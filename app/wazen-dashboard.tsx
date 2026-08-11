@@ -1,0 +1,667 @@
+"use client";
+
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  BarChart3,
+  Bell,
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  CircleDollarSign,
+  Clock3,
+  Download,
+  Ellipsis,
+  Globe2,
+  HandCoins,
+  House,
+  Landmark,
+  LayoutDashboard,
+  Menu,
+  Plane,
+  Plus,
+  ReceiptText,
+  Repeat2,
+  Search,
+  Settings,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  TrendingDown,
+  TrendingUp,
+  UserPlus,
+  Users,
+  WalletCards,
+  X,
+} from "lucide-react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+
+type Locale = "ar" | "en";
+type ViewId = "overview" | "personal" | "household" | "groups" | "trip" | "society" | "transactions" | "reports" | "settings";
+
+type User = { id: string; email: string; displayName: string; isDemo: boolean };
+type Space = {
+  id: string;
+  owner_user_id: string;
+  name_ar: string;
+  name_en: string;
+  type: string;
+  currency: string;
+  balance_minor: number;
+  goal_minor: number;
+  accent: string;
+  created_at: string;
+};
+type Member = {
+  id: string;
+  space_id: string;
+  display_name: string;
+  email: string | null;
+  role: string;
+  status: string;
+  due_minor: number;
+  paid_minor: number;
+  extra_minor: number;
+  avatar: string;
+};
+type Transaction = {
+  id: string;
+  space_id: string;
+  kind: string;
+  allocation: string;
+  amount_minor: number;
+  description_ar: string;
+  description_en: string;
+  status: string;
+  occurred_at: string;
+};
+type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[] };
+
+const copy = {
+  ar: {
+    greeting: "صباح الخير",
+    subtitle: "هذه صورتك المالية حتى اليوم",
+    overview: "نظرة عامة",
+    personal: "المحفظة الشخصية",
+    household: "المنزل والعائلة",
+    groups: "الأعضاء",
+    trip: "محفظة السفر",
+    society: "الجمعيات",
+    transactions: "العمليات",
+    reports: "التقارير",
+    settings: "الإعدادات",
+    workspace: "مساحتي المالية",
+    add: "إضافة عملية",
+    newWallet: "محفظة جديدة",
+    totalBalance: "صافي الرصيد",
+    spendableFunds: "رصيد المجموعات",
+    personalReserves: "فوائض شخصية",
+    monthlySpend: "مصروف أغسطس",
+    versus: "عن الشهر الماضي",
+    protected: "محمي ولا يدخل في الصندوق",
+    wallets: "محافظك",
+    viewAll: "عرض الكل",
+    tripGoal: "هدف رحلة العائلة",
+    collected: "تم جمعه من الهدف",
+    projected: "بالمعدل الحالي تصلون للهدف في مايو 2027",
+    commonFund: "الصندوق المشترك",
+    membersReserves: "فوائض الأعضاء",
+    cashHeld: "النقد الفعلي",
+    clarity: "لا تختلط الأرصدة الشخصية بأموال المجموعة",
+    recent: "أحدث العمليات",
+    obligations: "الالتزامات القادمة",
+    homeBudget: "توزيع مصروف المنزل",
+    paid: "مدفوع",
+    remaining: "متبقي",
+    extra: "فائض شخصي",
+    monthlyContribution: "المساهمة الشهرية",
+    nextDue: "القسط القادم",
+    members: "الأعضاء",
+    income: "دخل",
+    expense: "مصروف",
+    contribution: "مساهمة",
+    reimbursement: "تعويض",
+    mandatory: "إلزامي",
+    personalReserve: "فائض شخصي",
+    general: "عام",
+    amount: "المبلغ",
+    description: "الوصف",
+    wallet: "المحفظة",
+    allocation: "تخصيص المبلغ",
+    save: "حفظ العملية",
+    cancel: "إلغاء",
+    saving: "جارٍ الحفظ...",
+    transactionAdded: "تمت إضافة العملية بنجاح",
+    walletName: "اسم المحفظة",
+    walletType: "نوع المحفظة",
+    goal: "الهدف المالي",
+    create: "إنشاء المحفظة",
+    search: "ابحث في العمليات...",
+    allTransactions: "جميع العمليات",
+    date: "التاريخ",
+    status: "الحالة",
+    approved: "معتمدة",
+    memberProgress: "التزام أعضاء رحلة العائلة",
+    invite: "دعوة عضو",
+    roleOwner: "المالك",
+    roleTreasurer: "أمين الصندوق",
+    roleMember: "عضو",
+    householdInsight: "مصروف المنزل أقل بـ 8% من متوسط آخر ثلاثة أشهر",
+    smartInsight: "ملاحظة وازن",
+    privacy: "الخصوصية أولاً",
+    privacyText: "لا يرى أي عضو محفظتك الشخصية. تظهر للمجموعة فقط التحويلات التي تختار مشاركتها.",
+    access: "الصلاحيات",
+    accessText: "المالك يدير الإعدادات، أمين الصندوق يعتمد الدفعات، والعضو يرى حسابه فقط.",
+    export: "تصدير التقرير",
+    categories: ["السكن", "الطعام", "المواصلات", "التعليم", "أخرى"],
+    empty: "لا توجد بيانات بعد",
+    error: "تعذر تحميل البيانات. حاول مرة أخرى.",
+  },
+  en: {
+    greeting: "Good morning",
+    subtitle: "Here is your financial picture today",
+    overview: "Overview",
+    personal: "Personal wallet",
+    household: "Home & family",
+    groups: "Members",
+    trip: "Travel wallet",
+    society: "Savings circles",
+    transactions: "Transactions",
+    reports: "Reports",
+    settings: "Settings",
+    workspace: "My money space",
+    add: "Add transaction",
+    newWallet: "New wallet",
+    totalBalance: "Net balance",
+    spendableFunds: "Group funds",
+    personalReserves: "Personal reserves",
+    monthlySpend: "August spending",
+    versus: "vs last month",
+    protected: "Protected from group spending",
+    wallets: "Your wallets",
+    viewAll: "View all",
+    tripGoal: "Family trip goal",
+    collected: "collected of the goal",
+    projected: "At this pace, you will reach the goal in May 2027",
+    commonFund: "Common fund",
+    membersReserves: "Member reserves",
+    cashHeld: "Actual cash held",
+    clarity: "Personal reserves never mix with group funds",
+    recent: "Recent activity",
+    obligations: "Upcoming obligations",
+    homeBudget: "Home spending split",
+    paid: "Paid",
+    remaining: "Remaining",
+    extra: "Personal reserve",
+    monthlyContribution: "Monthly contribution",
+    nextDue: "Next due",
+    members: "members",
+    income: "Income",
+    expense: "Expense",
+    contribution: "Contribution",
+    reimbursement: "Reimbursement",
+    mandatory: "Mandatory",
+    personalReserve: "Personal reserve",
+    general: "General",
+    amount: "Amount",
+    description: "Description",
+    wallet: "Wallet",
+    allocation: "Allocation",
+    save: "Save transaction",
+    cancel: "Cancel",
+    saving: "Saving...",
+    transactionAdded: "Transaction added successfully",
+    walletName: "Wallet name",
+    walletType: "Wallet type",
+    goal: "Financial goal",
+    create: "Create wallet",
+    search: "Search transactions...",
+    allTransactions: "All transactions",
+    date: "Date",
+    status: "Status",
+    approved: "Approved",
+    memberProgress: "Family trip member progress",
+    invite: "Invite member",
+    roleOwner: "Owner",
+    roleTreasurer: "Treasurer",
+    roleMember: "Member",
+    householdInsight: "Home spending is 8% below your three-month average",
+    smartInsight: "Wazen insight",
+    privacy: "Privacy first",
+    privacyText: "No member can see your personal wallet. Groups only see transfers you explicitly share.",
+    access: "Permissions",
+    accessText: "Owners manage settings, treasurers approve payments, and members see only their own account.",
+    export: "Export report",
+    categories: ["Housing", "Food", "Transport", "Education", "Other"],
+    empty: "No data yet",
+    error: "Could not load your data. Please try again.",
+  },
+} as const;
+
+const navItems: { id: ViewId; icon: typeof LayoutDashboard }[] = [
+  { id: "overview", icon: LayoutDashboard },
+  { id: "personal", icon: WalletCards },
+  { id: "household", icon: House },
+  { id: "groups", icon: Users },
+  { id: "trip", icon: Plane },
+  { id: "society", icon: Repeat2 },
+  { id: "transactions", icon: ReceiptText },
+  { id: "reports", icon: BarChart3 },
+];
+
+const typeIcons: Record<string, typeof WalletCards> = {
+  personal: WalletCards,
+  household: House,
+  trip: Plane,
+  society: Repeat2,
+  group: Users,
+};
+
+const typeLabels = {
+  ar: { personal: "شخصية", household: "منزلية", trip: "سفر", society: "جمعية", group: "مجموعة" },
+  en: { personal: "Personal", household: "Household", trip: "Travel", society: "Circle", group: "Group" },
+};
+
+function formatMoney(minor: number, currency: string, locale: Locale, compact = false) {
+  return new Intl.NumberFormat(locale === "ar" ? "ar-SA" : "en-US", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: minor % 100 === 0 ? 0 : 2,
+    notation: compact ? "compact" : "standard",
+  }).format(minor / 100);
+}
+
+function nameOf(space: Space, locale: Locale) {
+  return locale === "ar" ? space.name_ar : space.name_en;
+}
+
+function transactionName(transaction: Transaction, locale: Locale) {
+  return locale === "ar" ? transaction.description_ar : transaction.description_en;
+}
+
+export function WazenDashboard() {
+  const [locale, setLocale] = useState<Locale>("ar");
+  const [activeView, setActiveView] = useState<ViewId>("overview");
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [modal, setModal] = useState<"transaction" | "wallet" | "invite" | null>(null);
+  const [toast, setToast] = useState("");
+  const t = copy[locale];
+
+  const load = async () => {
+    try {
+      setError(false);
+      const response = await fetch("/api/dashboard", { cache: "no-store" });
+      if (!response.ok) throw new Error("load failed");
+      setData(await response.json());
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+  }, [locale]);
+
+  const spacesByType = useMemo(() => {
+    const result: Record<string, Space | undefined> = {};
+    data?.spaces.forEach((space) => { if (!result[space.type]) result[space.type] = space; });
+    return result;
+  }, [data]);
+
+  const totals = useMemo(() => {
+    if (!data) return { net: 0, groups: 0, reserves: 0, spend: 0 };
+    const net = data.spaces.reduce((sum, item) => sum + item.balance_minor, 0);
+    const groups = data.spaces.filter((item) => ["trip", "society", "group"].includes(item.type)).reduce((sum, item) => sum + item.balance_minor, 0);
+    const reserves = data.members.reduce((sum, member) => sum + member.extra_minor, 0);
+    const spend = data.transactions.filter((item) => item.kind === "expense").reduce((sum, item) => sum + item.amount_minor, 0);
+    return { net, groups, reserves, spend };
+  }, [data]);
+
+  const flash = (message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(""), 2800);
+  };
+
+  const changeView = (view: ViewId) => {
+    setActiveView(view);
+    setSidebarOpen(false);
+  };
+
+  if (loading) return <LoadingScreen locale={locale} />;
+  if (error || !data) return <ErrorScreen message={t.error} retry={load} />;
+
+  const activeSpace = activeView === "personal" ? spacesByType.personal
+    : activeView === "household" ? spacesByType.household
+      : activeView === "trip" ? spacesByType.trip
+        : activeView === "society" ? spacesByType.society : undefined;
+
+  return (
+    <div className="app-shell">
+      <Sidebar locale={locale} active={activeView} open={sidebarOpen} onNavigate={changeView} onClose={() => setSidebarOpen(false)} />
+
+      <main className="main-shell">
+        <header className="topbar">
+          <div className="topbar-title">
+            <button className="mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Open menu"><Menu size={22} /></button>
+            <div>
+              <p className="eyebrow">{t.greeting}، {data.user.displayName.split(" ")[0]} 👋</p>
+              <h1>{t[activeView]}</h1>
+            </div>
+          </div>
+          <div className="topbar-actions">
+            <button className="language-button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")} aria-label="Change language">
+              <Globe2 size={17} /><span>{locale === "ar" ? "EN" : "عربي"}</span>
+            </button>
+            <button className="icon-button notification-button" aria-label="Notifications"><Bell size={19} /><i /></button>
+            <button className="primary-button" onClick={() => setModal("transaction")}><Plus size={18} />{t.add}</button>
+            <div className="user-avatar" title={data.user.email}>{data.user.displayName.slice(0, 1)}</div>
+          </div>
+        </header>
+
+        <div className="page-content">
+          {activeView === "overview" && (
+            <Overview data={data} locale={locale} totals={totals} onView={changeView} onAddWallet={() => setModal("wallet")} />
+          )}
+          {activeSpace && (
+            <SpaceDetail space={activeSpace} data={data} locale={locale} onAdd={() => setModal("transaction")} />
+          )}
+          {activeView === "groups" && <MembersView data={data} locale={locale} onInvite={() => setModal("invite")} />}
+          {activeView === "transactions" && <TransactionsView data={data} locale={locale} />}
+          {activeView === "reports" && <ReportsView data={data} locale={locale} totals={totals} />}
+          {activeView === "settings" && <SettingsView locale={locale} />}
+        </div>
+      </main>
+
+      {modal === "transaction" && (
+        <TransactionModal data={data} locale={locale} onClose={() => setModal(null)} onSaved={(next) => {
+          setData({ ...data, ...next });
+          setModal(null);
+          flash(t.transactionAdded);
+        }} />
+      )}
+      {modal === "wallet" && (
+        <WalletModal data={data} locale={locale} onClose={() => setModal(null)} onSaved={(next) => {
+          setData({ ...data, ...next });
+          setModal(null);
+          flash(locale === "ar" ? "تم إنشاء المحفظة" : "Wallet created");
+        }} />
+      )}
+      {modal === "invite" && <InviteModal data={data} locale={locale} onClose={() => setModal(null)} onDone={(message) => { setModal(null); flash(message); }} />}
+      {toast && <div className="toast"><Check size={17} />{toast}</div>}
+    </div>
+  );
+}
+
+function Sidebar({ locale, active, open, onNavigate, onClose }: { locale: Locale; active: ViewId; open: boolean; onNavigate: (id: ViewId) => void; onClose: () => void }) {
+  const t = copy[locale];
+  return (
+    <>
+      {open && <button className="sidebar-backdrop" onClick={onClose} aria-label="Close menu" />}
+      <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
+        <div className="brand-row">
+          <div className="brand-mark"><span>و</span></div>
+          <div className="brand-name"><strong>وازن</strong><small>WAZEN</small></div>
+          <button className="sidebar-close" onClick={onClose} aria-label="Close"><X size={20} /></button>
+        </div>
+        <div className="workspace-pill"><div className="workspace-icon"><Landmark size={17} /></div><div><small>{t.workspace}</small><strong>{locale === "ar" ? "الحساب الرئيسي" : "Main account"}</strong></div><ChevronDown size={15} /></div>
+        <nav className="sidebar-nav">
+          {navItems.map(({ id, icon: Icon }) => (
+            <button key={id} className={active === id ? "active" : ""} onClick={() => onNavigate(id)}>
+              <Icon size={19} strokeWidth={active === id ? 2.2 : 1.8} /><span>{t[id]}</span>
+              {id === "groups" && <em>5</em>}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-external">
+          <small>{locale === "ar" ? "إدارة الحساب" : "Account management"}</small>
+          <a href="/documents"><ReceiptText size={18} /><span>{locale === "ar" ? "الإيصالات والكشوفات" : "Documents & statements"}</span></a>
+          <a href="/billing"><CircleDollarSign size={18} /><span>{locale === "ar" ? "الباقة والفوترة" : "Plan & billing"}</span></a>
+          <a href="/admin"><ShieldCheck size={18} /><span>{locale === "ar" ? "إدارة المنصة" : "Platform admin"}</span></a>
+        </div>
+        <div className="sidebar-spacer" />
+        <button className={`sidebar-setting ${active === "settings" ? "active" : ""}`} onClick={() => onNavigate("settings")}><Settings size={19} /><span>{t.settings}</span></button>
+        <div className="security-card"><ShieldCheck size={20} /><div><strong>{locale === "ar" ? "بياناتك محمية" : "Your data is protected"}</strong><small>{locale === "ar" ? "تشفير وسجل تدقيق لكل عملية" : "Encryption and an audit trail"}</small></div></div>
+      </aside>
+    </>
+  );
+}
+
+function Overview({ data, locale, totals, onView, onAddWallet }: { data: DashboardData; locale: Locale; totals: { net: number; groups: number; reserves: number; spend: number }; onView: (id: ViewId) => void; onAddWallet: () => void }) {
+  const t = copy[locale];
+  const trip = data.spaces.find((space) => space.type === "trip");
+  const tripMembers = trip ? data.members.filter((member) => member.space_id === trip.id) : [];
+  const reserveTotal = tripMembers.reduce((sum, member) => sum + member.extra_minor, 0);
+  const goalProgress = trip?.goal_minor ? Math.min(100, Math.round((trip.balance_minor / trip.goal_minor) * 100)) : 0;
+  return (
+    <div className="dashboard-stack">
+      <div className="welcome-line"><p>{t.subtitle}</p><div className="date-chip"><CalendarDays size={16} />{new Intl.DateTimeFormat(locale === "ar" ? "ar-AE" : "en-GB", { day: "numeric", month: "long", year: "numeric" }).format(new Date("2026-08-11"))}</div></div>
+      <section className="stat-grid">
+        <StatCard icon={<CircleDollarSign />} label={t.totalBalance} value={formatMoney(totals.net + totals.reserves, "SAR", locale)} trend="+6.4%" accent="navy" note={t.versus} />
+        <StatCard icon={<HandCoins />} label={t.spendableFunds} value={formatMoney(totals.groups, "SAR", locale)} trend="+12%" accent="green" note={locale === "ar" ? "هذا الشهر" : "this month"} />
+        <StatCard icon={<ShieldCheck />} label={t.personalReserves} value={formatMoney(totals.reserves, "SAR", locale)} accent="amber" note={t.protected} />
+        <StatCard icon={<TrendingDown />} label={t.monthlySpend} value={formatMoney(totals.spend, "SAR", locale)} trend="-8%" accent="rose" note={t.versus} positive />
+      </section>
+
+      <section className="overview-grid">
+        <article className="goal-card panel">
+          <div className="panel-heading">
+            <div><span className="section-kicker"><Plane size={15} />{locale === "ar" ? "هدف جماعي" : "Group goal"}</span><h2>{t.tripGoal}</h2></div>
+            <button className="ghost-icon" onClick={() => onView("trip")} aria-label="Open trip"><ArrowUpRight size={18} /></button>
+          </div>
+          <div className="goal-number"><strong>{trip ? formatMoney(trip.balance_minor, trip.currency, locale) : "—"}</strong><span>{t.collected} {trip ? formatMoney(trip.goal_minor, trip.currency, locale) : "—"}</span></div>
+          <div className="progress-track tall"><span style={{ width: `${goalProgress}%` }} /></div>
+          <div className="progress-labels"><b>{goalProgress}%</b><span>{t.projected}</span></div>
+          <div className="money-separation">
+            <div><i className="dot common" /><span>{t.commonFund}</span><strong>{trip ? formatMoney(trip.balance_minor, trip.currency, locale) : "—"}</strong></div>
+            <div><i className="dot reserve" /><span>{t.membersReserves}</span><strong>{formatMoney(reserveTotal, "SAR", locale)}</strong></div>
+            <div className="cash-held"><i className="dot cash" /><span>{t.cashHeld}</span><strong>{formatMoney((trip?.balance_minor ?? 0) + reserveTotal, "SAR", locale)}</strong></div>
+          </div>
+          <p className="clarity-note"><ShieldCheck size={15} />{t.clarity}</p>
+        </article>
+
+        <article className="budget-card panel">
+          <div className="panel-heading"><div><span className="section-kicker"><Sparkles size={15} />{t.smartInsight}</span><h2>{t.homeBudget}</h2></div><Ellipsis size={20} /></div>
+          <div className="donut-wrap"><div className="donut"><div><strong>72%</strong><span>{locale === "ar" ? "من الميزانية" : "of budget"}</span></div></div>
+            <div className="budget-legend">
+              {[38, 24, 17, 12, 9].map((value, index) => <div key={index}><i className={`budget-dot c${index + 1}`} /><span>{t.categories[index]}</span><strong>{value}%</strong></div>)}
+            </div>
+          </div>
+          <p className="insight-note"><TrendingDown size={16} />{t.householdInsight}</p>
+        </article>
+      </section>
+
+      <section className="wallet-section">
+        <div className="section-title"><div><h2>{t.wallets}</h2><p>{locale === "ar" ? "أرصدة مستقلة لحياة مالية أوضح" : "Separate balances for a clearer financial life"}</p></div><button className="secondary-button" onClick={onAddWallet}><Plus size={16} />{t.newWallet}</button></div>
+        <div className="wallet-grid">
+          {data.spaces.map((space) => <WalletCard key={space.id} space={space} locale={locale} onOpen={() => onView(space.type === "group" ? "groups" : space.type as ViewId)} />)}
+        </div>
+      </section>
+
+      <section className="lower-grid">
+        <RecentTransactions data={data} locale={locale} onView={() => onView("transactions")} />
+        <Obligations data={data} locale={locale} onView={onView} />
+      </section>
+    </div>
+  );
+}
+
+function StatCard({ icon, label, value, trend, note, accent, positive = false }: { icon: ReactNode; label: string; value: string; trend?: string; note: string; accent: string; positive?: boolean }) {
+  return <article className="stat-card"><div className={`stat-icon ${accent}`}>{icon}</div><div className="stat-copy"><span>{label}</span><strong>{value}</strong><small className={positive ? "positive" : ""}>{trend && <b>{trend}</b>} {note}</small></div></article>;
+}
+
+function WalletCard({ space, locale, onOpen }: { space: Space; locale: Locale; onOpen: () => void }) {
+  const Icon = typeIcons[space.type] ?? WalletCards;
+  const progress = space.goal_minor ? Math.min(100, Math.round((space.balance_minor / space.goal_minor) * 100)) : 0;
+  return <button className={`wallet-card accent-${space.accent}`} onClick={onOpen}>
+    <div className="wallet-card-top"><span className="wallet-icon"><Icon size={19} /></span><ArrowUpRight size={17} /></div>
+    <span className="wallet-type">{typeLabels[locale][space.type as keyof typeof typeLabels.ar] ?? space.type}</span>
+    <h3>{nameOf(space, locale)}</h3><strong>{formatMoney(space.balance_minor, space.currency, locale)}</strong>
+    {space.goal_minor > 0 && <><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><small>{progress}% {locale === "ar" ? "من الهدف" : "of goal"}</small></>}
+  </button>;
+}
+
+function RecentTransactions({ data, locale, onView }: { data: DashboardData; locale: Locale; onView: () => void }) {
+  const t = copy[locale];
+  return <article className="panel list-panel"><div className="panel-heading"><h2>{t.recent}</h2><button className="text-button" onClick={onView}>{t.viewAll}<ArrowUpRight size={15} /></button></div>
+    <div className="transaction-list">{data.transactions.slice(0, 5).map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} data={data} locale={locale} />)}</div>
+  </article>;
+}
+
+function TransactionRow({ transaction, data, locale }: { transaction: Transaction; data: DashboardData; locale: Locale }) {
+  const positive = ["income", "contribution"].includes(transaction.kind);
+  const Icon = transaction.kind === "expense" ? ArrowUpRight : transaction.kind === "reimbursement" ? HandCoins : ArrowDownLeft;
+  const space = data.spaces.find((item) => item.id === transaction.space_id);
+  return <div className="transaction-row"><div className={`transaction-icon ${transaction.kind}`}><Icon size={17} /></div><div className="transaction-main"><strong>{transactionName(transaction, locale)}</strong><span>{space ? nameOf(space, locale) : "—"} · {new Intl.DateTimeFormat(locale === "ar" ? "ar-SA" : "en-GB", { day: "numeric", month: "short" }).format(new Date(transaction.occurred_at))}</span></div><strong className={positive ? "amount-positive" : "amount-negative"}>{positive ? "+" : "−"}{formatMoney(transaction.amount_minor, space?.currency ?? "SAR", locale)}</strong></div>;
+}
+
+function Obligations({ data, locale, onView }: { data: DashboardData; locale: Locale; onView: (view: ViewId) => void }) {
+  const t = copy[locale];
+  const trip = data.spaces.find((space) => space.type === "trip");
+  const society = data.spaces.find((space) => space.type === "society");
+  return <article className="panel obligation-panel"><div className="panel-heading"><h2>{t.obligations}</h2><CalendarDays size={18} /></div>
+    <button className="obligation-row" onClick={() => onView("trip")}><div className="obligation-date"><b>15</b><span>{locale === "ar" ? "أغسطس" : "AUG"}</span></div><div><strong>{trip ? nameOf(trip, locale) : t.trip}</strong><span>{t.monthlyContribution}</span></div><b>{formatMoney(2000, "SAR", locale)}</b></button>
+    <button className="obligation-row" onClick={() => onView("society")}><div className="obligation-date purple"><b>20</b><span>{locale === "ar" ? "أغسطس" : "AUG"}</span></div><div><strong>{society ? nameOf(society, locale) : t.society}</strong><span>{t.nextDue}</span></div><b>{formatMoney(20000, "SAR", locale)}</b></button>
+    <div className="completion-line"><CheckCircle2 size={17} /><span>{locale === "ar" ? "3 من 4 التزامات مكتملة هذا الشهر" : "3 of 4 obligations completed this month"}</span><strong>75%</strong></div>
+  </article>;
+}
+
+function SpaceDetail({ space, data, locale, onAdd }: { space: Space; data: DashboardData; locale: Locale; onAdd: () => void }) {
+  const t = copy[locale];
+  const members = data.members.filter((member) => member.space_id === space.id);
+  const transactions = data.transactions.filter((transaction) => transaction.space_id === space.id);
+  const reserves = members.reduce((sum, member) => sum + member.extra_minor, 0);
+  const progress = space.goal_minor ? Math.min(100, Math.round((space.balance_minor / space.goal_minor) * 100)) : 0;
+  return <div className="dashboard-stack">
+    <section className={`space-hero accent-${space.accent}`}><div><span>{typeLabels[locale][space.type as keyof typeof typeLabels.ar]}</span><h2>{nameOf(space, locale)}</h2><p>{space.type === "personal" ? (locale === "ar" ? "دخل، مصروف، ميزانيات وأهداف في مكان واحد" : "Income, spending, budgets and goals in one place") : (locale === "ar" ? "حسابات واضحة ومفصولة لكل فرد" : "Clear, separated balances for every member")}</p></div><div className="space-hero-balance"><span>{locale === "ar" ? "الرصيد المتاح" : "Available balance"}</span><strong>{formatMoney(space.balance_minor, space.currency, locale)}</strong><button onClick={onAdd}><Plus size={16} />{t.add}</button></div></section>
+    <section className="stat-grid compact">
+      <StatCard icon={<WalletCards />} label={locale === "ar" ? "الرصيد المتاح" : "Available"} value={formatMoney(space.balance_minor, space.currency, locale)} accent="navy" note={locale === "ar" ? "محدّث الآن" : "updated now"} />
+      <StatCard icon={<Target />} label={locale === "ar" ? "الهدف" : "Goal"} value={space.goal_minor ? formatMoney(space.goal_minor, space.currency, locale) : "—"} accent="green" note={`${progress}%`} />
+      <StatCard icon={<ShieldCheck />} label={t.personalReserves} value={formatMoney(reserves, space.currency, locale)} accent="amber" note={t.protected} />
+      <StatCard icon={<ReceiptText />} label={t.transactions} value={String(transactions.length)} accent="rose" note={locale === "ar" ? "عملية مسجلة" : "recorded entries"} />
+    </section>
+    {space.goal_minor > 0 && <article className="panel goal-wide"><div className="panel-heading"><div><span className="section-kicker"><Target size={15} />{locale === "ar" ? "تقدم الهدف" : "Goal progress"}</span><h2>{nameOf(space, locale)}</h2></div><strong>{progress}%</strong></div><div className="progress-track tall"><span style={{ width: `${progress}%` }} /></div><div className="goal-wide-values"><span>{formatMoney(space.balance_minor, space.currency, locale)}</span><span>{formatMoney(space.goal_minor, space.currency, locale)}</span></div></article>}
+    {members.length > 0 && <MembersTable members={members} locale={locale} currency={space.currency} />}
+    <article className="panel list-panel"><div className="panel-heading"><h2>{t.recent}</h2><button className="secondary-button" onClick={onAdd}><Plus size={15} />{t.add}</button></div><div className="transaction-list">{transactions.length ? transactions.map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} data={data} locale={locale} />) : <Empty locale={locale} />}</div></article>
+  </div>;
+}
+
+function MembersView({ data, locale, onInvite }: { data: DashboardData; locale: Locale; onInvite: () => void }) {
+  const trip = data.spaces.find((space) => space.type === "trip");
+  const members = trip ? data.members.filter((member) => member.space_id === trip.id) : [];
+  const t = copy[locale];
+  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.memberProgress}</h2><p>{locale === "ar" ? "المساهمات الإلزامية والفوائض الشخصية منفصلة دائماً" : "Mandatory contributions and personal reserves always stay separate"}</p></div><button className="primary-button" onClick={onInvite}><UserPlus size={17} />{t.invite}</button></div><MembersTable members={members} locale={locale} currency="SAR" /><section className="settings-grid"><InfoPanel icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} /><InfoPanel icon={<Users />} title={t.access} text={t.accessText} /></section></div>;
+}
+
+function MembersTable({ members, locale, currency }: { members: Member[]; locale: Locale; currency: string }) {
+  const t = copy[locale];
+  return <article className="panel members-panel"><div className="panel-heading"><h2>{t.members} <span className="count-badge">{members.length}</span></h2><button className="ghost-icon"><Ellipsis size={19} /></button></div><div className="members-table"><div className="table-head"><span>{locale === "ar" ? "العضو" : "Member"}</span><span>{t.paid}</span><span>{t.remaining}</span><span>{t.extra}</span><span>{t.status}</span></div>{members.map((member) => { const remaining = Math.max(0, member.due_minor - member.paid_minor); return <div className="member-row" key={member.id}><div className="member-name"><i style={{ background: member.avatar }}>{member.display_name.slice(0, 1)}</i><div><strong>{member.display_name}</strong><span>{member.role === "owner" ? t.roleOwner : member.role === "treasurer" ? t.roleTreasurer : t.roleMember}</span></div></div><strong>{formatMoney(member.paid_minor, currency, locale)}</strong><strong className={remaining ? "amount-negative" : "muted-amount"}>{formatMoney(remaining, currency, locale)}</strong><strong className="reserve-amount">{formatMoney(member.extra_minor, currency, locale)}</strong><span className={`status-pill ${remaining ? "pending" : "complete"}`}>{remaining ? <Clock3 size={13} /> : <CheckCircle2 size={13} />}{remaining ? (locale === "ar" ? "بانتظار الدفع" : "Pending") : t.paid}</span></div>; })}</div></article>;
+}
+
+function TransactionsView({ data, locale }: { data: DashboardData; locale: Locale }) {
+  const [query, setQuery] = useState("");
+  const t = copy[locale];
+  const rows = data.transactions.filter((transaction) => transactionName(transaction, locale).toLowerCase().includes(query.toLowerCase()));
+  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.allTransactions}</h2><p>{locale === "ar" ? "سجل واضح لكل حركة مالية دون حذف أو إخفاء" : "A clear audit trail for every money movement"}</p></div><button className="secondary-button"><Download size={16} />{t.export}</button></div><article className="panel transaction-table-panel"><label className="search-field"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.search} /></label><div className="full-transactions"><div className="full-table-head"><span>{t.description}</span><span>{t.wallet}</span><span>{t.date}</span><span>{t.allocation}</span><span>{t.amount}</span><span>{t.status}</span></div>{rows.map((transaction) => { const space = data.spaces.find((item) => item.id === transaction.space_id); const positive = ["income", "contribution"].includes(transaction.kind); return <div className="full-transaction-row" key={transaction.id}><span><i className={`mini-kind ${transaction.kind}`} />{transactionName(transaction, locale)}</span><span>{space ? nameOf(space, locale) : "—"}</span><span>{new Intl.DateTimeFormat(locale === "ar" ? "ar-SA" : "en-GB", { day: "numeric", month: "short", year: "numeric" }).format(new Date(transaction.occurred_at))}</span><span>{transaction.allocation === "personal_reserve" ? t.personalReserve : transaction.allocation === "mandatory" ? t.mandatory : t.general}</span><strong className={positive ? "amount-positive" : "amount-negative"}>{positive ? "+" : "−"}{formatMoney(transaction.amount_minor, space?.currency ?? "SAR", locale)}</strong><span className="status-pill complete"><CheckCircle2 size={13} />{t.approved}</span></div>; })}</div></article></div>;
+}
+
+function ReportsView({ locale, totals }: { data: DashboardData; locale: Locale; totals: { net: number; groups: number; reserves: number; spend: number } }) {
+  const t = copy[locale];
+  const bars = [44, 62, 49, 76, 58, 84, 68, 73, 52, 79, 64, 88];
+  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.reports}</h2><p>{locale === "ar" ? "افهم اتجاه أموالك واتخذ قرارك بثقة" : "Understand your money direction and decide with confidence"}</p></div><button className="secondary-button"><Download size={16} />{t.export}</button></div><section className="stat-grid compact"><StatCard icon={<TrendingUp />} label={t.income} value={formatMoney(720000, "SAR", locale)} trend="+4.2%" accent="green" note={t.versus} /><StatCard icon={<TrendingDown />} label={t.expense} value={formatMoney(totals.spend, "SAR", locale)} trend="-8%" accent="rose" note={t.versus} /><StatCard icon={<WalletCards />} label={t.totalBalance} value={formatMoney(totals.net, "SAR", locale)} accent="navy" note={locale === "ar" ? "عبر كل المحافظ" : "across all wallets"} /><StatCard icon={<ShieldCheck />} label={t.personalReserves} value={formatMoney(totals.reserves, "SAR", locale)} accent="amber" note={t.protected} /></section><article className="panel report-chart"><div className="panel-heading"><div><span className="section-kicker">{locale === "ar" ? "آخر 12 شهراً" : "Last 12 months"}</span><h2>{locale === "ar" ? "التدفق المالي" : "Cash flow"}</h2></div><span className="status-pill complete"><TrendingUp size={13} />+11.6%</span></div><div className="bars-chart">{bars.map((height, index) => <div className="bar-column" key={index}><div className="bar-pair"><i style={{ height: `${height}%` }} /><b style={{ height: `${Math.max(22, height - 28)}%` }} /></div><span>{new Intl.DateTimeFormat(locale === "ar" ? "ar-SA" : "en-US", { month: "short" }).format(new Date(2025, index + 8, 1))}</span></div>)}</div></article><section className="settings-grid"><InfoPanel icon={<Sparkles />} title={t.smartInsight} text={locale === "ar" ? "إذا حافظت على معدل الادخار الحالي، سيزيد صافي رصيدك بنحو 18,400 ريال خلال عام." : "At your current savings rate, your net balance could grow by SAR 18,400 within a year."} /><InfoPanel icon={<Target />} title={locale === "ar" ? "أقرب هدف" : "Closest goal"} text={locale === "ar" ? "محفظة رحلة العائلة وصلت إلى 32%، وتحتاجون 814 ريالاً شهرياً للوصول في الموعد." : "The family trip is 32% funded. You need SAR 814 monthly to reach it on time."} /></section></div>;
+}
+
+function SettingsView({ locale }: { locale: Locale }) {
+  const t = copy[locale];
+  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.settings}</h2><p>{locale === "ar" ? "تحكم في الخصوصية واللغة والصلاحيات" : "Control privacy, language and permissions"}</p></div></div><section className="settings-grid"><InfoPanel icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} /><InfoPanel icon={<Users />} title={t.access} text={t.accessText} /><InfoPanel icon={<Globe2 />} title={locale === "ar" ? "اللغة والمنطقة" : "Language & region"} text={locale === "ar" ? "العربية، الريال السعودي، والمنطقة الزمنية لمدينة دبي." : "English, Saudi riyal and Dubai time zone."} /><InfoPanel icon={<Bell />} title={locale === "ar" ? "التنبيهات" : "Notifications"} text={locale === "ar" ? "تذكير قبل الاستحقاق، إشعارات الدفع وطلبات الاسترداد." : "Due reminders, payment updates and withdrawal requests."} /></section></div>;
+}
+
+function InfoPanel({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
+  return <article className="panel info-panel"><div>{icon}</div><h3>{title}</h3><p>{text}</p><button><ArrowUpRight size={16} /></button></article>;
+}
+
+function TransactionModal({ data, locale, onClose, onSaved }: { data: DashboardData; locale: Locale; onClose: () => void; onSaved: (next: Partial<DashboardData>) => void }) {
+  const t = copy[locale];
+  const [saving, setSaving] = useState(false);
+  const [kind, setKind] = useState("expense");
+  const [spaceId, setSpaceId] = useState(data.spaces[0]?.id ?? "");
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [allocation, setAllocation] = useState("general");
+  const [memberId, setMemberId] = useState("");
+  const members = data.members.filter((member) => member.space_id === spaceId);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "addTransaction", kind, spaceId, amount: Number(amount), description, allocation, memberId: memberId || undefined }) });
+      if (!response.ok) throw new Error("save failed");
+      onSaved(await response.json());
+    } finally { setSaving(false); }
+  };
+  return <Modal title={t.add} onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="segmented-control">{["expense", "income", "contribution", "reimbursement"].map((item) => <button type="button" key={item} className={kind === item ? "active" : ""} onClick={() => setKind(item)}>{t[item as keyof typeof t] as string}</button>)}</div><label><span>{t.wallet}</span><select value={spaceId} onChange={(event) => { setSpaceId(event.target.value); setMemberId(""); }}>{data.spaces.map((space) => <option key={space.id} value={space.id}>{nameOf(space, locale)}</option>)}</select></label><div className="form-row"><label><span>{t.amount}</span><div className="money-input"><input required min="0.01" step="0.01" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" /><b>SAR</b></div></label><label><span>{t.allocation}</span><select value={allocation} onChange={(event) => setAllocation(event.target.value)}><option value="general">{t.general}</option><option value="mandatory">{t.mandatory}</option><option value="personal_reserve">{t.personalReserve}</option></select></label></div>{members.length > 0 && <label><span>{locale === "ar" ? "العضو (اختياري)" : "Member (optional)"}</span><select value={memberId} onChange={(event) => setMemberId(event.target.value)}><option value="">—</option>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}</option>)}</select></label>}<label><span>{t.description}</span><input required value={description} onChange={(event) => setDescription(event.target.value)} placeholder={locale === "ar" ? "مثال: مشتريات المنزل" : "e.g. Home groceries"} /></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : t.save}</button></div></form></Modal>;
+}
+
+function WalletModal({ locale, onClose, onSaved }: { data: DashboardData; locale: Locale; onClose: () => void; onSaved: (next: Partial<DashboardData>) => void }) {
+  const t = copy[locale];
+  const [saving, setSaving] = useState(false);
+  const [name, setName] = useState("");
+  const [type, setType] = useState("personal");
+  const [goal, setGoal] = useState("");
+  const submit = async (event: FormEvent) => { event.preventDefault(); setSaving(true); try { const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "addWallet", name, type, goal: Number(goal || 0) }) }); if (!response.ok) throw new Error("save failed"); onSaved(await response.json()); } finally { setSaving(false); } };
+  return <Modal title={t.newWallet} onClose={onClose}><form className="modal-form" onSubmit={submit}><label><span>{t.walletName}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={locale === "ar" ? "مثال: صندوق الطوارئ" : "e.g. Emergency fund"} /></label><label><span>{t.walletType}</span><select value={type} onChange={(event) => setType(event.target.value)}>{Object.entries(typeLabels[locale]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label><span>{t.goal}</span><div className="money-input"><input min="0" step="1" type="number" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="0" /><b>SAR</b></div></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : t.create}</button></div></form></Modal>;
+}
+
+function InviteModal({ data, locale, onClose, onDone }: { data: DashboardData; locale: Locale; onClose: () => void; onDone: (message: string) => void }) {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("member");
+  const [spaceId, setSpaceId] = useState(data.spaces.find((space) => space.type === "trip")?.id ?? data.spaces.find((space) => space.type !== "personal")?.id ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/platform", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "inviteMember", email, role, spaceId }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Unable to create invitation");
+      onDone(locale === "ar" ? `تم إنشاء دعوة آمنة لـ ${email}` : `A secure invitation was created for ${email}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to create invitation");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const roles = locale === "ar"
+    ? { member: "عضو", treasurer: "أمين صندوق", manager: "مدير", auditor: "مدقق", viewer: "مشاهدة فقط" }
+    : { member: "Member", treasurer: "Treasurer", manager: "Manager", auditor: "Auditor", viewer: "View only" };
+  const groupSpaces = data.spaces.filter((space) => space.type !== "personal");
+  return <Modal title={locale === "ar" ? "دعوة عضو" : "Invite a member"} onClose={onClose}>
+    <form className="modal-form" onSubmit={submit}>
+      <label><span>{locale === "ar" ? "البريد الإلكتروني" : "Email address"}</span><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="member@example.com" /></label>
+      <label><span>{locale === "ar" ? "المحفظة الجماعية" : "Group wallet"}</span><select required value={spaceId} onChange={(event) => setSpaceId(event.target.value)}>{groupSpaces.map((space) => <option key={space.id} value={space.id}>{nameOf(space, locale)}</option>)}</select></label>
+      <label><span>{locale === "ar" ? "الصلاحية" : "Access role"}</span><select value={role} onChange={(event) => setRole(event.target.value)}>{Object.entries(roles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      {error && <p className="modal-error">{error}</p>}
+      <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{copy[locale].cancel}</button><button className="primary-button" disabled={saving || groupSpaces.length === 0}>{saving ? copy[locale].saving : copy[locale].invite}</button></div>
+    </form>
+  </Modal>;
+}
+
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="modal-card" role="dialog" aria-modal="true" aria-label={title}><div className="modal-header"><h2>{title}</h2><button onClick={onClose} aria-label="Close"><X size={20} /></button></div>{children}</section></div>;
+}
+
+function Empty({ locale }: { locale: Locale }) { return <div className="empty-state"><ReceiptText size={24} /><span>{copy[locale].empty}</span></div>; }
+function LoadingScreen({ locale }: { locale: Locale }) { return <div className="loading-screen"><div className="loading-brand"><div className="brand-mark"><span>و</span></div><strong>{locale === "ar" ? "وازن" : "Wazen"}</strong></div><div className="loading-pulse"><i /><i /><i /></div></div>; }
+function ErrorScreen({ message, retry }: { message: string; retry: () => void }) { return <div className="error-screen"><CircleDollarSign size={40} /><h1>وازن</h1><p>{message}</p><button className="primary-button" onClick={retry}>Try again</button></div>; }

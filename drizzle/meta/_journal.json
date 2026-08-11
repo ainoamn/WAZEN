@@ -1,5 +1,20 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1786420800000,
+      "tag": "0000_wazen_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786507200000,
+      "tag": "0001_commercial_platform",
+      "breakpoints": true
+    }
+  ]
 }
