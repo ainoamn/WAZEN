@@ -1,11 +1,25 @@
 import { env } from "cloudflare:workers";
+import { getNodeSqliteD1 } from "./node-sqlite-d1";
 
 export function getRawDb(): D1Database {
   const bindings = env as unknown as { DB?: D1Database };
-  if (!bindings.DB) {
-    throw new Error("Database binding DB is unavailable");
+  if (bindings.DB) {
+    return bindings.DB;
   }
-  return bindings.DB;
+
+  // Next.js (Vercel / local `next start`) — not Cloudflare Workers.
+  const preferNodeSqlite =
+    process.env.VERCEL === "1" ||
+    process.env.WAZEN_USE_NODE_SQLITE === "1" ||
+    process.env.NEXT_RUNTIME === "nodejs";
+
+  if (preferNodeSqlite) {
+    return getNodeSqliteD1();
+  }
+
+  throw new Error(
+    "Database binding DB is unavailable. Enable D1 (`d1: DB` in .openai/hosting.json) or set WAZEN_USE_NODE_SQLITE=1 for Next.js/Vercel.",
+  );
 }
 
 export async function ensureSchema(db: D1Database) {
@@ -226,7 +240,9 @@ export function getRequestUser(request: Request): RequestUser | null {
   }
 
   const host = new URL(request.url).hostname;
-  if (host === "localhost" || host === "127.0.0.1") {
+  const isLocalHost = host === "localhost" || host === "127.0.0.1";
+  // On Vercel (no OpenAI SIWC headers) keep a stable demo identity so the UI works.
+  if (isLocalHost || process.env.VERCEL === "1" || process.env.WAZEN_DEMO_AUTH === "1") {
     return {
       id: "local-demo-user",
       email: "demo@wazen.app",
