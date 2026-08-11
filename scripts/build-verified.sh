@@ -2,9 +2,18 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+project_root="$(cd "${script_dir}/.." && pwd)"
+
+# Vercel and other standard Next.js hosts should use next build, not the
+# Cloudflare Sites vinext artifact pipeline.
+if [[ -n "${VERCEL:-}" ]] || [[ "${DEPLOY_TARGET:-}" == "vercel" ]]; then
+  cd "${project_root}"
+  echo "Detected Vercel/standard Next deploy. Running next build..."
+  exec npx next build
+fi
 
 if [[ "${SITES_ENV_READY:-}" != "1" ]]; then
-  exec "${script_dir}/sites-env.sh" -- "$0" "$@"
+  exec bash "${script_dir}/sites-env.sh" -- bash "$0" "$@"
 fi
 
 command -v timeout || {
@@ -25,4 +34,4 @@ timeout \
   "${SITES_BUILD_TIMEOUT:-3m}" \
   "${vinext}" build
 
-"${script_dir}/validate-artifact.sh"
+bash "${script_dir}/validate-artifact.sh"
