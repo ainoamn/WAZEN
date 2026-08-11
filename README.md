@@ -38,12 +38,16 @@ Cloudflare D1 عبر Drizzle. المخطط في `db/schema.ts` مع تهيئة r
 
 نسخة **رِفد | RIFD** (UI prototype / أفكار الشاشات والهوية) محفوظة للرجوع إليها عند الحاجة، وليست المنصة الرئيسية:
 
-- الفرع على GitHub: [`archive/rifd`](https://github.com/ainoamn/WAZEN/tree/archive/rifd)
-- للاطلاع محلياً:
+| المكان | المسار |
+|--------|--------|
+| GitHub | [`archive/rifd`](https://github.com/ainoamn/WAZEN/tree/archive/rifd) |
+| الكمبيوتر (worktree) | `C:\dev\WAZEN-archive-rifd` |
+| المنصة الرئيسية | `C:\dev\WAZEN` على فرع `main` |
 
 ```bash
-git fetch origin
-git checkout archive/rifd
+# من مجلد المنصة الرئيسية
+git worktree list
+# الأرشيف مربوط بالفرع archive/rifd — لا تعدّل عليه للعمل اليومي
 ```
 
 يمكن الاستفادة من أرشيف رِفد في الأفكار والسيناريوهات والتصميم دون دمجها كمنصة إنتاج.
