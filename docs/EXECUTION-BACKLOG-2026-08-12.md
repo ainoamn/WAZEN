@@ -24,10 +24,10 @@
 - [x] سكربت تصفير آمن `db:reset` (dry-run افتراضي)
 - [x] سكربت تهيئة مدير `admin:bootstrap` + جدول رموز + `/admin/setup`
 - [x] تحديث وثائق النشر والتشغيل
-- [ ] ضبط متغيرات Vercel Production يدوياً (`WAZEN_DEMO_MODE=0` … + Turso)
-- [ ] التأكد أن النشر يشير إلى `main` الحالي و`/api/health` ليس 404
+- [x] ضبط متغيرات Vercel Production يدوياً (`WAZEN_DEMO_MODE=0` … + Turso) — **النشر نجح؛ المتغيرات ما زالت فارغة كلياً**
+- [x] التأكد أن النشر يشير إلى `main` الحالي و`/api/health` ليس 404 — **health يعمل (degraded بلا DB)**
 - [ ] Staging مطابق قبل تحويل الإنتاج
-
+- [ ] إضافة Turso + أسرار الإنتاج إلى Vercel
 ## المرحلة 1 — التصفير والمدير
 
 - [ ] Backup + checksum للقاعدة الحالية
