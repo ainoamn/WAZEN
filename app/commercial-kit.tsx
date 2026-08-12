@@ -26,7 +26,7 @@ export function useCommerceLocale() {
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <Link className={`commerce-brand ${compact ? "compact" : ""}`} href="/">
-      <img src="/brand/wazen-mark.svg" alt="" width={38} height={38} />
+      <img src="/brand/wazen-mark.svg" alt="وازن" width={38} height={38} />
       <div>
         <b>وازن</b>
         <small>WAZEN</small>
