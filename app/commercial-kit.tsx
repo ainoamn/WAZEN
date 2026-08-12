@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, Building2, CreditCard, FileText, Globe2, LayoutDashboard, Menu, ReceiptText, Users, WalletCards, X } from "lucide-react";
+import { BarChart3, Building2, CreditCard, FileText, Globe2, LayoutDashboard, Menu, ReceiptText, UserCog, Users, WalletCards, X } from "lucide-react";
 import Link from "next/link";
 import { ReactNode, useEffect, useState } from "react";
 
@@ -53,6 +53,7 @@ const adminLinks = [
   ["/admin", "overview", LayoutDashboard, "نظرة عامة", "Overview"],
   ["/admin/users", "users", Users, "المستخدمون والعملاء", "Customers"],
   ["/admin/tenants", "tenants", Building2, "الشركات والمستأجرون", "Tenants"],
+  ["/admin/staff", "staff", UserCog, "فريق الإدارة", "Staff"],
   ["/pricing", "plans", WalletCards, "الباقات والاشتراكات", "Plans"],
   ["/admin/payments", "payments", CreditCard, "المدفوعات والفواتير", "Payments"],
   ["/admin/reports", "reports", BarChart3, "التقارير والإيرادات", "Reports"],

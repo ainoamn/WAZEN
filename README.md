@@ -15,6 +15,7 @@
 | **[docs/INTEGRATION-VERIFICATION-2026-08-12.md](./docs/INTEGRATION-VERIFICATION-2026-08-12.md)** | دمج حزمة الحماية v0.2.0، نتائج الاختبارات، معالجة التعارضات، ما تبقّى قبل الإنتاج |
 | **[docs/SECURITY-IMPLEMENTATION-REPORT.md](./docs/SECURITY-IMPLEMENTATION-REPORT.md)** | تقرير تنفيذ طبقات الحماية (12 أغسطس 2026) |
 | **[docs/PRODUCTION-DEPLOYMENT.md](./docs/PRODUCTION-DEPLOYMENT.md)** | إعداد قاعدة الإنتاج والأسرار والبريد والدفع والنسخ الاحتياطي والمراقبة |
+| **[docs/PRODUCTION-PROVISION.md](./docs/PRODUCTION-PROVISION.md)** | أمر واحد لتهيئة Turso + Vercel + المدير |
 | **[SECURITY.md](./SECURITY.md)** | طبقات الحماية الحالية ومتطلبات التشغيل والإبلاغ الأمني |
 | **[DOCUMENTATION.md](./DOCUMENTATION.md)** | توثيق تقني: التقنيات، APIs، الأمان الفعلي، الثغرات، سجل Git، ما ينقص للإطلاق |
 | **[docs/SECURITY-CONTROLS.md](./docs/SECURITY-CONTROLS.md)** | مصفوفة تنفيذ متطلبات الحماية والأدلة والحدود |

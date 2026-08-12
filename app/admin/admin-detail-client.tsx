@@ -309,3 +309,67 @@ export function AdminTenantDetail() {
     </AdminShell>
   );
 }
+
+export function AdminStaff() {
+  const { locale, setLocale, l } = useCommerceLocale();
+  const router = useRouter();
+  const [roles, setRoles] = useState<Row[] | null>(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(() => {
+    setRoles(null);
+    fetch("/api/platform?view=admin&scope=overview", { cache: "no-store" })
+      .then(async (response) => {
+        if (response.status === 401) {
+          router.push("/login?next=/admin/staff");
+          throw new Error("AUTH");
+        }
+        const result = await response.json() as { error?: string; roles?: Row[] };
+        if (!response.ok) throw new Error(result.error ?? "LOAD");
+        return (result.roles ?? []).filter((row) => String(row.role) !== "customer");
+      })
+      .then(setRoles)
+      .catch((caught: Error) => setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD"));
+  }, [router]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  if (error && !roles) {
+    return <AdminShell active="staff" locale={locale} setLocale={setLocale}><ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} /></AdminShell>;
+  }
+  if (!roles) return <PageLoader />;
+
+  return (
+    <AdminShell active="staff" locale={locale} setLocale={setLocale}>
+      <div className="admin-page-head">
+        <div>
+          <small>{l("الإدارة / الفريق", "Admin / Staff")}</small>
+          <h1>{l("فريق الإدارة والصلاحيات", "Admin staff & roles")}</h1>
+          <p>{l("عرض الأدوار الحالية. دعوات الموظفين ومصفوفة الصلاحيات الكاملة تُستكمل لاحقاً.", "Current roles. Staff invites and full permission matrix come next.")}</p>
+        </div>
+      </div>
+      <section className="admin-panel">
+        <div className="admin-panel-head"><h2>{l("الأدوار النشطة", "Active roles")}</h2></div>
+        <div className="role-list">
+          {roles.map((row) => (
+            <div key={String(row.user_id)}>
+              <i><ShieldCheck /></i>
+              <span>
+                <b><Link href={`/admin/users/${encodeURIComponent(String(row.user_id))}`}>{String(row.display_name ?? row.email ?? row.user_id)}</Link></b>
+                <small>{String(row.email ?? "")}</small>
+              </span>
+              <code>{String(row.role)}</code>
+            </div>
+          ))}
+          {!roles.length && <p>{l("لا يوجد موظفون إداريون بعد. أنشئ المدير عبر bootstrap.", "No admin staff yet. Bootstrap the first admin.")}</p>}
+        </div>
+        <p className="modal-note" style={{ marginTop: 16 }}>
+          {l(
+            "التهيئة الآمنة: npm run provision:production بعد توفير TURSO_API_TOKEN و TURSO_ORG، ثم /admin/setup.",
+            "Safe bootstrap: npm run provision:production after TURSO_API_TOKEN + TURSO_ORG, then /admin/setup.",
+          )}
+        </p>
+      </section>
+    </AdminShell>
+  );
+}
