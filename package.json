@@ -20,6 +20,7 @@
     "db:inventory": "node scripts/db-inventory.mjs",
     "db:reset": "node scripts/reset-db.mjs",
     "admin:bootstrap": "node scripts/bootstrap-admin.mjs",
+    "secrets:production": "node scripts/generate-production-env.mjs",
     "setup:local": "node scripts/setup-local-env.mjs",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"

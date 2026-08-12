@@ -9,7 +9,8 @@ import { countryPack } from "../../../lib/country-packs";
 import { nextReference } from "../../../lib/reference";
 import { encryptSecret, loadKeyring } from "../../../lib/encryption";
 import { configuredAllowedHosts, validateOutboundHttpsUrl } from "../../../lib/outbound";
-import { listAdminUsers } from "../../../services/admin/users-service";
+import { listAdminUsers, getAdminUserDetail } from "../../../services/admin/users-service";
+import { listAdminTenants, getAdminTenantDetail } from "../../../services/admin/tenants-service";
 
 const isoNow = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
@@ -254,6 +255,12 @@ export async function GET(request: Request) {
       if (scope === "users") {
         assertPlatformPermission(role, "users:read");
         if (!["super_admin", "admin", "support"].includes(role)) throw new ApiError(403, "FORBIDDEN");
+        const userId = url.searchParams.get("userId");
+        if (userId) {
+          const detail = await getAdminUserDetail(db, userId);
+          if (!detail) throw new ApiError(404, "USER_NOT_FOUND");
+          return Response.json({ user, role, detail }, { headers: responseHeaders });
+        }
         const usersPage = await listAdminUsers(db, {
           q: url.searchParams.get("q") ?? undefined,
           status: (url.searchParams.get("status") as "active" | "suspended" | "closed" | "all" | null) ?? "all",
@@ -262,6 +269,22 @@ export async function GET(request: Request) {
         });
         const base = await scopedAdminData(db, role, scope);
         return Response.json({ user, role, ...base, usersPage }, { headers: responseHeaders });
+      }
+      if (scope === "tenants") {
+        assertPlatformPermission(role, "users:read");
+        if (!["super_admin", "admin", "support"].includes(role)) throw new ApiError(403, "FORBIDDEN");
+        const tenantId = url.searchParams.get("tenantId");
+        if (tenantId) {
+          const detail = await getAdminTenantDetail(db, tenantId);
+          if (!detail) throw new ApiError(404, "TENANT_NOT_FOUND");
+          return Response.json({ user, role, detail }, { headers: responseHeaders });
+        }
+        const tenantsPage = await listAdminTenants(db, {
+          q: url.searchParams.get("q") ?? undefined,
+          page: Number(url.searchParams.get("page") ?? 1),
+          pageSize: Number(url.searchParams.get("pageSize") ?? 25),
+        });
+        return Response.json({ user, role, tenantsPage }, { headers: responseHeaders });
       }
       if (scope === "payments") assertPlatformPermission(role, "billing:read");
       if (scope === "reports") assertPlatformPermission(role, "reports:read");
@@ -463,7 +486,7 @@ export async function POST(request: Request) {
     }
 
     const actorRole = await roleOf(db, user.id);
-    if (["setUserStatus", "setRole", "setPaymentStatus", "createCoupon"].includes(action) && user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
+    if (["setUserStatus", "setRole", "setPaymentStatus", "createCoupon", "revokeUserSessions"].includes(action) && user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
     if (action === "setUserStatus") {
       assertPlatformPermission(actorRole, "users:status");
       const targetUserId = String(payload.userId ?? "");
@@ -472,6 +495,14 @@ export async function POST(request: Request) {
       await db.prepare("UPDATE customer_profiles SET status=? WHERE user_id=?").bind(status, targetUserId).run();
       if (status !== "active") await db.prepare("DELETE FROM auth_sessions WHERE user_id=?").bind(targetUserId).run();
       await writeAudit(db, { userId: user.id, action: "customer.status_changed", entityType: "user", entityId: targetUserId, metadata: { status } });
+    } else if (action === "revokeUserSessions") {
+      assertPlatformPermission(actorRole, "users:status");
+      const targetUserId = String(payload.userId ?? "");
+      const reason = String(payload.reason ?? "").trim().slice(0, 300);
+      if (!targetUserId || targetUserId === user.id) throw new ApiError(400, "INVALID_SESSION_REVOKE");
+      if (reason.length < 3) throw new ApiError(400, "REASON_REQUIRED");
+      const result = await db.prepare("DELETE FROM auth_sessions WHERE user_id=?").bind(targetUserId).run();
+      await writeAudit(db, { userId: user.id, action: "admin.sessions_revoked", entityType: "user", entityId: targetUserId, metadata: { reason, deleted: Number(result.meta.changes ?? 0) } });
     } else if (action === "setRole") {
       if (actorRole !== "super_admin") throw new ApiError(403, "FORBIDDEN");
       const targetUserId = String(payload.userId ?? "");
@@ -517,7 +548,7 @@ export async function POST(request: Request) {
     } else {
       throw new ApiError(400, "UNSUPPORTED_ACTION");
     }
-    const scope = action === "setPaymentStatus" ? "payments" : action === "setUserStatus" ? "users" : "overview";
+    const scope = action === "setPaymentStatus" ? "payments" : ["setUserStatus", "revokeUserSessions"].includes(action) ? "users" : "overview";
     return respond({ ok: true, ...(await scopedAdminData(db, actorRole, scope)) });
   } catch (error) {
     if (claimed) {

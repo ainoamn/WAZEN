@@ -39,37 +39,18 @@
 
 ## المرحلة 2 — الإدارة الأساسية (P1)
 
-- [ ] `/admin/users/[id]` جلسات ومفاتيح API
-- [ ] `/admin/tenants` + تفاصيل
+- [x] `/admin/users/[id]` جلسات ومفاتيح API (أساسي)
+- [x] `/admin/tenants` + تفاصيل (أساسي)
 - [ ] `/admin/staff` دعوات وأدوار
-- [ ] Pagination من الخادم
-- [ ] فصل `services/admin/*` عن `platform/route.ts`
-- [ ] حماية آخر `super_admin`
-
-## المرحلة 3 — التجارة والفوترة
-
-- [ ] `/admin/plans` بإصدارات أسعار
-- [ ] `/admin/subscriptions` `/admin/invoices` `/admin/payments` كاملة
-- [ ] كوبونات قابلة للتعطيل وحدود لكل عميل
-- [ ] Checkout مستضاف حقيقي
-
-## المرحلة 4 — التشغيل والأمان
-
-- [ ] `/admin/audit` و`/admin/security` و`/admin/operations`
-- [ ] طلبات خصوصية بمراحل
-- [ ] موافقات مزدوجة للإجراءات الحساسة
-- [ ] مراقبة Sentry/تنبيهات
-
-## المرحلة 5 — الجودة والإطلاق
-
-- [ ] E2E أدوار وعزل
-- [ ] اختبار استعادة Backup
-- [ ] إطلاق محدود بدعوات
+- [x] Pagination من الخادم (usersPage + tenantsPage)
+- [x] فصل `services/admin/*` عن `platform/route.ts` (بداية)
+- [x] حماية آخر `super_admin`
+- [x] إلغاء جلسات المستخدم بسبب + Audit
 
 ## ترتيب العمل التالي المقترح (sprint فوري)
 
-1. المالك يزوّد بريدي المدير + يؤكد أن بيانات النشر تجريبية.
-2. ضبط Vercel env ونشر `main` الحالي على Preview ثم Production.
-3. إنشاء قاعدة Turso جديدة وربط Preview.
-4. تشغيل migrate + bootstrap + TOTP.
-5. بدء مرحلة 2: تفاصيل المستخدمين + pagination.
+1. ~~المالك يزوّد بريد المدير~~ → `admin@wazen.pro`
+2. ضبط Vercel env (`npm run secrets:production`) ونشر `main` الحالي — **/api/health ما زال 404 على النشر القديم**
+3. إنشاء قاعدة Turso جديدة وربط Preview
+4. تشغيل migrate + bootstrap لـ `admin@wazen.pro` + كلمة مرور ≥12 + TOTP
+5. متابعة `/admin/staff` والفوترة

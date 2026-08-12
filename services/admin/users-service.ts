@@ -70,3 +70,46 @@ export async function listAdminUsers(db: D1Database, input: AdminUserListQuery =
     total: Number(countRow?.count ?? 0),
   };
 }
+
+export async function getAdminUserDetail(db: D1Database, userId: string) {
+  const profile = await db.prepare(`SELECT u.id AS user_id, u.email, u.display_name, u.locale, u.currency, u.created_at,
+      COALESCE(p.status,'active') AS status, p.country, p.phone, p.last_seen_at,
+      COALESCE(r.role,'customer') AS role, r.permissions_json,
+      s.id AS subscription_id, s.status AS subscription_status, s.billing_cycle, s.current_period_end,
+      pl.id AS plan_id, pl.name_ar AS plan_name_ar, pl.name_en AS plan_name_en,
+      CASE WHEN t.enabled_at IS NOT NULL THEN 1 ELSE 0 END AS totp_enabled
+    FROM users u
+    LEFT JOIN customer_profiles p ON p.user_id=u.id
+    LEFT JOIN platform_roles r ON r.user_id=u.id
+    LEFT JOIN subscriptions s ON s.user_id=u.id
+    LEFT JOIN plans pl ON pl.id=s.plan_id
+    LEFT JOIN totp_credentials t ON t.user_id=u.id
+    WHERE u.id=? LIMIT 1`).bind(userId).first<Record<string, unknown>>();
+  if (!profile) return null;
+
+  const [sessions, apiKeys, spaces, memberships, recentAudit] = await Promise.all([
+    db.prepare(`SELECT id, created_at, last_seen_at, expires_at FROM auth_sessions WHERE user_id=? ORDER BY last_seen_at DESC LIMIT 50`)
+      .bind(userId).all(),
+    db.prepare(`SELECT id, name, key_prefix, scopes_json, expires_at, last_used_at, revoked_at, created_at
+      FROM api_keys WHERE user_id=? ORDER BY created_at DESC LIMIT 50`).bind(userId).all<Record<string, unknown>>(),
+    db.prepare(`SELECT id, name_ar, name_en, type, currency, balance_minor, created_at FROM spaces WHERE owner_user_id=? ORDER BY created_at DESC`)
+      .bind(userId).all(),
+    db.prepare(`SELECT tm.tenant_id, tm.role, tm.status, t.name AS tenant_name, t.country, t.currency
+      FROM tenant_memberships tm JOIN tenants t ON t.id=tm.tenant_id WHERE tm.user_id=? ORDER BY tm.created_at DESC`)
+      .bind(userId).all(),
+    db.prepare(`SELECT id, action, entity_type, entity_id, created_at FROM audit_logs WHERE user_id=? OR entity_id=? ORDER BY created_at DESC LIMIT 30`)
+      .bind(userId, userId).all(),
+  ]);
+
+  return {
+    profile,
+    sessions: sessions.results,
+    apiKeys: apiKeys.results.map((row) => {
+      try { return { ...row, scopes: JSON.parse(String(row.scopes_json ?? "[]")), scopes_json: undefined }; }
+      catch { return { ...row, scopes: [], scopes_json: undefined }; }
+    }),
+    spaces: spaces.results,
+    tenants: memberships.results,
+    audit: recentAudit.results,
+  };
+}
