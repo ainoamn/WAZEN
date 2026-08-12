@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env } from "../lib/cloudflare-workers-stub";
 import { getLibsqlD1 } from "./libsql-d1";
 import { getNodeSqliteD1 } from "./node-sqlite-d1";
 

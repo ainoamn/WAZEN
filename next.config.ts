@@ -4,8 +4,10 @@ import { fileURLToPath } from "node:url";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 
+// Next.js 16.3 + Vercel adapter breaks when output:"standalone" is set
+// (ENOENT .next/next-server.js.nft.json). Keep standalone for Docker only.
 const nextConfig: NextConfig = {
-  output: "standalone",
+  ...(process.env.VERCEL ? {} : { output: "standalone" as const }),
   poweredByHeader: false,
   async headers() {
     const securityHeaders = [
@@ -33,7 +35,7 @@ const nextConfig: NextConfig = {
   webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,
-      "cloudflare:workers": path.join(root, "lib", "cloudflare-workers-stub.ts"),
+      "cloudflare:workers": path.join(root, "lib", "cloudflare-workers-stub"),
     };
     return config;
   },
