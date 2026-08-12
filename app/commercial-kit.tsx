@@ -24,9 +24,15 @@ export function useCommerceLocale() {
 }
 
 export function Brand({ compact = false }: { compact?: boolean }) {
-  return <Link className={`commerce-brand ${compact ? "compact" : ""}`} href="/">
-    <span>و</span><div><b>وازن</b><small>WAZEN</small></div>
-  </Link>;
+  return (
+    <Link className={`commerce-brand ${compact ? "compact" : ""}`} href="/">
+      <img src="/brand/wazen-mark.svg" alt="" width={38} height={38} />
+      <div>
+        <b>وازن</b>
+        <small>WAZEN</small>
+      </div>
+    </Link>
+  );
 }
 
 export function PublicHeader({ locale, setLocale }: { locale: CommerceLocale; setLocale: (locale: CommerceLocale) => void }) {
@@ -67,7 +73,7 @@ export function AdminShell({ active, locale, setLocale, children }: { active: st
     {open && <button className="admin-backdrop" onClick={() => setOpen(false)} aria-label="Close" />}
     <aside className={open ? "open" : ""}>
       <Brand compact />
-      <div className="admin-workspace"><span>W</span><div><small>{l("مساحة العمل", "Workspace")}</small><b>{l("إدارة وازن", "Wazen admin")}</b></div></div>
+      <div className="admin-workspace"><img src="/brand/wazen-mark.svg" alt="" width={28} height={28} /><div><small>{l("مساحة العمل", "Workspace")}</small><b>{l("إدارة وازن", "Wazen admin")}</b></div></div>
       <nav>{adminLinks.map(([href, id, Icon, ar, en]) => <Link key={id} href={href} className={active === id ? "active" : ""}><Icon size={18} /><span>{l(ar, en)}</span></Link>)}</nav>
       <div className="admin-side-foot"><Link href="/dashboard"><FileText size={17} />{l("العودة للوحة المستخدم", "User dashboard")}</Link><small>{l("نسخة الإدارة التجارية", "Commercial admin")}</small></div>
     </aside>
@@ -79,7 +85,7 @@ export function AdminShell({ active, locale, setLocale, children }: { active: st
 }
 
 export function PageLoader({ label = "وازن" }: { label?: string }) {
-  return <div className="commerce-loader"><div className="brand-mark"><span>و</span></div><b>{label}</b><i /></div>;
+  return <div className="commerce-loader"><div className="brand-mark"><img src="/brand/wazen-mark.svg" alt="" /></div><b>{label}</b><i /></div>;
 }
 
 export function ErrorCard({ message, retry }: { message: string; retry?: () => void }) {

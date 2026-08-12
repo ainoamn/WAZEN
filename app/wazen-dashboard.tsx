@@ -429,7 +429,7 @@ function Sidebar({ locale, active, open, onNavigate, onClose }: { locale: Locale
       {open && <button className="sidebar-backdrop" onClick={onClose} aria-label="Close menu" />}
       <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
         <div className="brand-row">
-          <div className="brand-mark"><span>و</span></div>
+          <div className="brand-mark"><img src="/brand/wazen-mark.svg" alt="" /></div>
           <div className="brand-name"><strong>وازن</strong><small>WAZEN</small></div>
           <button className="sidebar-close" onClick={onClose} aria-label="Close"><X size={20} /></button>
         </div>
@@ -858,5 +858,5 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 function Empty({ locale }: { locale: Locale }) { return <div className="empty-state"><ReceiptText size={24} /><span>{copy[locale].empty}</span></div>; }
-function LoadingScreen({ locale }: { locale: Locale }) { return <div className="loading-screen"><div className="loading-brand"><div className="brand-mark"><span>و</span></div><strong>{locale === "ar" ? "وازن" : "Wazen"}</strong></div><div className="loading-pulse"><i /><i /><i /></div></div>; }
+function LoadingScreen({ locale }: { locale: Locale }) { return <div className="loading-screen"><div className="loading-brand"><div className="brand-mark"><img src="/brand/wazen-mark.svg" alt="" /></div><strong>{locale === "ar" ? "وازن" : "Wazen"}</strong></div><div className="loading-pulse"><i /><i /><i /></div></div>; }
 function ErrorScreen({ message, retry }: { message: string; retry: () => void }) { return <div className="error-screen"><CircleDollarSign size={40} /><h1>وازن</h1><p>{message}</p><button className="primary-button" onClick={retry}>Try again</button></div>; }

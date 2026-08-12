@@ -9,6 +9,7 @@
 | الملف | المحتوى |
 |--------|---------|
 | **[docs/PRODUCT-FOUNDATION.md](./docs/PRODUCT-FOUNDATION.md)** | **الأساس الذي بُني عليه النظام** — الفكرة الكاملة، مثال 20 ر.س + الفائض، المحافظ، الصلاحيات، المراحل، مصفوفة التنفيذ |
+| **[docs/BRAND.md](./docs/BRAND.md)** | هوية وازن البصرية، الشعار، الألوان وقواعد الاستخدام |
 | **[docs/WAZEN-DEVELOPMENT-RESET-ADMIN-PLAN-2026-08-12.md](./docs/WAZEN-DEVELOPMENT-RESET-ADMIN-PLAN-2026-08-12.md)** | تقرير التطوير/التصفير/الإدارة المعتمد |
 | **[docs/EXECUTION-BACKLOG-2026-08-12.md](./docs/EXECUTION-BACKLOG-2026-08-12.md)** | خطة تنفيذ ما تبقى (مراحل 0–5) مع قرارات المالك |
 | **[docs/OPS-LOG-2026-08-12.md](./docs/OPS-LOG-2026-08-12.md)** | سجل العمليات المنفّذة والمعلّقة |
