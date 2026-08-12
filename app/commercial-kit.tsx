@@ -54,7 +54,7 @@ export function PublicHeader({ locale, setLocale }: { locale: CommerceLocale; se
     <nav className={open ? "open" : ""}>
       <Link href="/#features">{l("المزايا", "Features")}</Link>
       <Link href="/pricing">{l("الباقات", "Pricing")}</Link>
-      <Link href="/brand">{l("الهوية", "Brand")}</Link>
+      <Link href="/brand">{l("شرح الشعار", "Logo guide")}</Link>
       <Link href="/#security">{l("الأمان", "Security")}</Link>
       <Link href="/documents">{l("المستندات", "Documents")}</Link>
     </nav>
