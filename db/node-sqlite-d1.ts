@@ -116,8 +116,12 @@ class NodeD1Database {
 const globalKey = "__wazen_node_d1__";
 
 function resolveDbPath() {
-  if (process.env.WAZEN_SQLITE_PATH) return process.env.WAZEN_SQLITE_PATH;
-  if (process.env.VERCEL) return "/tmp/wazen.sqlite";
+  if (process.env.WAZEN_SQLITE_PATH) {
+    const configured = process.env.WAZEN_SQLITE_PATH;
+    if (configured !== ":memory:") fs.mkdirSync(path.dirname(configured), { recursive: true });
+    return configured;
+  }
+  if (process.env.VERCEL) throw new Error("DATABASE_NOT_CONFIGURED");
   const local = path.join(process.cwd(), ".data");
   fs.mkdirSync(local, { recursive: true });
   return path.join(local, "wazen.sqlite");

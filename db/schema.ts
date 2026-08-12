@@ -44,6 +44,7 @@ export const contributionPlans = sqliteTable("contribution_plans", {
   interval: text("interval").notNull().default("monthly"),
   dueDay: integer("due_day").notNull().default(1),
   extraPolicy: text("extra_policy").notNull().default("personal_reserve"),
+  durationMonths: integer("duration_months").notNull().default(60),
   startsAt: text("starts_at").notNull(),
 });
 
@@ -192,4 +193,71 @@ export const auditLogs = sqliteTable("audit_logs", {
   entityId: text("entity_id").notNull(),
   metadataJson: text("metadata_json").notNull().default("{}"),
   createdAt: text("created_at").notNull(),
+});
+
+export const authCredentials = sqliteTable("auth_credentials", {
+  userId: text("user_id").primaryKey(), passwordHash: text("password_hash").notNull(),
+  passwordSalt: text("password_salt").notNull(), passwordIterations: integer("password_iterations").notNull().default(600000),
+  emailVerifiedAt: text("email_verified_at"), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
+});
+
+export const authSessions = sqliteTable("auth_sessions", {
+  id: text("id").primaryKey(), userId: text("user_id").notNull(), tokenHash: text("token_hash").notNull().unique(),
+  csrfTokenHash: text("csrf_token_hash"), expiresAt: text("expires_at").notNull(), createdAt: text("created_at").notNull(), lastSeenAt: text("last_seen_at").notNull(),
+});
+
+export const tenants = sqliteTable("tenants", {
+  id: text("id").primaryKey(), name: text("name").notNull(), country: text("country").notNull().default("SA"), currency: text("currency").notNull().default("SAR"),
+  locale: text("locale").notNull().default("ar"), timezone: text("timezone").notNull().default("Asia/Riyadh"), createdBy: text("created_by").notNull(), createdAt: text("created_at").notNull(),
+});
+
+export const tenantMemberships = sqliteTable("tenant_memberships", {
+  tenantId: text("tenant_id").notNull(), userId: text("user_id").notNull(), role: text("role").notNull(), status: text("status").notNull().default("active"), createdAt: text("created_at").notNull(),
+});
+
+export const tenantResources = sqliteTable("tenant_resources", {
+  tenantId: text("tenant_id").notNull(), resourceType: text("resource_type").notNull(), resourceId: text("resource_id").notNull(), createdAt: text("created_at").notNull(),
+});
+
+export const totpCredentials = sqliteTable("totp_credentials", {
+  userId: text("user_id").primaryKey(), encryptedSecret: text("encrypted_secret").notNull(), keyVersion: text("key_version").notNull(), lastUsedStep: integer("last_used_step"), enabledAt: text("enabled_at"), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
+});
+
+export const apiKeys = sqliteTable("api_keys", {
+  id: text("id").primaryKey(), userId: text("user_id").notNull(), tenantId: text("tenant_id").notNull(), name: text("name").notNull(), keyPrefix: text("key_prefix").notNull(), tokenHash: text("token_hash").notNull().unique(), scopesJson: text("scopes_json").notNull(), expiresAt: text("expires_at"), lastUsedAt: text("last_used_at"), revokedAt: text("revoked_at"), createdAt: text("created_at").notNull(),
+});
+
+export const idempotencyKeys = sqliteTable("idempotency_keys", {
+  key: text("key").notNull(), userId: text("user_id").notNull(), action: text("action").notNull(),
+  responseJson: text("response_json"), createdAt: text("created_at").notNull(), expiresAt: text("expires_at").notNull(),
+});
+
+export const journalEntries = sqliteTable("journal_entries", {
+  id: text("id").primaryKey(), spaceId: text("space_id").notNull(), transactionId: text("transaction_id"),
+  createdBy: text("created_by").notNull(), description: text("description").notNull(), status: text("status").notNull().default("posted"),
+  reversalOf: text("reversal_of"), occurredAt: text("occurred_at").notNull(), createdAt: text("created_at").notNull(),
+});
+
+export const journalLines = sqliteTable("journal_lines", {
+  id: text("id").primaryKey(), entryId: text("entry_id").notNull(), accountCode: text("account_code").notNull(),
+  memberId: text("member_id"), debitMinor: integer("debit_minor").notNull().default(0),
+  creditMinor: integer("credit_minor").notNull().default(0), createdAt: text("created_at").notNull(),
+});
+
+export const circleTurns = sqliteTable("circle_turns", {
+  id: text("id").primaryKey(), spaceId: text("space_id").notNull(), memberId: text("member_id").notNull(),
+  turnNumber: integer("turn_number").notNull(), status: text("status").notNull().default("scheduled"),
+  amountMinor: integer("amount_minor").notNull(), scheduledAt: text("scheduled_at"), paidAt: text("paid_at"), createdAt: text("created_at").notNull(),
+});
+
+export const tripExpenses = sqliteTable("trip_expenses", {
+  id: text("id").primaryKey(), spaceId: text("space_id").notNull(), paidByMemberId: text("paid_by_member_id").notNull(),
+  amountMinor: integer("amount_minor").notNull(), description: text("description").notNull(), occurredAt: text("occurred_at").notNull(),
+  createdBy: text("created_by").notNull(), createdAt: text("created_at").notNull(),
+});
+
+export const settlements = sqliteTable("settlements", {
+  id: text("id").primaryKey(), spaceId: text("space_id").notNull(), fromMemberId: text("from_member_id").notNull(),
+  toMemberId: text("to_member_id").notNull(), amountMinor: integer("amount_minor").notNull(), status: text("status").notNull().default("pending"),
+  settledAt: text("settled_at"), createdAt: text("created_at").notNull(),
 });

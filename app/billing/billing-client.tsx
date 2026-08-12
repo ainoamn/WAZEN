@@ -1,5 +1,6 @@
 "use client";
 import { ArrowRight, CreditCard, Download, ReceiptText, WalletCards } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ErrorCard, money, PageLoader, PublicHeader, Status, useCommerceLocale } from "../commercial-kit";
 
@@ -9,8 +10,8 @@ type PaymentRow = { id: string; reference: string; method: string; amount_minor:
 type BillingData = { subscription: SubscriptionRow; invoices: InvoiceRow[]; payments: PaymentRow[] };
 
 export function BillingClient() {
-  const { locale, setLocale, l } = useCommerceLocale(); const [data, setData] = useState<BillingData|null>(null); const [error, setError] = useState("");
-  useEffect(() => { fetch("/api/platform?view=billing", { cache: "no-store" }).then(async r => { if (!r.ok) throw new Error(); return await r.json() as BillingData; }).then(setData).catch(() => setError(locale === "ar" ? "تعذر تحميل الفوترة" : "Could not load billing")); }, [locale]);
+  const router = useRouter(); const { locale, setLocale, l } = useCommerceLocale(); const [data, setData] = useState<BillingData|null>(null); const [error, setError] = useState("");
+  useEffect(() => { fetch("/api/platform?view=billing", { cache: "no-store" }).then(async r => { if(r.status===401){router.push("/login?next=/billing");throw new Error();}if (!r.ok) throw new Error(); return await r.json() as BillingData; }).then(setData).catch(() => setError(locale === "ar" ? "تعذر تحميل الفوترة" : "Could not load billing")); }, [locale, router]);
   if (error) return <ErrorCard message={error}/>; if (!data) return <PageLoader/>;
   const sub = data.subscription;
   return <main className="billing-page"><PublicHeader locale={locale} setLocale={setLocale}/><section className="route-wrap"><div className="route-head"><div><small>{l("الحساب / الفوترة", "Account / Billing")}</small><h1>{l("الاشتراك والفوترة", "Subscription & billing")}</h1><p>{l("تابع باقتك وفواتيرك ومدفوعاتك من مكان واحد.", "Manage your plan, invoices and payments in one place.")}</p></div><a className="primary-link" href="/pricing">{l("تغيير الباقة", "Change plan")}<ArrowRight size={17}/></a></div>

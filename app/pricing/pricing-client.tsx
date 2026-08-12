@@ -1,8 +1,10 @@
 "use client";
 
 import { Check, ChevronDown, ShieldCheck, Sparkles, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { ErrorCard, money, PageLoader, PublicHeader, useCommerceLocale } from "../commercial-kit";
+import { apiFetch } from "../../lib/client-api";
 
 type Plan = { id: string; name_ar: string; name_en: string; description_ar: string; description_en: string; monthly_minor: number; annual_minor: number; wallet_limit: number; member_limit: number; features: string[] };
 const featureCopy: Record<string, [string, string]> = {
@@ -14,6 +16,7 @@ const featureCopy: Record<string, [string, string]> = {
 };
 
 export function PricingClient() {
+  const router = useRouter();
   const { locale, setLocale, l } = useCommerceLocale();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [annual, setAnnual] = useState(true);
@@ -36,8 +39,8 @@ export function PricingClient() {
 
   const selectPlan = async (planId: string) => {
     setWorking(planId); setError("");
-    const response = await fetch("/api/platform", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "selectPlan", planId, cycle: annual ? "annual" : "monthly", coupon: discount > 0 ? coupon : "" }) });
-    if (response.status === 401) { window.location.assign(`/signin-with-chatgpt?return_to=${encodeURIComponent("/pricing")}`); return; }
+    const response = await apiFetch("/api/platform", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "selectPlan", idempotencyKey: crypto.randomUUID(), planId, cycle: annual ? "annual" : "monthly", coupon: discount > 0 ? coupon : "" }) });
+    if (response.status === 401) { router.push("/login?next=/pricing"); return; }
     const result = await response.json() as { error?: string; invoice?: Record<string, unknown> };
     if (!response.ok) setError(result.error ?? l("تعذر إنشاء الاشتراك", "Could not create subscription")); else setInvoice(result.invoice ?? null);
     setWorking("");

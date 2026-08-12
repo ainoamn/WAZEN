@@ -9,7 +9,15 @@
 | الملف | المحتوى |
 |--------|---------|
 | **[docs/PRODUCT-FOUNDATION.md](./docs/PRODUCT-FOUNDATION.md)** | **الأساس الذي بُني عليه النظام** — الفكرة الكاملة، مثال 20 ر.س + الفائض، المحافظ، الصلاحيات، المراحل، مصفوفة التنفيذ |
+| **[docs/INTEGRATION-VERIFICATION-2026-08-12.md](./docs/INTEGRATION-VERIFICATION-2026-08-12.md)** | دمج حزمة الحماية v0.2.0، نتائج الاختبارات، معالجة التعارضات، ما تبقّى قبل الإنتاج |
+| **[docs/SECURITY-IMPLEMENTATION-REPORT.md](./docs/SECURITY-IMPLEMENTATION-REPORT.md)** | تقرير تنفيذ طبقات الحماية (12 أغسطس 2026) |
+| **[docs/PRODUCTION-DEPLOYMENT.md](./docs/PRODUCTION-DEPLOYMENT.md)** | إعداد قاعدة الإنتاج والأسرار والبريد والدفع والنسخ الاحتياطي والمراقبة |
+| **[SECURITY.md](./SECURITY.md)** | طبقات الحماية الحالية ومتطلبات التشغيل والإبلاغ الأمني |
 | **[DOCUMENTATION.md](./DOCUMENTATION.md)** | توثيق تقني: التقنيات، APIs، الأمان الفعلي، الثغرات، سجل Git، ما ينقص للإطلاق |
+| **[docs/SECURITY-CONTROLS.md](./docs/SECURITY-CONTROLS.md)** | مصفوفة تنفيذ متطلبات الحماية والأدلة والحدود |
+| **[docs/THREAT-MODEL.md](./docs/THREAT-MODEL.md)** | نموذج التهديدات وحدود الثقة والمخاطر المتبقية |
+| **[docs/RUNBOOKS.md](./docs/RUNBOOKS.md)** | الإصدار، الاستعادة، الحوادث وتدوير المفاتيح |
+| **[docs/COUNTRY-PACKS.md](./docs/COUNTRY-PACKS.md)** | العملات والضرائب والترجمة والتوسع الدولي |
 
 ## التشغيل المحلي
 
@@ -26,11 +34,14 @@ npm run build
 | المسار | الوصف |
 |--------|--------|
 | `/` | الصفحة التسويقية |
-| `/dashboard` | لوحة المستخدم (محافظ وعمليات من API + D1) |
+| `/login` `/register` | تسجيل الدخول وإنشاء الحساب |
+| `/dashboard` | لوحة المستخدم (محافظ وعمليات من API) |
 | `/pricing` | الباقات والكوبونات |
 | `/billing` | الفوترة والاشتراك |
 | `/documents` | الإيصالات والكشوفات |
 | `/admin` | إدارة المنصة (عملاء، مدفوعات، تقارير) |
+| `/account/security` | أمان الحساب (كلمة المرور / الجلسات / TOTP) |
+| `/privacy` `/terms` `/security` | صفحات الثقة |
 
 ## واجهات API
 
@@ -39,7 +50,7 @@ npm run build
 
 ## قاعدة البيانات
 
-Cloudflare D1 عبر Drizzle. المخطط في `db/schema.ts` مع تهيئة runtime في `db/runtime.ts`.
+Turso/libSQL على Vercel، مع إمكانية D1 في بيئة Cloudflare مهيأة. المخطط في `db/schema.ts` وتهيئة التشغيل في `db/runtime.ts`.
 
 ## أرشيف رِفد (النسخة السابقة)
 
@@ -62,11 +73,12 @@ git worktree list
 ## أوامر مفيدة
 
 - `npm run dev` — تشغيل التطوير
-- `npm run build` — بناء vinext
-- `npm test` — بناء + اختبار HTML
-- `npm run db:generate` — توليد migrations من Drizzle
+- `npm run build` — بناء Next.js الإنتاجي
+- `npm test` — فحص TypeScript واختبارات المنطق المالي
+- `npm run audit:prod` — تدقيق اعتماديات الإنتاج
+- `npm run test:full` — اختبارات Backend وFrontend وIntegration/E2E
+- `npm run db:migrate` — تطبيق هجرات Turso المتحققة بالـ checksum
 
-## Learn more
+## الإطلاق
 
-- [vinext](https://github.com/cloudflare/vinext)
-- [Drizzle D1](https://orm.drizzle.team/docs/get-started/d1-new)
+راجع `docs/PRODUCTION-DEPLOYMENT.md` لإعداد قاعدة Turso والأسرار والبريد وويب هوك الدفع قبل النشر على Vercel.

@@ -1,0 +1,11 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      next-react:
+        patterns: ["next", "react", "react-dom", "react-server-dom-webpack", "@next/*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
