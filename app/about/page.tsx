@@ -30,23 +30,17 @@ export default function AboutPage() {
           <h2>{l("شرح الشعار", "Logo meaning")}</h2>
           <p>
             {l(
-              "الشعار الرسمي أدناه مأخوذ من لوح الهوية المعتمد. يدمج حرف W مع فكرة الاتزان وفصل الحقوق بين المال الشخصي والمشترك.",
-              "The official logo below comes from the approved brand board. It merges the letter W with equilibrium and the separation of personal vs shared rights.",
+              "شعار وازن يدمج حرف W مع فكرة الاتزان وفصل الحقوق بين المال الشخصي والمشترك — بهوية بصرية واحدة واضحة.",
+              "The WAZEN logo merges the letter W with equilibrium and the separation of personal vs shared rights — one clear visual identity.",
             )}
           </p>
         </div>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/brand/wazen-brand-board.png"
-          alt={l("لوح هوية وازن الرسمي", "Official WAZEN brand identity board")}
+          alt={l("هوية وازن البصرية", "WAZEN visual identity")}
           className="brand-doc-board-img"
         />
-        <p className="brand-doc-caption">
-          {l(
-            "المصدر: لوح هوية وازن الرسمي (أغسطس 2026)",
-            "Source: Official WAZEN brand board (August 2026)",
-          )}
-        </p>
       </section>
 
       <section className="brand-doc-story">
