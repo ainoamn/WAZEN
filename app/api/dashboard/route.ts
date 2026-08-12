@@ -241,7 +241,14 @@ export async function POST(request: Request) {
 
     if (action === "addWallet") {
       assertApiScope(user, "wallets:write");
-      const parsed = z.object({ name: z.string().trim().min(2).max(80), type: z.enum(["personal", "household", "trip", "society", "group"]), goal: z.union([z.string(),z.number()]).default("0") }).safeParse(payload);
+      const parsed = z.object({
+        name: z.string().trim().min(2).max(80),
+        type: z.enum(["personal", "household", "trip", "society", "group"]),
+        goal: z.union([z.string(), z.number()]).default("0"),
+        monthlyContribution: z.union([z.string(), z.number()]).optional(),
+        durationMonths: z.coerce.number().int().min(1).max(120).optional(),
+        dueDay: z.coerce.number().int().min(1).max(28).optional(),
+      }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_WALLET");
       const { name, type } = parsed.data;
       const limits = await db.prepare(`SELECT COALESCE(p.wallet_limit,1) AS wallet_limit FROM subscriptions s
@@ -253,11 +260,24 @@ export async function POST(request: Request) {
       const profile = await db.prepare("SELECT currency FROM users WHERE id=?").bind(user.id).first<{ currency: string }>(); const currency = profile?.currency ?? "SAR";
       let goalMinor: number; try { goalMinor = parseNonNegativeMoneyToMinor(parsed.data.goal, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
       const tenantId = await ensureDefaultTenant(db, user);
-      await db.batch([
+      const statements: D1PreparedStatement[] = [
         db.prepare("INSERT INTO spaces (id,owner_user_id,name_ar,name_en,type,currency,balance_minor,goal_minor,accent,created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'emerald', ?)").bind(id, user.id, name, name, type, currency, goalMinor, createdAt),
         db.prepare("INSERT INTO tenant_resources (tenant_id,resource_type,resource_id,created_at) VALUES (?,'space',?,?)").bind(tenantId, id, createdAt),
         prepareAudit(db, { userId: user.id, action: "wallet.created", entityType: "space", entityId: id, metadata: { type, currency }, createdAt }),
-      ]);
+      ];
+      const isGroup = ["household", "trip", "society", "group"].includes(type);
+      if (isGroup && parsed.data.monthlyContribution !== undefined && parsed.data.monthlyContribution !== "") {
+        let contributionMinor: number;
+        try { contributionMinor = parseMoneyToMinor(parsed.data.monthlyContribution, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+        const durationMonths = parsed.data.durationMonths ?? 12;
+        const dueDay = parsed.data.dueDay ?? 1;
+        statements.push(
+          db.prepare(`INSERT INTO contribution_plans (id,space_id,amount_minor,interval,due_day,extra_policy,duration_months,starts_at)
+            VALUES (?, ?, ?, 'monthly', ?, 'personal_reserve', ?, ?)`)
+            .bind(`${id}-plan`, id, contributionMinor, dueDay, durationMonths, createdAt),
+        );
+      }
+      await db.batch(statements);
     } else if (action === "addMember") {
       const parsed = z.object({ spaceId: z.string().min(1).max(120), displayName: z.string().trim().min(2).max(80), email: z.union([z.email().max(254), z.literal("")]).optional(), role: z.enum(["member", "treasurer", "manager", "auditor", "viewer"]).default("member") }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_MEMBER");

@@ -294,7 +294,8 @@ export function WazenDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [modal, setModal] = useState<"transaction" | "wallet" | "invite" | "tripExpense" | "circleOrder" | null>(null);
+  const [modal, setModal] = useState<"transaction" | "wallet" | "invite" | "tripExpense" | "circleOrder" | "withdrawSurplus" | null>(null);
+  const [withdrawMemberId, setWithdrawMemberId] = useState<string>("");
   const [toast, setToast] = useState("");
   const t = copy[locale];
 
@@ -391,7 +392,7 @@ export function WazenDashboard() {
           {activeSpace && (
             <SpaceDetail space={activeSpace} data={data} locale={locale} onAdd={() => setModal("transaction")} onInvite={() => setModal("invite")} onTripExpense={() => setModal("tripExpense")} onCircleOrder={() => setModal("circleOrder")} onSettle={(settlementId) => void settleReimbursement(settlementId)} onCompleteTurn={(turnId) => void completeCircleTurn(turnId)} />
           )}
-          {activeView === "groups" && <MembersView data={data} locale={locale} onInvite={() => setModal("invite")} />}
+          {activeView === "groups" && <MembersView data={data} locale={locale} onInvite={() => setModal("invite")} onWithdraw={(memberId) => { setWithdrawMemberId(memberId); setModal("withdrawSurplus"); }} />}
           {activeView === "transactions" && <TransactionsView data={data} locale={locale} />}
           {activeView === "reports" && <ReportsView data={data} locale={locale} totals={totals} />}
           {activeView === "settings" && <SettingsView locale={locale} />}
@@ -415,6 +416,7 @@ export function WazenDashboard() {
       {modal === "invite" && <InviteModal data={data} locale={locale} preferredSpaceId={activeSpace?.id} onClose={() => setModal(null)} onDone={(message) => { setModal(null); flash(message); void load(); }} />}
       {modal === "tripExpense" && <TripExpenseModal data={data} locale={locale} onClose={() => setModal(null)} onSaved={(next) => { setData({ ...data, ...next }); setModal(null); flash(locale === "ar" ? "تم تقسيم المصروف وتسجيل مبلغ التعويض" : "Expense split and reimbursement recorded"); }} />}
       {modal === "circleOrder" && <CircleOrderModal data={data} locale={locale} onClose={() => setModal(null)} onSaved={(next) => { setData({ ...data, ...next }); setModal(null); flash(locale === "ar" ? "تم اعتماد ترتيب الأدوار" : "Turn order saved"); }} />}
+      {modal === "withdrawSurplus" && <SurplusWithdrawModal data={data} locale={locale} memberId={withdrawMemberId} onClose={() => setModal(null)} onSaved={(next) => { setData({ ...data, ...next }); setModal(null); flash(locale === "ar" ? "تم صرف الفائض الشخصي" : "Personal surplus withdrawn"); }} />}
       {toast && <div className="toast"><Check size={17} />{toast}</div>}
     </div>
   );
@@ -576,17 +578,17 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onTripExpense, onCi
   </div>;
 }
 
-function MembersView({ data, locale, onInvite }: { data: DashboardData; locale: Locale; onInvite: () => void }) {
-  const trip = data.spaces.find((space) => space.type === "trip");
-  const members = trip ? data.members.filter((member) => member.space_id === trip.id) : [];
+function MembersView({ data, locale, onInvite, onWithdraw }: { data: DashboardData; locale: Locale; onInvite: () => void; onWithdraw: (memberId: string) => void }) {
+  const trip = data.spaces.find((space) => space.type === "trip") ?? data.spaces.find((space) => space.type !== "personal");
+  const members = trip ? data.members.filter((member) => member.space_id === trip.id) : data.members.filter((member) => member.space_id !== data.spaces.find((space) => space.type === "personal")?.id);
   const t = copy[locale];
-  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.memberProgress}</h2><p>{locale === "ar" ? "المساهمات الإلزامية والفوائض الشخصية منفصلة دائماً" : "Mandatory contributions and personal reserves always stay separate"}</p></div><button className="primary-button" onClick={onInvite}><UserPlus size={17} />{t.invite}</button></div><MembersTable members={members} locale={locale} currency="SAR" /><section className="settings-grid"><InfoPanel icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} /><InfoPanel icon={<Users />} title={t.access} text={t.accessText} /></section></div>;
+  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.memberProgress}</h2><p>{locale === "ar" ? "المساهمات الإلزامية والفوائض الشخصية منفصلة دائماً" : "Mandatory contributions and personal reserves always stay separate"}</p></div><button className="primary-button" onClick={onInvite}><UserPlus size={17} />{t.invite}</button></div><MembersTable members={members} locale={locale} currency={trip?.currency ?? "SAR"} onWithdraw={onWithdraw} /><section className="settings-grid"><InfoPanel icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} /><InfoPanel icon={<Users />} title={t.access} text={t.accessText} /></section></div>;
 }
 
-function MembersTable({ members, locale, currency }: { members: Member[]; locale: Locale; currency: string }) {
+function MembersTable({ members, locale, currency, onWithdraw }: { members: Member[]; locale: Locale; currency: string; onWithdraw?: (memberId: string) => void }) {
   const t = copy[locale];
   const [query, setQuery] = useState(""); const visible = members.filter((member) => `${member.display_name} ${member.email ?? ""}`.toLowerCase().includes(query.toLowerCase()));
-  return <article className="panel members-panel"><div className="panel-heading"><h2>{t.members} <span className="count-badge">{members.length}</span></h2><label className="search-field member-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={locale === "ar" ? "ابحث باسم المساهم" : "Search member name"} /></label></div><div className="members-table"><div className="table-head"><span>{locale === "ar" ? "العضو" : "Member"}</span><span>{t.paid}</span><span>{t.remaining}</span><span>{t.extra}</span><span>{t.status}</span></div>{visible.map((member) => { const remaining = Math.max(0, member.due_minor - member.paid_minor); return <div className="member-row" key={member.id}><div className="member-name"><i style={{ background: member.avatar }}>{member.display_name.slice(0, 1)}</i><div><strong>{member.display_name}</strong><span>{member.role === "owner" ? t.roleOwner : member.role === "treasurer" ? t.roleTreasurer : t.roleMember}</span></div></div><strong>{formatMoney(member.paid_minor, currency, locale)}</strong><strong className={remaining ? "amount-negative" : "muted-amount"}>{formatMoney(remaining, currency, locale)}</strong><strong className="reserve-amount">{formatMoney(member.extra_minor, currency, locale)}</strong><span className={`status-pill ${remaining ? "pending" : "complete"}`}>{remaining ? <Clock3 size={13} /> : <CheckCircle2 size={13} />}{remaining ? (locale === "ar" ? "بانتظار الدفع" : "Pending") : t.paid}</span></div>; })}</div></article>;
+  return <article className="panel members-panel"><div className="panel-heading"><h2>{t.members} <span className="count-badge">{members.length}</span></h2><label className="search-field member-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={locale === "ar" ? "ابحث باسم المساهم" : "Search member name"} /></label></div><div className="members-table"><div className="table-head"><span>{locale === "ar" ? "العضو" : "Member"}</span><span>{t.paid}</span><span>{t.remaining}</span><span>{t.extra}</span><span>{t.status}</span><span>{locale === "ar" ? "إجراء" : "Action"}</span></div>{visible.map((member) => { const remaining = Math.max(0, member.due_minor - member.paid_minor); return <div className="member-row" key={member.id}><div className="member-name"><i style={{ background: member.avatar }}>{member.display_name.slice(0, 1)}</i><div><strong>{member.display_name}</strong><span>{member.role === "owner" ? t.roleOwner : member.role === "treasurer" ? t.roleTreasurer : t.roleMember}</span></div></div><strong>{formatMoney(member.paid_minor, currency, locale)}</strong><strong className={remaining ? "amount-negative" : "muted-amount"}>{formatMoney(remaining, currency, locale)}</strong><strong className="reserve-amount">{formatMoney(member.extra_minor, currency, locale)}</strong><span className={`status-pill ${remaining ? "pending" : "complete"}`}>{remaining ? <Clock3 size={13} /> : <CheckCircle2 size={13} />}{remaining ? (locale === "ar" ? "بانتظار الدفع" : "Pending") : t.paid}</span><span>{member.extra_minor > 0 && onWithdraw ? <button type="button" className="secondary-button compact" onClick={() => onWithdraw(member.id)}>{locale === "ar" ? "صرف فائض" : "Withdraw"}</button> : "—"}</span></div>; })}</div></article>;
 }
 
 function TransactionsView({ data, locale }: { data: DashboardData; locale: Locale }) {
@@ -684,11 +686,38 @@ function TransactionModal({ data, locale, onClose, onSaved }: { data: DashboardD
 function WalletModal({ locale, onClose, onSaved }: { data: DashboardData; locale: Locale; onClose: () => void; onSaved: (next: Partial<DashboardData>) => void }) {
   const t = copy[locale];
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [name, setName] = useState("");
-  const [type, setType] = useState("personal");
+  const [type, setType] = useState("trip");
   const [goal, setGoal] = useState("");
-  const submit = async (event: FormEvent) => { event.preventDefault(); setSaving(true); try { const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "addWallet", idempotencyKey: crypto.randomUUID(), name, type, goal: goal || "0" }) }); if (!response.ok) throw new Error("save failed"); onSaved(await response.json()); } finally { setSaving(false); } };
-  return <Modal title={t.newWallet} onClose={onClose}><form className="modal-form" onSubmit={submit}><label><span>{t.walletName}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={locale === "ar" ? "مثال: صندوق الطوارئ" : "e.g. Emergency fund"} /></label><label><span>{t.walletType}</span><select value={type} onChange={(event) => setType(event.target.value)}>{Object.entries(typeLabels[locale]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label><span>{t.goal}</span><div className="money-input"><input min="0" step="1" type="number" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="0" /><b>SAR</b></div></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : t.create}</button></div></form></Modal>;
+  const [monthlyContribution, setMonthlyContribution] = useState("20");
+  const [durationMonths, setDurationMonths] = useState("12");
+  const isGroup = ["household", "trip", "society", "group"].includes(type);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setSaving(true); setError("");
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "addWallet",
+          idempotencyKey: crypto.randomUUID(),
+          name,
+          type,
+          goal: goal || "0",
+          ...(isGroup && monthlyContribution
+            ? { monthlyContribution, durationMonths: Number(durationMonths) || 12, dueDay: 1 }
+            : {}),
+        }),
+      });
+      const result = await response.json() as Partial<DashboardData> & { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "save failed");
+      onSaved(result);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "SAVE_FAILED");
+    } finally { setSaving(false); }
+  };
+  return <Modal title={t.newWallet} onClose={onClose}><form className="modal-form" onSubmit={submit}><label><span>{t.walletName}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={locale === "ar" ? "مثال: سفرة الإخوة 2027" : "e.g. Siblings trip 2027"} /></label><label><span>{t.walletType}</span><select value={type} onChange={(event) => setType(event.target.value)}>{Object.entries(typeLabels[locale]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label><span>{t.goal}</span><div className="money-input"><input min="0" step="1" type="number" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="0" /><b>SAR</b></div></label>{isGroup && <div className="form-row"><label><span>{locale === "ar" ? "المساهمة الشهرية الإلزامية" : "Mandatory monthly contribution"}</span><div className="money-input"><input required min="0.01" step="0.01" type="number" value={monthlyContribution} onChange={(event) => setMonthlyContribution(event.target.value)} /><b>SAR</b></div></label><label><span>{locale === "ar" ? "مدة الخطة (أشهر)" : "Plan duration (months)"}</span><input required type="number" min="1" max="120" value={durationMonths} onChange={(event) => setDurationMonths(event.target.value)} /></label></div>}{isGroup && <p className="modal-note">{locale === "ar" ? "أي مبلغ أعلى من المساهمة الإلزامية يُسجَّل كفائض شخصي محمي افتراضياً." : "Any amount above the mandatory contribution is booked as a protected personal reserve by default."}</p>}{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : t.create}</button></div></form></Modal>;
 }
 
 function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data: DashboardData; locale: Locale; preferredSpaceId?: string; onClose: () => void; onDone: (message: string) => void }) {
@@ -743,6 +772,74 @@ function TripExpenseModal({ data, locale, onClose, onSaved }: { data: DashboardD
     const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error); onSaved(result);
   } catch (caught) { setError(caught instanceof Error ? caught.message : "SAVE_FAILED"); } finally { setSaving(false); } };
   return <Modal title={locale === "ar" ? "إضافة مصروف رحلة" : "Add trip expense"} onClose={onClose}><form className="modal-form" onSubmit={submit}><label><span>{locale === "ar" ? "العضو الذي دفع" : "Member who paid"}</span><select required value={paidByMemberId} onChange={(event) => setPayer(event.target.value)}>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}</option>)}</select></label><label><span>{locale === "ar" ? "المبلغ" : "Amount"}</span><div className="money-input"><input required type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /><b>SAR</b></div></label><label><span>{locale === "ar" ? "الوصف" : "Description"}</span><input required minLength={2} maxLength={300} value={description} onChange={(event) => setDescription(event.target.value)} /></label><p className="modal-note">{locale === "ar" ? "سيُقسم المصروف بالتساوي، ويظهر كامل المبلغ مستحقاً للعضو الذي دفع." : "The expense will be split equally and the full reimbursement owed to the payer."}</p>{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{copy[locale].cancel}</button><button className="primary-button" disabled={saving || !trip || !members.length}>{saving ? copy[locale].saving : copy[locale].save}</button></div></form></Modal>;
+}
+
+function SurplusWithdrawModal({ data, locale, memberId, onClose, onSaved }: { data: DashboardData; locale: Locale; memberId: string; onClose: () => void; onSaved: (next: Partial<DashboardData>) => void }) {
+  const member = data.members.find((item) => item.id === memberId);
+  const space = data.spaces.find((item) => item.id === member?.space_id);
+  const maxMajor = ((member?.extra_minor ?? 0) / 100).toFixed(2);
+  const [amount, setAmount] = useState(maxMajor);
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!member || !space) return;
+    setSaving(true);
+    setError("");
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "withdrawSurplus",
+          idempotencyKey: crypto.randomUUID(),
+          spaceId: space.id,
+          memberId: member.id,
+          amount,
+          ...(description.trim() ? { description: description.trim() } : {}),
+        }),
+      });
+      const result = await response.json() as Partial<DashboardData> & { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "WITHDRAW_FAILED");
+      onSaved(result);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "WITHDRAW_FAILED");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal title={locale === "ar" ? "صرف فائض شخصي" : "Withdraw personal surplus"} onClose={onClose}>
+      <form className="modal-form" onSubmit={submit}>
+        <p className="modal-note">
+          {locale === "ar"
+            ? `الفائض ملك لـ ${member?.display_name ?? "العضو"} ولا يُخصم من رصيد الصندوق المشترك.`
+            : `Surplus belongs to ${member?.display_name ?? "the member"} and never debits the shared fund balance.`}
+        </p>
+        <label>
+          <span>{locale === "ar" ? "المبلغ المتاح" : "Available reserve"}</span>
+          <strong className="reserve-amount">{formatMoney(member?.extra_minor ?? 0, space?.currency ?? "SAR", locale)}</strong>
+        </label>
+        <label>
+          <span>{locale === "ar" ? "مبلغ الصرف" : "Withdrawal amount"}</span>
+          <div className="money-input">
+            <input required type="number" min="0.01" step="0.01" max={maxMajor} value={amount} onChange={(event) => setAmount(event.target.value)} />
+            <b>{space?.currency ?? "SAR"}</b>
+          </div>
+        </label>
+        <label>
+          <span>{locale === "ar" ? "ملاحظة (اختياري)" : "Note (optional)"}</span>
+          <input maxLength={300} value={description} onChange={(event) => setDescription(event.target.value)} placeholder={locale === "ar" ? "مثال: استرداد فائض نقدي" : "e.g. Cash surplus refund"} />
+        </label>
+        {error && <p className="modal-error">{error}</p>}
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose}>{copy[locale].cancel}</button>
+          <button className="primary-button" disabled={saving || !member || !space || !(member?.extra_minor > 0)}>{saving ? copy[locale].saving : (locale === "ar" ? "صرف" : "Withdraw")}</button>
+        </div>
+      </form>
+    </Modal>
+  );
 }
 
 function CircleOrderModal({ data, locale, onClose, onSaved }: { data: DashboardData; locale: Locale; onClose: () => void; onSaved: (next: Partial<DashboardData>) => void }) {
