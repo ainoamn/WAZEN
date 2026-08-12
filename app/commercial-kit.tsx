@@ -34,7 +34,7 @@ export function Brand({
   return (
     <Link className={`commerce-brand ${compact ? "compact" : ""}`} href="/">
       <WazenLogo
-        iconClassName={compact ? "h-[36px] w-auto" : "h-[44px] w-auto"}
+        iconClassName={compact ? "h-[42px] w-auto" : "h-[52px] w-auto"}
         showText
       />
     </Link>

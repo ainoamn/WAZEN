@@ -29,8 +29,8 @@ export default function WazenLogo({
         src={src}
         alt={alt}
         className={`wazen-logo-icon shrink-0 ${iconClassName} ${showText ? "wazen-logo-lockup" : "wazen-logo-mark"}`}
-        width={showText ? 320 : 120}
-        height={showText ? 100 : 55}
+        width={showText ? 420 : 120}
+        height={showText ? 96 : 55}
       />
     </div>
   );
