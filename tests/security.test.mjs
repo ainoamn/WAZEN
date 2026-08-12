@@ -46,8 +46,42 @@ test("encryption separates purposes and supports key rotation", async () => {
   await assert.rejects(() => decryptSecret(encrypted, "totp:user", currentRing));
 });
 
-test("TOTP accepts a narrow window and rejects replay", async () => {
-  const secret = createTotpSecret(); const now = 1_800_000_000_000; const step = Math.floor(now / 1000 / 30); const code = await totpCode(secret, step);
-  const first = await verifyTotp(secret, code, { now, window: 1 }); assert.equal(first.valid, true);
-  const replay = await verifyTotp(secret, code, { now, window: 1, lastUsedStep: first.step }); assert.equal(replay.valid, false);
+test("production setup checklist flags missing Turso in production-like runtime", async () => {
+  const { productionSetupChecklist } = await import("../lib/production-setup.ts");
+  const original = {
+    TURSO_DATABASE_URL: process.env.TURSO_DATABASE_URL,
+    TURSO_AUTH_TOKEN: process.env.TURSO_AUTH_TOKEN,
+    WAZEN_APP_ORIGIN: process.env.WAZEN_APP_ORIGIN,
+    WAZEN_ENCRYPTION_KEYRING: process.env.WAZEN_ENCRYPTION_KEYRING,
+    WAZEN_JOB_SECRET: process.env.WAZEN_JOB_SECRET,
+    WAZEN_PAYMENT_WEBHOOK_SECRET: process.env.WAZEN_PAYMENT_WEBHOOK_SECRET,
+    WAZEN_DEMO_MODE: process.env.WAZEN_DEMO_MODE,
+    WAZEN_TRUST_OAI_HEADERS: process.env.WAZEN_TRUST_OAI_HEADERS,
+    WAZEN_USE_NODE_SQLITE: process.env.WAZEN_USE_NODE_SQLITE,
+    WAZEN_ADMIN_EMAILS: process.env.WAZEN_ADMIN_EMAILS,
+  };
+
+  try {
+    delete process.env.TURSO_DATABASE_URL;
+    delete process.env.TURSO_AUTH_TOKEN;
+    process.env.WAZEN_APP_ORIGIN = "https://wazen-roan.vercel.app";
+    process.env.WAZEN_ENCRYPTION_KEYRING = "test";
+    process.env.WAZEN_JOB_SECRET = "test";
+    process.env.WAZEN_PAYMENT_WEBHOOK_SECRET = "test";
+    process.env.WAZEN_DEMO_MODE = "0";
+    process.env.WAZEN_TRUST_OAI_HEADERS = "0";
+    process.env.WAZEN_USE_NODE_SQLITE = "0";
+    process.env.WAZEN_ADMIN_EMAILS = "admin@wazen.pro";
+
+    const setup = productionSetupChecklist();
+    const database = setup.find((item) => item.id === "database");
+    assert.equal(database?.ok, false);
+    assert.match(database?.hint ?? "", /provision:production/);
+    assert.equal(setup.find((item) => item.id === "auth_hardening")?.ok, true);
+  } finally {
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });

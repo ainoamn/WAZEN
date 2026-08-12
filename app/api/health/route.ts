@@ -1,8 +1,16 @@
-import { ensureSchema, getRawDb, isProductionLikeRuntime, productionAuthRisks } from "../../../db/runtime";
+import {
+  ensureSchema,
+  getRawDb,
+  isProductionLikeRuntime,
+  productionAuthRisks,
+  productionSetupChecklist,
+} from "../../../db/runtime";
 
 export async function GET() {
   const risks = productionAuthRisks();
   const productionLike = isProductionLikeRuntime();
+  const setup = productionSetupChecklist();
+  const setupPending = setup.filter((item) => !item.ok);
   const unsafeInProduction = productionLike && risks.length > 0;
 
   try {
@@ -18,19 +26,23 @@ export async function GET() {
         version: "0.2.0",
         schemaMigrations: Number(migrations?.count ?? -1),
         risks,
+        setup,
+        setupPending: setupPending.map((item) => item.id),
         checkedAt: new Date().toISOString(),
       }, { status: 503, headers: { "Cache-Control": "no-store" } });
     }
 
     return Response.json({
-      status: "ok",
+      status: setupPending.length ? "degraded" : "ok",
       database: "ready",
       version: "0.2.0",
       schemaMigrations: Number(migrations?.count ?? -1),
       productionLike,
       risks,
+      setup,
+      setupPending: setupPending.map((item) => item.id),
       checkedAt: new Date().toISOString(),
-    }, { headers: { "Cache-Control": "no-store" } });
+    }, { status: setupPending.length ? 503 : 200, headers: { "Cache-Control": "no-store" } });
   } catch {
     return Response.json({
       status: "degraded",
@@ -38,6 +50,9 @@ export async function GET() {
       version: "0.2.0",
       productionLike,
       risks,
+      setup,
+      setupPending: setupPending.map((item) => item.id),
+      nextStep: setup.find((item) => item.id === "database")?.hint ?? "Configure database credentials",
       checkedAt: new Date().toISOString(),
     }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }

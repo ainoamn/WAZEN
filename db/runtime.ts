@@ -1,6 +1,19 @@
 import { env } from "../lib/cloudflare-workers-stub";
 import { getLibsqlD1 } from "./libsql-d1";
 import { getNodeSqliteD1 } from "./node-sqlite-d1";
+import {
+  isProductionLikeRuntime,
+  productionAuthRisks,
+  productionSetupChecklist,
+  type ProductionSetupItem,
+} from "../lib/production-setup";
+
+export {
+  isProductionLikeRuntime,
+  productionAuthRisks,
+  productionSetupChecklist,
+  type ProductionSetupItem,
+};
 
 export function getRawDb(): D1Database {
   const bindings = env as unknown as { DB?: D1Database };
@@ -464,19 +477,6 @@ export type RequestUser = {
   authType?: "session" | "api_key" | "hosted" | "demo";
   scopes?: string[];
 };
-
-/** True when the process must refuse demo/header spoof shortcuts. */
-export function isProductionLikeRuntime() {
-  return process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
-}
-
-export function productionAuthRisks() {
-  const risks: string[] = [];
-  if (process.env.WAZEN_DEMO_MODE === "1") risks.push("WAZEN_DEMO_MODE");
-  if (process.env.WAZEN_TRUST_OAI_HEADERS === "1") risks.push("WAZEN_TRUST_OAI_HEADERS");
-  if (process.env.WAZEN_USE_NODE_SQLITE === "1") risks.push("WAZEN_USE_NODE_SQLITE");
-  return risks;
-}
 
 export function getRequestUser(request: Request): RequestUser | null {
   // Production/Vercel must never honor demo identity or spoofable hosted headers,

@@ -44,6 +44,7 @@
 - مكوّن `Brand` في `app/commercial-kit.tsx` يستخدم `wazen-mark.svg`.
 - لوحة المستخدم والإدارة تعرض نفس العلامة.
 - البيانات الوصفية في `app/layout.tsx` تشير إلى favicon والـ PNG.
+- صورة المشاركة الاجتماعية تُولَّد ديناميكياً عبر `app/opengraph-image.tsx`.
 
 ## ملاحظات إنتاج
 
