@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="وازن">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="WAZEN">
   <defs>
     <linearGradient id="wz-bg" x1="8" y1="4" x2="58" y2="62" gradientUnits="userSpaceOnUse">
       <stop stop-color="#123C36"/>
@@ -6,13 +6,6 @@
     </linearGradient>
   </defs>
   <path d="M22 2h20q12 0 12 12v20q0 12-12 12H9L2 49V14Q2 2 14 2z" fill="url(#wz-bg)"/>
-  <g fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M32 14v8"/>
-    <path d="M18 22h28"/>
-    <path d="M18 22v6"/>
-    <path d="M46 22v6"/>
-    <circle cx="18" cy="34" r="5"/>
-    <circle cx="46" cy="34" r="5"/>
-  </g>
-  <circle cx="32" cy="22" r="2.6" fill="#B8F0DE"/>
+  <path d="M18.5 42.5 25.2 19.8 32 34.2 38.8 19.8 45.5 42.5" fill="none" stroke="#FFFFFF" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="34.2" r="2" fill="#B8F0DE"/>
 </svg>
