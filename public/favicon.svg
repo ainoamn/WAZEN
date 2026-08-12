@@ -1,17 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="WAZEN">
-  <defs>
-    <linearGradient id="wz-f" x1="3" y1="2" x2="29" y2="30" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#0F4A42"/>
-      <stop offset="1" stop-color="#0A8568"/>
-    </linearGradient>
-  </defs>
-  <rect x="1.5" y="1.5" width="29" height="29" rx="8" fill="url(#wz-f)"/>
-  <path
-    d="M8.8 21.8 12.9 9.2 16 15.9 19.1 9.2 23.2 21.8"
-    fill="none"
-    stroke="#FFFFFF"
-    stroke-width="3.2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  />
+  <rect width="32" height="32" rx="8" fill="#0F172A"/>
+  <path d="M 5.5 24 C 5.5 13.5 13.5 6.5 21.5 6.5 C 25 6.5 28 9 28 13.5 C 28 18.5 20 24 12 24 Z" fill="#FFFFFF" fill-opacity="0.18"/>
+  <path d="M 26.5 8 C 26.5 18.5 18.5 25.5 10.5 25.5 C 7 25.5 4 23 4 18.5 C 4 13.5 12 8 20 8 Z" fill="#10B981" fill-opacity="0.95"/>
+  <circle cx="16" cy="16" r="3" fill="#FFFFFF"/>
+  <circle cx="16" cy="16" r="1.6" fill="#0F172A"/>
 </svg>
