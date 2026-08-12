@@ -1,13 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 72" role="img" aria-label="وازن WAZEN">
   <defs>
     <linearGradient id="wz-lock" x1="6" y1="4" x2="58" y2="66" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#123C36"/>
-      <stop offset="1" stop-color="#0A7A64"/>
+      <stop stop-color="#0F4A42"/>
+      <stop offset="1" stop-color="#0A8568"/>
     </linearGradient>
   </defs>
-  <path d="M22 4h20q12 0 12 12v20q0 12-12 12H9L2 49V14Q2 2 14 2z" fill="url(#wz-lock)"/>
-  <path d="M18.5 44.5 25.2 21.8 32 36.2 38.8 21.8 45.5 44.5" fill="none" stroke="#FFFFFF" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="32" cy="36.2" r="2" fill="#B8F0DE"/>
-  <text x="76" y="38" font-family="Tahoma, 'Segoe UI', Arial, sans-serif" font-size="30" font-weight="800" fill="#123C36">وازن</text>
-  <text x="76" y="58" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="4" fill="#0A7A64">WAZEN</text>
+  <rect x="4" y="4" width="56" height="56" rx="15" fill="url(#wz-lock)"/>
+  <path
+    d="M17.5 45.5 25.8 20.5 32 33.8 38.2 20.5 46.5 45.5"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-width="6.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <text x="76" y="38" font-family="Segoe UI, Tahoma, Arial, sans-serif" font-size="30" font-weight="700" fill="#123C36" letter-spacing="-0.02em">وازن</text>
+  <text x="76" y="58" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" letter-spacing="5" fill="#0A7A64">WAZEN</text>
 </svg>
