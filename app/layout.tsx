@@ -26,9 +26,9 @@ export async function generateMetadata(): Promise<Metadata> {
     icons: {
       icon: [
         { url: "/favicon.svg", type: "image/svg+xml" },
-        { url: "/brand/wazen-mark.png", type: "image/png" },
+        { url: "/brand/wazen-app-icon.svg", type: "image/svg+xml", sizes: "64x64" },
       ],
-      apple: [{ url: "/brand/wazen-mark.png" }],
+      apple: [{ url: "/brand/wazen-app-icon.svg", type: "image/svg+xml" }],
     },
     openGraph: {
       title: "وازن | كل أموالك في صورة واضحة",

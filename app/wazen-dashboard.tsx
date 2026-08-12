@@ -38,7 +38,7 @@ import {
 import { useRouter } from "next/navigation";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/client-api";
-import { WazenMarkFramed } from "./wazen-mark";
+import { WazenIcon } from "../components/brand/WazenLogo";
 
 type Locale = "ar" | "en";
 type ViewId = "overview" | "personal" | "household" | "groups" | "trip" | "society" | "transactions" | "reports" | "settings";
@@ -430,7 +430,7 @@ function Sidebar({ locale, active, open, onNavigate, onClose }: { locale: Locale
       {open && <button className="sidebar-backdrop" onClick={onClose} aria-label="Close menu" />}
       <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
         <div className="brand-row">
-          <div className="brand-mark"><WazenMarkFramed size={39} /></div>
+          <div className="brand-mark"><WazenIcon className="h-10 w-12" /></div>
           <div className="brand-name"><strong>وازن</strong><small>WAZEN</small></div>
           <button className="sidebar-close" onClick={onClose} aria-label="Close"><X size={20} /></button>
         </div>
@@ -859,5 +859,5 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 function Empty({ locale }: { locale: Locale }) { return <div className="empty-state"><ReceiptText size={24} /><span>{copy[locale].empty}</span></div>; }
-function LoadingScreen({ locale }: { locale: Locale }) { return <div className="loading-screen"><div className="loading-brand"><div className="brand-mark"><WazenMarkFramed size={39} /></div><strong>{locale === "ar" ? "وازن" : "Wazen"}</strong></div><div className="loading-pulse"><i /><i /><i /></div></div>; }
+function LoadingScreen({ locale }: { locale: Locale }) { return <div className="loading-screen"><div className="loading-brand"><WazenIcon className="h-10 w-12" /><strong>{locale === "ar" ? "وازن" : "WAZEN"}</strong></div><div className="loading-pulse"><i /><i /><i /></div></div>; }
 function ErrorScreen({ message, retry }: { message: string; retry: () => void }) { return <div className="error-screen"><CircleDollarSign size={40} /><h1>وازن</h1><p>{message}</p><button className="primary-button" onClick={retry}>Try again</button></div>; }

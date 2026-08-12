@@ -1,59 +1,62 @@
 # هوية وازن البصرية (Brand)
 
-تاريخ الاعتماد: 12 أغسطس 2026  
-المفهوم: **الاتزان الهندسي الرقمي** (Geometric Equilibrium)
+المفهوم: **W هندسي Minimal Fintech** — جناح كحلي (مال شخصي) + جناح تركوازي (مال مشترك) + نواة اتزان.
 
-## المعنى
+## المكوّن
 
-- الحلقة **الكحلية** `#0F172A` = المال **الشخصي**
-- الحلقة **الزمردية** `#10B981` = المال **المشترك** (منزل، جمعية، رحلة)
-- **النواة البيضاء** في الوسط = نظام وازن الذي يحفظ التوازن والفصل بين الحقوق
+```tsx
+import WazenLogo, { WazenIcon } from "@/components/brand/WazenLogo";
 
-## الملفات
+// Navbar: [رمز] WAZEN
+<WazenLogo iconClassName="h-10 w-12" showText />
+
+// أيقونة فقط
+<WazenIcon className="h-9 w-[2.7rem]" />
+
+// تسجيل الدخول: + وازن
+<WazenLogo showText showArabic iconClassName="h-10 w-12" />
+
+// وضع داكن
+<WazenLogo variant="dark" iconClassName="h-10 w-12" />
+```
+
+## الملفات SVG (Vector فقط)
 
 | الملف | الاستخدام |
 |-------|-----------|
-| `app/wazen-mark.tsx` | مكوّن React (`WazenMark`, `WazenMarkFramed`) |
-| `public/brand/wazen-mark.svg` | أيقونة مؤطّرة للاستخدام المباشر |
-| `public/brand/wazen-mark.png` | Apple touch / OG / متاجر |
-| `public/brand/wazen-lockup.svg` | علامة + وازن + WAZEN |
-| `public/brand/wazen-equilibrium.svg` | نسخة تسويقية مع الشعار |
-| `public/brand/wazen-brand-reference.png` | المرجع البصري الكامل (infographic) |
-| `public/favicon.svg` | أيقونة المتصفح |
+| `components/brand/WazenLogo.tsx` | المكوّن الرئيسي |
+| `public/favicon.svg` | favicon — رمز فقط |
+| `public/brand/wazen-mark.svg` | رمز standalone |
+| `public/brand/wazen-app-icon.svg` | أيقونة مربعة `#0F172A` |
 
-## لوحة الألوان
+## الألوان
 
-| الدور | Hex | الاستخدام |
-|-------|-----|-----------|
-| Slate Navy | `#0F172A` | نص أساسي، حلقة شخصية، ثقة |
-| Emerald | `#10B981` | تأكيد، نمو، حلقة مشتركة |
-| Tech Blue | `#2563EB` | بديل تقني (اختياري) |
-| Surface | `#F6F9FC` | خلفيات |
-| Muted | `#64748B` | نص ثانوي |
+| الاسم | Hex |
+|-------|-----|
+| Navy | `#0F172A` |
+| Deep Navy | `#08213D` |
+| Teal | `#0F9F91` |
+| Emerald | `#10B981` |
+| Light | `#F8FAFC` |
 
-## كود SVG (للنسخ)
+## قواعد
+
+- الاسم الرسمي: **WAZEN** (ليس WAZEN ROAN)
+- الهيدر: `[رمز] WAZEN` بدون «وازen» أسفل الاسم
+- «وازن» تظهر في صفحات الهوية/تسجيل الدخول فقط (`showArabic`)
+- لا PNG/JPG للشعار — SVG فقط
+- لا ميزان تقليدي، لا $، لا R، لا أسهم نمو
+
+## كود SVG للرمز
 
 ```svg
-<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M 8 36 C 8 20, 20 10, 32 10 C 38 10, 42 14, 42 20 C 42 28, 30 36, 18 36 Z" fill="#0F172A"/>
-  <path d="M 40 12 C 40 28, 28 38, 16 38 C 10 38, 6 34, 6 28 C 6 20, 18 12, 30 12 Z" fill="#10B981" fill-opacity="0.92"/>
-  <circle cx="24" cy="24" r="4.5" fill="#FFFFFF"/>
-  <circle cx="24" cy="24" r="2.5" fill="#0F172A"/>
+<svg viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Left wing: personal -->
+  <path d="M8 18 C8 14 12 12 16 12 H29 C33 12 36 14 38 18 L58 57 L47 76 C44 82 37 86 30 86 C23 86 17 82 14 76 L2 28 C1 23 3 19 8 18 Z" fill="#173B63"/>
+  <!-- Right wing: shared -->
+  <path d="M112 18 C112 14 108 12 104 12 H91 C87 12 84 14 82 18 L62 57 L73 76 C76 82 83 86 90 86 C97 86 103 82 106 76 L118 28 C119 23 117 19 112 18 Z" fill="#0F9F91"/>
+  <!-- Balance core -->
+  <path d="M60 35 C55 42 52 50 52 59 C52 65 55 70 60 74 C65 70 68 65 68 59 C68 50 65 42 60 35 Z" fill="#F8FAFC"/>
+  <circle cx="60" cy="22" r="7" fill="#0F9F91"/>
 </svg>
 ```
-
-## الخطوط
-
-- **Cairo** — عربي + لاتيني في الواجهة (`app/layout.tsx`)
-- بدائل: Readex Pro، IBM Plex Sans Arabic، Tajawal
-
-## الاستخدام في الكود
-
-```tsx
-import { WazenMarkFramed } from "./wazen-mark";
-
-<WazenMarkFramed size={38} />
-```
-
-- `Brand` في `app/commercial-kit.tsx` يستخدم المكوّن مباشرة.
-- لا تستخدم ميزاناً تقليدياً ولا فقاعة دردشة في الشعار.

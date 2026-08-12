@@ -3,7 +3,7 @@
 import { BarChart3, Building2, CreditCard, FileText, Globe2, LayoutDashboard, Menu, ReceiptText, UserCog, Users, WalletCards, X } from "lucide-react";
 import Link from "next/link";
 import { ReactNode, useEffect, useState } from "react";
-import { WazenMarkFramed } from "./wazen-mark";
+import WazenLogo, { WazenIcon } from "../components/brand/WazenLogo";
 
 export type CommerceLocale = "ar" | "en";
 
@@ -24,15 +24,23 @@ export function useCommerceLocale() {
   return { locale, setLocale, l: (ar: string, en: string) => locale === "ar" ? ar : en };
 }
 
-export function Brand({ compact = false }: { compact?: boolean }) {
-  const size = compact ? 34 : 38;
+export function Brand({
+  compact = false,
+  showArabic = false,
+  variant = "light",
+}: {
+  compact?: boolean;
+  showArabic?: boolean;
+  variant?: "light" | "dark";
+}) {
   return (
     <Link className={`commerce-brand ${compact ? "compact" : ""}`} href="/">
-      <WazenMarkFramed size={size} />
-      <div>
-        <b>وازن</b>
-        <small>WAZEN</small>
-      </div>
+      <WazenLogo
+        iconClassName={compact ? "h-[34px] w-[41px]" : "h-[38px] w-[46px]"}
+        showText
+        showArabic={showArabic}
+        variant={variant}
+      />
     </Link>
   );
 }
@@ -75,7 +83,7 @@ export function AdminShell({ active, locale, setLocale, children }: { active: st
     {open && <button className="admin-backdrop" onClick={() => setOpen(false)} aria-label="Close" />}
     <aside className={open ? "open" : ""}>
       <Brand compact />
-      <div className="admin-workspace"><WazenMarkFramed size={28} /><div><small>{l("مساحة العمل", "Workspace")}</small><b>{l("إدارة وازن", "Wazen admin")}</b></div></div>
+      <div className="admin-workspace"><WazenIcon className="h-7 w-[2.1rem]" /><div><small>{l("مساحة العمل", "Workspace")}</small><b>{l("إدارة وازن", "Wazen admin")}</b></div></div>
       <nav>{adminLinks.map(([href, id, Icon, ar, en]) => <Link key={id} href={href} className={active === id ? "active" : ""}><Icon size={18} /><span>{l(ar, en)}</span></Link>)}</nav>
       <div className="admin-side-foot"><Link href="/dashboard"><FileText size={17} />{l("العودة للوحة المستخدم", "User dashboard")}</Link><small>{l("نسخة الإدارة التجارية", "Commercial admin")}</small></div>
     </aside>
@@ -86,8 +94,8 @@ export function AdminShell({ active, locale, setLocale, children }: { active: st
   </main>;
 }
 
-export function PageLoader({ label = "وازن" }: { label?: string }) {
-  return <div className="commerce-loader"><div className="brand-mark"><WazenMarkFramed size={39} /></div><b>{label}</b><i /></div>;
+export function PageLoader({ label = "WAZEN" }: { label?: string }) {
+  return <div className="commerce-loader"><WazenIcon className="h-10 w-12" /><b>{label}</b><i /></div>;
 }
 
 export function ErrorCard({ message, retry }: { message: string; retry?: () => void }) {
