@@ -25,10 +25,10 @@ export async function generateMetadata(): Promise<Metadata> {
       "منصة مالية عربية وعالمية لإدارة المحافظ الشخصية والمنزلية والجمعيات والرحلات.",
     icons: {
       icon: [
+        { url: "/brand/wazen-app-icon.png", type: "image/png" },
         { url: "/favicon.svg", type: "image/svg+xml" },
-        { url: "/brand/wazen-app-icon.svg", type: "image/svg+xml", sizes: "64x64" },
       ],
-      apple: [{ url: "/brand/wazen-app-icon.svg", type: "image/svg+xml" }],
+      apple: [{ url: "/brand/wazen-app-icon.png", type: "image/png" }],
     },
     openGraph: {
       title: "وازن | كل أموالك في صورة واضحة",

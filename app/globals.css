@@ -29,7 +29,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .sidebar { position: fixed; inset-block: 0; inset-inline-start: 0; width: 252px; display: flex; flex-direction: column; padding: 24px 16px 18px; background: #fbfcfa; border-inline-end: 1px solid var(--line); z-index: 30; }
 .brand-row { height: 48px; display: flex; align-items: center; gap: 11px; padding-inline: 8px; margin-bottom: 25px; }
 .brand-mark { width: auto; height: auto; display: grid; place-items: center; background: transparent; box-shadow: none; overflow: visible; }
-.brand-mark .wazen-logo-icon { height: 39px; width: auto; aspect-ratio: 120 / 100; display: block; }
+.brand-mark .wazen-logo-icon { height: 39px; width: auto; aspect-ratio: 550 / 252; display: block; object-fit: contain; }
 .brand-mark span { font-family: Tahoma, sans-serif; font-weight: 800; font-size: 23px; transform: translateY(-1px); }
 .brand-name { display: flex; flex-direction: column; line-height: 1; }
 .brand-name strong { font-size: 21px; letter-spacing: -0.04em; }

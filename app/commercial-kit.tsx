@@ -36,7 +36,7 @@ export function Brand({
   return (
     <Link className={`commerce-brand ${compact ? "compact" : ""}`} href="/">
       <WazenLogo
-        iconClassName={compact ? "h-[34px] w-[41px]" : "h-[38px] w-[46px]"}
+        iconClassName={compact ? "h-[32px] w-auto" : "h-[38px] w-auto"}
         showText
         showArabic={showArabic}
         variant={variant}
@@ -54,6 +54,7 @@ export function PublicHeader({ locale, setLocale }: { locale: CommerceLocale; se
     <nav className={open ? "open" : ""}>
       <Link href="/#features">{l("المزايا", "Features")}</Link>
       <Link href="/pricing">{l("الباقات", "Pricing")}</Link>
+      <Link href="/brand">{l("الهوية", "Brand")}</Link>
       <Link href="/#security">{l("الأمان", "Security")}</Link>
       <Link href="/documents">{l("المستندات", "Documents")}</Link>
     </nav>
