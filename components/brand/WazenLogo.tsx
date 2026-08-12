@@ -3,41 +3,35 @@
 export type WazenLogoProps = {
   className?: string;
   iconClassName?: string;
+  /** When true, shows the full lockup (mark + WAZEN + وازن). When false, mark only. */
   showText?: boolean;
   showArabic?: boolean;
   variant?: "light" | "dark";
 };
 
-/** Official Wazen mark — sourced from ChatGPT brand board (PNG, not approximate SVG). */
+/**
+ * Official Wazen logo.
+ * - Full site logo: `/brand/wazen-lockup.png`
+ * - Icon-only: `/brand/wazen-mark.png`
+ */
 export default function WazenLogo({
   className = "",
   iconClassName = "h-10 w-auto",
   showText = true,
-  showArabic = false,
-  variant = "light",
 }: WazenLogoProps) {
-  const textClass = variant === "dark" ? "wazen-logo-wordmark wazen-logo-wordmark-dark" : "wazen-logo-wordmark";
+  const src = showText ? "/brand/wazen-lockup.png" : "/brand/wazen-mark.png";
+  const alt = showText ? "WAZEN · وازن" : "WAZEN";
 
   return (
-    <div className={`wazen-logo inline-flex items-center gap-3 ${className}`} aria-label="WAZEN">
+    <div className={`wazen-logo inline-flex items-center ${className}`} aria-label="WAZEN">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/brand/wazen-mark.png"
-        alt=""
-        className={`wazen-logo-icon shrink-0 ${iconClassName}`}
-        width={120}
-        height={55}
+        src={src}
+        alt={alt}
+        className={`wazen-logo-icon shrink-0 ${iconClassName} ${showText ? "wazen-logo-lockup" : "wazen-logo-mark"}`}
+        width={showText ? 320 : 120}
+        height={showText ? 100 : 55}
       />
-      {showText && (
-        <div className="wazen-logo-copy flex flex-col justify-center leading-none">
-          <span className={textClass}>WAZEN</span>
-          {showArabic && (
-            <span className="wazen-logo-arabic mt-1 text-sm font-semibold" dir="rtl">
-              وازن
-            </span>
-          )}
-        </div>
-      )}
     </div>
   );
 }

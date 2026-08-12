@@ -1,32 +1,26 @@
 # هوية وازن البصرية (Brand)
 
-المصدر الرسمي: لوح ChatGPT المعتمد (`public/brand/wazen-brand-board.png`)  
-الرمز المستخدم في المنتج: `public/brand/wazen-mark.png` (من ملف التحميل الأصلي مباشرة)
+- شعار الموقع الرسمي: `public/brand/wazen-lockup.png`
+- صفحة من نحن + شرح الشعار: [`/about`](/about)
+- `/brand` يحوّل تلقائياً إلى `/about#logo`
 
-## الصفحة
+## الاستخدام في الكود
 
-- التوثيق العام: [`/brand`](/brand)
+```tsx
+import WazenLogo, { WazenIcon } from "@/components/brand/WazenLogo";
+
+// شعار الموقع الكامل (Lockup)
+<WazenLogo showText iconClassName="h-11 w-auto" />
+
+// الرمز فقط
+<WazenIcon className="h-9 w-auto" />
+```
 
 ## الملفات
 
 | الملف | الاستخدام |
 |-------|-----------|
-| `public/brand/wazen-mark.png` | رمز الهيدر / المكوّن |
-| `public/brand/wazen-brand-board.png` | لوح الهوية الكامل |
-| `public/brand/wazen-app-icon.png` | أيقونة التطبيق |
-| `public/brand/wazen-lockup.png` | رمز + اسم |
-| `components/brand/WazenLogo.tsx` | مكوّن React يستخدم الـ PNG الرسمي |
-
-## المعنى
-
-- الجناح الكحلي `#0F172A` = المال الشخصي / الثقة
-- الجناح التركوازي `#10B981` = المال المشترك / النمو
-- الدائرة المركزية = نقطة الاتزان (إنسان / محور)
-- معاً يكوّنان حرف **W** لـ WAZEN
-
-## قواعد
-
-- الهيدر: `[الرمز] WAZEN`
-- «وازن» في صفحات الدخول/الهوية فقط
-- الاسم الرسمي: **WAZEN** فقط (ليس ROAN)
-- لا ميزان تقليدي، لا `$`، لا حرف R داخل الرمز
+| `wazen-lockup.png` | شعار الموقع (رمز + WAZEN + وازن) |
+| `wazen-mark.png` | الرمز فقط |
+| `wazen-app-icon.png` | أيقونة التطبيق |
+| `wazen-brand-board.png` | لوح الهوية الكامل |

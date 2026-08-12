@@ -7,7 +7,7 @@ export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 export default async function OpenGraphImage() {
-  const png = await readFile(join(process.cwd(), "public/brand/wazen-mark.png"));
+  const png = await readFile(join(process.cwd(), "public/brand/wazen-lockup.png"));
   const logo = `data:image/png;base64,${png.toString("base64")}`;
 
   return new ImageResponse(
@@ -27,10 +27,9 @@ export default async function OpenGraphImage() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 28 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={logo} width={220} height={100} alt="" />
+          <img src={logo} width={360} height={112} alt="" />
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ fontSize: 64, fontWeight: 800, letterSpacing: 6 }}>WAZEN</div>
-            <div style={{ fontSize: 28, color: "#10B981", fontWeight: 700 }}>وازن</div>
+            <div style={{ fontSize: 28, color: "#10B981", fontWeight: 700 }}>Official brand lockup</div>
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 920 }}>

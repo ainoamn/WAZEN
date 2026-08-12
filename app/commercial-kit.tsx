@@ -26,8 +26,6 @@ export function useCommerceLocale() {
 
 export function Brand({
   compact = false,
-  showArabic = false,
-  variant = "light",
 }: {
   compact?: boolean;
   showArabic?: boolean;
@@ -36,10 +34,8 @@ export function Brand({
   return (
     <Link className={`commerce-brand ${compact ? "compact" : ""}`} href="/">
       <WazenLogo
-        iconClassName={compact ? "h-[32px] w-auto" : "h-[38px] w-auto"}
+        iconClassName={compact ? "h-[36px] w-auto" : "h-[44px] w-auto"}
         showText
-        showArabic={showArabic}
-        variant={variant}
       />
     </Link>
   );
@@ -54,7 +50,7 @@ export function PublicHeader({ locale, setLocale }: { locale: CommerceLocale; se
     <nav className={open ? "open" : ""}>
       <Link href="/#features">{l("المزايا", "Features")}</Link>
       <Link href="/pricing">{l("الباقات", "Pricing")}</Link>
-      <Link href="/brand">{l("شرح الشعار", "Logo guide")}</Link>
+      <Link href="/about">{l("من نحن", "About")}</Link>
       <Link href="/#security">{l("الأمان", "Security")}</Link>
       <Link href="/documents">{l("المستندات", "Documents")}</Link>
     </nav>
