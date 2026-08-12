@@ -1,13 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="H'2F">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="وازن">
   <defs>
-    <linearGradient id="wazenGrad" x1="12" y1="8" x2="52" y2="56" gradientUnits="userSpaceOnUse">
+    <linearGradient id="wz-bg" x1="8" y1="4" x2="58" y2="62" gradientUnits="userSpaceOnUse">
       <stop stop-color="#123C36"/>
       <stop offset="1" stop-color="#0A7A64"/>
     </linearGradient>
   </defs>
-  <path d="M12 10c0-2.2 1.8-4 4-4h32c2.2 0 4 1.8 4 4v36c0 2.2-1.8 4-4 4H22l-10 8V10z" fill="url(#wazenGrad)"/>
-  <path d="M20 28h24M32 20v20" stroke="#E8F5F1" stroke-width="2.2" stroke-linecap="round" opacity=".35"/>
-  <path d="M22 24c2.5-5 7-8 12.5-8 7.5 0 13 5 13 12.5S41.5 41 34 41c-3.2 0-6-.8-8.2-2.2" fill="none" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round"/>
-  <path d="M22 24c1.8 3.2 2.6 6.8 2.6 10.5 0 2.2-.3 4.2-.9 6" fill="none" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round"/>
-  <circle cx="22" cy="24" r="2.2" fill="#B8F0DE"/>
+  <path d="M22 2h20q12 0 12 12v20q0 12-12 12H9L2 49V14Q2 2 14 2z" fill="url(#wz-bg)"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 14v8"/>
+    <path d="M18 22h28"/>
+    <path d="M18 22v6"/>
+    <path d="M46 22v6"/>
+    <circle cx="18" cy="34" r="5"/>
+    <circle cx="46" cy="34" r="5"/>
+  </g>
+  <circle cx="32" cy="22" r="2.6" fill="#B8F0DE"/>
 </svg>

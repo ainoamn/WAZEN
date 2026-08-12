@@ -1,15 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 72" role="img" aria-label="H'2F WAZEN">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 72" role="img" aria-label="وازن WAZEN">
   <defs>
-    <linearGradient id="g" x1="8" y1="8" x2="56" y2="64" gradientUnits="userSpaceOnUse">
+    <linearGradient id="wz-lock" x1="6" y1="4" x2="58" y2="66" gradientUnits="userSpaceOnUse">
       <stop stop-color="#123C36"/>
       <stop offset="1" stop-color="#0A7A64"/>
     </linearGradient>
   </defs>
-  <path d="M8 12c0-2.2 1.8-4 4-4h36c2.2 0 4 1.8 4 4v40c0 2.2-1.8 4-4 4H20L8 68V12z" fill="url(#g)"/>
-  <path d="M18 30h28M32 20v24" stroke="#E8F5F1" stroke-width="2" stroke-linecap="round" opacity=".35"/>
-  <path d="M22 28c2.2-4.4 6.2-7 11-7 6.6 0 11.5 4.4 11.5 11S39.6 43 33 43c-2.8 0-5.3-.7-7.2-1.9" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>
-  <path d="M22 28c1.6 2.8 2.3 6 2.3 9.2 0 2-.3 3.7-.8 5.3" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>
-  <circle cx="22" cy="28" r="2" fill="#B8F0DE"/>
-  <text x="72" y="34" font-family="Tahoma, 'Segoe UI', sans-serif" font-size="28" font-weight="800" fill="#123C36">H'2F</text>
-  <text x="72" y="56" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="3" fill="#0A7A64">WAZEN</text>
+  <path d="M22 4h20q12 0 12 12v20q0 12-12 12H9L2 49V14Q2 2 14 2z" fill="url(#wz-lock)"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 16v8"/>
+    <path d="M18 24h28"/>
+    <path d="M18 24v6"/>
+    <path d="M46 24v6"/>
+    <circle cx="18" cy="36" r="5"/>
+    <circle cx="46" cy="36" r="5"/>
+  </g>
+  <circle cx="32" cy="24" r="2.6" fill="#B8F0DE"/>
+  <text x="76" y="38" font-family="Tahoma, 'Segoe UI', Arial, sans-serif" font-size="30" font-weight="800" fill="#123C36">وازن</text>
+  <text x="76" y="58" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="4" fill="#0A7A64">WAZEN</text>
 </svg>
