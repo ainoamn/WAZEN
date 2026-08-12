@@ -9,6 +9,7 @@ import { countryPack } from "../../../lib/country-packs";
 import { nextReference } from "../../../lib/reference";
 import { encryptSecret, loadKeyring } from "../../../lib/encryption";
 import { configuredAllowedHosts, validateOutboundHttpsUrl } from "../../../lib/outbound";
+import { listAdminUsers } from "../../../services/admin/users-service";
 
 const isoNow = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
@@ -250,7 +251,18 @@ export async function GET(request: Request) {
       if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
       const scope = url.searchParams.get("scope") ?? "overview";
       if (scope === "overview" && !["super_admin", "admin"].includes(role)) throw new ApiError(403, "FORBIDDEN");
-      if (scope === "users") assertPlatformPermission(role, "users:read");
+      if (scope === "users") {
+        assertPlatformPermission(role, "users:read");
+        if (!["super_admin", "admin", "support"].includes(role)) throw new ApiError(403, "FORBIDDEN");
+        const usersPage = await listAdminUsers(db, {
+          q: url.searchParams.get("q") ?? undefined,
+          status: (url.searchParams.get("status") as "active" | "suspended" | "closed" | "all" | null) ?? "all",
+          page: Number(url.searchParams.get("page") ?? 1),
+          pageSize: Number(url.searchParams.get("pageSize") ?? 25),
+        });
+        const base = await scopedAdminData(db, role, scope);
+        return Response.json({ user, role, ...base, usersPage }, { headers: responseHeaders });
+      }
       if (scope === "payments") assertPlatformPermission(role, "billing:read");
       if (scope === "reports") assertPlatformPermission(role, "reports:read");
       return Response.json({ user, role, ...(await scopedAdminData(db, role, scope)) }, { headers: responseHeaders });
@@ -466,6 +478,11 @@ export async function POST(request: Request) {
       const role = String(payload.role ?? "customer");
       if (!targetUserId || !["customer", "support", "finance", "admin", "super_admin"].includes(role)) throw new ApiError(400, "INVALID_ROLE");
       if (targetUserId === user.id && role !== "super_admin") throw new ApiError(400, "CANNOT_DEMOTE_SELF");
+      const current = await db.prepare("SELECT role FROM platform_roles WHERE user_id=?").bind(targetUserId).first<{ role: string }>();
+      if (current?.role === "super_admin" && role !== "super_admin") {
+        const remaining = await db.prepare("SELECT COUNT(*) AS count FROM platform_roles WHERE role='super_admin' AND user_id<>?").bind(targetUserId).first<{ count: number }>();
+        if (Number(remaining?.count ?? 0) < 1) throw new ApiError(409, "LAST_SUPER_ADMIN");
+      }
       await db.prepare("UPDATE platform_roles SET role=?,updated_at=? WHERE user_id=?").bind(role, isoNow(), targetUserId).run();
       await writeAudit(db, { userId: user.id, action: "admin.role_changed", entityType: "user", entityId: targetUserId, metadata: { role } });
     } else if (action === "setPaymentStatus") {

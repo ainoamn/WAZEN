@@ -8,7 +8,7 @@ import { createTotpSecret, verifyTotp } from "../../../lib/totp";
 import { ensureDefaultTenant } from "../../../lib/authorization";
 
 const credentialsSchema = z.object({
-  action: z.enum(["register", "login", "logout", "verifyEmail", "forgotPassword", "resetPassword", "changePassword", "beginTotp", "confirmTotp", "disableTotp"]),
+  action: z.enum(["register", "login", "logout", "verifyEmail", "forgotPassword", "resetPassword", "changePassword", "beginTotp", "confirmTotp", "disableTotp", "completeAdminBootstrap"]),
   email: z.email().max(254).optional(), password: z.string().min(12).max(128).optional(),
   currentPassword: z.string().min(12).max(128).optional(), newPassword: z.string().min(12).max(128).optional(),
   displayName: z.string().trim().min(2).max(80).optional(),
@@ -34,6 +34,34 @@ export async function POST(request: Request) {
     const parsed = credentialsSchema.safeParse(await request.json());
     if (!parsed.success) throw new ApiError(400, "INVALID_CREDENTIALS");
     const { action } = parsed.data;
+    if (action === "completeAdminBootstrap") {
+      const token = parsed.data.token ?? "";
+      const password = parsed.data.password ?? "";
+      const displayName = parsed.data.displayName?.trim() ?? "";
+      if (!token || !password || !displayName) throw new ApiError(400, "INVALID_BOOTSTRAP");
+      const tokenHash = await sha256(token);
+      const invite = await db.prepare("SELECT id,email,display_name,expires_at,used_at FROM admin_bootstrap_tokens WHERE token_hash=? LIMIT 1")
+        .bind(tokenHash)
+        .first<{ id: string; email: string; display_name: string; expires_at: string; used_at: string | null }>();
+      if (!invite || invite.used_at) throw new ApiError(400, "INVALID_BOOTSTRAP_TOKEN");
+      if (new Date(invite.expires_at).getTime() < Date.now()) throw new ApiError(400, "BOOTSTRAP_TOKEN_EXPIRED");
+      if (await db.prepare("SELECT id FROM users WHERE email=? COLLATE NOCASE").bind(invite.email).first()) throw new ApiError(409, "EMAIL_ALREADY_USED");
+      const userId = crypto.randomUUID();
+      const createdAt = new Date().toISOString();
+      const passwordData = await hashPassword(password);
+      await db.batch([
+        db.prepare("INSERT INTO users (id,email,display_name,locale,currency,created_at) VALUES (?,?,?,'ar','SAR',?)").bind(userId, invite.email, displayName, createdAt),
+        db.prepare("INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','SA',?,?)").bind(userId, createdAt, createdAt),
+        db.prepare("INSERT INTO platform_roles (user_id,role,permissions_json,created_at,updated_at) VALUES (?,?,?,?,?)").bind(userId, "super_admin", '["*"]', createdAt, createdAt),
+        db.prepare("INSERT INTO auth_credentials (user_id,password_hash,password_salt,password_iterations,email_verified_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(userId, passwordData.hash, passwordData.salt, passwordData.iterations, createdAt, createdAt, createdAt),
+        db.prepare("UPDATE admin_bootstrap_tokens SET used_at=? WHERE id=? AND used_at IS NULL").bind(createdAt, invite.id),
+      ]);
+      await ensureDefaultTenant(db, { id: userId, displayName });
+      await writeAudit(db, { userId, action: "admin.bootstrap_completed", entityType: "user", entityId: userId, metadata: { email: invite.email }, createdAt });
+      const session = await createSession(db, userId);
+      return Response.json({ ok: true, user: { id: userId, email: invite.email, displayName }, next: "/account/security" }, { status: 201, headers: sessionHeaders(session) });
+    }
     if (action === "logout") {
       const user = await authenticateRequest(db, request); if (user?.authType === "session") await enforceCsrf(db, request);
       await revokeSession(db, request);

@@ -242,6 +242,16 @@ async function initializeSchema(db: D1Database) {
       used_at TEXT,
       created_at TEXT NOT NULL
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS admin_bootstrap_tokens (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL
+    )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS rate_limits (
       key TEXT PRIMARY KEY,
       hits INTEGER NOT NULL DEFAULT 0,
@@ -455,7 +465,24 @@ export type RequestUser = {
   scopes?: string[];
 };
 
+/** True when the process must refuse demo/header spoof shortcuts. */
+export function isProductionLikeRuntime() {
+  return process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
+}
+
+export function productionAuthRisks() {
+  const risks: string[] = [];
+  if (process.env.WAZEN_DEMO_MODE === "1") risks.push("WAZEN_DEMO_MODE");
+  if (process.env.WAZEN_TRUST_OAI_HEADERS === "1") risks.push("WAZEN_TRUST_OAI_HEADERS");
+  if (process.env.WAZEN_USE_NODE_SQLITE === "1") risks.push("WAZEN_USE_NODE_SQLITE");
+  return risks;
+}
+
 export function getRequestUser(request: Request): RequestUser | null {
+  // Production/Vercel must never honor demo identity or spoofable hosted headers,
+  // even if misconfigured env vars are present.
+  if (isProductionLikeRuntime()) return null;
+
   const id = request.headers.get("oai-authenticated-user-id");
   const email = request.headers.get("oai-authenticated-user-email");
   const encodedName = request.headers.get("oai-authenticated-user-full-name");

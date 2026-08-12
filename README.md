@@ -9,6 +9,9 @@
 | الملف | المحتوى |
 |--------|---------|
 | **[docs/PRODUCT-FOUNDATION.md](./docs/PRODUCT-FOUNDATION.md)** | **الأساس الذي بُني عليه النظام** — الفكرة الكاملة، مثال 20 ر.س + الفائض، المحافظ، الصلاحيات، المراحل، مصفوفة التنفيذ |
+| **[docs/WAZEN-DEVELOPMENT-RESET-ADMIN-PLAN-2026-08-12.md](./docs/WAZEN-DEVELOPMENT-RESET-ADMIN-PLAN-2026-08-12.md)** | تقرير التطوير/التصفير/الإدارة المعتمد |
+| **[docs/EXECUTION-BACKLOG-2026-08-12.md](./docs/EXECUTION-BACKLOG-2026-08-12.md)** | خطة تنفيذ ما تبقى (مراحل 0–5) مع قرارات المالك |
+| **[docs/OPS-LOG-2026-08-12.md](./docs/OPS-LOG-2026-08-12.md)** | سجل العمليات المنفّذة والمعلّقة |
 | **[docs/INTEGRATION-VERIFICATION-2026-08-12.md](./docs/INTEGRATION-VERIFICATION-2026-08-12.md)** | دمج حزمة الحماية v0.2.0، نتائج الاختبارات، معالجة التعارضات، ما تبقّى قبل الإنتاج |
 | **[docs/SECURITY-IMPLEMENTATION-REPORT.md](./docs/SECURITY-IMPLEMENTATION-REPORT.md)** | تقرير تنفيذ طبقات الحماية (12 أغسطس 2026) |
 | **[docs/PRODUCTION-DEPLOYMENT.md](./docs/PRODUCTION-DEPLOYMENT.md)** | إعداد قاعدة الإنتاج والأسرار والبريد والدفع والنسخ الاحتياطي والمراقبة |

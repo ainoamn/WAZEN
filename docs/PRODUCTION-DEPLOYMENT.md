@@ -67,7 +67,37 @@ npm run audit:prod
 npm run build
 ```
 
-يجب أن ينجح `/api/health` بعد النشر. أضف مراقبة خارجية له وتنبيهاً لأخطاء الخادم وفشل Webhooks والبريد.
+يجب أن ينجح `/api/health` بعد النشر. في Production/Vercel يرفض النظام Demo وTrust-headers وNode SQLite حتى لو ضُبطت المتغيرات خطأً، ويعيد `503` من `/api/health` إذا وُجدت هذه المخاطر.
+
+أضف مراقبة خارجية لـ `/api/health` وتنبيهاً لأخطاء الخادم وفشل Webhooks والبريد.
+
+## تصفير آمن وتهيئة المدير
+
+الخيار الموصى به: **قاعدة Turso إنتاجية جديدة** بدل حذف القاعدة الحالية.
+
+```bash
+# جرد فقط
+npm run db:inventory
+
+# dry-run (افتراضي)
+npm run db:reset
+
+# تنفيذ مدمّر — فقط بعد Backup وموافقة صريحة
+# WAZEN_ENV_NAME=staging
+# WAZEN_RESET_CONFIRM="RESET staging 2026-08-12"
+# npm run db:reset -- --execute
+
+# تهيئة مدير أول (رمز لمرة واحدة، بدون كلمة مرور في البيئة)
+npm run admin:bootstrap -- --email owner@domain.com --name "Owner" --origin https://your-domain.com
+# افتح الرابط المطبوع → /admin/setup?token=...
+# ثم فعّل TOTP من /account/security فوراً
+```
+
+راجع التقرير المعتمد والخطة التنفيذية:
+
+- `docs/WAZEN-DEVELOPMENT-RESET-ADMIN-PLAN-2026-08-12.md`
+- `docs/EXECUTION-BACKLOG-2026-08-12.md`
+- `docs/OPS-LOG-2026-08-12.md`
 
 ## النسخ الاحتياطي والاستعادة
 
@@ -75,6 +105,7 @@ npm run build
 - احتفظ بنسخة منفصلة ومشفرة وفق سياسة الاحتفاظ المحلية.
 - اختبر الاستعادة في Staging كل ثلاثة أشهر.
 - لا تستخدم بيانات الإنتاج للاختبار.
+- قبل أي `db:reset --execute` يجب وجود Backup حديث وchecksum موثّق في سجل العمليات.
 
 ## قرارات مطلوبة قبل الإطلاق العام
 
