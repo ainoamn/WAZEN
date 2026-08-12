@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
 import { authenticateRequest, csrfCookie, issueCsrfToken } from "../../../lib/auth";
-import { buildCircleOrder, splitEvenly, type CircleMode } from "../../../lib/finance";
+import { buildCircleOrder, splitContributionPayment, splitEvenly, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
 import { assertApiScope, authorizeSpace, ensureDefaultTenant } from "../../../lib/authorization";
 import { prepareAudit } from "../../../lib/audit";
@@ -420,6 +420,166 @@ export async function POST(request: Request) {
       splits.forEach((split) => statements.push(db.prepare("INSERT INTO expense_splits (id,expense_id,member_id,share_minor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), expenseId, split.memberId, split.shareMinor)));
       statements.push(prepareAudit(db, { userId: user.id, action: "trip.expense_split", entityType: "trip_expense", entityId: expenseId, metadata: { amountMinor, paidByMemberId: parsed.data.paidByMemberId, splits }, createdAt }));
       await db.batch(statements);
+    } else if (action === "recordContributionPayment") {
+      // Foundation rule: cash received = mandatory (common fund) + surplus (policy).
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        memberId: z.string().min(1).max(120),
+        amount: z.union([z.string(), z.number()]),
+        description: z.string().trim().min(2).max(300).optional(),
+        extraPolicy: z.enum(["personal_reserve", "voluntary_to_fund", "advance_credit"]).optional(),
+        occurredAt: z.iso.datetime().optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_CONTRIBUTION_PAYMENT");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["household", "trip", "society", "group"]);
+      const member = await db.prepare("SELECT id,display_name,due_minor,paid_minor,extra_minor FROM members WHERE id=? AND space_id=? AND status='active'")
+        .bind(parsed.data.memberId, parsed.data.spaceId)
+        .first<{ id: string; display_name: string; due_minor: number; paid_minor: number; extra_minor: number }>();
+      if (!member) throw new ApiError(400, "INVALID_MEMBER");
+      const plan = await db.prepare("SELECT amount_minor,extra_policy FROM contribution_plans WHERE space_id=? ORDER BY starts_at LIMIT 1")
+        .bind(parsed.data.spaceId)
+        .first<{ amount_minor: number; extra_policy: string }>();
+      if (!plan) throw new ApiError(400, "CONTRIBUTION_PLAN_REQUIRED");
+      let amountMinor: number;
+      try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      const remainingDueMinor = Math.max(0, Number(member.due_minor) - Number(member.paid_minor));
+      const policy = (parsed.data.extraPolicy ?? plan.extra_policy ?? "personal_reserve") as ExtraPolicy;
+      if (!["personal_reserve", "voluntary_to_fund", "advance_credit"].includes(policy)) throw new ApiError(400, "INVALID_EXTRA_POLICY");
+      let split;
+      try {
+        split = splitContributionPayment(amountMinor, Number(plan.amount_minor), {
+          remainingDueMinor,
+          extraPolicy: policy,
+        });
+      } catch {
+        throw new ApiError(400, "INVALID_CONTRIBUTION_SPLIT");
+      }
+      const createdAt = now();
+      const occurredAt = parsed.data.occurredAt ?? createdAt;
+      const baseDescription = parsed.data.description?.trim()
+        || (policy === "personal_reserve"
+          ? `مساهمة ${member.display_name}`
+          : `Contribution — ${member.display_name}`);
+      const statements: D1PreparedStatement[] = [];
+      if (split.mandatoryMinor > 0) {
+        const transactionId = crypto.randomUUID();
+        const entryId = crypto.randomUUID();
+        const description = `${baseDescription} · إلزامي`;
+        statements.push(
+          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'mandatory',?,?,?,'approved',?,?)")
+            .bind(transactionId, parsed.data.spaceId, user.id, member.id, "contribution", split.mandatoryMinor, description, description, occurredAt, createdAt),
+          db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id = ?").bind(split.mandatoryMinor, parsed.data.spaceId),
+          db.prepare("UPDATE members SET paid_minor = paid_minor + ? WHERE id = ? AND space_id = ?").bind(split.mandatoryMinor, member.id, parsed.data.spaceId),
+          db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+            .bind(entryId, parsed.data.spaceId, transactionId, user.id, description, occurredAt, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "asset:cash", member.id, split.mandatoryMinor, 0, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "income:contribution", member.id, 0, split.mandatoryMinor, createdAt),
+        );
+      }
+      if (split.surplusMinor > 0 && policy === "personal_reserve") {
+        const transactionId = crypto.randomUUID();
+        const entryId = crypto.randomUUID();
+        const description = `${baseDescription} · فائض شخصي`;
+        statements.push(
+          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'personal_reserve',?,?,?,'approved',?,?)")
+            .bind(transactionId, parsed.data.spaceId, user.id, member.id, "contribution", split.surplusMinor, description, description, occurredAt, createdAt),
+          db.prepare("UPDATE members SET extra_minor = extra_minor + ? WHERE id = ? AND space_id = ?").bind(split.surplusMinor, member.id, parsed.data.spaceId),
+          db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+            .bind(entryId, parsed.data.spaceId, transactionId, user.id, description, occurredAt, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "asset:cash", member.id, split.surplusMinor, 0, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "liability:member_reserve", member.id, 0, split.surplusMinor, createdAt),
+        );
+      } else if (split.surplusMinor > 0 && policy === "voluntary_to_fund") {
+        const transactionId = crypto.randomUUID();
+        const entryId = crypto.randomUUID();
+        const description = `${baseDescription} · تطوع للصندوق`;
+        statements.push(
+          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'general',?,?,?,'approved',?,?)")
+            .bind(transactionId, parsed.data.spaceId, user.id, member.id, "contribution", split.surplusMinor, description, description, occurredAt, createdAt),
+          db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id = ?").bind(split.surplusMinor, parsed.data.spaceId),
+          db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+            .bind(entryId, parsed.data.spaceId, transactionId, user.id, description, occurredAt, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "asset:cash", member.id, split.surplusMinor, 0, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "income:voluntary", member.id, 0, split.surplusMinor, createdAt),
+        );
+      } else if (split.surplusMinor > 0 && policy === "advance_credit") {
+        const transactionId = crypto.randomUUID();
+        const entryId = crypto.randomUUID();
+        const description = `${baseDescription} · دفعة مقدمة`;
+        statements.push(
+          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'mandatory',?,?,?,'approved',?,?)")
+            .bind(transactionId, parsed.data.spaceId, user.id, member.id, "contribution", split.surplusMinor, description, description, occurredAt, createdAt),
+          db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id = ?").bind(split.surplusMinor, parsed.data.spaceId),
+          db.prepare("UPDATE members SET paid_minor = paid_minor + ? WHERE id = ? AND space_id = ?").bind(split.surplusMinor, member.id, parsed.data.spaceId),
+          db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+            .bind(entryId, parsed.data.spaceId, transactionId, user.id, description, occurredAt, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "asset:cash", member.id, split.surplusMinor, 0, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "liability:advance", member.id, 0, split.surplusMinor, createdAt),
+        );
+      }
+      statements.push(prepareAudit(db, {
+        userId: user.id,
+        action: "contribution.payment_split",
+        entityType: "member",
+        entityId: member.id,
+        metadata: {
+          spaceId: parsed.data.spaceId,
+          receivedMinor: split.receivedMinor,
+          mandatoryMinor: split.mandatoryMinor,
+          surplusMinor: split.surplusMinor,
+          extraPolicy: policy,
+        },
+        createdAt,
+      }));
+      if (!statements.length) throw new ApiError(400, "EMPTY_CONTRIBUTION");
+      await db.batch(statements);
+    } else if (action === "withdrawSurplus") {
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        memberId: z.string().min(1).max(120),
+        amount: z.union([z.string(), z.number()]),
+        description: z.string().trim().min(2).max(300).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_SURPLUS_WITHDRAWAL");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "settlements:write", ["household", "trip", "society", "group"]);
+      const member = await db.prepare("SELECT id,display_name,extra_minor FROM members WHERE id=? AND space_id=? AND status='active'")
+        .bind(parsed.data.memberId, parsed.data.spaceId)
+        .first<{ id: string; display_name: string; extra_minor: number }>();
+      if (!member) throw new ApiError(400, "INVALID_MEMBER");
+      let amountMinor: number;
+      try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      if (Number(member.extra_minor) < amountMinor) throw new ApiError(409, "INSUFFICIENT_PERSONAL_RESERVE");
+      const transactionId = crypto.randomUUID();
+      const entryId = crypto.randomUUID();
+      const createdAt = now();
+      const description = parsed.data.description?.trim() || `استرداد فائض · ${member.display_name}`;
+      await db.batch([
+        db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'personal_reserve',?,?,?,'approved',?,?)")
+          .bind(transactionId, parsed.data.spaceId, user.id, member.id, "reimbursement", amountMinor, description, description, createdAt, createdAt),
+        db.prepare("UPDATE members SET extra_minor = extra_minor - ? WHERE id = ? AND space_id = ?").bind(amountMinor, member.id, parsed.data.spaceId),
+        db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+          .bind(entryId, parsed.data.spaceId, transactionId, user.id, description, createdAt, createdAt),
+        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(crypto.randomUUID(), entryId, "liability:member_reserve", member.id, amountMinor, 0, createdAt),
+        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(crypto.randomUUID(), entryId, "asset:cash", member.id, 0, amountMinor, createdAt),
+        prepareAudit(db, {
+          userId: user.id,
+          action: "surplus.withdrawn",
+          entityType: "member",
+          entityId: member.id,
+          metadata: { spaceId: parsed.data.spaceId, amountMinor },
+          createdAt,
+        }),
+      ]);
     } else throw new ApiError(400, "UNSUPPORTED_ACTION");
 
     const response = { ok: true, ...(await loadDashboard(db, user.id)) };

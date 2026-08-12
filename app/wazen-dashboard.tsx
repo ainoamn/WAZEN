@@ -620,22 +620,65 @@ function InfoPanel({ icon, title, text, onClick }: { icon: ReactNode; title: str
 function TransactionModal({ data, locale, onClose, onSaved }: { data: DashboardData; locale: Locale; onClose: () => void; onSaved: (next: Partial<DashboardData>) => void }) {
   const t = copy[locale];
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [kind, setKind] = useState("expense");
   const [spaceId, setSpaceId] = useState(data.spaces[0]?.id ?? "");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [allocation, setAllocation] = useState("general");
   const [memberId, setMemberId] = useState("");
+  const [extraPolicy, setExtraPolicy] = useState("personal_reserve");
   const members = data.members.filter((member) => member.space_id === spaceId);
+  const plan = data.plans.find((item) => String(item.space_id) === spaceId);
+  const monthlyPlan = Number(plan?.amount_minor ?? 0);
+  const selectedMember = members.find((member) => member.id === memberId);
+  const amountNumber = Number(amount || 0);
+  const remainingDue = selectedMember ? Math.max(0, selectedMember.due_minor - selectedMember.paid_minor) : 0;
+  const mandatoryCap = monthlyPlan > 0
+    ? (remainingDue > 0 ? Math.min(monthlyPlan / 100, remainingDue / 100) : monthlyPlan / 100)
+    : 0;
+  const previewMandatory = kind === "contribution" && memberId && amountNumber > 0
+    ? Math.min(amountNumber, mandatoryCap || amountNumber)
+    : 0;
+  const previewSurplus = kind === "contribution" && memberId && amountNumber > previewMandatory
+    ? amountNumber - previewMandatory
+    : 0;
   const submit = async (event: FormEvent) => {
-    event.preventDefault(); setSaving(true);
+    event.preventDefault(); setSaving(true); setError("");
     try {
-      const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "addTransaction", idempotencyKey: crypto.randomUUID(), kind, spaceId, amount, description, allocation, memberId: memberId || undefined }) });
-      if (!response.ok) throw new Error("save failed");
-      onSaved(await response.json());
+      const useSmartSplit = kind === "contribution" && Boolean(memberId) && monthlyPlan > 0;
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(useSmartSplit
+          ? {
+              action: "recordContributionPayment",
+              idempotencyKey: crypto.randomUUID(),
+              spaceId,
+              memberId,
+              amount,
+              description: description || undefined,
+              extraPolicy,
+            }
+          : {
+              action: "addTransaction",
+              idempotencyKey: crypto.randomUUID(),
+              kind,
+              spaceId,
+              amount,
+              description,
+              allocation,
+              memberId: memberId || undefined,
+            }),
+      });
+      const result = await response.json() as Partial<DashboardData> & { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "save failed");
+      onSaved(result);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "SAVE_FAILED");
     } finally { setSaving(false); }
   };
-  return <Modal title={t.add} onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="segmented-control">{["expense", "income", "contribution", "reimbursement"].map((item) => <button type="button" key={item} className={kind === item ? "active" : ""} onClick={() => setKind(item)}>{t[item as keyof typeof t] as string}</button>)}</div><label><span>{t.wallet}</span><select value={spaceId} onChange={(event) => { setSpaceId(event.target.value); setMemberId(""); }}>{data.spaces.map((space) => <option key={space.id} value={space.id}>{nameOf(space, locale)}</option>)}</select></label><div className="form-row"><label><span>{t.amount}</span><div className="money-input"><input required min="0.01" step="0.01" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" /><b>SAR</b></div></label><label><span>{t.allocation}</span><select value={allocation} onChange={(event) => setAllocation(event.target.value)}><option value="general">{t.general}</option><option value="mandatory">{t.mandatory}</option><option value="personal_reserve">{t.personalReserve}</option></select></label></div>{members.length > 0 && <label><span>{locale === "ar" ? "العضو (اختياري)" : "Member (optional)"}</span><select value={memberId} onChange={(event) => setMemberId(event.target.value)}><option value="">—</option>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}</option>)}</select></label>}<label><span>{t.description}</span><input required value={description} onChange={(event) => setDescription(event.target.value)} placeholder={locale === "ar" ? "مثال: مشتريات المنزل" : "e.g. Home groceries"} /></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : t.save}</button></div></form></Modal>;
+  return <Modal title={t.add} onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="segmented-control">{["expense", "income", "contribution", "reimbursement"].map((item) => <button type="button" key={item} className={kind === item ? "active" : ""} onClick={() => setKind(item)}>{t[item as keyof typeof t] as string}</button>)}</div><label><span>{t.wallet}</span><select value={spaceId} onChange={(event) => { setSpaceId(event.target.value); setMemberId(""); }}>{data.spaces.map((space) => <option key={space.id} value={space.id}>{nameOf(space, locale)}</option>)}</select></label><div className="form-row"><label><span>{t.amount}</span><div className="money-input"><input required min="0.01" step="0.01" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" /><b>SAR</b></div></label>{kind !== "contribution" && <label><span>{t.allocation}</span><select value={allocation} onChange={(event) => setAllocation(event.target.value)}><option value="general">{t.general}</option><option value="mandatory">{t.mandatory}</option><option value="personal_reserve">{t.personalReserve}</option></select></label>}{kind === "contribution" && <label><span>{locale === "ar" ? "سياسة الزيادة" : "Surplus policy"}</span><select value={extraPolicy} onChange={(event) => setExtraPolicy(event.target.value)}><option value="personal_reserve">{locale === "ar" ? "فائض شخصي محمي" : "Protected personal reserve"}</option><option value="voluntary_to_fund">{locale === "ar" ? "تطوع للصندوق" : "Voluntary to common fund"}</option><option value="advance_credit">{locale === "ar" ? "دفعة مقدمة" : "Advance credit"}</option></select></label>}</div>{members.length > 0 && <label><span>{kind === "contribution" ? (locale === "ar" ? "العضو (مطلوب للمساهمة)" : "Member (required)") : (locale === "ar" ? "العضو (اختياري)" : "Member (optional)")}</span><select required={kind === "contribution"} value={memberId} onChange={(event) => setMemberId(event.target.value)}><option value="">—</option>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}</option>)}</select></label>}{kind === "contribution" && memberId && amountNumber > 0 && <div className="modal-note split-preview"><span>{locale === "ar" ? "تقسيم تلقائي حسب الخطة" : "Automatic plan split"}</span><strong>{locale === "ar" ? `إلزامي: ${previewMandatory.toFixed(2)}` : `Mandatory: ${previewMandatory.toFixed(2)}`}</strong><strong>{locale === "ar" ? `فائض: ${previewSurplus.toFixed(2)}` : `Surplus: ${previewSurplus.toFixed(2)}`}</strong></div>}<label><span>{t.description}</span><input required={kind !== "contribution"} value={description} onChange={(event) => setDescription(event.target.value)} placeholder={locale === "ar" ? "مثال: مساهمة أغسطس" : "e.g. August contribution"} /></label>{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : t.save}</button></div></form></Modal>;
 }
 
 function WalletModal({ locale, onClose, onSaved }: { data: DashboardData; locale: Locale; onClose: () => void; onSaved: (next: Partial<DashboardData>) => void }) {

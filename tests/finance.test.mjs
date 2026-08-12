@@ -1,11 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCircleOrder, minimizeSettlements, splitEvenly, validateJournal } from "../lib/finance.ts";
+import { buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, validateJournal } from "../lib/finance.ts";
 
 test("equal expense splits preserve every minor unit", () => {
   const splits = splitEvenly(100, ["a", "b", "c"]);
   assert.deepEqual(splits.map((item) => item.shareMinor), [34, 33, 33]);
   assert.equal(splits.reduce((sum, item) => sum + item.shareMinor, 0), 100);
+});
+
+test("contribution payment splits mandatory and protected surplus", () => {
+  // 20.00 SAR plan, receive 50.00 SAR → 20 mandatory + 30 personal reserve
+  const split = splitContributionPayment(5000, 2000, { remainingDueMinor: 120_000, extraPolicy: "personal_reserve" });
+  assert.equal(split.mandatoryMinor, 2000);
+  assert.equal(split.surplusMinor, 3000);
+  assert.equal(split.commonFundDeltaMinor, 2000);
+  assert.equal(split.personalReserveDeltaMinor, 3000);
+  assert.equal(split.advanceCreditMinor, 0);
+});
+
+test("voluntary surplus joins the common fund", () => {
+  const split = splitContributionPayment(5000, 2000, { extraPolicy: "voluntary_to_fund" });
+  assert.equal(split.commonFundDeltaMinor, 5000);
+  assert.equal(split.personalReserveDeltaMinor, 0);
 });
 
 test("journal validation rejects unbalanced entries", () => {

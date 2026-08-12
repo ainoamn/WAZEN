@@ -63,3 +63,38 @@ export function validateJournal(lines: { debitMinor: number; creditMinor: number
     Number.isSafeInteger(line.debitMinor) && Number.isSafeInteger(line.creditMinor) &&
     ((line.debitMinor > 0 && line.creditMinor === 0) || (line.creditMinor > 0 && line.debitMinor === 0)));
 }
+
+/** How surplus above the mandatory contribution is booked. */
+export type ExtraPolicy = "personal_reserve" | "voluntary_to_fund" | "advance_credit";
+
+/**
+ * Foundation rule: received cash = mandatory (common fund) + surplus (policy).
+ * Example: plan 20, receive 50 → mandatory 20, surplus 30.
+ */
+export function splitContributionPayment(
+  receivedMinor: number,
+  monthlyPlanMinor: number,
+  options: { remainingDueMinor?: number; extraPolicy?: ExtraPolicy } = {},
+) {
+  if (!Number.isSafeInteger(receivedMinor) || receivedMinor <= 0) throw new Error("INVALID_AMOUNT");
+  if (!Number.isSafeInteger(monthlyPlanMinor) || monthlyPlanMinor < 0) throw new Error("INVALID_PLAN");
+  const remainingDue = options.remainingDueMinor;
+  if (remainingDue !== undefined && (!Number.isSafeInteger(remainingDue) || remainingDue < 0)) {
+    throw new Error("INVALID_REMAINING_DUE");
+  }
+  const mandatoryCap = remainingDue === undefined
+    ? monthlyPlanMinor
+    : Math.min(monthlyPlanMinor, remainingDue);
+  const mandatoryMinor = Math.min(receivedMinor, mandatoryCap);
+  const surplusMinor = receivedMinor - mandatoryMinor;
+  const extraPolicy = options.extraPolicy ?? "personal_reserve";
+  return {
+    receivedMinor,
+    mandatoryMinor,
+    surplusMinor,
+    extraPolicy,
+    commonFundDeltaMinor: mandatoryMinor + (extraPolicy === "voluntary_to_fund" ? surplusMinor : 0),
+    personalReserveDeltaMinor: extraPolicy === "personal_reserve" ? surplusMinor : 0,
+    advanceCreditMinor: extraPolicy === "advance_credit" ? surplusMinor : 0,
+  };
+}

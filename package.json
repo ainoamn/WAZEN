@@ -17,6 +17,7 @@
     "test:full": "npm run test && npm run test:e2e",
     "typecheck": "tsc --noEmit --incremental false",
     "db:migrate": "node scripts/migrate.mjs",
+    "setup:local": "node scripts/setup-local-env.mjs",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
