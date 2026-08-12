@@ -44,3 +44,6 @@ yarn-error.log*
 *.tsbuildinfo
 /AGENTS.md
 /CLAUDE.md
+
+LOGO/
+
