@@ -212,8 +212,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .list-panel, .obligation-panel, .members-panel, .transaction-table-panel, .report-chart { padding: 20px; }
 .text-button { border: 0; background: transparent; display: flex; align-items: center; gap: 4px; color: var(--green); font-size: 13px; font-weight: 700; cursor: pointer; }
 .transaction-list { margin-top: 9px; display: flex; flex-direction: column; }
-.transaction-row { min-height: 59px; display: grid; grid-template-columns: 35px 1fr auto; align-items: center; gap: 11px; border-bottom: 1px solid #eef0ee; }
+.transaction-row { min-height: 59px; display: grid; grid-template-columns: 35px 1fr auto auto; align-items: center; gap: 11px; border-bottom: 1px solid #eef0ee; }
 .transaction-row:last-child { border-bottom: 0; }
+.transaction-actions { display: flex; align-items: center; gap: 4px; }
+.transaction-actions button { width: 30px; height: 30px; border: 1px solid #dfe6e1; border-radius: 8px; background: white; color: #4f635c; display: grid; place-items: center; cursor: pointer; }
+.transaction-actions button:hover { border-color: var(--green); color: var(--green); }
+.transaction-actions button.danger:hover { border-color: #c45555; color: #c45555; }
+.transaction-list.dense .transaction-row { min-height: 64px; }
 .transaction-icon { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; }
 .transaction-icon.expense { color: var(--rose); background: var(--rose-soft); }.transaction-icon.income, .transaction-icon.contribution { color: var(--green); background: var(--green-soft); }.transaction-icon.reimbursement { color: #b87721; background: var(--amber-soft); }
 .transaction-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
