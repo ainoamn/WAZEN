@@ -46,11 +46,13 @@ test("encryption separates purposes and supports key rotation", async () => {
   await assert.rejects(() => decryptSecret(encrypted, "totp:user", currentRing));
 });
 
-test("production setup checklist flags missing Turso in production-like runtime", async () => {
+test("production setup checklist flags missing database in production-like runtime", async () => {
   const { productionSetupChecklist } = await import("../lib/production-setup.ts");
   const original = {
     TURSO_DATABASE_URL: process.env.TURSO_DATABASE_URL,
     TURSO_AUTH_TOKEN: process.env.TURSO_AUTH_TOKEN,
+    DATABASE_URL: process.env.DATABASE_URL,
+    NEON_DATABASE_URL: process.env.NEON_DATABASE_URL,
     WAZEN_APP_ORIGIN: process.env.WAZEN_APP_ORIGIN,
     WAZEN_ENCRYPTION_KEYRING: process.env.WAZEN_ENCRYPTION_KEYRING,
     WAZEN_JOB_SECRET: process.env.WAZEN_JOB_SECRET,
@@ -64,6 +66,8 @@ test("production setup checklist flags missing Turso in production-like runtime"
   try {
     delete process.env.TURSO_DATABASE_URL;
     delete process.env.TURSO_AUTH_TOKEN;
+    delete process.env.DATABASE_URL;
+    delete process.env.NEON_DATABASE_URL;
     process.env.WAZEN_APP_ORIGIN = "https://wazen-roan.vercel.app";
     process.env.WAZEN_ENCRYPTION_KEYRING = "test";
     process.env.WAZEN_JOB_SECRET = "test";
@@ -76,7 +80,7 @@ test("production setup checklist flags missing Turso in production-like runtime"
     const setup = productionSetupChecklist();
     const database = setup.find((item) => item.id === "database");
     assert.equal(database?.ok, false);
-    assert.match(database?.hint ?? "", /provision:production/);
+    assert.match(database?.hint ?? "", /DATABASE_URL|TURSO/);
     assert.equal(setup.find((item) => item.id === "auth_hardening")?.ok, true);
   } finally {
     for (const [key, value] of Object.entries(original)) {

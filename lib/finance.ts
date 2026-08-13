@@ -68,8 +68,13 @@ export function validateJournal(lines: { debitMinor: number; creditMinor: number
 export type ExtraPolicy = "personal_reserve" | "voluntary_to_fund" | "advance_credit";
 
 /**
- * Foundation rule: received cash = mandatory (common fund) + surplus (policy).
- * Example: plan 20, receive 50 → mandatory 20, surplus 30.
+ * Foundation rule for member payments:
+ * 1) Apply cash against outstanding dues first (full remaining claim, not only one month).
+ * 2) Any remainder is treated as advance (مقدم) by default.
+ *
+ * Example: remaining due 240, receive 100 → mandatory 100, surplus 0.
+ * Example: remaining due 0, receive 50 → mandatory 0, surplus 50 as advance.
+ * Example: remaining due 40, receive 100 → mandatory 40, surplus 60 as advance.
  */
 export function splitContributionPayment(
   receivedMinor: number,
@@ -82,18 +87,19 @@ export function splitContributionPayment(
   if (remainingDue !== undefined && (!Number.isSafeInteger(remainingDue) || remainingDue < 0)) {
     throw new Error("INVALID_REMAINING_DUE");
   }
-  const mandatoryCap = remainingDue === undefined
-    ? monthlyPlanMinor
-    : Math.min(monthlyPlanMinor, remainingDue);
+  // When remaining due is provided, apply against the full outstanding claim.
+  // Monthly plan is only a fallback when remaining due is unknown.
+  const mandatoryCap = remainingDue === undefined ? monthlyPlanMinor : remainingDue;
   const mandatoryMinor = Math.min(receivedMinor, mandatoryCap);
   const surplusMinor = receivedMinor - mandatoryMinor;
-  const extraPolicy = options.extraPolicy ?? "personal_reserve";
+  const extraPolicy = options.extraPolicy
+    ?? (remainingDue !== undefined ? "advance_credit" : "personal_reserve");
   return {
     receivedMinor,
     mandatoryMinor,
     surplusMinor,
     extraPolicy,
-    commonFundDeltaMinor: mandatoryMinor + (extraPolicy === "voluntary_to_fund" ? surplusMinor : 0),
+    commonFundDeltaMinor: mandatoryMinor + (extraPolicy === "voluntary_to_fund" || extraPolicy === "advance_credit" ? surplusMinor : 0),
     personalReserveDeltaMinor: extraPolicy === "personal_reserve" ? surplusMinor : 0,
     advanceCreditMinor: extraPolicy === "advance_credit" ? surplusMinor : 0,
   };

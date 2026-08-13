@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
 import { authenticateRequest, csrfCookie, issueCsrfToken } from "../../../lib/auth";
-import { buildCircleOrder, splitContributionPayment, splitEvenly, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
+import { buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
 import { assertApiScope, authorizeSpace, ensureDefaultTenant } from "../../../lib/authorization";
 import { prepareAudit } from "../../../lib/audit";
@@ -65,9 +65,6 @@ async function ensureUser(db: D1Database, user: RequestUser) {
         VALUES (?, ?, ?, 'ar', 'OMR', ?)`)
       .bind(user.id, user.email, user.displayName, createdAt)
       .run();
-  } else {
-    await db.prepare(`INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','OM',?,?)
-      ON CONFLICT(user_id) DO UPDATE SET last_seen_at=excluded.last_seen_at`).bind(user.id, createdAt, createdAt).run();
   }
 
   if (!existing) {
@@ -179,8 +176,8 @@ async function reconcileMemberLedgers(db: D1Database, spaceIds: string[]) {
           SELECT SUM(t.amount_minor) FROM transactions t
           WHERE t.member_id = members.id AND t.space_id = members.space_id AND t.status = 'approved'
             AND (
-              (t.kind = 'contribution' AND t.allocation IN ('mandatory', 'general'))
-              OR (t.kind = 'income' AND t.allocation IN ('mandatory', 'general'))
+              (t.kind = 'contribution' AND t.allocation IN ('mandatory', 'general', 'advance'))
+              OR (t.kind = 'income' AND t.allocation IN ('mandatory', 'general', 'advance'))
             )
         ), 0),
         extra_minor = COALESCE((
@@ -250,8 +247,7 @@ async function loadDashboard(db: D1Database, userId: string) {
   const ids = spaces.results.map((space) => space.id);
   if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [] };
 
-  await reconcileMemberLedgers(db, ids);
-
+  // Reconcile only on writes — running it on every GET made the dashboard feel slow.
   const placeholders = ids.map(() => "?").join(",");
   const members = await db
     .prepare(`SELECT * FROM members WHERE space_id IN (${placeholders}) ORDER BY joined_at ASC`)
@@ -271,7 +267,12 @@ async function loadDashboard(db: D1Database, userId: string) {
     WHERE te.space_id IN (${placeholders}) ORDER BY te.occurred_at DESC LIMIT 50`).bind(...ids).all();
   const expenseSplits = await db.prepare(`SELECT es.*,m.display_name FROM expense_splits es JOIN trip_expenses te ON te.id=es.expense_id
     JOIN members m ON m.id=es.member_id WHERE te.space_id IN (${placeholders}) ORDER BY es.expense_id,m.joined_at`).bind(...ids).all();
-  const settlements = await db.prepare(`SELECT s.*,m.display_name AS to_member_name FROM settlements s LEFT JOIN members m ON m.id=s.to_member_id
+  const settlements = await db.prepare(`SELECT s.*,
+      tm.display_name AS to_member_name,
+      fm.display_name AS from_member_name
+    FROM settlements s
+    LEFT JOIN members tm ON tm.id=s.to_member_id
+    LEFT JOIN members fm ON fm.id=s.from_member_id
     WHERE s.space_id IN (${placeholders}) ORDER BY s.created_at DESC LIMIT 50`).bind(...ids).all();
 
   return {
@@ -392,8 +393,75 @@ export async function POST(request: Request) {
       if (memberId && !member) throw new ApiError(400, "INVALID_MEMBER");
       if (allocation === "personal_reserve" && (!memberId || !["contribution", "reimbursement"].includes(kind))) throw new ApiError(400, "INVALID_RESERVE_OPERATION");
       if (allocation === "personal_reserve" && kind === "reimbursement" && Number(member?.extra_minor ?? 0) < amountMinor) throw new ApiError(409, "INSUFFICIENT_PERSONAL_RESERVE");
-      if (member && allocation === "mandatory" && kind === "contribution" && Number(member.paid_minor) + amountMinor > Number(member.due_minor)) throw new ApiError(409, "CONTRIBUTION_EXCEEDS_DUE");
-
+      // Member income/contribution on group wallets: apply to outstanding dues first; surplus = advance.
+      if (
+        member
+        && kind === "contribution"
+        && allocation !== "personal_reserve"
+        && ["household", "trip", "society", "group"].includes(space.type)
+      ) {
+        const remainingDueMinor = Math.max(0, Number(member.due_minor) - Number(member.paid_minor));
+        const plan = await db.prepare("SELECT amount_minor FROM contribution_plans WHERE space_id=? ORDER BY starts_at LIMIT 1")
+          .bind(spaceId)
+          .first<{ amount_minor: number }>();
+        const monthlyPlanMinor = Number(plan?.amount_minor ?? remainingDueMinor);
+        let split;
+        try {
+          split = splitContributionPayment(amountMinor, monthlyPlanMinor, {
+            remainingDueMinor,
+            extraPolicy: "advance_credit",
+          });
+        } catch {
+          throw new ApiError(400, "INVALID_CONTRIBUTION_SPLIT");
+        }
+        const createdAt = now();
+        const occurredAt = parsed.data.occurredAt ?? createdAt;
+        const statements: D1PreparedStatement[] = [];
+        if (split.mandatoryMinor > 0) {
+          const transactionId = crypto.randomUUID();
+          const entryId = crypto.randomUUID();
+          const lineDescription = `${description} · سداد مطالبة`;
+          statements.push(
+            db.prepare("INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)")
+              .bind(transactionId, spaceId, user.id, memberId, "contribution", "mandatory", split.mandatoryMinor, lineDescription, lineDescription, occurredAt, createdAt),
+            db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id = ?").bind(split.mandatoryMinor, spaceId),
+            db.prepare("UPDATE members SET paid_minor = paid_minor + ? WHERE id = ? AND space_id = ?").bind(split.mandatoryMinor, memberId, spaceId),
+            db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+              .bind(entryId, spaceId, transactionId, user.id, lineDescription, occurredAt, createdAt),
+            db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+              .bind(crypto.randomUUID(), entryId, "asset:cash", memberId, split.mandatoryMinor, 0, createdAt),
+            db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+              .bind(crypto.randomUUID(), entryId, "income:contribution", memberId, 0, split.mandatoryMinor, createdAt),
+          );
+        }
+        if (split.surplusMinor > 0) {
+          const transactionId = crypto.randomUUID();
+          const entryId = crypto.randomUUID();
+          const lineDescription = `${description} · مقدّم`;
+          statements.push(
+            db.prepare("INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)")
+              .bind(transactionId, spaceId, user.id, memberId, "contribution", "advance", split.surplusMinor, lineDescription, lineDescription, occurredAt, createdAt),
+            db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id = ?").bind(split.surplusMinor, spaceId),
+            db.prepare("UPDATE members SET paid_minor = paid_minor + ? WHERE id = ? AND space_id = ?").bind(split.surplusMinor, memberId, spaceId),
+            db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+              .bind(entryId, spaceId, transactionId, user.id, lineDescription, occurredAt, createdAt),
+            db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+              .bind(crypto.randomUUID(), entryId, "asset:cash", memberId, split.surplusMinor, 0, createdAt),
+            db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+              .bind(crypto.randomUUID(), entryId, "liability:advance", memberId, 0, split.surplusMinor, createdAt),
+          );
+        }
+        statements.push(prepareAudit(db, {
+          userId: user.id,
+          action: "transaction.created",
+          entityType: "transaction",
+          entityId: spaceId,
+          metadata: { spaceId, kind: "contribution", amountMinor, memberId, split },
+          createdAt,
+        }));
+        await db.batch(statements);
+        await reconcileMemberLedgers(db, [spaceId]);
+      } else {
       const positiveKinds = ["income", "contribution"];
       const balanceDelta = allocation === "personal_reserve"
         ? 0
@@ -427,6 +495,7 @@ export async function POST(request: Request) {
       statements.push(prepareAudit(db, { userId: user.id, action: "transaction.created", entityType: "transaction", entityId: transactionId, metadata: { spaceId, kind, allocation: bookedAllocation, amountMinor, memberId }, createdAt }));
       await db.batch(statements);
       await reconcileMemberLedgers(db, [spaceId]);
+      }
     } else if (action === "voidTransaction") {
       const parsed = z.object({ transactionId: z.string().min(1).max(120) }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_TRANSACTION");
@@ -510,21 +579,36 @@ export async function POST(request: Request) {
     } else if (action === "settleReimbursement") {
       const parsed = z.object({ settlementId: z.string().min(1).max(120) }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_SETTLEMENT");
-      const settlement = await db.prepare(`SELECT st.id,st.space_id,st.to_member_id,st.amount_minor,s.balance_minor FROM settlements st
-        JOIN spaces s ON s.id=st.space_id WHERE st.id=? AND st.status='pending'`).bind(parsed.data.settlementId).first<{ id: string; space_id: string; to_member_id: string; amount_minor: number; balance_minor: number }>();
+      const settlement = await db.prepare(`SELECT st.id,st.space_id,st.from_member_id,st.to_member_id,st.amount_minor,s.balance_minor FROM settlements st
+        JOIN spaces s ON s.id=st.space_id WHERE st.id=? AND st.status='pending'`).bind(parsed.data.settlementId).first<{ id: string; space_id: string; from_member_id: string; to_member_id: string; amount_minor: number; balance_minor: number }>();
       if (!settlement) throw new ApiError(404, "SETTLEMENT_NOT_FOUND");
-      await authorizeSpace(db, user, settlement.space_id, "settlements:write", ["trip"]);
-      if (Number(settlement.balance_minor) < Number(settlement.amount_minor)) throw new ApiError(409, "INSUFFICIENT_FUNDS");
+      await authorizeSpace(db, user, settlement.space_id, "settlements:write", ["household", "trip", "society", "group"]);
+      const fromFund = String(settlement.from_member_id).startsWith("space:");
+      const toFund = String(settlement.to_member_id).startsWith("space:");
       const entryId = crypto.randomUUID(); const createdAt = now();
-      await db.batch([
-        db.prepare("INSERT INTO financial_operation_claims (operation_type,resource_id,idempotency_key,created_at) VALUES ('trip_settlement',?,?,?)").bind(settlement.id, idempotencyKey, createdAt),
-        db.prepare("UPDATE settlements SET status='settled',settled_at=? WHERE id=? AND status='pending'").bind(createdAt, settlement.id),
-        db.prepare("UPDATE spaces SET balance_minor=balance_minor-? WHERE id=?").bind(settlement.amount_minor, settlement.space_id),
-        db.prepare("INSERT INTO journal_entries (id,space_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,'Member reimbursement settled','posted',?,?)").bind(entryId, settlement.space_id, user.id, createdAt, createdAt),
-        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)").bind(crypto.randomUUID(), entryId, "liability:member_payable", settlement.to_member_id, settlement.amount_minor, 0, createdAt),
-        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)").bind(crypto.randomUUID(), entryId, "asset:cash", settlement.to_member_id, 0, settlement.amount_minor, createdAt),
-        prepareAudit(db, { userId: user.id, action: "trip.reimbursement_settled", entityType: "settlement", entityId: settlement.id, metadata: { amountMinor: settlement.amount_minor }, createdAt }),
-      ]);
+      if (toFund) {
+        await db.batch([
+          db.prepare("UPDATE settlements SET status='settled',settled_at=? WHERE id=? AND status='pending'").bind(createdAt, settlement.id),
+          prepareAudit(db, { userId: user.id, action: "expense.share_acknowledged", entityType: "settlement", entityId: settlement.id, metadata: { amountMinor: settlement.amount_minor }, createdAt }),
+        ]);
+      } else if (fromFund) {
+        if (Number(settlement.balance_minor) < Number(settlement.amount_minor)) throw new ApiError(409, "INSUFFICIENT_FUNDS");
+        await db.batch([
+          db.prepare("INSERT INTO financial_operation_claims (operation_type,resource_id,idempotency_key,created_at) VALUES ('trip_settlement',?,?,?)").bind(settlement.id, idempotencyKey, createdAt),
+          db.prepare("UPDATE settlements SET status='settled',settled_at=? WHERE id=? AND status='pending'").bind(createdAt, settlement.id),
+          db.prepare("UPDATE spaces SET balance_minor=balance_minor-? WHERE id=?").bind(settlement.amount_minor, settlement.space_id),
+          db.prepare("INSERT INTO journal_entries (id,space_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,'Member reimbursement settled','posted',?,?)").bind(entryId, settlement.space_id, user.id, createdAt, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)").bind(crypto.randomUUID(), entryId, "liability:member_payable", settlement.to_member_id, settlement.amount_minor, 0, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)").bind(crypto.randomUUID(), entryId, "asset:cash", settlement.to_member_id, 0, settlement.amount_minor, createdAt),
+          prepareAudit(db, { userId: user.id, action: "trip.reimbursement_settled", entityType: "settlement", entityId: settlement.id, metadata: { amountMinor: settlement.amount_minor }, createdAt }),
+        ]);
+      } else {
+        // Member-to-member settlement recorded as settled without moving the common fund.
+        await db.batch([
+          db.prepare("UPDATE settlements SET status='settled',settled_at=? WHERE id=? AND status='pending'").bind(createdAt, settlement.id),
+          prepareAudit(db, { userId: user.id, action: "member.settlement_recorded", entityType: "settlement", entityId: settlement.id, metadata: { fromMemberId: settlement.from_member_id, toMemberId: settlement.to_member_id, amountMinor: settlement.amount_minor }, createdAt }),
+        ]);
+      }
     } else if (action === "setCircleOrder") {
       const parsed = z.object({
         spaceId: z.string().min(1).max(120), mode: z.enum(["manual", "round_robin", "draw", "alphabetical", "hierarchical"]),
@@ -566,30 +650,87 @@ export async function POST(request: Request) {
       statements.push(prepareAudit(db, { userId: user.id, action: "circle.order_set", entityType: "space", entityId: parsed.data.spaceId, metadata: { mode: parsed.data.mode, members: ordered.members.map((member) => member.id), seedHash: ordered.seedHash }, createdAt }));
       await db.batch(statements);
     } else if (action === "addTripExpense") {
-      const parsed = z.object({ spaceId: z.string().min(1).max(120), paidByMemberId: z.string().min(1).max(120), amount: z.union([z.string(),z.number()]), description: z.string().trim().min(2).max(300), occurredAt: z.iso.datetime().optional() }).safeParse(payload);
+      // Group expense: choose paid-from account (common fund vs member pocket).
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        paidFrom: z.enum(["common_fund", "member"]).default("member"),
+        paidByMemberId: z.string().min(1).max(120).optional(),
+        amount: z.union([z.string(), z.number()]),
+        description: z.string().trim().min(2).max(300),
+        occurredAt: z.iso.datetime().optional(),
+      }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_TRIP_EXPENSE");
-      const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["trip"]);
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["household", "trip", "society", "group"]);
       const members = await db.prepare("SELECT id FROM members WHERE space_id=? AND status='active' ORDER BY joined_at").bind(parsed.data.spaceId).all<{ id: string }>();
-      if (!members.results.some((member) => member.id === parsed.data.paidByMemberId)) throw new ApiError(400, "INVALID_PAYER");
-      let amountMinor: number; try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      if (!members.results.length) throw new ApiError(400, "NO_ACTIVE_MEMBERS");
+      let amountMinor: number;
+      try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      const paidFrom = parsed.data.paidFrom;
+      const paidByMemberId = paidFrom === "member"
+        ? parsed.data.paidByMemberId
+        : (parsed.data.paidByMemberId ?? members.results[0]?.id);
+      if (!paidByMemberId || !members.results.some((member) => member.id === paidByMemberId)) {
+        throw new ApiError(400, "INVALID_PAYER");
+      }
+      if (paidFrom === "common_fund" && Number(space.balance_minor) < amountMinor) {
+        throw new ApiError(409, "INSUFFICIENT_FUNDS");
+      }
       const splits = splitEvenly(amountMinor, members.results.map((member) => member.id));
-      const expenseId = crypto.randomUUID(); const transactionId = crypto.randomUUID(); const entryId = crypto.randomUUID(); const createdAt = now();
+      const expenseId = crypto.randomUUID();
+      const transactionId = crypto.randomUUID();
+      const entryId = crypto.randomUUID();
+      const createdAt = now();
+      const occurredAt = parsed.data.occurredAt ?? createdAt;
       const statements: D1PreparedStatement[] = [
         db.prepare("INSERT INTO trip_expenses (id,space_id,paid_by_member_id,amount_minor,description,occurred_at,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)")
-          .bind(expenseId, parsed.data.spaceId, parsed.data.paidByMemberId, amountMinor, parsed.data.description, parsed.data.occurredAt ?? createdAt, user.id, createdAt),
-        db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'general',?,?,?,'approved',?,?)")
-          .bind(transactionId, parsed.data.spaceId, user.id, parsed.data.paidByMemberId, "reimbursement", amountMinor, parsed.data.description, parsed.data.description, parsed.data.occurredAt ?? createdAt, createdAt),
-        db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
-          .bind(entryId, parsed.data.spaceId, transactionId, user.id, parsed.data.description, parsed.data.occurredAt ?? createdAt, createdAt),
-        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
-          .bind(crypto.randomUUID(), entryId, "expense:trip", parsed.data.paidByMemberId, amountMinor, 0, createdAt),
-        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
-          .bind(crypto.randomUUID(), entryId, "liability:member_payable", parsed.data.paidByMemberId, 0, amountMinor, createdAt),
-        db.prepare("INSERT INTO settlements (id,space_id,from_member_id,to_member_id,amount_minor,status,created_at) VALUES (?,?,?,?,?,'pending',?)")
-          .bind(crypto.randomUUID(), parsed.data.spaceId, `space:${parsed.data.spaceId}`, parsed.data.paidByMemberId, amountMinor, createdAt),
+          .bind(expenseId, parsed.data.spaceId, paidByMemberId, amountMinor, parsed.data.description, occurredAt, user.id, createdAt),
       ];
+      if (paidFrom === "common_fund") {
+        // Paid from group wallet: reduce common fund. Splits remain for له/عليه reporting only.
+        statements.push(
+          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'general',?,?,?,'approved',?,?)")
+            .bind(transactionId, parsed.data.spaceId, user.id, paidByMemberId, "expense", amountMinor, parsed.data.description, parsed.data.description, occurredAt, createdAt),
+          db.prepare("UPDATE spaces SET balance_minor = balance_minor - ? WHERE id = ?").bind(amountMinor, parsed.data.spaceId),
+          db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+            .bind(entryId, parsed.data.spaceId, transactionId, user.id, parsed.data.description, occurredAt, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "expense:group", paidByMemberId, amountMinor, 0, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "asset:cash", paidByMemberId, 0, amountMinor, createdAt),
+        );
+      } else {
+        // Member paid from pocket: payer is owed (له); others owe their share (عليه).
+        statements.push(
+          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'general',?,?,?,'approved',?,?)")
+            .bind(transactionId, parsed.data.spaceId, user.id, paidByMemberId, "reimbursement", amountMinor, parsed.data.description, parsed.data.description, occurredAt, createdAt),
+          db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+            .bind(entryId, parsed.data.spaceId, transactionId, user.id, parsed.data.description, occurredAt, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "expense:trip", paidByMemberId, amountMinor, 0, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "liability:member_payable", paidByMemberId, 0, amountMinor, createdAt),
+        );
+        const balances = members.results.map((member) => {
+          const share = splits.find((item) => item.memberId === member.id)?.shareMinor ?? 0;
+          const paid = member.id === paidByMemberId ? amountMinor : 0;
+          return { memberId: member.id, balanceMinor: paid - share };
+        });
+        minimizeSettlements(balances).forEach((settlement) => {
+          statements.push(
+            db.prepare("INSERT INTO settlements (id,space_id,from_member_id,to_member_id,amount_minor,status,created_at) VALUES (?,?,?,?,?,'pending',?)")
+              .bind(crypto.randomUUID(), parsed.data.spaceId, settlement.fromMemberId, settlement.toMemberId, settlement.amountMinor, createdAt),
+          );
+        });
+      }
       splits.forEach((split) => statements.push(db.prepare("INSERT INTO expense_splits (id,expense_id,member_id,share_minor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), expenseId, split.memberId, split.shareMinor)));
-      statements.push(prepareAudit(db, { userId: user.id, action: "trip.expense_split", entityType: "trip_expense", entityId: expenseId, metadata: { amountMinor, paidByMemberId: parsed.data.paidByMemberId, splits }, createdAt }));
+      statements.push(prepareAudit(db, {
+        userId: user.id,
+        action: "trip.expense_split",
+        entityType: "trip_expense",
+        entityId: expenseId,
+        metadata: { amountMinor, paidFrom, paidByMemberId, splits },
+        createdAt,
+      }));
       await db.batch(statements);
     } else if (action === "recordContributionPayment") {
       // Foundation rule: cash received = mandatory (common fund) + surplus (policy).
@@ -614,7 +755,8 @@ export async function POST(request: Request) {
       let amountMinor: number;
       try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
       const remainingDueMinor = Math.max(0, Number(member.due_minor) - Number(member.paid_minor));
-      const policy = (parsed.data.extraPolicy ?? plan.extra_policy ?? "personal_reserve") as ExtraPolicy;
+      // Rule: cover outstanding claims first; any remainder defaults to advance (مقدم).
+      const policy = (parsed.data.extraPolicy ?? "advance_credit") as ExtraPolicy;
       if (!["personal_reserve", "voluntary_to_fund", "advance_credit"].includes(policy)) throw new ApiError(400, "INVALID_EXTRA_POLICY");
       let split;
       try {
@@ -628,14 +770,12 @@ export async function POST(request: Request) {
       const createdAt = now();
       const occurredAt = parsed.data.occurredAt ?? createdAt;
       const baseDescription = parsed.data.description?.trim()
-        || (policy === "personal_reserve"
-          ? `مساهمة ${member.display_name}`
-          : `Contribution — ${member.display_name}`);
+        || `مساهمة ${member.display_name}`;
       const statements: D1PreparedStatement[] = [];
       if (split.mandatoryMinor > 0) {
         const transactionId = crypto.randomUUID();
         const entryId = crypto.randomUUID();
-        const description = `${baseDescription} · إلزامي`;
+        const description = `${baseDescription} · سداد مطالبة`;
         statements.push(
           db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'mandatory',?,?,?,'approved',?,?)")
             .bind(transactionId, parsed.data.spaceId, user.id, member.id, "contribution", split.mandatoryMinor, description, description, occurredAt, createdAt),
@@ -682,9 +822,9 @@ export async function POST(request: Request) {
       } else if (split.surplusMinor > 0 && policy === "advance_credit") {
         const transactionId = crypto.randomUUID();
         const entryId = crypto.randomUUID();
-        const description = `${baseDescription} · دفعة مقدمة`;
+        const description = `${baseDescription} · مقدّم`;
         statements.push(
-          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'mandatory',?,?,?,'approved',?,?)")
+          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'advance',?,?,?,'approved',?,?)")
             .bind(transactionId, parsed.data.spaceId, user.id, member.id, "contribution", split.surplusMinor, description, description, occurredAt, createdAt),
           db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id = ?").bind(split.surplusMinor, parsed.data.spaceId),
           db.prepare("UPDATE members SET paid_minor = paid_minor + ? WHERE id = ? AND space_id = ?").bind(split.surplusMinor, member.id, parsed.data.spaceId),

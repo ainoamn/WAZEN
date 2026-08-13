@@ -8,9 +8,30 @@ test("equal expense splits preserve every minor unit", () => {
   assert.equal(splits.reduce((sum, item) => sum + item.shareMinor, 0), 100);
 });
 
-test("contribution payment splits mandatory and protected surplus", () => {
-  // 20.00 SAR plan, receive 50.00 SAR → 20 mandatory + 30 personal reserve
-  const split = splitContributionPayment(5000, 2000, { remainingDueMinor: 120_000, extraPolicy: "personal_reserve" });
+test("contribution payment applies against full outstanding dues then advance", () => {
+  // Remaining 240.000 OMR, receive 100.000 → all 100 against dues (not capped to monthly 20)
+  const againstDues = splitContributionPayment(100_000, 20_000, { remainingDueMinor: 240_000 });
+  assert.equal(againstDues.mandatoryMinor, 100_000);
+  assert.equal(againstDues.surplusMinor, 0);
+  assert.equal(againstDues.extraPolicy, "advance_credit");
+
+  // No outstanding claims → full amount is advance (مقدم)
+  const advanceOnly = splitContributionPayment(50_000, 20_000, { remainingDueMinor: 0 });
+  assert.equal(advanceOnly.mandatoryMinor, 0);
+  assert.equal(advanceOnly.surplusMinor, 50_000);
+  assert.equal(advanceOnly.advanceCreditMinor, 50_000);
+  assert.equal(advanceOnly.commonFundDeltaMinor, 50_000);
+
+  // Remaining 40, receive 100 → 40 dues + 60 advance
+  const mixed = splitContributionPayment(100_000, 20_000, { remainingDueMinor: 40_000 });
+  assert.equal(mixed.mandatoryMinor, 40_000);
+  assert.equal(mixed.surplusMinor, 60_000);
+  assert.equal(mixed.advanceCreditMinor, 60_000);
+});
+
+test("contribution payment splits mandatory and protected surplus when explicitly requested", () => {
+  // 20.00 plan (legacy monthly-only mode without remainingDue), receive 50.00 → 20 mandatory + 30 personal reserve
+  const split = splitContributionPayment(5000, 2000, { extraPolicy: "personal_reserve" });
   assert.equal(split.mandatoryMinor, 2000);
   assert.equal(split.surplusMinor, 3000);
   assert.equal(split.commonFundDeltaMinor, 2000);

@@ -2,41 +2,55 @@
 
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
-import WazenPageLoader from "./WazenPageLoader";
 
+/**
+ * Lightweight top progress bar for route changes.
+ * Avoids a full-screen branded overlay (that felt like the app was freezing).
+ * Only appears if navigation takes longer than SHOW_AFTER_MS.
+ */
 function NavigationProgressInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [active, setActive] = useState(false);
+  const [visible, setVisible] = useState(false);
   const [progress, setProgress] = useState(0);
   const pendingRef = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const showTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const routeKey = `${pathname}?${searchParams?.toString() ?? ""}`;
+  const SHOW_AFTER_MS = 120;
 
-  const stopTick = () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
+  const clearTimers = () => {
+    if (showTimerRef.current) {
+      clearTimeout(showTimerRef.current);
+      showTimerRef.current = null;
     }
-  };
-
-  const start = () => {
+    if (tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
     if (hideTimerRef.current) {
       clearTimeout(hideTimerRef.current);
       hideTimerRef.current = null;
     }
+  };
+
+  const start = () => {
+    clearTimers();
     pendingRef.current = true;
-    stopTick();
-    setActive(true);
-    setProgress(12);
-    timerRef.current = setInterval(() => {
-      setProgress((current) => {
-        if (current >= 88) return current;
-        const step = current < 40 ? 9 : current < 70 ? 4 : 1.5;
-        return Math.min(88, current + step);
-      });
-    }, 180);
+    setProgress(8);
+    // Fast navigations never flash a loader.
+    showTimerRef.current = setTimeout(() => {
+      if (!pendingRef.current) return;
+      setVisible(true);
+      tickRef.current = setInterval(() => {
+        setProgress((current) => {
+          if (current >= 90) return current;
+          const step = current < 40 ? 12 : current < 70 ? 5 : 1.5;
+          return Math.min(90, current + step);
+        });
+      }, 160);
+    }, SHOW_AFTER_MS);
   };
 
   useEffect(() => {
@@ -53,6 +67,7 @@ function NavigationProgressInner() {
       if (!href || href.startsWith("#")) return;
       if (anchor.target && anchor.target !== "_self") return;
       if (anchor.hasAttribute("download")) return;
+      if (anchor.hasAttribute("data-no-progress")) return;
 
       let url: URL;
       try {
@@ -62,9 +77,7 @@ function NavigationProgressInner() {
       }
 
       if (url.origin !== window.location.origin) return;
-      if (url.pathname === window.location.pathname && url.search === window.location.search) {
-        if (url.hash) return;
-      }
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
 
       start();
     };
@@ -76,36 +89,46 @@ function NavigationProgressInner() {
     return () => {
       document.removeEventListener("click", onClick, true);
       window.removeEventListener("popstate", onPopState);
-      stopTick();
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      clearTimers();
     };
   }, []);
 
   useEffect(() => {
     if (!pendingRef.current) return;
     pendingRef.current = false;
-    stopTick();
+    if (showTimerRef.current) {
+      clearTimeout(showTimerRef.current);
+      showTimerRef.current = null;
+    }
+    if (tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
     setProgress(100);
     hideTimerRef.current = setTimeout(() => {
-      setActive(false);
+      setVisible(false);
       setProgress(0);
       hideTimerRef.current = null;
-    }, 280);
+    }, 180);
   }, [routeKey]);
 
-  if (!active) return null;
+  if (!visible) return null;
 
   return (
-    <WazenPageLoader
-      overlay
-      compact
-      progress={progress}
-      label="جاري تحميل الصفحة…"
-    />
+    <div
+      className="wazen-nav-progress"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(progress)}
+      aria-label="جاري الانتقال…"
+    >
+      <i style={{ width: `${progress}%` }} />
+    </div>
   );
 }
 
-/** Global soft-navigation indicator with official logo + filling heart. */
+/** Soft route-change indicator (top bar only — not a blocking overlay). */
 export default function NavigationProgress() {
   return (
     <Suspense fallback={null}>
