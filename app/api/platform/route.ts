@@ -192,12 +192,66 @@ async function adminData(db: D1Database) {
 }
 
 async function scopedAdminData(db: D1Database, role: string, scope: string) {
-  const data = await adminData(db);
-  if (["super_admin", "admin"].includes(role)) return data;
+  if (!["super_admin", "admin", "support", "finance"].includes(role)) throw new ApiError(403, "FORBIDDEN");
+
+  const loadPaymentsScope = async () => {
+    const [subscriptions, invoices, payments, plans] = await Promise.all([
+      db.prepare("SELECT * FROM subscriptions ORDER BY created_at DESC LIMIT 200").all(),
+      db.prepare("SELECT i.*,u.display_name,u.email FROM invoices i LEFT JOIN users u ON u.id=i.user_id ORDER BY i.created_at DESC LIMIT 200").all(),
+      db.prepare("SELECT p.*,u.display_name,u.email FROM payments p LEFT JOIN users u ON u.id=p.user_id ORDER BY p.occurred_at DESC LIMIT 200").all(),
+      db.prepare("SELECT * FROM plans ORDER BY sort_order").all<Record<string, unknown>>(),
+    ]);
+    return {
+      users: [] as unknown[],
+      subscriptions: subscriptions.results,
+      invoices: invoices.results,
+      payments: payments.results,
+      coupons: [] as unknown[],
+      plans: plans.results.map(parseFeatures),
+      roles: [] as unknown[],
+      logs: [] as unknown[],
+    };
+  };
+
+  const loadReportsScope = async () => {
+    const [users, subscriptions, invoices, payments, plans] = await Promise.all([
+      db.prepare("SELECT COALESCE(p.status,'active') AS status FROM users u LEFT JOIN customer_profiles p ON p.user_id=u.id").all(),
+      db.prepare("SELECT * FROM subscriptions ORDER BY created_at DESC LIMIT 200").all(),
+      db.prepare("SELECT id,status,total_minor,created_at FROM invoices ORDER BY created_at DESC LIMIT 200").all(),
+      db.prepare("SELECT id,status,amount_minor,occurred_at FROM payments ORDER BY occurred_at DESC LIMIT 200").all(),
+      db.prepare("SELECT * FROM plans ORDER BY sort_order").all<Record<string, unknown>>(),
+    ]);
+    return {
+      users: users.results,
+      subscriptions: subscriptions.results,
+      invoices: invoices.results,
+      payments: payments.results,
+      coupons: [] as unknown[],
+      plans: plans.results.map(parseFeatures),
+      roles: [] as unknown[],
+      logs: [] as unknown[],
+    };
+  };
+
+  if (["super_admin", "admin"].includes(role)) {
+    if (scope === "payments") return loadPaymentsScope();
+    if (scope === "reports") return loadReportsScope();
+    return adminData(db);
+  }
+
   const empty = { users: [], subscriptions: [], invoices: [], payments: [], coupons: [], plans: [], roles: [], logs: [] };
-  if (scope === "users" && role === "support") return { ...empty, users: data.users, subscriptions: data.subscriptions, plans: data.plans };
-  if (scope === "payments" && role === "finance") return { ...empty, subscriptions: data.subscriptions, invoices: data.invoices, payments: data.payments, plans: data.plans };
-  if (scope === "reports" && role === "finance") return { ...empty, users: data.users.map((row) => ({ status: (row as Record<string, unknown>).status })), subscriptions: data.subscriptions, invoices: data.invoices, payments: data.payments, plans: data.plans };
+  if (scope === "users" && role === "support") {
+    const data = await adminData(db);
+    return { ...empty, users: data.users, subscriptions: data.subscriptions, plans: data.plans };
+  }
+  if (scope === "payments" && role === "finance") {
+    const data = await loadPaymentsScope();
+    return { ...empty, subscriptions: data.subscriptions, invoices: data.invoices, payments: data.payments, plans: data.plans };
+  }
+  if (scope === "reports" && role === "finance") {
+    const data = await loadReportsScope();
+    return { ...empty, users: data.users, subscriptions: data.subscriptions, invoices: data.invoices, payments: data.payments, plans: data.plans };
+  }
   throw new ApiError(403, "FORBIDDEN");
 }
 

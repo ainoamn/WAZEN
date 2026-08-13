@@ -58,31 +58,38 @@ function cleanId(value: string) {
 
 async function ensureUser(db: D1Database, user: RequestUser) {
   const createdAt = now();
-  await db
-    .prepare(`INSERT INTO users (id, email, display_name, locale, currency, created_at)
-      VALUES (?, ?, ?, 'ar', 'OMR', ?)
-      ON CONFLICT(id) DO UPDATE SET email = excluded.email, display_name = excluded.display_name`)
-    .bind(user.id, user.email, user.displayName, createdAt)
-    .run();
+  const existing = await db.prepare("SELECT id FROM users WHERE id=?").bind(user.id).first<{ id: string }>();
+  if (!existing) {
+    await db
+      .prepare(`INSERT INTO users (id, email, display_name, locale, currency, created_at)
+        VALUES (?, ?, ?, 'ar', 'OMR', ?)`)
+      .bind(user.id, user.email, user.displayName, createdAt)
+      .run();
+  } else {
+    await db.prepare(`INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','OM',?,?)
+      ON CONFLICT(user_id) DO UPDATE SET last_seen_at=excluded.last_seen_at`).bind(user.id, createdAt, createdAt).run();
+  }
 
-  const configuredAdmins = (process.env.WAZEN_ADMIN_EMAILS ?? "").split(",").map((email) => email.trim().toLowerCase());
-  const role = configuredAdmins.includes(user.email.toLowerCase()) ? "super_admin" : "customer";
-  await db.batch([
-    db.prepare(`INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','OM',?,?)
-      ON CONFLICT(user_id) DO UPDATE SET last_seen_at=excluded.last_seen_at`).bind(user.id, createdAt, createdAt),
-    db.prepare(`INSERT OR IGNORE INTO platform_roles (user_id,role,permissions_json,created_at,updated_at) VALUES (?,?,?,?,?)`)
-      .bind(user.id, role, role === "super_admin" ? '["*"]' : '["wallets:own","documents:own"]', createdAt, createdAt),
-  ]);
-  await ensureDefaultTenant(db, user);
+  if (!existing) {
+    const configuredAdmins = (process.env.WAZEN_ADMIN_EMAILS ?? "").split(",").map((email) => email.trim().toLowerCase());
+    const role = configuredAdmins.includes(user.email.toLowerCase()) ? "super_admin" : "customer";
+    await db.batch([
+      db.prepare(`INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','OM',?,?)
+        ON CONFLICT(user_id) DO UPDATE SET last_seen_at=excluded.last_seen_at`).bind(user.id, createdAt, createdAt),
+      db.prepare(`INSERT OR IGNORE INTO platform_roles (user_id,role,permissions_json,created_at,updated_at) VALUES (?,?,?,?,?)`)
+        .bind(user.id, role, role === "super_admin" ? '["*"]' : '["wallets:own","documents:own"]', createdAt, createdAt),
+    ]);
+    await ensureDefaultTenant(db, user);
+  }
 
   // Real accounts start empty. Seeded finance data is restricted to explicit local demo mode.
   if (!user.isDemo) return;
 
-  const existing = await db
+  const spaceCount = await db
     .prepare("SELECT COUNT(*) AS count FROM spaces WHERE owner_user_id = ?")
     .bind(user.id)
     .first<{ count: number }>();
-  if ((existing?.count ?? 0) > 0) return;
+  if ((spaceCount?.count ?? 0) > 0) return;
 
   const prefix = cleanId(user.id);
   const personal = `${prefix}-personal`;

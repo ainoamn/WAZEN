@@ -15,7 +15,6 @@ import {
   CircleDollarSign,
   Clock3,
   Download,
-  Ellipsis,
   Globe2,
   HandCoins,
   House,
@@ -438,7 +437,6 @@ function Sidebar({ locale, active, open, onNavigate, onClose }: { locale: Locale
           {navItems.map(({ id, icon: Icon }) => (
             <button key={id} className={active === id ? "active" : ""} onClick={() => onNavigate(id)}>
               <Icon size={19} strokeWidth={active === id ? 2.2 : 1.8} /><span>{t[id]}</span>
-              {id === "groups" && <em>5</em>}
             </button>
           ))}
         </nav>
@@ -459,52 +457,88 @@ function Sidebar({ locale, active, open, onNavigate, onClose }: { locale: Locale
 function Overview({ data, locale, totals, onView, onAddWallet }: { data: DashboardData; locale: Locale; totals: { net: number; groups: number; reserves: number; spend: number }; onView: (id: ViewId) => void; onAddWallet: () => void }) {
   const t = copy[locale];
   const trip = data.spaces.find((space) => space.type === "trip");
+  const household = data.spaces.find((space) => space.type === "household");
   const tripMembers = trip ? data.members.filter((member) => member.space_id === trip.id) : [];
   const reserveTotal = tripMembers.reduce((sum, member) => sum + member.extra_minor, 0);
-  const goalProgress = trip?.goal_minor ? Math.min(100, Math.round((trip.balance_minor / trip.goal_minor) * 100)) : 0;
+  const goalProgress = trip && trip.goal_minor > 0 ? Math.min(100, Math.round((trip.balance_minor / trip.goal_minor) * 100)) : 0;
+  const householdExpenses = household
+    ? data.transactions.filter((row) => row.space_id === household.id && row.kind === "expense")
+    : [];
+  const householdSpend = householdExpenses.reduce((sum, row) => sum + row.amount_minor, 0);
+  const walletCount = data.spaces.length;
+
   return (
     <div className="dashboard-stack">
-      <div className="welcome-line"><p>{t.subtitle}</p><div className="date-chip"><CalendarDays size={16} />{new Intl.DateTimeFormat(locale === "ar" ? "ar-AE" : "en-GB", { day: "numeric", month: "long", year: "numeric" }).format(new Date("2026-08-11"))}</div></div>
+      <div className="welcome-line">
+        <p>{t.subtitle}</p>
+        <div className="date-chip"><CalendarDays size={16} />{new Intl.DateTimeFormat(locale === "ar" ? "ar-AE" : "en-GB", { day: "numeric", month: "long", year: "numeric" }).format(new Date())}</div>
+      </div>
       <section className="stat-grid">
-        <StatCard icon={<CircleDollarSign />} label={t.totalBalance} value={formatMoney(totals.net + totals.reserves, "OMR", locale)} trend="+6.4%" accent="navy" note={t.versus} />
-        <StatCard icon={<HandCoins />} label={t.spendableFunds} value={formatMoney(totals.groups, "OMR", locale)} trend="+12%" accent="green" note={locale === "ar" ? "هذا الشهر" : "this month"} />
+        <StatCard icon={<CircleDollarSign />} label={t.totalBalance} value={formatMoney(totals.net + totals.reserves, "OMR", locale)} accent="navy" note={walletCount ? (locale === "ar" ? `${walletCount} محافظ` : `${walletCount} wallets`) : (locale === "ar" ? "لا محافظ بعد" : "no wallets yet")} />
+        <StatCard icon={<HandCoins />} label={t.spendableFunds} value={formatMoney(totals.groups, "OMR", locale)} accent="green" note={locale === "ar" ? "أرصدة المجموعات" : "group balances"} />
         <StatCard icon={<ShieldCheck />} label={t.personalReserves} value={formatMoney(totals.reserves, "OMR", locale)} accent="amber" note={t.protected} />
-        <StatCard icon={<TrendingDown />} label={t.monthlySpend} value={formatMoney(totals.spend, "OMR", locale)} trend="-8%" accent="rose" note={t.versus} positive />
+        <StatCard icon={<TrendingDown />} label={t.monthlySpend} value={formatMoney(totals.spend, "OMR", locale)} accent="rose" note={locale === "ar" ? "من السجل الفعلي" : "from recorded entries"} />
       </section>
 
       <section className="overview-grid">
         <article className="goal-card panel">
           <div className="panel-heading">
-            <div><span className="section-kicker"><Plane size={15} />{locale === "ar" ? "هدف جماعي" : "Group goal"}</span><h2>{t.tripGoal}</h2></div>
+            <div><span className="section-kicker"><Plane size={15} />{locale === "ar" ? "هدف جماعي" : "Group goal"}</span><h2>{trip ? nameOf(trip, locale) : t.tripGoal}</h2></div>
             <button className="ghost-icon" onClick={() => onView("trip")} aria-label="Open trip"><ArrowUpRight size={18} /></button>
           </div>
-          <div className="goal-number"><strong>{trip ? formatMoney(trip.balance_minor, trip.currency, locale) : "—"}</strong><span>{t.collected} {trip ? formatMoney(trip.goal_minor, trip.currency, locale) : "—"}</span></div>
-          <div className="progress-track tall"><span style={{ width: `${goalProgress}%` }} /></div>
-          <div className="progress-labels"><b>{goalProgress}%</b><span>{t.projected}</span></div>
-          <div className="money-separation">
-            <div><i className="dot common" /><span>{t.commonFund}</span><strong>{trip ? formatMoney(trip.balance_minor, trip.currency, locale) : "—"}</strong></div>
-            <div><i className="dot reserve" /><span>{t.membersReserves}</span><strong>{formatMoney(reserveTotal, "OMR", locale)}</strong></div>
-            <div className="cash-held"><i className="dot cash" /><span>{t.cashHeld}</span><strong>{formatMoney((trip?.balance_minor ?? 0) + reserveTotal, "OMR", locale)}</strong></div>
-          </div>
-          <p className="clarity-note"><ShieldCheck size={15} />{t.clarity}</p>
+          {trip ? (
+            <>
+              <div className="goal-number">
+                <strong>{formatMoney(trip.balance_minor, trip.currency, locale)}</strong>
+                <span>{t.collected} {trip.goal_minor > 0 ? formatMoney(trip.goal_minor, trip.currency, locale) : "—"}</span>
+              </div>
+              <div className="progress-track tall"><span style={{ width: `${goalProgress}%` }} /></div>
+              <div className="progress-labels">
+                <b>{goalProgress}%</b>
+                <span>{trip.goal_minor > 0 && trip.balance_minor > 0 ? (locale === "ar" ? "التقدم من الرصيد الفعلي" : "Progress from actual balance") : (locale === "ar" ? "أضف مساهمات لبدء التقدم" : "Add contributions to start progress")}</span>
+              </div>
+              <div className="money-separation">
+                <div><i className="dot common" /><span>{t.commonFund}</span><strong>{formatMoney(trip.balance_minor, trip.currency, locale)}</strong></div>
+                <div><i className="dot reserve" /><span>{t.membersReserves}</span><strong>{formatMoney(reserveTotal, trip.currency, locale)}</strong></div>
+                <div className="cash-held"><i className="dot cash" /><span>{t.cashHeld}</span><strong>{formatMoney(trip.balance_minor + reserveTotal, trip.currency, locale)}</strong></div>
+              </div>
+              <p className="clarity-note"><ShieldCheck size={15} />{t.clarity}</p>
+            </>
+          ) : (
+            <div className="empty-state"><Plane size={22} /><span>{locale === "ar" ? "لا توجد محفظة رحلة بعد. أنشئ محفظة لتظهر الأهداف الحقيقية." : "No trip wallet yet. Create one to see real goals."}</span></div>
+          )}
         </article>
 
         <article className="budget-card panel">
-          <div className="panel-heading"><div><span className="section-kicker"><Sparkles size={15} />{t.smartInsight}</span><h2>{t.homeBudget}</h2></div><Ellipsis size={20} /></div>
-          <div className="donut-wrap"><div className="donut"><div><strong>72%</strong><span>{locale === "ar" ? "من الميزانية" : "of budget"}</span></div></div>
-            <div className="budget-legend">
-              {[38, 24, 17, 12, 9].map((value, index) => <div key={index}><i className={`budget-dot c${index + 1}`} /><span>{t.categories[index]}</span><strong>{value}%</strong></div>)}
-            </div>
-          </div>
-          <p className="insight-note"><TrendingDown size={16} />{t.householdInsight}</p>
+          <div className="panel-heading"><div><span className="section-kicker"><Sparkles size={15} />{t.smartInsight}</span><h2>{t.homeBudget}</h2></div></div>
+          {householdSpend > 0 ? (
+            <>
+              <div className="donut-wrap">
+                <div className="donut" style={{ background: `conic-gradient(var(--green) 0 100%)` }}>
+                  <div><strong>{formatMoney(householdSpend, household?.currency ?? "OMR", locale)}</strong><span>{locale === "ar" ? "مصروف المنزل" : "home spend"}</span></div>
+                </div>
+                <div className="budget-legend">
+                  <div><i className="budget-dot c1" /><span>{locale === "ar" ? "عمليات مسجلة" : "Recorded entries"}</span><strong>{householdExpenses.length}</strong></div>
+                  <div><i className="budget-dot c2" /><span>{locale === "ar" ? "المحفظة" : "Wallet"}</span><strong>{household ? nameOf(household, locale) : "—"}</strong></div>
+                </div>
+              </div>
+              <p className="insight-note"><TrendingDown size={16} />{locale === "ar" ? "هذه الأرقام من عملياتك المسجلة فقط." : "These figures come only from your recorded transactions."}</p>
+            </>
+          ) : (
+            <div className="empty-state"><Sparkles size={22} /><span>{locale === "ar" ? "لا توجد إحصاءات بعد. ستظهر ملاحظات وازن بعد تسجيل مصروفات منزل حقيقية." : "No insights yet. Wazen notes appear after real household expenses are recorded."}</span></div>
+          )}
         </article>
       </section>
 
       <section className="wallet-section">
         <div className="section-title"><div><h2>{t.wallets}</h2><p>{locale === "ar" ? "أرصدة مستقلة لحياة مالية أوضح" : "Separate balances for a clearer financial life"}</p></div><button className="secondary-button" onClick={onAddWallet}><Plus size={16} />{t.newWallet}</button></div>
-        <div className="wallet-grid">
-          {data.spaces.map((space) => <WalletCard key={space.id} space={space} locale={locale} onOpen={() => onView(space.type === "group" ? "groups" : space.type as ViewId)} />)}
-        </div>
+        {data.spaces.length ? (
+          <div className="wallet-grid">
+            {data.spaces.map((space) => <WalletCard key={space.id} space={space} locale={locale} onOpen={() => onView(space.type === "group" ? "groups" : space.type as ViewId)} />)}
+          </div>
+        ) : (
+          <article className="panel"><div className="empty-state"><WalletCards size={22} /><span>{locale === "ar" ? "ابدأ بإنشاء محفظتك الأولى." : "Start by creating your first wallet."}</span><button className="primary-button" onClick={onAddWallet}><Plus size={16} />{t.newWallet}</button></div></article>
+        )}
       </section>
 
       <section className="lower-grid">
@@ -533,7 +567,7 @@ function WalletCard({ space, locale, onOpen }: { space: Space; locale: Locale; o
 function RecentTransactions({ data, locale, onView }: { data: DashboardData; locale: Locale; onView: () => void }) {
   const t = copy[locale];
   return <article className="panel list-panel"><div className="panel-heading"><h2>{t.recent}</h2><button className="text-button" onClick={onView}>{t.viewAll}<ArrowUpRight size={15} /></button></div>
-    <div className="transaction-list">{data.transactions.slice(0, 5).map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} data={data} locale={locale} />)}</div>
+    <div className="transaction-list">{data.transactions.length ? data.transactions.slice(0, 5).map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} data={data} locale={locale} />) : <Empty locale={locale} />}</div>
   </article>;
 }
 
@@ -546,13 +580,32 @@ function TransactionRow({ transaction, data, locale }: { transaction: Transactio
 
 function Obligations({ data, locale, onView }: { data: DashboardData; locale: Locale; onView: (view: ViewId) => void }) {
   const t = copy[locale];
-  const trip = data.spaces.find((space) => space.type === "trip");
-  const society = data.spaces.find((space) => space.type === "society");
-  return <article className="panel obligation-panel"><div className="panel-heading"><h2>{t.obligations}</h2><CalendarDays size={18} /></div>
-    <button className="obligation-row" onClick={() => onView("trip")}><div className="obligation-date"><b>15</b><span>{locale === "ar" ? "أغسطس" : "AUG"}</span></div><div><strong>{trip ? nameOf(trip, locale) : t.trip}</strong><span>{t.monthlyContribution}</span></div><b>{formatMoney(2000, "OMR", locale)}</b></button>
-    <button className="obligation-row" onClick={() => onView("society")}><div className="obligation-date purple"><b>20</b><span>{locale === "ar" ? "أغسطس" : "AUG"}</span></div><div><strong>{society ? nameOf(society, locale) : t.society}</strong><span>{t.nextDue}</span></div><b>{formatMoney(20000, "OMR", locale)}</b></button>
-    <div className="completion-line"><CheckCircle2 size={17} /><span>{locale === "ar" ? "3 من 4 التزامات مكتملة هذا الشهر" : "3 of 4 obligations completed this month"}</span><strong>75%</strong></div>
-  </article>;
+  const rows = data.plans
+    .map((plan) => {
+      const space = data.spaces.find((item) => item.id === String(plan.space_id));
+      if (!space) return null;
+      const dueDay = Number(plan.due_day ?? 1);
+      const amount = Number(plan.amount_minor ?? 0);
+      if (amount <= 0) return null;
+      const view = space.type === "group" ? "groups" : (space.type as ViewId);
+      return { space, dueDay, amount, view };
+    })
+    .filter(Boolean) as Array<{ space: Space; dueDay: number; amount: number; view: ViewId }>;
+
+  return (
+    <article className="panel obligation-panel">
+      <div className="panel-heading"><h2>{t.obligations}</h2><CalendarDays size={18} /></div>
+      {rows.length ? rows.map((row) => (
+        <button className="obligation-row" key={row.space.id} onClick={() => onView(row.view)}>
+          <div className={`obligation-date${row.space.type === "society" ? " purple" : ""}`}><b>{row.dueDay}</b><span>{locale === "ar" ? "كل شهر" : "MONTHLY"}</span></div>
+          <div><strong>{nameOf(row.space, locale)}</strong><span>{t.monthlyContribution}</span></div>
+          <b>{formatMoney(row.amount, row.space.currency, locale)}</b>
+        </button>
+      )) : (
+        <div className="empty-state"><CalendarDays size={20} /><span>{locale === "ar" ? "لا التزامات قادمة حتى تضيف خطط مساهمة." : "No upcoming obligations until contribution plans exist."}</span></div>
+      )}
+    </article>
+  );
 }
 
 function SpaceDetail({ space, data, locale, onAdd, onInvite, onTripExpense, onCircleOrder, onSettle, onCompleteTurn }: { space: Space; data: DashboardData; locale: Locale; onAdd: () => void; onInvite: () => void; onTripExpense: () => void; onCircleOrder: () => void; onSettle: (settlementId: string) => void; onCompleteTurn: (turnId: string) => void }) {
@@ -602,9 +655,10 @@ function ReportsView({ data, locale, totals }: { data: DashboardData; locale: Lo
   const t = copy[locale];
   const months = Array.from({ length: 12 }, (_, index) => { const date = new Date(); date.setUTCDate(1); date.setUTCMonth(date.getUTCMonth() - (11 - index)); return date; });
   const flow = months.map((date) => { const key = date.toISOString().slice(0, 7); const rows = data.transactions.filter((transaction) => transaction.occurred_at.slice(0, 7) === key); return { date, income: rows.filter((row) => ["income", "contribution"].includes(row.kind)).reduce((sum, row) => sum + row.amount_minor, 0), expense: rows.filter((row) => ["expense", "reimbursement"].includes(row.kind)).reduce((sum, row) => sum + row.amount_minor, 0) }; });
-  const income = data.transactions.filter((row) => ["income", "contribution"].includes(row.kind)).reduce((sum, row) => sum + row.amount_minor, 0); const maximum = Math.max(1, ...flow.flatMap((row) => [row.income, row.expense]));
+  const income = data.transactions.filter((row) => ["income", "contribution"].includes(row.kind)).reduce((sum, row) => sum + row.amount_minor, 0);
+  const maximum = Math.max(0, ...flow.flatMap((row) => [row.income, row.expense]));
   const exportCsv = () => { const rows = [["date", "description", "kind", "amount_minor"], ...data.transactions.map((row) => [row.occurred_at, transactionName(row, locale), row.kind, String(row.amount_minor)])]; const blob = new Blob([rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n")], { type: "text/csv;charset=utf-8" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "wazen-transactions.csv"; link.click(); URL.revokeObjectURL(link.href); };
-  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.reports}</h2><p>{locale === "ar" ? "افهم اتجاه أموالك واتخذ قرارك بثقة" : "Understand your money direction and decide with confidence"}</p></div><button className="secondary-button" onClick={exportCsv}><Download size={16} />{t.export}</button></div><section className="stat-grid compact"><StatCard icon={<TrendingUp />} label={t.income} value={formatMoney(income, "OMR", locale)} accent="green" note={locale === "ar" ? "إجمالي مسجل" : "recorded total"} /><StatCard icon={<TrendingDown />} label={t.expense} value={formatMoney(totals.spend, "OMR", locale)} accent="rose" note={locale === "ar" ? "إجمالي مسجل" : "recorded total"} /><StatCard icon={<WalletCards />} label={t.totalBalance} value={formatMoney(totals.net, "OMR", locale)} accent="navy" note={locale === "ar" ? "عبر كل المحافظ" : "across all wallets"} /><StatCard icon={<ShieldCheck />} label={t.personalReserves} value={formatMoney(totals.reserves, "OMR", locale)} accent="amber" note={t.protected} /></section><article className="panel report-chart"><div className="panel-heading"><div><span className="section-kicker">{locale === "ar" ? "آخر 12 شهراً" : "Last 12 months"}</span><h2>{locale === "ar" ? "التدفق المالي" : "Cash flow"}</h2></div></div><div className="bars-chart">{flow.map((row) => <div className="bar-column" key={row.date.toISOString()}><div className="bar-pair"><i style={{ height: `${Math.max(2, row.income / maximum * 100)}%` }} /><b style={{ height: `${Math.max(2, row.expense / maximum * 100)}%` }} /></div><span>{new Intl.DateTimeFormat(locale === "ar" ? "ar-OM" : "en-US", { month: "short" }).format(row.date)}</span></div>)}</div></article></div>;
+  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.reports}</h2><p>{locale === "ar" ? "افهم اتجاه أموالك واتخذ قرارك بثقة" : "Understand your money direction and decide with confidence"}</p></div><button className="secondary-button" onClick={exportCsv}><Download size={16} />{t.export}</button></div><section className="stat-grid compact"><StatCard icon={<TrendingUp />} label={t.income} value={formatMoney(income, "OMR", locale)} accent="green" note={locale === "ar" ? "إجمالي مسجل" : "recorded total"} /><StatCard icon={<TrendingDown />} label={t.expense} value={formatMoney(totals.spend, "OMR", locale)} accent="rose" note={locale === "ar" ? "إجمالي مسجل" : "recorded total"} /><StatCard icon={<WalletCards />} label={t.totalBalance} value={formatMoney(totals.net, "OMR", locale)} accent="navy" note={locale === "ar" ? "عبر كل المحافظ" : "across all wallets"} /><StatCard icon={<ShieldCheck />} label={t.personalReserves} value={formatMoney(totals.reserves, "OMR", locale)} accent="amber" note={t.protected} /></section><article className="panel report-chart"><div className="panel-heading"><div><span className="section-kicker">{locale === "ar" ? "آخر 12 شهراً" : "Last 12 months"}</span><h2>{locale === "ar" ? "التدفق المالي" : "Cash flow"}</h2></div></div>{maximum > 0 ? <div className="bars-chart">{flow.map((row) => <div className="bar-column" key={row.date.toISOString()}><div className="bar-pair"><i style={{ height: `${row.income / maximum * 100}%` }} /><b style={{ height: `${row.expense / maximum * 100}%` }} /></div><span>{new Intl.DateTimeFormat(locale === "ar" ? "ar-OM" : "en-US", { month: "short" }).format(row.date)}</span></div>)}</div> : <div className="empty-state"><BarChart3 size={22} /><span>{locale === "ar" ? "لا بيانات كافية لرسم التدفق بعد." : "Not enough data to chart cash flow yet."}</span></div>}</article></div>;
 }
 
 function SettingsView({ locale }: { locale: Locale }) {
