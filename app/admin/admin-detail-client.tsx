@@ -365,8 +365,8 @@ export function AdminStaff() {
         </div>
         <p className="modal-note" style={{ marginTop: 16 }}>
           {l(
-            "التهيئة الآمنة: npm run provision:production بعد توفير TURSO_API_TOKEN و TURSO_ORG، ثم /admin/setup.",
-            "Safe bootstrap: npm run provision:production after TURSO_API_TOKEN + TURSO_ORG, then /admin/setup.",
+            "التهيئة الآمنة: أضف DATABASE_URL من Neon ثم npm run admin:bootstrap وافتح /admin/setup.",
+            "Safe bootstrap: set DATABASE_URL from Neon, run npm run admin:bootstrap, open /admin/setup.",
           )}
         </p>
       </section>

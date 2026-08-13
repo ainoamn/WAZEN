@@ -18,7 +18,9 @@ export type ProductionSetupItem = {
 };
 
 export function productionSetupChecklist(): ProductionSetupItem[] {
+  const hasNeon = Boolean(process.env.DATABASE_URL?.trim() || process.env.NEON_DATABASE_URL?.trim());
   const hasTurso = Boolean(process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN);
+  const hasDatabase = hasNeon || hasTurso;
   const hasOrigin = Boolean(process.env.WAZEN_APP_ORIGIN?.trim());
   const hasKeyring = Boolean(process.env.WAZEN_ENCRYPTION_KEYRING?.trim());
   const hasJobSecret = Boolean(process.env.WAZEN_JOB_SECRET?.trim());
@@ -29,9 +31,11 @@ export function productionSetupChecklist(): ProductionSetupItem[] {
   return [
     {
       id: "database",
-      ok: hasTurso,
-      label: "Turso database linked",
-      hint: hasTurso ? undefined : "Set TURSO_DATABASE_URL + TURSO_AUTH_TOKEN or run npm run provision:production",
+      ok: hasDatabase,
+      label: hasNeon ? "Neon Postgres linked" : "Database linked",
+      hint: hasDatabase
+        ? undefined
+        : "Set DATABASE_URL (Neon) or TURSO_DATABASE_URL + TURSO_AUTH_TOKEN",
     },
     {
       id: "app_origin",

@@ -1,5 +1,6 @@
 import { env } from "../lib/cloudflare-workers-stub";
 import { getLibsqlD1 } from "./libsql-d1";
+import { getNeonD1, hasNeonDatabaseUrl } from "./neon-d1";
 import { getNodeSqliteD1 } from "./node-sqlite-d1";
 import {
   isProductionLikeRuntime,
@@ -21,7 +22,9 @@ export function getRawDb(): D1Database {
     return bindings.DB;
   }
 
-  // Vercel must use durable storage. Ephemeral /tmp SQLite is rejected.
+  // Prefer Neon Postgres when configured.
+  if (hasNeonDatabaseUrl()) return getNeonD1();
+  // Legacy Turso/libSQL remains supported.
   if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) return getLibsqlD1();
   if (process.env.WAZEN_USE_NODE_SQLITE === "1" || process.env.NODE_ENV === "development") return getNodeSqliteD1();
 
