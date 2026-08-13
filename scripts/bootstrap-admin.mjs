@@ -59,7 +59,13 @@ async function withNeon() {
     created_by TEXT,
     created_at TEXT NOT NULL
   )`);
-  const existing = await pool.query("SELECT id FROM users WHERE LOWER(email)=LOWER($1) LIMIT 1", [email]);
+  const existing = await pool.query(
+    `SELECT id FROM users WHERE LOWER(email)=LOWER($1) LIMIT 1`,
+    [email],
+  ).catch((error) => {
+    if (error && error.code === "42P01") return { rows: [] };
+    throw error;
+  });
   if (existing.rows.length) {
     await pool.end();
     console.error("A user with this email already exists. Refuse to bootstrap over it.");
