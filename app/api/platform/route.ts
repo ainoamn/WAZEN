@@ -10,7 +10,7 @@ import { countryPack } from "../../../lib/country-packs";
 import { nextReference } from "../../../lib/reference";
 import { encryptSecret, loadKeyring } from "../../../lib/encryption";
 import { configuredAllowedHosts, validateOutboundHttpsUrl } from "../../../lib/outbound";
-import { listAdminUsers, getAdminUserDetail } from "../../../services/admin/users-service";
+import { listAdminUsers, getAdminUserDetail, adminVerifyUserEmail, adminUpdateUserProfile } from "../../../services/admin/users-service";
 import { listAdminTenants, getAdminTenantDetail } from "../../../services/admin/tenants-service";
 import {
   adminUpdateSubscription,
@@ -325,7 +325,8 @@ export async function GET(request: Request) {
         if (userId) {
           const detail = await getAdminUserDetail(db, userId);
           if (!detail) throw new ApiError(404, "USER_NOT_FOUND");
-          return Response.json({ user, role, detail }, { headers: responseHeaders });
+          const plans = await listAdminPlans(db);
+          return Response.json({ user, role, detail, plans }, { headers: responseHeaders });
         }
         const usersPage = await listAdminUsers(db, {
           q: url.searchParams.get("q") ?? undefined,
@@ -577,7 +578,7 @@ export async function POST(request: Request) {
     }
 
     const actorRole = await roleOf(db, user.id);
-    if (["setUserStatus", "setRole", "setPaymentStatus", "createCoupon", "revokeUserSessions", "updateGateway", "upsertPlan", "adminUpdateSubscription"].includes(action) && user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
+    if (["setUserStatus", "setRole", "setPaymentStatus", "createCoupon", "revokeUserSessions", "updateGateway", "upsertPlan", "adminUpdateSubscription", "adminVerifyEmail", "adminUpdateUser"].includes(action) && user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
     if (action === "setUserStatus") {
       assertPlatformPermission(actorRole, "users:status");
       const targetUserId = String(payload.userId ?? "");
@@ -669,12 +670,22 @@ export async function POST(request: Request) {
       return respond({ ok: true, plans: result.plans, gateways: await listGatewaysWithPlans(db) });
     } else if (action === "adminUpdateSubscription") {
       assertPlatformPermission(actorRole, "plans:write");
+      const periodEndRaw = payload.periodEnd;
+      let periodEnd: string | undefined;
+      if (typeof periodEndRaw === "string" && periodEndRaw.trim()) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(periodEndRaw.trim())) {
+          periodEnd = new Date(`${periodEndRaw.trim()}T23:59:59.000Z`).toISOString();
+        } else {
+          const parsedDate = new Date(periodEndRaw);
+          if (Number.isNaN(parsedDate.getTime())) throw new ApiError(400, "INVALID_SUBSCRIPTION_UPDATE");
+          periodEnd = parsedDate.toISOString();
+        }
+      }
       const parsed = z.object({
         userId: z.string().min(1).max(120),
         planId: z.string().min(1).max(50).optional(),
         status: z.enum(["active", "trialing", "pending_payment", "suspended", "cancelled"]).optional(),
         billingCycle: z.enum(["monthly", "annual"]).optional(),
-        periodEnd: z.iso.datetime().optional(),
         discountPercent: z.coerce.number().min(0).max(100).optional(),
         discountFixedMinor: z.coerce.number().int().min(0).max(10_000_000).optional(),
         discountLabel: z.string().max(120).nullable().optional(),
@@ -683,11 +694,37 @@ export async function POST(request: Request) {
         pause: z.boolean().optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_SUBSCRIPTION_UPDATE");
-      const billing = await adminUpdateSubscription(db, parsed.data);
+      if (!parsed.data.planId) {
+        const existing = await db.prepare("SELECT id FROM subscriptions WHERE user_id=? LIMIT 1").bind(parsed.data.userId).first();
+        if (!existing) throw new ApiError(400, "PLAN_REQUIRED");
+      }
+      const billing = await adminUpdateSubscription(db, { ...parsed.data, periodEnd });
       if (!billing) throw new ApiError(404, "SUBSCRIPTION_NOT_FOUND");
-      await writeAudit(db, { userId: user.id, action: "subscription.admin_updated", entityType: "user", entityId: parsed.data.userId, metadata: parsed.data });
+      await writeAudit(db, { userId: user.id, action: "subscription.admin_updated", entityType: "user", entityId: parsed.data.userId, metadata: { ...parsed.data, periodEnd: periodEnd ?? null } });
       const detail = await getAdminUserDetail(db, parsed.data.userId);
       return respond({ ok: true, detail, billing });
+    } else if (action === "adminVerifyEmail") {
+      assertPlatformPermission(actorRole, "users:status");
+      const targetUserId = String(payload.userId ?? "");
+      if (!targetUserId) throw new ApiError(400, "INVALID_USER");
+      const result = await adminVerifyUserEmail(db, targetUserId, user.id);
+      if (!result.ok) throw new ApiError(404, result.reason);
+      const detail = await getAdminUserDetail(db, targetUserId);
+      return respond({ ok: true, detail, verifiedAt: result.verifiedAt, alreadyVerified: result.alreadyVerified });
+    } else if (action === "adminUpdateUser") {
+      assertPlatformPermission(actorRole, "users:status");
+      const parsed = z.object({
+        userId: z.string().min(1).max(120),
+        displayName: z.string().trim().min(2).max(120).optional(),
+        status: z.enum(["active", "suspended", "closed"]).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_USER_UPDATE");
+      if (parsed.data.userId === user.id && parsed.data.status && parsed.data.status !== "active") {
+        throw new ApiError(400, "CANNOT_SUSPEND_SELF");
+      }
+      const detail = await adminUpdateUserProfile(db, { ...parsed.data, actorUserId: user.id });
+      if (!detail) throw new ApiError(404, "USER_NOT_FOUND");
+      return respond({ ok: true, detail });
     } else if (action === "requestDataExport" || action === "requestDeletion") {
       const type = action === "requestDataExport" ? "export" : "deletion";
       const requestId = id(); await db.prepare("INSERT INTO data_requests (id,user_id,type,status,requested_at) VALUES (?,?,?,'pending',?)").bind(requestId, user.id, type, isoNow()).run();
@@ -697,7 +734,7 @@ export async function POST(request: Request) {
       throw new ApiError(400, "UNSUPPORTED_ACTION");
     }
     const scope = action === "setPaymentStatus" ? "payments"
-      : ["setUserStatus", "revokeUserSessions", "adminUpdateSubscription"].includes(action) ? "users"
+      : ["setUserStatus", "revokeUserSessions", "adminUpdateSubscription", "adminVerifyEmail", "adminUpdateUser"].includes(action) ? "users"
       : ["updateGateway"].includes(action) ? "gateways"
       : ["upsertPlan"].includes(action) ? "plans"
       : "overview";

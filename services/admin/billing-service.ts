@@ -351,50 +351,96 @@ export async function adminUpdateSubscription(
     pause?: boolean;
   },
 ) {
+  await ensureSubscriptionAdminColumns(db);
   const now = new Date().toISOString();
+  const user = await db.prepare("SELECT id FROM users WHERE id=?").bind(input.userId).first();
+  if (!user) return null;
+
   const current = await db
     .prepare("SELECT * FROM subscriptions WHERE user_id=? ORDER BY created_at DESC LIMIT 1")
     .bind(input.userId)
     .first<Record<string, unknown>>();
-  if (!current) return null;
 
-  let status = input.status ?? String(current.status);
-  let pausedAt = current.paused_at ?? null;
+  const planId = input.planId ?? (current ? String(current.plan_id) : "starter");
+  const plan = await db.prepare("SELECT id FROM plans WHERE id=?").bind(planId).first();
+  if (!plan) return null;
+
+  let status = input.status ?? (current ? String(current.status) : "active");
+  let pausedAt: string | null = current ? ((current.paused_at as string | null) ?? null) : null;
   if (input.pause === true) {
     status = "suspended";
     pausedAt = now;
-  } else if (input.pause === false && String(current.status) === "suspended") {
-    status = "active";
+  } else if (input.pause === false) {
+    status = input.status ?? "active";
     pausedAt = null;
   }
 
-  if (input.planId) {
-    const plan = await db.prepare("SELECT id FROM plans WHERE id=?").bind(input.planId).first();
-    if (!plan) return null;
-  }
+  const billingCycle = input.billingCycle ?? (current ? String(current.billing_cycle) : "monthly");
+  const periodEnd =
+    input.periodEnd ??
+    (current ? String(current.current_period_end) : new Date(Date.now() + 30 * 86_400_000).toISOString());
+  const adminNote = input.adminNote === undefined ? (current?.admin_note ?? null) : input.adminNote;
+  const discountPercent =
+    input.discountPercent === undefined
+      ? Number(current?.discount_percent ?? 0)
+      : Math.max(0, Math.min(100, input.discountPercent));
+  const discountFixedMinor =
+    input.discountFixedMinor === undefined
+      ? Number(current?.discount_fixed_minor ?? 0)
+      : Math.max(0, input.discountFixedMinor);
+  const discountLabel = input.discountLabel === undefined ? (current?.discount_label ?? null) : input.discountLabel;
+  const gatewayId = input.gatewayId === undefined ? (current?.gateway_id ?? null) : input.gatewayId;
 
-  await db
-    .prepare(
-      `UPDATE subscriptions SET
-        plan_id=?, status=?, billing_cycle=?, current_period_end=?,
-        paused_at=?, admin_note=?, discount_percent=?, discount_fixed_minor=?, discount_label=?, gateway_id=?, updated_at=?
-       WHERE id=?`,
-    )
-    .bind(
-      input.planId ?? current.plan_id,
-      status,
-      input.billingCycle ?? current.billing_cycle,
-      input.periodEnd ?? current.current_period_end,
-      pausedAt,
-      input.adminNote === undefined ? current.admin_note ?? null : input.adminNote,
-      input.discountPercent === undefined ? Number(current.discount_percent ?? 0) : Math.max(0, Math.min(100, input.discountPercent)),
-      input.discountFixedMinor === undefined ? Number(current.discount_fixed_minor ?? 0) : Math.max(0, input.discountFixedMinor),
-      input.discountLabel === undefined ? current.discount_label ?? null : input.discountLabel,
-      input.gatewayId === undefined ? current.gateway_id ?? null : input.gatewayId,
-      now,
-      current.id,
-    )
-    .run();
+  if (!current) {
+    await db
+      .prepare(
+        `INSERT INTO subscriptions (
+          id,user_id,plan_id,status,billing_cycle,current_period_start,current_period_end,cancel_at_period_end,
+          paused_at,admin_note,discount_percent,discount_fixed_minor,discount_label,gateway_id,created_at,updated_at
+        ) VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?)`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        input.userId,
+        planId,
+        status,
+        billingCycle,
+        now,
+        periodEnd,
+        pausedAt,
+        adminNote,
+        discountPercent,
+        discountFixedMinor,
+        discountLabel,
+        gatewayId,
+        now,
+        now,
+      )
+      .run();
+  } else {
+    await db
+      .prepare(
+        `UPDATE subscriptions SET
+          plan_id=?, status=?, billing_cycle=?, current_period_end=?,
+          paused_at=?, admin_note=?, discount_percent=?, discount_fixed_minor=?, discount_label=?, gateway_id=?, updated_at=?
+         WHERE id=?`,
+      )
+      .bind(
+        planId,
+        status,
+        billingCycle,
+        periodEnd,
+        pausedAt,
+        adminNote,
+        discountPercent,
+        discountFixedMinor,
+        discountLabel,
+        gatewayId,
+        now,
+        current.id,
+      )
+      .run();
+  }
 
   return getUserBillingHistory(db, input.userId);
 }

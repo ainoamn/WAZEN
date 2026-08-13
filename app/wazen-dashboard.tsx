@@ -2,6 +2,7 @@
 
 import OmrSymbol from "../components/brand/OmrSymbol";
 import { WazenIcon } from "../components/brand/WazenLogo";
+import WazenPageLoader from "../components/brand/WazenPageLoader";
 import { formatMoneyMinor } from "../lib/money";
 import {
   ArrowDownLeft,
@@ -912,5 +913,11 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 function Empty({ locale }: { locale: Locale }) { return <div className="empty-state"><ReceiptText size={24} /><span>{copy[locale].empty}</span></div>; }
-function LoadingScreen({ locale }: { locale: Locale }) { return <div className="loading-screen"><div className="loading-brand"><WazenIcon className="h-10 w-12" /><strong>{locale === "ar" ? "وازن" : "WAZEN"}</strong></div><div className="loading-pulse"><i /><i /><i /></div></div>; }
+function LoadingScreen({ locale }: { locale: Locale }) {
+  return (
+    <WazenPageLoader
+      label={locale === "ar" ? "جاري تحميل لوحة وازن…" : "Loading Wazen…"}
+    />
+  );
+}
 function ErrorScreen({ message, retry }: { message: string; retry: () => void }) { return <div className="error-screen"><CircleDollarSign size={40} /><h1>وازن</h1><p>{message}</p><button className="primary-button" onClick={retry}>Try again</button></div>; }

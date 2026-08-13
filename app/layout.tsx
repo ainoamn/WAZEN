@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans_Arabic, Inter } from "next/font/google";
 import { headers } from "next/headers";
+import NavigationProgress from "../components/brand/NavigationProgress";
 import "./globals.css";
 import "./commercial.css";
 
@@ -69,7 +70,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ar" dir="rtl" className={`${plexArabic.variable} ${inter.variable}`}>
-      <body className={plexArabic.className}>{children}</body>
+      <body className={plexArabic.className}>
+        <NavigationProgress />
+        {children}
+      </body>
     </html>
   );
 }

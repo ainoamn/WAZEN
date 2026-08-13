@@ -71,10 +71,75 @@ export async function listAdminUsers(db: D1Database, input: AdminUserListQuery =
   };
 }
 
+export async function adminVerifyUserEmail(db: D1Database, userId: string, actorUserId: string) {
+  const now = new Date().toISOString();
+  const credential = await db
+    .prepare("SELECT user_id, email_verified_at FROM auth_credentials WHERE user_id=?")
+    .bind(userId)
+    .first<{ user_id: string; email_verified_at: string | null }>();
+  if (!credential) return { ok: false as const, reason: "NO_CREDENTIALS" as const };
+  if (credential.email_verified_at) return { ok: true as const, alreadyVerified: true as const, verifiedAt: credential.email_verified_at };
+
+  await db.batch([
+    db.prepare("UPDATE auth_credentials SET email_verified_at=?, updated_at=? WHERE user_id=?").bind(now, now, userId),
+    db.prepare("UPDATE email_verification_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL").bind(now, userId),
+  ]);
+  const { writeAudit } = await import("../../lib/audit");
+  await writeAudit(db, {
+    userId: actorUserId,
+    action: "admin.email_verified_manual",
+    entityType: "user",
+    entityId: userId,
+    metadata: { method: "manual" },
+    createdAt: now,
+  });
+  return { ok: true as const, alreadyVerified: false as const, verifiedAt: now };
+}
+
+export async function adminUpdateUserProfile(
+  db: D1Database,
+  input: { userId: string; displayName?: string; status?: "active" | "suspended" | "closed"; actorUserId: string },
+) {
+  const now = new Date().toISOString();
+  const user = await db.prepare("SELECT id, display_name FROM users WHERE id=?").bind(input.userId).first<{ id: string; display_name: string }>();
+  if (!user) return null;
+
+  if (input.displayName && input.displayName.trim().length >= 2) {
+    await db.prepare("UPDATE users SET display_name=? WHERE id=?").bind(input.displayName.trim().slice(0, 120), input.userId).run();
+  }
+
+  if (input.status) {
+    const existing = await db.prepare("SELECT user_id FROM customer_profiles WHERE user_id=?").bind(input.userId).first();
+    if (existing) {
+      await db.prepare("UPDATE customer_profiles SET status=? WHERE user_id=?").bind(input.status, input.userId).run();
+    } else {
+      await db
+        .prepare("INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,?,?,?,?)")
+        .bind(input.userId, input.status, "OM", now, now)
+        .run();
+    }
+    if (input.status !== "active") {
+      await db.prepare("DELETE FROM auth_sessions WHERE user_id=?").bind(input.userId).run();
+    }
+  }
+
+  const { writeAudit } = await import("../../lib/audit");
+  await writeAudit(db, {
+    userId: input.actorUserId,
+    action: "admin.user_profile_updated",
+    entityType: "user",
+    entityId: input.userId,
+    metadata: { displayName: input.displayName ?? null, status: input.status ?? null },
+    createdAt: now,
+  });
+  return getAdminUserDetail(db, input.userId);
+}
+
 export async function getAdminUserDetail(db: D1Database, userId: string) {
   const profile = await db.prepare(`SELECT u.id AS user_id, u.email, u.display_name, u.locale, u.currency, u.created_at,
       COALESCE(p.status,'active') AS status, p.country, p.phone, p.last_seen_at,
       COALESCE(r.role,'customer') AS role, r.permissions_json,
+      c.email_verified_at,
       s.id AS subscription_id, s.status AS subscription_status, s.billing_cycle,
       s.current_period_start, s.current_period_end, s.paused_at, s.admin_note,
       s.discount_percent, s.discount_fixed_minor, s.discount_label, s.gateway_id,
@@ -84,6 +149,7 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
     FROM users u
     LEFT JOIN customer_profiles p ON p.user_id=u.id
     LEFT JOIN platform_roles r ON r.user_id=u.id
+    LEFT JOIN auth_credentials c ON c.user_id=u.id
     LEFT JOIN subscriptions s ON s.user_id=u.id
     LEFT JOIN plans pl ON pl.id=s.plan_id
     LEFT JOIN totp_credentials t ON t.user_id=u.id

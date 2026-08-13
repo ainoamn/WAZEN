@@ -4,6 +4,7 @@ import { BarChart3, Building2, CreditCard, FileText, Globe2, LayoutDashboard, Me
 import Link from "next/link";
 import { ReactNode, useEffect, useState } from "react";
 import WazenLogo, { WazenIcon } from "../components/brand/WazenLogo";
+import WazenPageLoader from "../components/brand/WazenPageLoader";
 import { formatMoneyMinor } from "../lib/money";
 
 export type CommerceLocale = "ar" | "en";
@@ -93,8 +94,8 @@ export function AdminShell({ active, locale, setLocale, children }: { active: st
   </main>;
 }
 
-export function PageLoader({ label = "WAZEN" }: { label?: string }) {
-  return <div className="commerce-loader"><WazenIcon className="h-10 w-12" /><b>{label}</b><i /></div>;
+export function PageLoader({ label = "جاري التحميل…" }: { label?: string }) {
+  return <WazenPageLoader label={label} />;
 }
 
 export function ErrorCard({ message, retry }: { message: string; retry?: () => void }) {
