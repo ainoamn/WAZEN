@@ -22,6 +22,34 @@
 html { background: var(--canvas); overflow-x: clip; }
 body { margin: 0; background: var(--canvas); color: var(--ink); font-family: var(--font-cairo), "Segoe UI", Tahoma, Arial, sans-serif; -webkit-font-smoothing: antialiased; overflow-x: clip; min-width: 0; }
 img, svg, video, canvas { max-width: 100%; height: auto; }
+img.omr-symbol, .omr-symbol {
+  max-width: 22px !important;
+  max-height: 18px !important;
+  width: auto !important;
+  height: auto !important;
+  object-fit: contain !important;
+  flex-shrink: 0 !important;
+  display: inline-block !important;
+  vertical-align: middle;
+}
+.omr-amount {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.28em;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.omr-amount .omr-code {
+  font-size: 0.72em;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: inherit;
+  opacity: 0.85;
+}
+.money-input .omr-symbol {
+  height: 14px !important;
+  max-width: 18px !important;
+}
 .main-shell, .page-content, .topbar { min-width: 0; }
 button, input, select { font: inherit; }
 button { color: inherit; }

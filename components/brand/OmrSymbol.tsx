@@ -19,13 +19,19 @@ const SRC: Record<OmrSymbolVariant, string> = {
   "light-white": "/brand/currency/omr-light-white.png",
 };
 
-/** Official Omani Rial (ر.ع.) currency mark. */
+/**
+ * Official Omani Rial mark — always capped to a small glyph size.
+ * (Global `img { max-width:100% }` must not enlarge it.)
+ */
 export default function OmrSymbol({
   variant = "medium",
-  className = "h-4 w-auto",
+  size = 14,
+  className = "",
   title = "ر.ع.",
 }: {
   variant?: OmrSymbolVariant;
+  /** Pixel height of the glyph (width scales with aspect). */
+  size?: number;
   className?: string;
   title?: string;
 }) {
@@ -35,29 +41,41 @@ export default function OmrSymbol({
       src={SRC[variant]}
       alt={title}
       title={title}
-      className={`omr-symbol inline-block align-middle ${className}`}
-      width={64}
-      height={64}
+      className={`omr-symbol ${className}`}
+      width={size}
+      height={size}
+      style={{
+        width: "auto",
+        height: `${size}px`,
+        maxWidth: `${Math.round(size * 1.35)}px`,
+        maxHeight: `${size}px`,
+        objectFit: "contain",
+        display: "inline-block",
+        verticalAlign: "middle",
+        flexShrink: 0,
+      }}
     />
   );
 }
 
-/** Amount with the official Omani Rial mark. */
+/** Compact amount label using ر.ع. text (safe for dense UI). */
 export function OmrAmount({
   children,
   className = "",
-  symbolClassName = "h-[0.95em] w-auto",
-  variant = "medium",
+  showMark = false,
+  markSize = 12,
 }: {
   children: ReactNode;
   className?: string;
-  symbolClassName?: string;
-  variant?: OmrSymbolVariant;
+  /** When true, shows the official PNG mark at a tiny fixed size. */
+  showMark?: boolean;
+  markSize?: number;
 }) {
   return (
-    <span className={`omr-amount inline-flex items-center gap-[0.28em] ${className}`}>
-      <OmrSymbol variant={variant} className={symbolClassName} />
+    <span className={`omr-amount ${className}`}>
+      {showMark ? <OmrSymbol size={markSize} /> : null}
       <span>{children}</span>
+      <span className="omr-code" aria-hidden="true">ر.ع.</span>
     </span>
   );
 }

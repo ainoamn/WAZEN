@@ -25,7 +25,7 @@ export default function LandingPage() {
           <section className="hero-wallets"><h3>{l("محافظي", "My wallets")}</h3>{[[Plane,l("رحلة العائلة", "Family trip"),"386.000"],[House,l("ميزانية المنزل", "Home budget"),"124.700"],[Repeat2,l("جمعية الإخوة", "Siblings circle"),"210.000"]].map(([Icon,name,value]) => { const C = Icon as typeof Plane; return <div key={String(name)}><i><C size={18}/></i><span><b>{String(name)}</b><small>{l("نشطة", "Active")}</small></span><strong><OmrAmount>{String(value)}</OmrAmount></strong></div>; })}</section>
           <div className="hero-separation"><ShieldCheck size={18}/><span>{l("الفوائض الشخصية محمية", "Personal reserves protected")}</span><b><OmrAmount>6.400</OmrAmount></b></div>
         </div>
-        <div className="hero-float"><Check size={18}/><span><b>{l("تمت مساهمة جديدة", "Contribution received")}</b><small><OmrAmount symbolClassName="h-3 w-auto">5.000</OmrAmount> · {l("الآن", "now")}</small></span></div>
+        <div className="hero-float"><Check size={18}/><span><b>{l("تمت مساهمة جديدة", "Contribution received")}</b><small><OmrAmount>5.000</OmrAmount> · {l("الآن", "now")}</small></span></div>
       </div>
     </section>
 
