@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { WazenIcon } from "../components/brand/WazenLogo";
 import { Brand, useCommerceLocale } from "./commercial-kit";
 
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
@@ -35,5 +36,5 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       {error && <p className="auth-error" role="alert">{error}</p>}<button className="auth-submit" disabled={saving}>{saving ? l("جارٍ التحقق…", "Checking…") : mode === "login" ? l("تسجيل الدخول", "Sign in") : l("إنشاء الحساب", "Create account")}</button>
     </form>
     <footer>{mode === "login" ? <>{l("ليس لديك حساب؟", "No account?")} <Link href="/register">{l("أنشئ حساباً", "Create one")}</Link></> : <>{l("لديك حساب؟", "Already registered?")} <Link href="/login">{l("سجّل الدخول", "Sign in")}</Link></>}</footer>
-  </section><aside><span>و</span><h2>{l("وضوح مالي، من أول ريال.", "Financial clarity from day one.")}</h2><p>{l("المحافظ الشخصية والمنزلية والجمعيات والرحلات في نظام واحد.", "Personal, household, circle and trip wallets in one system.")}</p></aside></main>;
+  </section><aside><span className="brand-glyph"><WazenIcon className="h-10 w-auto" /></span><h2>{l("وضوح مالي، من أول ريال.", "Financial clarity from day one.")}</h2><p>{l("المحافظ الشخصية والمنزلية والجمعيات والرحلات في نظام واحد.", "Personal, household, circle and trip wallets in one system.")}</p></aside></main>;
 }
