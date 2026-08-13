@@ -1,5 +1,9 @@
-import { Pool, type QueryResultRow } from "@neondatabase/serverless";
+import { neonConfig, Pool, type QueryResultRow } from "@neondatabase/serverless";
+import ws from "ws";
 import { isSkippedSqliteTrigger, translateSqliteToPostgres } from "./sql-translate";
+
+// Vercel/Node serverless needs an explicit WebSocket constructor for Neon Pool.
+neonConfig.webSocketConstructor = ws;
 
 type D1Result<T> = {
   results: T[];

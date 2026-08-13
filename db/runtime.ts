@@ -413,6 +413,27 @@ async function initializeSchema(db: D1Database) {
       encrypted_config TEXT NOT NULL, key_version TEXT NOT NULL, updated_by TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT, updated_at TEXT NOT NULL,
       PRIMARY KEY(tenant_id,provider)
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS payment_gateways (
+      id TEXT PRIMARY KEY,
+      provider_key TEXT NOT NULL UNIQUE,
+      name_ar TEXT NOT NULL,
+      name_en TEXT NOT NULL,
+      scope TEXT NOT NULL DEFAULT 'local',
+      countries_json TEXT NOT NULL DEFAULT '[]',
+      methods_json TEXT NOT NULL DEFAULT '[]',
+      is_enabled INTEGER NOT NULL DEFAULT 0,
+      is_test_mode INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      config_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS plan_payment_gateways (
+      plan_id TEXT NOT NULL,
+      gateway_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY(plan_id, gateway_id)
+    )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS financial_operation_claims (
       operation_type TEXT NOT NULL, resource_id TEXT NOT NULL, idempotency_key TEXT NOT NULL, created_at TEXT NOT NULL,
       PRIMARY KEY(operation_type,resource_id)
@@ -456,6 +477,9 @@ async function initializeSchema(db: D1Database) {
     try { await db.prepare("ALTER TABLE auth_sessions ADD COLUMN csrf_token_hash TEXT").run(); }
     catch (error) { const refreshed = await db.prepare("PRAGMA table_info(auth_sessions)").all<{ name: string }>(); if (!refreshed.results.some((column) => column.name === "csrf_token_hash")) throw error; }
   }
+  const { ensureSubscriptionAdminColumns, ensurePaymentGateways } = await import("../services/admin/billing-service");
+  await ensureSubscriptionAdminColumns(db);
+  await ensurePaymentGateways(db);
   await db.batch([
     db.prepare(`INSERT OR IGNORE INTO tenants (id,name,country,currency,locale,timezone,created_by,created_at)
       SELECT 'tenant:'||id,display_name,'OM',currency,locale,'Asia/Muscat',id,created_at FROM users`),

@@ -15,13 +15,38 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     event.preventDefault(); setError(""); setSaving(true);
     try {
       const response = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: mode, displayName: mode === "register" ? displayName : undefined, email, password, totpCode: totpCode || undefined }) });
-      const result = await response.json() as { error?: string; verificationRequired?: boolean }; if (!response.ok) throw new Error(result.error ?? "AUTH_FAILED");
-      if (result.verificationRequired) { router.push(`/verify-email?sent=1&email=${encodeURIComponent(email)}`); return; }
+      const result = await response.json() as {
+        error?: string;
+        verificationRequired?: boolean;
+        emailDelivery?: "queued" | "not_configured";
+        verifyUrl?: string;
+      };
+      if (!response.ok) throw new Error(result.error ?? "AUTH_FAILED");
+      if (result.verificationRequired) {
+        if (result.verifyUrl?.startsWith("/verify-email")) {
+          router.push(result.verifyUrl);
+          return;
+        }
+        router.push(`/verify-email?sent=1&email=${encodeURIComponent(email)}&delivery=${result.emailDelivery === "queued" ? "queued" : "deferred"}`);
+        return;
+      }
       const requested = new URLSearchParams(window.location.search).get("next");
       router.push(requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/dashboard");
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : "AUTH_FAILED"; if (code === "TOTP_REQUIRED") setTotpRequired(true);
-      setError(code === "EMAIL_ALREADY_USED" ? l("البريد مستخدم بالفعل", "Email is already in use") : code === "EMAIL_NOT_VERIFIED" ? l("يجب تأكيد البريد أولاً.", "Verify your email first.") : code === "DATABASE_NOT_CONFIGURED" ? l("قاعدة البيانات الإنتاجية غير مهيأة", "Production database is not configured") : l("تعذر تسجيل الدخول. تحقق من البيانات.", "Unable to sign in. Check your details."));
+      setError(
+        code === "EMAIL_ALREADY_USED"
+          ? l("البريد مستخدم بالفعل", "Email is already in use")
+          : code === "EMAIL_NOT_VERIFIED"
+            ? l("يجب تأكيد البريد أولاً.", "Verify your email first.")
+            : code === "DATABASE_NOT_CONFIGURED"
+              ? l("قاعدة البيانات الإنتاجية غير مهيأة", "Production database is not configured")
+              : code === "APP_ORIGIN_INVALID"
+                ? l("إعداد عنوان الموقع غير صالح. راجع WAZEN_APP_ORIGIN.", "App origin is misconfigured. Check WAZEN_APP_ORIGIN.")
+                : mode === "register"
+                  ? l("تعذر إنشاء الحساب. تحقق من البيانات وحاول مرة أخرى.", "Could not create the account. Check your details and try again.")
+                  : l("تعذر تسجيل الدخول. تحقق من البيانات.", "Unable to sign in. Check your details."),
+      );
     } finally { setSaving(false); }
   }
   return <main className="auth-page"><section className="auth-panel">

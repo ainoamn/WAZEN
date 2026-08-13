@@ -3,41 +3,74 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { Search, ShieldCheck, Users } from "lucide-react";
-import { AdminShell, ErrorCard, PageLoader, Status, useCommerceLocale } from "../commercial-kit";
+import { CreditCard, Search, ShieldCheck, Users, WalletCards } from "lucide-react";
+import { AdminShell, ErrorCard, money, PageLoader, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 
 type Row = Record<string, unknown>;
+
+type UserDetail = {
+  profile: Row;
+  sessions: Row[];
+  apiKeys: Row[];
+  spaces: Row[];
+  tenants: Row[];
+  audit: Row[];
+  billing?: {
+    subscriptions: Row[];
+    invoices: Row[];
+    payments: Row[];
+    couponRedemptions: Row[];
+  };
+};
 
 export function AdminUserDetail() {
   const { locale, setLocale, l } = useCommerceLocale();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const userId = params.id;
-  const [detail, setDetail] = useState<{
-    profile: Row;
-    sessions: Row[];
-    apiKeys: Row[];
-    spaces: Row[];
-    tenants: Row[];
-    audit: Row[];
-  } | null>(null);
+  const [detail, setDetail] = useState<UserDetail | null>(null);
+  const [plans, setPlans] = useState<Row[]>([]);
   const [error, setError] = useState("");
   const [reason, setReason] = useState("");
   const [working, setWorking] = useState(false);
+  const [planId, setPlanId] = useState("");
+  const [status, setStatus] = useState("active");
+  const [billingCycle, setBillingCycle] = useState("monthly");
+  const [periodEnd, setPeriodEnd] = useState("");
+  const [discountPercent, setDiscountPercent] = useState("0");
+  const [discountFixed, setDiscountFixed] = useState("0");
+  const [discountLabel, setDiscountLabel] = useState("");
+  const [adminNote, setAdminNote] = useState("");
 
   const load = useCallback(() => {
-    fetch(`/api/platform?view=admin&scope=users&userId=${encodeURIComponent(userId)}`, { cache: "no-store" })
-      .then(async (response) => {
-        if (response.status === 401) {
+    Promise.all([
+      fetch(`/api/platform?view=admin&scope=users&userId=${encodeURIComponent(userId)}`, { cache: "no-store" }),
+      fetch("/api/platform?view=admin&scope=plans", { cache: "no-store" }),
+    ])
+      .then(async ([userRes, plansRes]) => {
+        if (userRes.status === 401) {
           router.push(`/login?next=${encodeURIComponent(`/admin/users/${userId}`)}`);
           throw new Error("AUTH");
         }
-        const result = await response.json() as { error?: string; detail?: typeof detail };
-        if (!response.ok) throw new Error(result.error ?? "LOAD");
-        return result.detail!;
+        const userResult = await userRes.json() as { error?: string; detail?: UserDetail };
+        if (!userRes.ok) throw new Error(userResult.error ?? "LOAD");
+        const plansResult = await plansRes.json() as { plans?: Row[] };
+        if (plansRes.ok) setPlans(plansResult.plans ?? []);
+        return userResult.detail!;
       })
-      .then(setDetail)
+      .then((next) => {
+        setDetail(next);
+        const profile = next.profile;
+        setPlanId(String(profile.plan_id ?? ""));
+        setStatus(String(profile.subscription_status ?? "active"));
+        setBillingCycle(String(profile.billing_cycle ?? "monthly"));
+        setPeriodEnd(profile.current_period_end ? String(profile.current_period_end).slice(0, 10) : "");
+        setDiscountPercent(String(profile.discount_percent ?? 0));
+        setDiscountFixed(String(profile.discount_fixed_minor ?? 0));
+        setDiscountLabel(String(profile.discount_label ?? ""));
+        setAdminNote(String(profile.admin_note ?? ""));
+      })
       .catch((caught: Error) => setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD"));
   }, [router, userId]);
 
@@ -63,11 +96,46 @@ export function AdminUserDetail() {
     }
   };
 
+  const saveSubscription = async (event: FormEvent, pause?: boolean) => {
+    event.preventDefault();
+    setWorking(true);
+    try {
+      const response = await apiFetch("/api/platform", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "adminUpdateSubscription",
+          idempotencyKey: crypto.randomUUID(),
+          userId,
+          planId: planId || undefined,
+          status: pause === undefined ? status : undefined,
+          billingCycle,
+          periodEnd: periodEnd ? new Date(`${periodEnd}T23:59:59.000Z`).toISOString() : undefined,
+          discountPercent: Number(discountPercent),
+          discountFixedMinor: Number(discountFixed),
+          discountLabel: discountLabel || null,
+          adminNote: adminNote || null,
+          pause,
+        }),
+      });
+      const result = await response.json() as { error?: string; detail?: UserDetail };
+      if (!response.ok) throw new Error(result.error ?? "SAVE_FAILED");
+      if (result.detail) setDetail(result.detail);
+      else void load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "SAVE_FAILED");
+    } finally {
+      setWorking(false);
+    }
+  };
+
   if (error && !detail) {
     return <AdminShell active="users" locale={locale} setLocale={setLocale}><ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} /></AdminShell>;
   }
   if (!detail) return <PageLoader />;
   const profile = detail.profile;
+  const billing = detail.billing;
+  const fmt = (value: unknown) => value ? new Date(String(value)).toLocaleString(locale === "ar" ? "ar" : "en-GB") : "—";
 
   return (
     <AdminShell active="users" locale={locale} setLocale={setLocale}>
@@ -75,16 +143,89 @@ export function AdminUserDetail() {
         <div>
           <small><Link href="/admin/users">{l("المستخدمون", "Users")}</Link> / {String(profile.email)}</small>
           <h1>{String(profile.display_name)}</h1>
-          <p>{l("الحساب والجلسات ومفاتيح API والمستأجرون دون انتحال هوية.", "Account, sessions, API keys and tenants — no silent impersonation.")}</p>
+          <p>{l("الاشتراك والخصومات والمعاملات والجلسات.", "Subscription, discounts, transactions and sessions.")}</p>
         </div>
         <Status value={String(profile.status ?? "active")} locale={locale} />
       </div>
 
       <div className="admin-kpis">
-        <article><i><Users /></i><span>{l("الدور", "Role")}</span><b>{String(profile.role)}</b><small>{String(profile.plan_name_ar ?? profile.plan_name_en ?? "—")}</small></article>
-        <article><i><ShieldCheck /></i><span>TOTP</span><b>{Number(profile.totp_enabled) ? l("مفعّل", "On") : l("غير مفعّل", "Off")}</b><small>{String(profile.country ?? "—")}</small></article>
-        <article><i><Users /></i><span>{l("جلسات", "Sessions")}</span><b>{detail.sessions.length}</b><small>{l("نشطة/مسجّلة", "recorded")}</small></article>
-        <article><i><Users /></i><span>{l("مفاتيح API", "API keys")}</span><b>{detail.apiKeys.length}</b><small>{l("بما فيها الملغاة", "including revoked")}</small></article>
+        <article><i><WalletCards /></i><span>{l("الباقة", "Plan")}</span><b>{String(profile.plan_name_ar ?? profile.plan_name_en ?? "—")}</b><small><Status value={String(profile.subscription_status ?? "pending")} locale={locale} /></small></article>
+        <article><i><CreditCard /></i><span>{l("ينتهي", "Ends")}</span><b>{profile.current_period_end ? new Date(String(profile.current_period_end)).toLocaleDateString(locale === "ar" ? "ar" : "en-GB") : "—"}</b><small>{String(profile.billing_cycle ?? "—")}</small></article>
+        <article><i><Users /></i><span>{l("خصم خاص", "Special discount")}</span><b>{Number(profile.discount_percent ?? 0)}% + {money(Number(profile.discount_fixed_minor ?? 0), locale)}</b><small>{String(profile.discount_label ?? "—")}</small></article>
+        <article><i><ShieldCheck /></i><span>TOTP</span><b>{Number(profile.totp_enabled) ? l("مفعّل", "On") : l("غير مفعّل", "Off")}</b><small>{String(profile.role)}</small></article>
+      </div>
+
+      <section className="admin-panel">
+        <div className="admin-panel-head">
+          <div>
+            <h2>{l("التحكم بالاشتراك", "Subscription controls")}</h2>
+            <p>{l("ترقية أو إيقاف أو منح خصم خاص وتتبع نهاية الفترة.", "Upgrade, pause, grant a special discount and track period end.")}</p>
+          </div>
+        </div>
+        <form className="coupon-create" onSubmit={(event) => void saveSubscription(event)} style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))" }}>
+          <select value={planId} onChange={(e) => setPlanId(e.target.value)}>
+            {plans.map((plan) => (
+              <option key={String(plan.id)} value={String(plan.id)}>
+                {locale === "ar" ? String(plan.name_ar) : String(plan.name_en)}
+              </option>
+            ))}
+          </select>
+          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            {["active", "trialing", "pending_payment", "suspended", "cancelled"].map((value) => (
+              <option key={value} value={value}>{value}</option>
+            ))}
+          </select>
+          <select value={billingCycle} onChange={(e) => setBillingCycle(e.target.value)}>
+            <option value="monthly">{l("شهري", "Monthly")}</option>
+            <option value="annual">{l("سنوي", "Annual")}</option>
+          </select>
+          <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+          <input type="number" min={0} max={100} value={discountPercent} onChange={(e) => setDiscountPercent(e.target.value)} placeholder={l("خصم %", "Discount %")} />
+          <input type="number" min={0} value={discountFixed} onChange={(e) => setDiscountFixed(e.target.value)} placeholder={l("خصم ثابت (بيسة)", "Fixed discount minor")} />
+          <input value={discountLabel} onChange={(e) => setDiscountLabel(e.target.value)} placeholder={l("تسمية الخصم", "Discount label")} />
+          <input value={adminNote} onChange={(e) => setAdminNote(e.target.value)} placeholder={l("ملاحظة إدارية", "Admin note")} />
+          <button disabled={working} type="submit">{l("حفظ الاشتراك", "Save subscription")}</button>
+          <button disabled={working} type="button" onClick={(event) => void saveSubscription(event as unknown as FormEvent, true)}>{l("إيقاف الاشتراك", "Pause subscription")}</button>
+          <button disabled={working} type="button" onClick={(event) => void saveSubscription(event as unknown as FormEvent, false)}>{l("استئناف الاشتراك", "Resume subscription")}</button>
+        </form>
+        {Array.isArray(profile.features) && profile.features.length > 0 && (
+          <p style={{ marginTop: 12 }}><small>{l("صلاحيات الباقة", "Plan features")}: {profile.features.map(String).join(", ")}</small></p>
+        )}
+      </section>
+
+      <div className="admin-overview-grid">
+        <section className="admin-panel">
+          <div className="admin-panel-head"><h2>{l("الفواتير", "Invoices")}</h2></div>
+          <div className="audit-list">
+            {(billing?.invoices ?? []).map((invoice) => (
+              <div key={String(invoice.id)}>
+                <CreditCard />
+                <span>
+                  <b>{String(invoice.reference)}</b>
+                  <small>{money(Number(invoice.total_minor ?? 0), locale, String(invoice.currency ?? "OMR"))} · {fmt(invoice.created_at)}</small>
+                </span>
+                <Status value={String(invoice.status)} locale={locale} />
+              </div>
+            ))}
+            {!billing?.invoices?.length && <p>{l("لا فواتير.", "No invoices.")}</p>}
+          </div>
+        </section>
+        <section className="admin-panel">
+          <div className="admin-panel-head"><h2>{l("المعاملات", "Transactions")}</h2></div>
+          <div className="audit-list">
+            {(billing?.payments ?? []).map((payment) => (
+              <div key={String(payment.id)}>
+                <CreditCard />
+                <span>
+                  <b>{String(payment.reference)}</b>
+                  <small>{money(Number(payment.amount_minor ?? 0), locale, String(payment.currency ?? "OMR"))} · {String(payment.method)} · {fmt(payment.occurred_at)}</small>
+                </span>
+                <Status value={String(payment.status)} locale={locale} />
+              </div>
+            ))}
+            {!billing?.payments?.length && <p>{l("لا معاملات.", "No payments.")}</p>}
+          </div>
+        </section>
       </div>
 
       <section className="admin-panel">

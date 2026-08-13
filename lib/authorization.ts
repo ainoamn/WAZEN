@@ -7,7 +7,7 @@ export type SpaceCapability = "read" | "transact" | "members:write" | "circle:wr
 const platformPermissions: Record<PlatformRole, ReadonlySet<string>> = {
   super_admin: new Set(["*"]),
   admin: new Set(["users:read", "users:status", "roles:write", "plans:write", "coupons:write", "payments:write", "providers:write", "billing:read", "reports:read"]),
-  finance: new Set(["payments:write", "providers:write", "billing:read", "reports:read"]),
+  finance: new Set(["payments:write", "providers:write", "billing:read", "reports:read", "plans:write"]),
   support: new Set(["users:read"]),
   customer: new Set(),
 };

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
 import { authenticateRequest, createSessionToken, csrfCookie, issueCsrfToken, normalizeEmail, sha256 } from "../../../lib/auth";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
+import { appOrigin } from "../../../lib/app-origin";
 import { assertApiScope, assertPlatformPermission, authorizeSpace, ensureDefaultTenant } from "../../../lib/authorization";
 import { prepareAudit, writeAudit } from "../../../lib/audit";
 import { calculatePercentMinor, multiplyMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
@@ -11,6 +12,13 @@ import { encryptSecret, loadKeyring } from "../../../lib/encryption";
 import { configuredAllowedHosts, validateOutboundHttpsUrl } from "../../../lib/outbound";
 import { listAdminUsers, getAdminUserDetail } from "../../../services/admin/users-service";
 import { listAdminTenants, getAdminTenantDetail } from "../../../services/admin/tenants-service";
+import {
+  adminUpdateSubscription,
+  listAdminPlans,
+  listGatewaysWithPlans,
+  updatePaymentGateway,
+  upsertAdminPlan,
+} from "../../../services/admin/billing-service";
 
 const isoNow = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
@@ -28,19 +36,19 @@ const planSeeds = [
     id: "family", nameAr: "العائلة", nameEn: "Family",
     descriptionAr: "للأفراد والعائلات الصغيرة", descriptionEn: "For individuals and families",
     monthly: 2900, annual: 27840, wallets: 5, members: 15,
-    features: ["personal", "household", "travel", "circle", "exports"], order: 2,
+    features: ["personal", "household", "trips", "travel", "circles", "circle", "exports"], order: 2,
   },
   {
     id: "pro", nameAr: "الاحتراف", nameEn: "Professional",
     descriptionAr: "لمديري المجموعات والجمعيات", descriptionEn: "For group and circle managers",
     monthly: 7900, annual: 75840, wallets: 20, members: 75,
-    features: ["all_wallets", "documents", "draws", "voting", "advanced_reports", "custom_roles"], order: 3,
+    features: ["personal", "household", "trips", "circles", "all_wallets", "documents", "exports", "draws", "voting", "advanced_reports", "custom_roles"], order: 3,
   },
   {
     id: "business", nameAr: "الأعمال", nameEn: "Business",
     descriptionAr: "للفرق والمؤسسات", descriptionEn: "For teams and organizations",
     monthly: 19900, annual: 191040, wallets: 9999, members: 9999,
-    features: ["unlimited", "multi_approval", "audit", "api", "priority_support"], order: 4,
+    features: ["personal", "household", "trips", "circles", "unlimited", "documents", "exports", "multi_approval", "audit", "api", "priority_support"], order: 4,
   },
 ] as const;
 
@@ -51,6 +59,8 @@ async function seedPlans(db: D1Database) {
   await db.batch(planSeeds.map((plan) => db.prepare(
     "INSERT INTO plans (id,name_ar,name_en,description_ar,description_en,monthly_minor,annual_minor,wallet_limit,member_limit,features_json,is_active,sort_order,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?)",
   ).bind(plan.id, plan.nameAr, plan.nameEn, plan.descriptionAr, plan.descriptionEn, plan.monthly, plan.annual, plan.wallets, plan.members, JSON.stringify(plan.features), plan.order, createdAt)));
+  const { ensurePaymentGateways } = await import("../../../services/admin/billing-service");
+  await ensurePaymentGateways(db);
 }
 
 async function seedCoupons(db: D1Database) {
@@ -82,7 +92,8 @@ async function ensureIdentity(db: D1Database, user: RequestUser) {
 
   const subscription = await db.prepare("SELECT id FROM subscriptions WHERE user_id=? LIMIT 1").bind(user.id).first();
   if (!subscription) {
-    await db.prepare("INSERT INTO subscriptions VALUES (?,?,?,'active','monthly',?,?,0,?,?)")
+    await db.prepare(`INSERT INTO subscriptions (id,user_id,plan_id,status,billing_cycle,current_period_start,current_period_end,cancel_at_period_end,created_at,updated_at)
+      VALUES (?,?,?,'active','monthly',?,?,0,?,?)`)
       .bind(id(), user.id, "starter", now, atOffset(3650), now, now).run();
   }
   await ensureDefaultTenant(db, user);
@@ -112,7 +123,8 @@ async function seedCommercialData(db: D1Database, user: RequestUser) {
         db.prepare("INSERT INTO users VALUES (?, ?, ?, 'ar', 'OMR', ?)").bind(userId, demo[2], demo[1], atOffset(-120 + index * 12)),
         db.prepare("INSERT INTO customer_profiles VALUES (?, ?, ?, NULL, ?, ?)").bind(userId, demo[4] === "suspended" ? "suspended" : "active", demo[5], atOffset(-index), atOffset(-120 + index * 12)),
         db.prepare("INSERT INTO platform_roles VALUES (?, 'customer', '[\"wallets:own\",\"documents:own\"]', ?, ?)").bind(userId, now, now),
-        db.prepare("INSERT INTO subscriptions VALUES (?, ?, ?, ?, 'monthly', ?, ?, 0, ?, ?)").bind(subId, userId, demo[3], demo[4], atOffset(-20), atOffset(10), atOffset(-120), now),
+        db.prepare(`INSERT INTO subscriptions (id,user_id,plan_id,status,billing_cycle,current_period_start,current_period_end,cancel_at_period_end,created_at,updated_at)
+          VALUES (?, ?, ?, ?, 'monthly', ?, ?, 0, ?, ?)`).bind(subId, userId, demo[3], demo[4], atOffset(-20), atOffset(10), atOffset(-120), now),
       );
       const amount = [7900, 2900, 19900, 0][index];
       if (amount > 0) {
@@ -288,6 +300,18 @@ export async function GET(request: Request) {
       }
       if (scope === "payments") assertPlatformPermission(role, "billing:read");
       if (scope === "reports") assertPlatformPermission(role, "reports:read");
+      if (scope === "gateways") {
+        assertPlatformPermission(role, "providers:write");
+        const gateways = await listGatewaysWithPlans(db);
+        const plans = await listAdminPlans(db);
+        return Response.json({ user, role, gateways, plans }, { headers: responseHeaders });
+      }
+      if (scope === "plans") {
+        assertPlatformPermission(role, "plans:write");
+        const plans = await listAdminPlans(db);
+        const gateways = await listGatewaysWithPlans(db);
+        return Response.json({ user, role, plans, gateways }, { headers: responseHeaders });
+      }
       return Response.json({ user, role, ...(await scopedAdminData(db, role, scope)) }, { headers: responseHeaders });
     }
     return Response.json({ user, role }, { headers: responseHeaders });
@@ -349,6 +373,12 @@ export async function POST(request: Request) {
           couponId = String(coupon.id);
         }
       }
+      const personal = await db.prepare("SELECT discount_percent,discount_fixed_minor FROM subscriptions WHERE user_id=? ORDER BY created_at DESC LIMIT 1")
+        .bind(user.id).first<{ discount_percent: number; discount_fixed_minor: number }>();
+      if (personal) {
+        discount += calculatePercentMinor(subtotal, Number(personal.discount_percent ?? 0) * 100);
+        discount += Number(personal.discount_fixed_minor ?? 0);
+      }
       discount = Math.min(discount, subtotal);
       const profile = await db.prepare("SELECT p.country,u.currency FROM customer_profiles p JOIN users u ON u.id=p.user_id WHERE p.user_id=?").bind(user.id).first<{ country: string; currency: string }>();
       const pack = countryPack(profile?.country ?? "SA"); const currency = profile?.currency ?? pack.currency;
@@ -362,7 +392,8 @@ export async function POST(request: Request) {
       const status = total === 0 ? "active" : "pending_payment";
       const statements: D1PreparedStatement[] = [];
       if (current) statements.push(db.prepare("UPDATE subscriptions SET plan_id=?,status=?,billing_cycle=?,current_period_start=?,current_period_end=?,updated_at=? WHERE id=?").bind(planId, status, cycle, now, periodEnd, now, subscriptionId));
-      else statements.push(db.prepare("INSERT INTO subscriptions VALUES (?,?,?,?,?,?,?,0,?,?)").bind(subscriptionId, user.id, planId, status, cycle, now, periodEnd, now, now));
+      else statements.push(db.prepare(`INSERT INTO subscriptions (id,user_id,plan_id,status,billing_cycle,current_period_start,current_period_end,cancel_at_period_end,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,0,?,?)`).bind(subscriptionId, user.id, planId, status, cycle, now, periodEnd, now, now));
       statements.push(
         db.prepare("INSERT INTO invoices VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(invoiceId, user.id, subscriptionId, reference, subtotal, discount, tax, total, currency, total === 0 ? "paid" : "pending", atOffset(7), total === 0 ? now : null, now),
         db.prepare("INSERT INTO tenant_resources (tenant_id,resource_type,resource_id,created_at) VALUES (?,?,?,?)").bind(tenantId, "invoice", invoiceId, now),
@@ -377,6 +408,12 @@ export async function POST(request: Request) {
       assertApiScope(user, "documents:write");
       const parsed = z.object({ type: z.enum(["receipt", "disbursement", "handover", "member_statement", "society_statement", "trip_statement", "household_statement", "personal_report"]), personName: z.string().trim().min(2).max(120), description: z.string().trim().min(2).max(500), amount: z.union([z.string().min(1).max(40), z.number().nonnegative()]), spaceId: z.string().max(120).optional(), paymentMethod: z.enum(["bank_transfer", "cash", "card", "other"]).default("bank_transfer") }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_DOCUMENT");
+      const advancedDocs = ["disbursement", "handover", "member_statement", "society_statement", "trip_statement", "household_statement"];
+      if (advancedDocs.includes(parsed.data.type)) {
+        const { getActivePlanEntitlements, planHasFeature } = await import("../../../services/admin/billing-service");
+        const entitlements = await getActivePlanEntitlements(db, user.id);
+        if (!planHasFeature(entitlements.features, "documents")) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
+      }
       const { type, personName, description } = parsed.data;
       const space = parsed.data.spaceId ? await authorizeSpace(db, user, parsed.data.spaceId, "transact") : null;
       const ownCurrency = await db.prepare("SELECT currency FROM users WHERE id=?").bind(user.id).first<{ currency: string }>();
@@ -408,7 +445,7 @@ export async function POST(request: Request) {
       const duplicate = await db.prepare("SELECT id FROM invites WHERE space_id=? AND email=? COLLATE NOCASE AND status='pending' AND expires_at>?").bind(spaceId, email, isoNow()).first();
       if (duplicate) throw new ApiError(409, "INVITATION_EXISTS");
       const invitationId = id(); const token = id().replaceAll("-", "") + id().replaceAll("-", ""); const tokenHash = await sha256(token); const createdAt = isoNow();
-      const origin = new URL(process.env.WAZEN_APP_ORIGIN ?? request.url).origin;
+      const origin = appOrigin(request);
       await db.batch([
         db.prepare("INSERT INTO invites VALUES (?,?,?,?,?,'pending',?,?,?)").bind(invitationId, spaceId, email, role, tokenHash, atOffset(7), user.id, createdAt),
         db.prepare("INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)")
@@ -486,7 +523,7 @@ export async function POST(request: Request) {
     }
 
     const actorRole = await roleOf(db, user.id);
-    if (["setUserStatus", "setRole", "setPaymentStatus", "createCoupon", "revokeUserSessions"].includes(action) && user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
+    if (["setUserStatus", "setRole", "setPaymentStatus", "createCoupon", "revokeUserSessions", "updateGateway", "upsertPlan", "adminUpdateSubscription"].includes(action) && user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
     if (action === "setUserStatus") {
       assertPlatformPermission(actorRole, "users:status");
       const targetUserId = String(payload.userId ?? "");
@@ -540,6 +577,63 @@ export async function POST(request: Request) {
       if (!/^[A-Z0-9_-]{3,20}$/.test(code) || !Number.isFinite(value)) throw new ApiError(400, "INVALID_COUPON");
       await db.prepare("INSERT INTO coupons VALUES (?,?,'percent',?,100,0,?,1,?)").bind(id(), code, value, atOffset(90), isoNow()).run();
       await writeAudit(db, { userId: user.id, action: "coupon.created", entityType: "coupon", entityId: code, metadata: { value } });
+    } else if (action === "updateGateway") {
+      assertPlatformPermission(actorRole, "providers:write");
+      const gatewayId = String(payload.gatewayId ?? "");
+      if (!gatewayId) throw new ApiError(400, "INVALID_GATEWAY");
+      const planIds = Array.isArray(payload.planIds) ? payload.planIds.map(String) : undefined;
+      const gateways = await updatePaymentGateway(db, {
+        gatewayId,
+        isEnabled: payload.isEnabled === undefined ? undefined : Boolean(payload.isEnabled),
+        isTestMode: payload.isTestMode === undefined ? undefined : Boolean(payload.isTestMode),
+        sortOrder: payload.sortOrder === undefined ? undefined : Number(payload.sortOrder),
+        planIds,
+      });
+      if (!gateways) throw new ApiError(404, "GATEWAY_NOT_FOUND");
+      await writeAudit(db, { userId: user.id, action: "gateway.updated", entityType: "payment_gateway", entityId: gatewayId, metadata: { isEnabled: payload.isEnabled, planIds } });
+      return respond({ ok: true, gateways, plans: await listAdminPlans(db) });
+    } else if (action === "upsertPlan") {
+      assertPlatformPermission(actorRole, "plans:write");
+      const parsed = z.object({
+        id: z.string().min(1).max(50).optional(),
+        nameAr: z.string().trim().min(2).max(80),
+        nameEn: z.string().trim().min(2).max(80),
+        descriptionAr: z.string().trim().min(2).max(300),
+        descriptionEn: z.string().trim().min(2).max(300),
+        monthlyMinor: z.coerce.number().int().min(0).max(10_000_000),
+        annualMinor: z.coerce.number().int().min(0).max(100_000_000),
+        walletLimit: z.coerce.number().int().min(1).max(9999),
+        memberLimit: z.coerce.number().int().min(1).max(9999),
+        features: z.array(z.string().min(1).max(40)).max(40),
+        isActive: z.boolean().default(true),
+        sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
+        gatewayIds: z.array(z.string().min(1).max(80)).max(40).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_PLAN");
+      const result = await upsertAdminPlan(db, parsed.data);
+      await writeAudit(db, { userId: user.id, action: "plan.upserted", entityType: "plan", entityId: result.planId, metadata: { features: parsed.data.features } });
+      return respond({ ok: true, plans: result.plans, gateways: await listGatewaysWithPlans(db) });
+    } else if (action === "adminUpdateSubscription") {
+      assertPlatformPermission(actorRole, "plans:write");
+      const parsed = z.object({
+        userId: z.string().min(1).max(120),
+        planId: z.string().min(1).max(50).optional(),
+        status: z.enum(["active", "trialing", "pending_payment", "suspended", "cancelled"]).optional(),
+        billingCycle: z.enum(["monthly", "annual"]).optional(),
+        periodEnd: z.iso.datetime().optional(),
+        discountPercent: z.coerce.number().min(0).max(100).optional(),
+        discountFixedMinor: z.coerce.number().int().min(0).max(10_000_000).optional(),
+        discountLabel: z.string().max(120).nullable().optional(),
+        adminNote: z.string().max(500).nullable().optional(),
+        gatewayId: z.string().max(80).nullable().optional(),
+        pause: z.boolean().optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_SUBSCRIPTION_UPDATE");
+      const billing = await adminUpdateSubscription(db, parsed.data);
+      if (!billing) throw new ApiError(404, "SUBSCRIPTION_NOT_FOUND");
+      await writeAudit(db, { userId: user.id, action: "subscription.admin_updated", entityType: "user", entityId: parsed.data.userId, metadata: parsed.data });
+      const detail = await getAdminUserDetail(db, parsed.data.userId);
+      return respond({ ok: true, detail, billing });
     } else if (action === "requestDataExport" || action === "requestDeletion") {
       const type = action === "requestDataExport" ? "export" : "deletion";
       const requestId = id(); await db.prepare("INSERT INTO data_requests (id,user_id,type,status,requested_at) VALUES (?,?,?,'pending',?)").bind(requestId, user.id, type, isoNow()).run();
@@ -548,7 +642,11 @@ export async function POST(request: Request) {
     } else {
       throw new ApiError(400, "UNSUPPORTED_ACTION");
     }
-    const scope = action === "setPaymentStatus" ? "payments" : ["setUserStatus", "revokeUserSessions"].includes(action) ? "users" : "overview";
+    const scope = action === "setPaymentStatus" ? "payments"
+      : ["setUserStatus", "revokeUserSessions", "adminUpdateSubscription"].includes(action) ? "users"
+      : ["updateGateway"].includes(action) ? "gateways"
+      : ["upsertPlan"].includes(action) ? "plans"
+      : "overview";
     return respond({ ok: true, ...(await scopedAdminData(db, actorRole, scope)) });
   } catch (error) {
     if (claimed) {

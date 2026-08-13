@@ -21,10 +21,23 @@ export function productionSetupChecklist(): ProductionSetupItem[] {
   const hasNeon = Boolean(process.env.DATABASE_URL?.trim() || process.env.NEON_DATABASE_URL?.trim());
   const hasTurso = Boolean(process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN);
   const hasDatabase = hasNeon || hasTurso;
-  const hasOrigin = Boolean(process.env.WAZEN_APP_ORIGIN?.trim());
+  const rawOrigin = process.env.WAZEN_APP_ORIGIN
+    ?.replace(/^\uFEFF/, "")
+    .replace(/\\r|\\n/g, "")
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .trim() ?? "";
+  let hasOrigin = Boolean(rawOrigin);
+  if (hasOrigin) {
+    try {
+      hasOrigin = Boolean(new URL(rawOrigin).origin);
+    } catch {
+      hasOrigin = false;
+    }
+  }
   const hasKeyring = Boolean(process.env.WAZEN_ENCRYPTION_KEYRING?.trim());
   const hasJobSecret = Boolean(process.env.WAZEN_JOB_SECRET?.trim());
   const hasWebhookSecret = Boolean(process.env.WAZEN_PAYMENT_WEBHOOK_SECRET?.trim());
+  const hasEmailProvider = Boolean(process.env.WAZEN_EMAIL_WEBHOOK_URL?.trim() && process.env.WAZEN_EMAIL_WEBHOOK_TOKEN?.trim());
   const adminEmails = process.env.WAZEN_ADMIN_EMAILS?.trim();
   const risks = productionAuthRisks();
 
@@ -41,7 +54,7 @@ export function productionSetupChecklist(): ProductionSetupItem[] {
       id: "app_origin",
       ok: hasOrigin,
       label: "Public app origin configured",
-      hint: hasOrigin ? undefined : "Set WAZEN_APP_ORIGIN to the production URL",
+      hint: hasOrigin ? undefined : "Set WAZEN_APP_ORIGIN to a clean URL like https://wazen-roan.vercel.app (no BOM/newlines)",
     },
     {
       id: "encryption",
@@ -58,6 +71,14 @@ export function productionSetupChecklist(): ProductionSetupItem[] {
       id: "webhook_secret",
       ok: hasWebhookSecret,
       label: "Payment webhook secret configured",
+    },
+    {
+      id: "email_provider",
+      ok: hasEmailProvider,
+      label: "Email delivery webhook configured",
+      hint: hasEmailProvider
+        ? undefined
+        : "Set WAZEN_EMAIL_WEBHOOK_URL + WAZEN_EMAIL_WEBHOOK_TOKEN (messages stay queued until then)",
     },
     {
       id: "auth_hardening",

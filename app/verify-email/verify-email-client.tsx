@@ -4,9 +4,18 @@ import { useEffect, useState } from "react";
 import { WazenIcon } from "../../components/brand/WazenLogo";
 import { Brand, useCommerceLocale } from "../commercial-kit";
 
-export function VerifyEmailClient({ token, sent }: { token: string; sent: boolean }) {
+export function VerifyEmailClient({
+  token,
+  sent,
+  delivery,
+}: {
+  token: string;
+  sent: boolean;
+  delivery: "queued" | "deferred" | "unknown";
+}) {
   const { locale, setLocale, l } = useCommerceLocale();
   const [status, setStatus] = useState<"waiting" | "verifying" | "done" | "error">(token ? "verifying" : "waiting");
+
   useEffect(() => {
     if (!token) return;
     void fetch("/api/auth", {
@@ -17,6 +26,17 @@ export function VerifyEmailClient({ token, sent }: { token: string; sent: boolea
       .then((response) => setStatus(response.ok ? "done" : "error"))
       .catch(() => setStatus("error"));
   }, [token]);
+
+  const waitingCopy =
+    delivery === "deferred"
+      ? l(
+          "مزوّد البريد غير مضبوط بعد، لذلك لم تُرسل رسالة حقيقية. استخدم رابط التأكيد من شاشة التسجيل أو اضبط WAZEN_EMAIL_WEBHOOK_URL.",
+          "Email delivery is not configured yet, so no real message was sent. Use the confirmation link from signup or set WAZEN_EMAIL_WEBHOOK_URL.",
+        )
+      : sent
+        ? l("أرسلنا رابطاً صالحاً لمدة 24 ساعة. افحص بريدك.", "We sent a link valid for 24 hours. Check your inbox.")
+        : l("جارٍ التحقق من الرابط…", "Checking your link…");
+
   return (
     <main className="auth-page">
       <section className="auth-panel">
@@ -32,15 +52,22 @@ export function VerifyEmailClient({ token, sent }: { token: string; sent: boolea
               ? l("تم تأكيد بريدك وإنشاء جلسة آمنة.", "Your email is verified and a secure session was created.")
               : status === "error"
                 ? l("رابط التأكيد غير صالح أو انتهت صلاحيته.", "The verification link is invalid or expired.")
-                : sent
-                  ? l("أرسلنا رابطاً صالحاً لمدة 24 ساعة. افحص بريدك.", "We sent a link valid for 24 hours. Check your inbox.")
-                  : l("جارٍ التحقق من الرابط…", "Checking your link…")}
+                : status === "verifying"
+                  ? l("جارٍ التحقق من الرابط…", "Checking your link…")
+                  : waitingCopy}
           </p>
         </div>
         {status === "done" ? (
           <Link className="auth-submit" href="/dashboard">{l("فتح لوحة التحكم", "Open dashboard")}</Link>
         ) : status === "error" ? (
           <Link className="auth-submit" href="/register">{l("إنشاء حساب جديد", "Create a new account")}</Link>
+        ) : delivery === "deferred" && !token ? (
+          <p className="auth-error" role="status">
+            {l(
+              "اضبط إرسال البريد لاحقاً عبر WAZEN_EMAIL_WEBHOOK_URL ثم وظيفة /api/jobs/email.",
+              "Configure email later with WAZEN_EMAIL_WEBHOOK_URL and the /api/jobs/email job.",
+            )}
+          </p>
         ) : null}
       </section>
       <aside>

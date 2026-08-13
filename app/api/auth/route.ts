@@ -2,10 +2,12 @@ import { z } from "zod";
 import { ensureSchema, getRawDb } from "../../../db/runtime";
 import { authenticateRequest, clearCsrfCookie, clearSessionCookie, createSession, createSessionToken, csrfCookie, hashPassword, issueCsrfToken, normalizeEmail, revokeSession, sessionHeaders, sha256, verifyPassword } from "../../../lib/auth";
 import { ApiError, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit } from "../../../lib/security";
+import { appOrigin } from "../../../lib/app-origin";
 import { writeAudit } from "../../../lib/audit";
 import { decryptSecret, encryptSecret, loadKeyring } from "../../../lib/encryption";
 import { createTotpSecret, verifyTotp } from "../../../lib/totp";
 import { ensureDefaultTenant } from "../../../lib/authorization";
+import { isEmailProviderConfigured } from "../../../lib/email-provider";
 
 const credentialsSchema = z.object({
   action: z.enum(["register", "login", "logout", "verifyEmail", "forgotPassword", "resetPassword", "changePassword", "beginTotp", "confirmTotp", "disableTotp", "completeAdminBootstrap"]),
@@ -128,7 +130,7 @@ export async function POST(request: Request) {
       const recoveryEmail = normalizeEmail(parsed.data.email ?? "");
       const account = recoveryEmail ? await db.prepare("SELECT id,display_name FROM users WHERE email=? COLLATE NOCASE").bind(recoveryEmail).first<{ id: string; display_name: string }>() : null;
       if (account) {
-        const token = createSessionToken(); const createdAt = new Date().toISOString(); const origin = new URL(process.env.WAZEN_APP_ORIGIN ?? request.url).origin;
+        const token = createSessionToken(); const createdAt = new Date().toISOString(); const origin = appOrigin(request);
         await db.batch([
           db.prepare("UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL").bind(createdAt, account.id),
           db.prepare("INSERT INTO password_reset_tokens (id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)").bind(crypto.randomUUID(), account.id, await sha256(token), new Date(Date.now() + 3_600_000).toISOString(), createdAt),
@@ -161,7 +163,7 @@ export async function POST(request: Request) {
       const userId = crypto.randomUUID(); const createdAt = new Date().toISOString();
       const passwordData = await hashPassword(password);
       const verificationToken = createSessionToken(); const verificationHash = await sha256(verificationToken);
-      const origin = new URL(process.env.WAZEN_APP_ORIGIN ?? request.url).origin;
+      const origin = appOrigin(request);
       const configuredAdmins = (process.env.WAZEN_ADMIN_EMAILS ?? "").split(",").map(normalizeEmail).filter(Boolean);
       const role = configuredAdmins.includes(email) ? "super_admin" : "customer";
       await db.batch([
@@ -174,7 +176,14 @@ export async function POST(request: Request) {
       ]);
       await ensureDefaultTenant(db, { id: userId, displayName });
       await writeAudit(db, { userId, action: "auth.registered", entityType: "user", entityId: userId, createdAt });
-      return Response.json({ ok: true, verificationRequired: true }, { status: 201, headers: { "Cache-Control": "no-store" } });
+      const emailReady = isEmailProviderConfigured();
+      return Response.json({
+        ok: true,
+        verificationRequired: true,
+        emailDelivery: emailReady ? "queued" : "not_configured",
+        // Until an email provider is wired, return the one-time link so registration can complete.
+        ...(emailReady ? {} : { verifyUrl: `/verify-email?token=${encodeURIComponent(verificationToken)}` }),
+      }, { status: 201, headers: { "Cache-Control": "no-store" } });
     }
     const row = await db.prepare(`SELECT u.id,u.email,u.display_name,c.password_hash,c.password_salt,c.password_iterations,c.email_verified_at,p.status,t.encrypted_secret,t.last_used_step,t.enabled_at
       FROM users u JOIN auth_credentials c ON c.user_id=u.id LEFT JOIN customer_profiles p ON p.user_id=u.id

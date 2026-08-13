@@ -68,10 +68,11 @@ const adminLinks = [
   ["/admin/users", "users", Users, "المستخدمون والعملاء", "Customers"],
   ["/admin/tenants", "tenants", Building2, "الشركات والمستأجرون", "Tenants"],
   ["/admin/staff", "staff", UserCog, "فريق الإدارة", "Staff"],
-  ["/pricing", "plans", WalletCards, "الباقات والاشتراكات", "Plans"],
-  ["/admin/payments", "payments", CreditCard, "المدفوعات والفواتير", "Payments"],
+  ["/admin/plans", "plans", WalletCards, "الباقات والاشتراكات", "Plans"],
+  ["/admin/gateways", "gateways", CreditCard, "بوابات الدفع", "Payment gateways"],
+  ["/admin/payments", "payments", ReceiptText, "المدفوعات والفواتير", "Payments"],
   ["/admin/reports", "reports", BarChart3, "التقارير والإيرادات", "Reports"],
-  ["/documents", "documents", ReceiptText, "الإيصالات والكشوفات", "Documents"],
+  ["/documents", "documents", FileText, "الإيصالات والكشوفات", "Documents"],
 ] as const;
 
 export function AdminShell({ active, locale, setLocale, children }: { active: string; locale: CommerceLocale; setLocale: (locale: CommerceLocale) => void; children: ReactNode }) {
@@ -82,7 +83,7 @@ export function AdminShell({ active, locale, setLocale, children }: { active: st
     <aside className={open ? "open" : ""}>
       <Brand compact />
       <div className="admin-workspace"><WazenIcon className="h-7 w-[2.1rem]" /><div><small>{l("مساحة العمل", "Workspace")}</small><b>{l("إدارة وازن", "Wazen admin")}</b></div></div>
-      <nav>{adminLinks.map(([href, id, Icon, ar, en]) => <Link key={id} href={href} className={active === id ? "active" : ""}><Icon size={18} /><span>{l(ar, en)}</span></Link>)}</nav>
+      <nav>{adminLinks.map(([href, id, Icon, ar, en]) => <Link key={id} href={href} prefetch className={active === id ? "active" : ""}><Icon size={18} strokeWidth={2} /><span>{l(ar, en)}</span></Link>)}</nav>
       <div className="admin-side-foot"><Link href="/dashboard"><FileText size={17} />{l("العودة للوحة المستخدم", "User dashboard")}</Link><small>{l("نسخة الإدارة التجارية", "Commercial admin")}</small></div>
     </aside>
     <section className="admin-main">
@@ -107,7 +108,7 @@ export function money(minor: number, locale: CommerceLocale, currency = "OMR") {
 export function Status({ value, locale }: { value: string; locale: CommerceLocale }) {
   const labels: Record<string, [string, string]> = {
     active: ["نشط", "Active"], trialing: ["تجريبي", "Trial"], suspended: ["موقوف", "Suspended"], closed: ["مغلق", "Closed"],
-    paid: ["مدفوعة", "Paid"], pending: ["معلقة", "Pending"], pending_payment: ["بانتظار الدفع", "Awaiting payment"],
+    cancelled: ["ملغى", "Cancelled"], paid: ["مدفوعة", "Paid"], pending: ["معلقة", "Pending"], pending_payment: ["بانتظار الدفع", "Awaiting payment"],
     succeeded: ["ناجحة", "Succeeded"], failed: ["فاشلة", "Failed"], refunded: ["مستردة", "Refunded"], issued: ["صادر", "Issued"],
   };
   const text = labels[value]?.[locale === "ar" ? 0 : 1] ?? value;

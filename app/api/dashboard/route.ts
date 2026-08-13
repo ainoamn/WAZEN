@@ -251,11 +251,11 @@ export async function POST(request: Request) {
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_WALLET");
       const { name, type } = parsed.data;
-      const limits = await db.prepare(`SELECT COALESCE(p.wallet_limit,1) AS wallet_limit FROM subscriptions s
-        JOIN plans p ON p.id=s.plan_id WHERE s.user_id=? AND s.status IN ('active','trialing') ORDER BY s.created_at DESC LIMIT 1`)
-        .bind(user.id).first<{ wallet_limit: number }>();
+      const { getActivePlanEntitlements, planAllowsSpaceType } = await import("../../../services/admin/billing-service");
+      const entitlements = await getActivePlanEntitlements(db, user.id);
+      if (!planAllowsSpaceType(entitlements.features, type)) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
       const count = await db.prepare("SELECT COUNT(*) AS count FROM spaces WHERE owner_user_id=?").bind(user.id).first<{ count: number }>();
-      if (Number(count?.count ?? 0) >= Number(limits?.wallet_limit ?? 1)) throw new ApiError(403, "PLAN_WALLET_LIMIT");
+      if (Number(count?.count ?? 0) >= entitlements.walletLimit) throw new ApiError(403, "PLAN_WALLET_LIMIT");
       const id = `${cleanId(user.id)}-${crypto.randomUUID()}`; const createdAt = now();
       const profile = await db.prepare("SELECT currency FROM users WHERE id=?").bind(user.id).first<{ currency: string }>(); const currency = profile?.currency ?? "OMR";
       let goalMinor: number; try { goalMinor = parseNonNegativeMoneyToMinor(parsed.data.goal, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
@@ -282,9 +282,10 @@ export async function POST(request: Request) {
       const parsed = z.object({ spaceId: z.string().min(1).max(120), displayName: z.string().trim().min(2).max(80), email: z.union([z.email().max(254), z.literal("")]).optional(), role: z.enum(["member", "treasurer", "manager", "auditor", "viewer"]).default("member") }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_MEMBER");
       await authorizeSpace(db, user, parsed.data.spaceId, "members:write", ["household", "trip", "society", "group"]);
-      const plan = await db.prepare(`SELECT p.member_limit FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.user_id=? AND s.status IN ('active','trialing') ORDER BY s.created_at DESC LIMIT 1`).bind(user.id).first<{ member_limit: number }>();
+      const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
+      const entitlements = await getActivePlanEntitlements(db, user.id);
       const count = await db.prepare("SELECT COUNT(*) AS count FROM members WHERE space_id=? AND status='active'").bind(parsed.data.spaceId).first<{ count: number }>();
-      if (Number(count?.count ?? 0) >= Number(plan?.member_limit ?? 2)) throw new ApiError(403, "PLAN_MEMBER_LIMIT");
+      if (Number(count?.count ?? 0) >= entitlements.memberLimit) throw new ApiError(403, "PLAN_MEMBER_LIMIT");
       const contribution = await db.prepare("SELECT amount_minor,duration_months FROM contribution_plans WHERE space_id=? LIMIT 1").bind(parsed.data.spaceId).first<{ amount_minor: number; duration_months: number }>();
       const memberId = crypto.randomUUID(); const createdAt = now(); const dueMinor = multiplyMinor(Number(contribution?.amount_minor ?? 0), Number(contribution?.duration_months ?? 0));
       await db.batch([

@@ -1,13 +1,22 @@
 import type { Metadata, Viewport } from "next";
-import { Cairo } from "next/font/google";
+import { IBM_Plex_Sans_Arabic, Inter } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
 import "./commercial.css";
 
-const cairo = Cairo({
-  subsets: ["arabic", "latin"],
-  weight: ["400", "600", "700", "800"],
-  variable: "--font-cairo",
+/** Arabic UI: IBM Plex Sans Arabic. Latin/EN: Inter. */
+const plexArabic = IBM_Plex_Sans_Arabic({
+  subsets: ["arabic"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-plex-arabic",
+  display: "swap",
+});
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-inter",
+  display: "swap",
 });
 
 export const viewport: Viewport = {
@@ -59,8 +68,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ar" dir="rtl" className={cairo.variable}>
-      <body className={cairo.className}>{children}</body>
+    <html lang="ar" dir="rtl" className={`${plexArabic.variable} ${inter.variable}`}>
+      <body className={plexArabic.className}>{children}</body>
     </html>
   );
 }

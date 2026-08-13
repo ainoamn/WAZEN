@@ -19,13 +19,60 @@ export default function LandingPage() {
         <small><Check size={14} />{l("لا تحتاج بطاقة للبدء", "No card required")}<Check size={14} />{l("بياناتك خاصة ومشفرة", "Private, protected data")}</small>
       </div>
       <div className="commerce-hero-visual">
-        <div className="hero-window">
-          <header><Brand compact/><span>{l("أغسطس 2026", "August 2026")}</span></header>
-          <div className="hero-kpis"><article><span>{l("صافي الرصيد", "Net balance")}</span><b><OmrAmount>1,416.700</OmrAmount></b><em>+6.4%</em></article><article><span>{l("محافظ نشطة", "Active wallets")}</span><b>4</b><em>{l("منتظمة", "On track")}</em></article></div>
-          <section className="hero-wallets"><h3>{l("محافظي", "My wallets")}</h3>{[[Plane,l("رحلة العائلة", "Family trip"),"386.000"],[House,l("ميزانية المنزل", "Home budget"),"124.700"],[Repeat2,l("جمعية الإخوة", "Siblings circle"),"210.000"]].map(([Icon,name,value]) => { const C = Icon as typeof Plane; return <div key={String(name)}><i><C size={18}/></i><span><b>{String(name)}</b><small>{l("نشطة", "Active")}</small></span><strong><OmrAmount>{String(value)}</OmrAmount></strong></div>; })}</section>
-          <div className="hero-separation"><ShieldCheck size={18}/><span>{l("الفوائض الشخصية محمية", "Personal reserves protected")}</span><b><OmrAmount>6.400</OmrAmount></b></div>
+        <div className="hero-ledger" aria-hidden="true">
+          <div className="hero-ledger-spine" aria-hidden="true">
+            <i /><i /><i /><i /><i />
+          </div>
+          <div className="hero-ledger-page">
+            <header className="hero-ledger-head">
+              <Brand compact />
+              <span>{l("أغسطس 2026", "August 2026")}</span>
+            </header>
+            <div className="hero-ledger-balance">
+              <div>
+                <span>{l("صافي الرصيد", "Net balance")}</span>
+                <b><OmrAmount>1,416.700</OmrAmount></b>
+              </div>
+              <div className="hero-ledger-meta">
+                <em>+6.4%</em>
+                <small>{l("4 محافظ نشطة", "4 active wallets")}</small>
+              </div>
+            </div>
+            <div className="hero-ledger-rule" aria-hidden="true" />
+            <section className="hero-ledger-lines">
+              <div className="hero-ledger-cols" aria-hidden="true">
+                <span>{l("الحساب", "Account")}</span>
+                <span>{l("المصروف", "Expense")}</span>
+                <span>{l("المتبقي", "Remaining")}</span>
+              </div>
+              {([
+                [Plane, l("رحلة العائلة", "Family trip"), "72.300", "386.000"],
+                [House, l("ميزانية المنزل", "Home budget"), "41.200", "124.700"],
+                [Repeat2, l("جمعية الإخوة", "Siblings circle"), "30.000", "210.000"],
+              ] as const).map(([Icon, name, expense, remaining]) => (
+                <div className="hero-ledger-row" key={String(name)}>
+                  <i><Icon size={18} /></i>
+                  <b className="hero-ledger-account">{name}</b>
+                  <div className="hero-ledger-amounts">
+                    <strong className="hero-ledger-debit">
+                      <small>{l("مصروف", "Out")}</small>
+                      <OmrAmount>{expense}</OmrAmount>
+                    </strong>
+                    <strong className="hero-ledger-remain">
+                      <small>{l("متبقي", "Left")}</small>
+                      <OmrAmount>{remaining}</OmrAmount>
+                    </strong>
+                  </div>
+                </div>
+              ))}
+            </section>
+            <div className="hero-ledger-footer">
+              <ShieldCheck size={18} />
+              <span>{l("الفوائض الشخصية محمية", "Personal reserves protected")}</span>
+              <b><OmrAmount>6.400</OmrAmount></b>
+            </div>
+          </div>
         </div>
-        <div className="hero-float"><Check size={18}/><span><b>{l("تمت مساهمة جديدة", "Contribution received")}</b><small><OmrAmount>5.000</OmrAmount> · {l("الآن", "now")}</small></span></div>
       </div>
     </section>
 

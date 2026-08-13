@@ -1,7 +1,7 @@
 /* OMR amount glyphs stay tiny inside mock UI */
-.hero-kpis .omr-amount,.hero-wallets .omr-amount,.hero-separation .omr-amount,.hero-float .omr-amount,.separation-demo .omr-amount{font:inherit;gap:.2em}.hero-kpis .omr-code,.hero-wallets .omr-code,.hero-separation .omr-code,.hero-float .omr-code,.separation-demo .omr-code{font-size:8px;font-weight:800}
-.commerce-landing,.pricing-page,.billing-page,.documents-page,.admin-app{--c-ink:#0f172a;--c-muted:#64748b;--c-green:#10b981;--c-deep:#0f172a;--c-soft:#ecfdf5;--c-cream:#f6f9fc;--c-line:#e2e8f0;--c-amber:#d9902f;color:var(--c-ink);background:var(--c-cream);min-height:100vh}
-.commerce-brand{display:flex;align-items:center;gap:10px;color:inherit;text-decoration:none;min-width:0;flex-shrink:1}.commerce-brand .wazen-logo{min-width:0;max-width:100%}.commerce-brand .wazen-logo-icon{display:block;height:48px;width:auto;max-width:min(260px,46vw);object-fit:contain;box-shadow:none;border-radius:0;background:transparent}.commerce-brand .wazen-logo-lockup{aspect-ratio:auto}.commerce-brand .wazen-logo-mark{aspect-ratio:550/252;max-width:min(120px,28vw)}.commerce-brand.compact .wazen-logo-icon{height:36px;max-width:min(200px,42vw)}.wazen-logo-wordmark{font:800 11px/1 Inter,Segoe UI,Arial,sans-serif;letter-spacing:.22em;color:#0F172A}.wazen-logo-wordmark-dark{color:#F8FAFC}.wazen-logo-arabic{color:#10B981;font-family:var(--font-cairo),Tahoma,sans-serif}
+.hero-kpis .omr-amount,.hero-wallets .omr-amount,.hero-separation .omr-amount,.hero-float .omr-amount,.separation-demo .omr-amount,.hero-ledger .omr-amount{font:inherit;gap:.2em}.hero-kpis .omr-code,.hero-wallets .omr-code,.hero-separation .omr-code,.hero-float .omr-code,.separation-demo .omr-code,.hero-ledger .omr-code{font-size:8px;font-weight:800}
+.commerce-landing,.pricing-page,.billing-page,.documents-page,.admin-app{--c-ink:#0f172a;--c-muted:#64748b;--c-green:#10b981;--c-deep:#0f172a;--c-soft:#ecfdf5;--c-cream:#f6f9fc;--c-line:#e2e8f0;--c-amber:#d9902f;color:var(--c-ink);background:var(--c-cream);min-height:100vh;font-family:var(--font-sans)}
+.commerce-brand{display:flex;align-items:center;gap:10px;color:inherit;text-decoration:none;min-width:0;flex-shrink:1}.commerce-brand .wazen-logo{min-width:0;max-width:100%}.commerce-brand .wazen-logo-icon{display:block;height:48px;width:auto;max-width:min(260px,46vw);object-fit:contain;box-shadow:none;border-radius:0;background:transparent}.commerce-brand .wazen-logo-lockup{aspect-ratio:auto}.commerce-brand .wazen-logo-mark{aspect-ratio:550/252;max-width:min(120px,28vw)}.commerce-brand.compact .wazen-logo-icon{height:36px;max-width:min(200px,42vw)}.wazen-logo-wordmark{font:800 11px/1 var(--font-inter),Segoe UI,Arial,sans-serif;letter-spacing:.22em;color:#0F172A}.wazen-logo-wordmark-dark{color:#F8FAFC}.wazen-logo-arabic{color:#10B981;font-family:var(--font-plex-arabic),Tahoma,sans-serif}
 .commerce-header{height:78px;max-width:1440px;margin:auto;padding:0 5vw;display:flex;align-items:center;justify-content:space-between;gap:16px;background:rgba(245,246,242,.88);backdrop-filter:blur(18px);position:relative;z-index:10;min-width:0}.commerce-header nav{display:flex;gap:22px;flex-wrap:wrap}.commerce-header nav a,.commerce-header-actions a{color:#53645e;text-decoration:none;font-size:12px;font-weight:650;white-space:nowrap}.commerce-header-actions{display:flex;align-items:center;gap:10px;flex-shrink:0}.commerce-header-actions button{height:37px;border:1px solid var(--c-line);border-radius:10px;padding:0 11px;display:flex;align-items:center;gap:6px;background:white;font-size:10px;cursor:pointer}.commerce-header-actions a{height:37px;padding:0 12px;display:flex;align-items:center}.commerce-header-actions a.filled{border-radius:10px;background:var(--c-green);color:white}.commerce-menu{display:none;border:0;background:transparent;width:40px;height:40px;place-items:center;cursor:pointer;flex-shrink:0}
 .commerce-hero{max-width:1440px;min-height:650px;margin:auto;padding:68px 6vw 90px;display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:7vw;overflow:hidden}.commerce-hero-copy{position:relative;z-index:2}.commerce-pill{width:max-content;display:flex;align-items:center;gap:7px;padding:8px 12px;border-radius:99px;background:var(--c-soft);color:var(--c-green);font-size:10px;font-weight:750}.commerce-hero h1{margin:24px 0 20px;font-size:clamp(32px,5.2vw,76px);line-height:1.08;letter-spacing:-.055em}.commerce-hero h1 em{font-style:normal;color:var(--c-green)}.commerce-hero-copy>p{max-width:610px;margin:0;color:var(--c-muted);font-size:15px;line-height:1.9}.commerce-hero-actions{display:flex;flex-wrap:wrap;gap:11px;margin-top:30px}.commerce-hero-actions a,.commerce-product-row a,.commerce-cta a{min-height:46px;padding:0 20px;border-radius:13px;display:inline-flex;align-items:center;justify-content:center;gap:9px;text-decoration:none;background:var(--c-green);color:white;font-size:12px;font-weight:750;box-shadow:0 10px 24px rgba(13,122,101,.15)}.commerce-hero-actions a.secondary{background:white;color:#344b44;border:1px solid var(--c-line);box-shadow:none}.commerce-hero-copy>small{margin-top:18px;display:flex;align-items:center;gap:7px;color:#708079;font-size:9px}.commerce-hero-copy>small svg{color:var(--c-green);margin-inline-start:8px}
 .commerce-hero-visual{position:relative}.hero-window{padding:19px;border:1px solid rgba(255,255,255,.8);border-radius:28px;background:#fff;box-shadow:0 35px 80px rgba(28,52,44,.14);transform:perspective(1000px) rotateY(-3deg);position:relative}.hero-window:before{content:"";position:absolute;width:480px;height:480px;border-radius:50%;background:#dcebe5;z-index:-1;inset-inline-end:-120px;top:-100px}.hero-window header{display:flex;align-items:center;justify-content:space-between;padding:0 3px 14px;border-bottom:1px solid var(--c-line)}.hero-window header>span{padding:7px 10px;border-radius:8px;background:#f1f4f1;color:var(--c-muted);font-size:8px}.hero-kpis{display:grid;grid-template-columns:1.5fr .7fr;gap:10px;margin:15px 0}.hero-kpis article{min-height:102px;padding:16px;border-radius:16px;background:#f3f6f4;display:flex;flex-direction:column}.hero-kpis span{color:var(--c-muted);font-size:8px}.hero-kpis b{margin-top:11px;font-size:23px;letter-spacing:-.04em}.hero-kpis b small{font-size:8px}.hero-kpis em{margin-top:8px;color:var(--c-green);font-size:8px;font-style:normal}.hero-wallets{padding:14px;border:1px solid var(--c-line);border-radius:17px}.hero-wallets h3{font-size:11px;margin:0 0 6px}.hero-wallets>div{min-height:52px;display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:9px;border-bottom:1px solid #edf0ed}.hero-wallets>div:last-child{border:0}.hero-wallets i{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:var(--c-soft);color:var(--c-green)}.hero-wallets span{display:flex;flex-direction:column}.hero-wallets span b{font-size:9px}.hero-wallets span small{color:#8a9691;font-size:7px}.hero-wallets strong{font-size:9px}.hero-separation{margin-top:10px;padding:11px;border-radius:12px;display:flex;align-items:center;gap:8px;background:#fff5e6;color:#8a6429;font-size:8px}.hero-separation b{margin-inline-start:auto}.hero-float{position:absolute;inset-inline-start:-55px;bottom:28px;min-width:195px;padding:12px;border-radius:14px;display:flex;align-items:center;gap:9px;background:white;box-shadow:0 18px 40px rgba(29,52,45,.15)}.hero-float>svg{width:32px;height:32px;padding:8px;border-radius:10px;background:var(--c-soft);color:var(--c-green)}.hero-float span{display:flex;flex-direction:column;gap:3px}.hero-float b{font-size:9px}.hero-float small{color:#8a9591;font-size:7px}
@@ -83,3 +83,618 @@
 /* Responsive extras: phone + tablet */
 @media(max-width:900px){.brand-doc-hero,.brand-doc-grid,.brand-variant-row,.brand-equation,.brand-swatches-row{grid-template-columns:1fr}.brand-equation>em{display:none}.brand-doc-hero{padding-top:40px;padding-inline:16px}.brand-doc-story,.brand-doc-colors,.brand-doc-files,.brand-doc-variants{padding-inline:16px}.commerce-footer{grid-template-columns:1fr;text-align:center;gap:16px}.commerce-footer nav{flex-wrap:wrap;justify-content:center}.commerce-footer>*{justify-self:center}.commerce-footer>small{grid-column:auto}}
 @media(max-width:480px){.commerce-brand .wazen-logo-icon{height:30px;max-width:min(160px,52vw)}.commerce-security{grid-template-columns:1fr}.document-kpis{grid-template-columns:1fr}.pricing-grid{padding:0 12px 40px}.coupon-panel{flex-direction:column;align-items:stretch}.coupon-panel input,.coupon-panel button{width:100%}.hero-float{display:none}.hero-kpis{grid-template-columns:1fr}}
+
+/* Readable admin + commerce UI type scale (overrides tiny legacy px sizes) */
+.admin-app{
+  font-size:15px;
+  line-height:1.55;
+}
+.admin-app > aside{
+  width:270px;
+  padding:24px 16px;
+}
+.admin-workspace{
+  padding:12px;
+  gap:10px;
+}
+.admin-workspace small{font-size:12px}
+.admin-workspace b{font-size:15px}
+.admin-workspace .wazen-logo-icon{height:32px}
+.admin-app > aside nav{gap:4px}
+.admin-app > aside nav a{
+  min-height:46px;
+  padding:0 12px;
+  font-size:14px;
+  gap:12px;
+}
+.admin-side-foot a{font-size:13px}
+.admin-side-foot small{font-size:12px;line-height:1.5}
+.admin-main{width:calc(100% - 270px);margin-inline-start:270px}
+.admin-main > header{height:78px;padding:0 28px}
+.admin-main > header small{font-size:13px}
+.admin-main > header b{font-size:16px}
+.admin-head-actions button,
+.admin-head-actions a{
+  height:40px;
+  padding:0 12px;
+  font-size:13px;
+}
+.admin-content{
+  max-width:none;
+  width:100%;
+  padding:28px clamp(16px,2.5vw,36px) 64px;
+}
+.admin-page-head small{font-size:13px;font-weight:700}
+.admin-page-head h1{font-size:clamp(26px,2.5vw,34px);margin:8px 0}
+.admin-page-head p{font-size:15px;line-height:1.7;max-width:52ch}
+.admin-page-head button{
+  height:42px;
+  padding:0 14px;
+  font-size:13px;
+}
+.admin-kpis{gap:14px;margin:22px 0}
+.admin-kpis > article{
+  min-height:124px;
+  padding:20px;
+  gap:4px 12px;
+}
+.admin-kpis span{font-size:14px}
+.admin-kpis b{font-size:28px;letter-spacing:-.03em}
+.admin-kpis small{font-size:13px}
+.admin-panel{padding:22px}
+.admin-panel-head h2{font-size:17px}
+.admin-panel-head p{font-size:13px;line-height:1.6}
+.admin-panel-head > span{font-size:13px}
+.admin-filters{gap:10px;margin-bottom:16px}
+.admin-filters > label{
+  width:min(360px,100%);
+  height:44px;
+  padding:0 12px;
+}
+.admin-filters input{font-size:14px}
+.admin-filters select,
+.admin-filters > button{
+  height:44px;
+  padding:0 12px;
+  font-size:13px;
+}
+.admin-table-scroll th,
+.table-scroll th{
+  height:44px;
+  padding:0 12px;
+  font-size:13px;
+  font-weight:700;
+}
+.admin-table-scroll td,
+.table-scroll td{
+  height:64px;
+  padding:10px 12px;
+  font-size:14px;
+}
+.admin-table-scroll td b{font-size:14px}
+.admin-table-scroll td small{font-size:12px}
+.admin-table-scroll td button,
+.admin-table-scroll td select,
+.admin-table-scroll td a{
+  font-size:13px;
+}
+.admin-app .commerce-status{
+  font-size:13px;
+  padding:.4rem .75rem;
+}
+.role-list b,
+.coupon-list code,
+.coupon-list b,
+.coupon-list span,
+.audit-list b,
+.plan-distribution span,
+.plan-distribution b,
+.report-metrics dt,
+.report-metrics dd,
+.report-buttons button{
+  font-size:13px;
+}
+.role-list small,
+.audit-list small,
+.audit-list time,
+.role-list code{
+  font-size:12px;
+}
+.coupon-create input,
+.coupon-create button{
+  height:40px;
+  font-size:13px;
+}
+.filter-tabs > button{
+  height:38px;
+  padding:0 12px;
+  font-size:13px;
+}
+.documents-page,
+.billing-page,
+.pricing-page{
+  font-size:15px;
+  line-height:1.55;
+}
+.documents-layout > aside button{font-size:14px;min-height:44px}
+.documents-layout > aside h2{font-size:16px}
+.documents-title h1{font-size:clamp(26px,3vw,32px)}
+.documents-title p,
+.documents-title small{font-size:14px}
+.documents-title button{font-size:13px;height:42px}
+.document-kpis span{font-size:13px}
+.document-kpis b{font-size:20px}
+.document-list > button b{font-size:14px}
+.document-list > button small,
+.document-list > button em{font-size:12px}
+.document-list > label input{font-size:14px}
+.route-head h1{font-size:clamp(28px,3vw,36px)}
+.route-head p,
+.route-head small{font-size:14px}
+.table-card-head h2{font-size:17px}
+.table-card-head button{font-size:13px}
+.commerce-header nav a,
+.commerce-header-actions a{font-size:14px}
+.commerce-header-actions button{font-size:13px;height:40px}
+.pricing-hero p{font-size:15px}
+.billing-toggle button{font-size:13px;height:40px}
+.pricing-grid h2{font-size:24px}
+.pricing-grid article > p,
+.pricing-grid li,
+.pricing-grid article > small,
+.plan-price span,
+.annual-note{font-size:14px}
+.pricing-grid article > button{font-size:14px;height:46px}
+.coupon-panel b{font-size:14px}
+.coupon-panel small{font-size:13px}
+
+@media(max-width:1100px){
+  .admin-main{width:100%;margin:0}
+  .admin-app > aside{width:min(280px,86vw)}
+}
+@media(max-width:760px){
+  .admin-page-head h1{font-size:24px}
+  .admin-kpis{grid-template-columns:1fr;gap:10px}
+  .admin-kpis > article{min-height:0;padding:14px;min-width:0;overflow:hidden}
+  .admin-kpis i{width:34px;height:34px;flex:0 0 34px}
+  .admin-kpis i svg{width:16px;height:16px}
+  .admin-kpis b{font-size:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .admin-filters > label{width:100%}
+  .admin-app > aside nav a{min-height:44px;font-size:13px;gap:12px}
+  .admin-app > aside nav a svg{width:18px;height:18px;flex-shrink:0}
+  .admin-content,.admin-main,.admin-panel,.admin-table-scroll{min-width:0;max-width:100%}
+  .admin-table-scroll table,.table-scroll table{min-width:640px}
+  .coupon-create{grid-template-columns:1fr!important}
+}
+
+/* Landing hero: open ledger mock */
+@keyframes hero-ledger-in {
+  from { opacity: 0; transform: translateY(18px) rotate(-1.2deg); }
+  to { opacity: 1; transform: translateY(0) rotate(-1.2deg); }
+}
+
+.commerce-hero-visual {
+  position: relative;
+  isolation: isolate;
+}
+.hero-ledger {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  border-radius: 22px 26px 26px 18px;
+  background:
+    linear-gradient(145deg, #1a4a42 0%, #0f322c 48%, #163b35 100%);
+  box-shadow:
+    0 34px 70px rgba(16, 42, 36, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  padding: 14px 14px 14px 0;
+  overflow: hidden;
+  animation: hero-ledger-in 700ms ease both;
+  transform: rotate(-1.2deg);
+}
+.hero-ledger-spine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-evenly;
+  padding: 18px 0;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.22), rgba(255, 255, 255, 0.05) 45%, rgba(0, 0, 0, 0.18));
+  border-inline-end: 1px solid rgba(255, 255, 255, 0.08);
+}
+.hero-ledger-spine i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #d7c49a, #8d7340 70%);
+  box-shadow: inset 0 -1px 1px rgba(0, 0, 0, 0.35);
+}
+.hero-ledger-page {
+  position: relative;
+  min-height: 460px;
+  border-radius: 14px 18px 18px 12px;
+  padding: 22px 22px 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55), transparent 18%),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 39px,
+      rgba(34, 68, 58, 0.07) 40px
+    ),
+    linear-gradient(165deg, #fbfaf6 0%, #f4f1ea 100%);
+  color: #14221f;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.65),
+    8px 0 24px rgba(0, 0, 0, 0.08);
+}
+.hero-ledger-page::before {
+  content: "";
+  position: absolute;
+  inset-block: 18px;
+  inset-inline-start: 54px;
+  width: 1px;
+  background: rgba(196, 84, 84, 0.28);
+  pointer-events: none;
+}
+.hero-ledger-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding-inline-start: 12px;
+}
+.hero-ledger-head > span {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(22, 59, 53, 0.08);
+  color: #3f514a;
+  font-size: 13px;
+  font-weight: 600;
+}
+.hero-ledger-balance {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 8px 0 10px;
+  padding: 4px 4px 14px 12px;
+}
+.hero-ledger-balance > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.hero-ledger-balance span {
+  color: #3f514a;
+  font-size: 14px;
+  font-weight: 600;
+}
+.hero-ledger-balance b {
+  font-size: clamp(28px, 3.4vw, 38px);
+  font-weight: 700;
+  color: #12231f;
+  letter-spacing: 0;
+  line-height: 1.1;
+}
+.hero-ledger-balance .omr-code {
+  font-size: 17px !important;
+  font-weight: 700;
+  opacity: 1;
+  color: #0d7a65;
+}
+.hero-ledger-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.hero-ledger-meta em {
+  font-style: normal;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0d7a65;
+}
+.hero-ledger-meta small {
+  color: #4b5c56;
+  font-size: 13px;
+  font-weight: 600;
+}
+.hero-ledger-rule {
+  height: 1px;
+  margin: 0 4px 12px 12px;
+  background: linear-gradient(90deg, rgba(22, 59, 53, 0.18), transparent);
+}
+.hero-ledger-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding-inline-start: 12px;
+}
+.hero-ledger-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(88px, 0.9fr) minmax(88px, 0.9fr);
+  gap: 10px;
+  padding: 0 0 8px 48px;
+  color: #6a7872;
+  font-size: 12px;
+  font-weight: 700;
+}
+.hero-ledger-cols span:nth-child(2),
+.hero-ledger-cols span:nth-child(3) {
+  text-align: end;
+}
+.hero-ledger-row {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1.4fr) minmax(88px, 0.9fr) minmax(88px, 0.9fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px dashed rgba(34, 68, 58, 0.14);
+}
+.hero-ledger-amounts {
+  display: contents;
+}
+.hero-ledger-row:last-child {
+  border-bottom: 0;
+}
+.hero-ledger-row i {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: #e8f4ef;
+  color: #0d7a65;
+}
+.hero-ledger-account {
+  font-size: 15px;
+  font-weight: 700;
+  color: #12231f;
+  min-width: 0;
+}
+.hero-ledger-debit,
+.hero-ledger-remain {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #b42318;
+  white-space: nowrap;
+}
+.hero-ledger-debit small,
+.hero-ledger-remain small {
+  font-size: 11px;
+  font-weight: 700;
+  color: #c75c62;
+  opacity: 0.9;
+}
+.hero-ledger-debit .omr-code,
+.hero-ledger-remain .omr-code {
+  font-size: 12px !important;
+  font-weight: 700;
+  opacity: 1;
+  color: inherit;
+}
+.hero-ledger-remain {
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(199, 92, 98, 0.08);
+  border: 1px solid rgba(199, 92, 98, 0.16);
+}
+.hero-ledger-footer {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(135deg, #fff6e5, #f8edd6);
+  border: 1px solid #f0e0c2;
+  color: #7a5520;
+  font-size: 14px;
+  font-weight: 700;
+}
+.hero-ledger-footer span {
+  flex: 1;
+  min-width: 0;
+}
+.hero-ledger-footer b {
+  font-size: 15px;
+  color: #6a4a18;
+  white-space: nowrap;
+}
+.commerce-hero-copy > p {
+  font-size: 17px;
+  line-height: 1.85;
+  color: #3f514a;
+}
+.commerce-hero-copy > small {
+  font-size: 14px;
+  color: #3f514a;
+}
+.commerce-pill {
+  font-size: 13px;
+}
+.commerce-hero-actions a {
+  min-height: 50px;
+  font-size: 15px;
+}
+
+@media (max-width: 1100px) {
+  .hero-ledger {
+    transform: none;
+    animation-name: none;
+    opacity: 1;
+  }
+}
+@media (max-width: 760px) {
+  .hero-ledger {
+    grid-template-columns: 14px 1fr;
+    padding: 8px 8px 8px 0;
+    border-radius: 16px;
+    max-height: min(58vh, 420px);
+  }
+  .hero-ledger-spine {
+    padding: 10px 0;
+  }
+  .hero-ledger-spine i {
+    width: 7px;
+    height: 7px;
+  }
+  .hero-ledger-page {
+    min-height: 0;
+    padding: 12px 12px 10px;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.55), transparent 18%),
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 31px,
+        rgba(34, 68, 58, 0.07) 32px
+      ),
+      linear-gradient(165deg, #fbfaf6 0%, #f4f1ea 100%);
+  }
+  .hero-ledger-page::before {
+    inset-block: 12px;
+    inset-inline-start: 36px;
+  }
+  .hero-ledger-head {
+    margin-bottom: 8px;
+    gap: 8px;
+    padding-inline-start: 8px;
+  }
+  .hero-ledger-head .commerce-brand.compact .wazen-logo-icon {
+    height: 26px;
+    max-width: 120px;
+  }
+  .hero-ledger-head > span {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+  .hero-ledger-balance {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 0 4px;
+    padding: 0 0 8px 8px;
+  }
+  .hero-ledger-balance span {
+    font-size: 12px;
+  }
+  .hero-ledger-balance b {
+    font-size: 20px;
+  }
+  .hero-ledger-balance .omr-code {
+    font-size: 12px !important;
+  }
+  .hero-ledger-meta {
+    align-items: flex-end;
+    gap: 2px;
+  }
+  .hero-ledger-meta em {
+    font-size: 12px;
+  }
+  .hero-ledger-meta small {
+    font-size: 11px;
+  }
+  .hero-ledger-rule {
+    margin: 0 0 6px 8px;
+  }
+  .hero-ledger-lines {
+    padding-inline-start: 8px;
+  }
+  .hero-ledger-cols {
+    display: none;
+  }
+  .hero-ledger-row {
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 3px 8px;
+    min-height: 0;
+    padding: 7px 0;
+    align-items: start;
+  }
+  .hero-ledger-row i {
+    grid-row: 1 / 3;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    margin-top: 2px;
+  }
+  .hero-ledger-row i svg {
+    width: 14px;
+    height: 14px;
+  }
+  .hero-ledger-account {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hero-ledger-amounts {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+  }
+  .hero-ledger-debit,
+  .hero-ledger-remain {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hero-ledger-debit small,
+  .hero-ledger-remain small {
+    font-size: 9px;
+  }
+  .hero-ledger-debit .omr-code,
+  .hero-ledger-remain .omr-code {
+    font-size: 10px !important;
+  }
+  .hero-ledger-remain {
+    padding: 4px 6px;
+    border-radius: 8px;
+  }
+  .hero-ledger-footer {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .hero-ledger-footer svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+  .hero-ledger-footer b {
+    font-size: 12px;
+  }
+  .commerce-hero-visual {
+    max-width: 420px;
+    margin-inline: auto;
+    transform: scale(0.92);
+    transform-origin: top center;
+    margin-bottom: -12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-ledger {
+    animation: none !important;
+  }
+}

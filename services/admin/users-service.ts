@@ -75,8 +75,11 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
   const profile = await db.prepare(`SELECT u.id AS user_id, u.email, u.display_name, u.locale, u.currency, u.created_at,
       COALESCE(p.status,'active') AS status, p.country, p.phone, p.last_seen_at,
       COALESCE(r.role,'customer') AS role, r.permissions_json,
-      s.id AS subscription_id, s.status AS subscription_status, s.billing_cycle, s.current_period_end,
+      s.id AS subscription_id, s.status AS subscription_status, s.billing_cycle,
+      s.current_period_start, s.current_period_end, s.paused_at, s.admin_note,
+      s.discount_percent, s.discount_fixed_minor, s.discount_label, s.gateway_id,
       pl.id AS plan_id, pl.name_ar AS plan_name_ar, pl.name_en AS plan_name_en,
+      pl.wallet_limit, pl.member_limit, pl.features_json, pl.monthly_minor, pl.annual_minor,
       CASE WHEN t.enabled_at IS NOT NULL THEN 1 ELSE 0 END AS totp_enabled
     FROM users u
     LEFT JOIN customer_profiles p ON p.user_id=u.id
@@ -84,10 +87,13 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
     LEFT JOIN subscriptions s ON s.user_id=u.id
     LEFT JOIN plans pl ON pl.id=s.plan_id
     LEFT JOIN totp_credentials t ON t.user_id=u.id
-    WHERE u.id=? LIMIT 1`).bind(userId).first<Record<string, unknown>>();
+    WHERE u.id=?
+    ORDER BY s.created_at DESC
+    LIMIT 1`).bind(userId).first<Record<string, unknown>>();
   if (!profile) return null;
 
-  const [sessions, apiKeys, spaces, memberships, recentAudit] = await Promise.all([
+  const { getUserBillingHistory } = await import("./billing-service");
+  const [sessions, apiKeys, spaces, memberships, recentAudit, billing] = await Promise.all([
     db.prepare(`SELECT id, created_at, last_seen_at, expires_at FROM auth_sessions WHERE user_id=? ORDER BY last_seen_at DESC LIMIT 50`)
       .bind(userId).all(),
     db.prepare(`SELECT id, name, key_prefix, scopes_json, expires_at, last_used_at, revoked_at, created_at
@@ -99,10 +105,14 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
       .bind(userId).all(),
     db.prepare(`SELECT id, action, entity_type, entity_id, created_at FROM audit_logs WHERE user_id=? OR entity_id=? ORDER BY created_at DESC LIMIT 30`)
       .bind(userId, userId).all(),
+    getUserBillingHistory(db, userId),
   ]);
 
+  let features: string[] = [];
+  try { features = JSON.parse(String(profile.features_json ?? "[]")); } catch { features = []; }
+
   return {
-    profile,
+    profile: { ...profile, features },
     sessions: sessions.results,
     apiKeys: apiKeys.results.map((row) => {
       try { return { ...row, scopes: JSON.parse(String(row.scopes_json ?? "[]")), scopes_json: undefined }; }
@@ -111,5 +121,6 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
     spaces: spaces.results,
     tenants: memberships.results,
     audit: recentAudit.results,
+    billing,
   };
 }

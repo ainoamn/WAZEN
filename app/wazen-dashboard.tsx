@@ -39,7 +39,7 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState, startTransition } from "react";
 import { apiFetch } from "../lib/client-api";
 
 type Locale = "ar" | "en";
@@ -348,8 +348,10 @@ export function WazenDashboard() {
   };
 
   const changeView = (view: ViewId) => {
-    setActiveView(view);
-    setSidebarOpen(false);
+    startTransition(() => {
+      setActiveView(view);
+      setSidebarOpen(false);
+    });
   };
 
   if (loading) return <LoadingScreen locale={locale} />;

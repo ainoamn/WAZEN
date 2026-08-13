@@ -12,6 +12,11 @@ test("translates COLLATE NOCASE comparisons", () => {
   assert.equal(sql, "SELECT id FROM users WHERE LOWER(email)=LOWER($1) LIMIT 1");
 });
 
+test("translates aliased COLLATE NOCASE comparisons", () => {
+  const sql = translateSqliteToPostgres("SELECT u.id FROM users u WHERE u.email=? COLLATE NOCASE LIMIT 1");
+  assert.equal(sql, "SELECT u.id FROM users u WHERE LOWER(u.email)=LOWER($1) LIMIT 1");
+});
+
 test("translates PRAGMA table_info", () => {
   const sql = translateSqliteToPostgres("PRAGMA table_info(contribution_plans)");
   assert.match(sql, /information_schema\.columns/);

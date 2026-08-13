@@ -6,7 +6,7 @@ export function translateSqliteToPostgres(sql: string): string {
 
   // Case-insensitive comparisons before placeholder renumbering
   out = out.replace(
-    /([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\?\s+COLLATE\s+NOCASE/gi,
+    /((?:[A-Za-z_][A-Za-z0-9_]*\.)?[A-Za-z_][A-Za-z0-9_]*)\s*=\s*\?\s+COLLATE\s+NOCASE/gi,
     "LOWER($1)=LOWER(?)",
   );
   out = out.replace(/\s+COLLATE\s+NOCASE/gi, "");

@@ -1,5 +1,6 @@
 import { sha256, verifyCsrfToken } from "./auth";
 import { ApiError } from "./api-error";
+import { appOrigin } from "./app-origin";
 export { ApiError };
 
 export function enforceWriteRequest(request: Request, maxBytes = 65_536) {
@@ -8,7 +9,7 @@ export function enforceWriteRequest(request: Request, maxBytes = 65_536) {
   const length = Number(request.headers.get("content-length") ?? 0);
   if (Number.isFinite(length) && length > maxBytes) throw new ApiError(413, "PAYLOAD_TOO_LARGE");
   const origin = request.headers.get("origin");
-  const expected = process.env.WAZEN_APP_ORIGIN ? new URL(process.env.WAZEN_APP_ORIGIN).origin : new URL(request.url).origin;
+  const expected = appOrigin(request);
   if (origin && origin !== expected && origin !== new URL(request.url).origin) throw new ApiError(403, "ORIGIN_REJECTED");
   if (request.headers.get("sec-fetch-site") === "cross-site") throw new ApiError(403, "ORIGIN_REJECTED");
 }
@@ -65,8 +66,15 @@ export async function releaseIdempotency(db: D1Database, userId: string, key: st
 
 export function errorResponse(error: unknown) {
   if (error instanceof ApiError) return Response.json({ error: error.code }, { status: error.status });
-  const code = error instanceof Error && error.message === "DATABASE_NOT_CONFIGURED" ? "DATABASE_NOT_CONFIGURED" : "INTERNAL_ERROR";
-  console.error(JSON.stringify({ level: "error", code, at: new Date().toISOString() }));
-  const diagnostic = process.env.NODE_ENV === "production" || !(error instanceof Error) ? {} : { detail: error.message };
+  const message = error instanceof Error ? error.message : String(error);
+  const code = message === "DATABASE_NOT_CONFIGURED" ? "DATABASE_NOT_CONFIGURED" : "INTERNAL_ERROR";
+  console.error(JSON.stringify({
+    level: "error",
+    code,
+    message,
+    stack: error instanceof Error ? error.stack?.split("\n").slice(0, 8) : undefined,
+    at: new Date().toISOString(),
+  }));
+  const diagnostic = process.env.NODE_ENV !== "production" ? { detail: message } : {};
   return Response.json({ error: code, ...diagnostic }, { status: code === "DATABASE_NOT_CONFIGURED" ? 503 : 500 });
 }
