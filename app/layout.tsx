@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Cairo } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
@@ -9,6 +9,12 @@ const cairo = Cairo({
   weight: ["400", "600", "700", "800"],
   variable: "--font-cairo",
 });
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();

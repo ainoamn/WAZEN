@@ -46,8 +46,8 @@ export function PublicHeader({ locale, setLocale }: { locale: CommerceLocale; se
   const l = (ar: string, en: string) => locale === "ar" ? ar : en;
   return <header className="commerce-header">
     <Brand />
-    <button className="commerce-menu" onClick={() => setOpen(!open)} aria-label="Menu">{open ? <X /> : <Menu />}</button>
-    <nav className={open ? "open" : ""}>
+    <button className="commerce-menu" onClick={() => setOpen(!open)} aria-label="Menu" aria-expanded={open}>{open ? <X /> : <Menu />}</button>
+    <nav className={open ? "open" : ""} onClick={() => setOpen(false)}>
       <Link href="/#features">{l("المزايا", "Features")}</Link>
       <Link href="/pricing">{l("الباقات", "Pricing")}</Link>
       <Link href="/about">{l("من نحن", "About")}</Link>

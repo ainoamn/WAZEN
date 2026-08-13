@@ -19,8 +19,10 @@
 }
 
 * { box-sizing: border-box; }
-html { background: var(--canvas); }
-body { margin: 0; background: var(--canvas); color: var(--ink); font-family: "Segoe UI", Tahoma, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+html { background: var(--canvas); overflow-x: clip; }
+body { margin: 0; background: var(--canvas); color: var(--ink); font-family: var(--font-cairo), "Segoe UI", Tahoma, Arial, sans-serif; -webkit-font-smoothing: antialiased; overflow-x: clip; min-width: 0; }
+img, svg, video, canvas { max-width: 100%; height: auto; }
+.main-shell, .page-content, .topbar { min-width: 0; }
 button, input, select { font: inherit; }
 button { color: inherit; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid rgba(28, 150, 124, 0.22); outline-offset: 2px; }
@@ -208,18 +210,19 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .overview-grid, .lower-grid { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 1024px) {
   .sidebar { transform: translateX(-105%); transition: transform 220ms ease; box-shadow: 20px 0 50px rgba(17,31,27,.14); }
   [dir="rtl"] .sidebar { transform: translateX(105%); }
   .sidebar.sidebar-open { transform: translateX(0); }
   .sidebar-backdrop { position: fixed; inset: 0; z-index: 29; border: 0; background: rgba(17,31,27,.35); }
   .sidebar-close, .mobile-menu { display: grid; place-items: center; }
   .main-shell { width: 100%; margin-inline-start: 0; }
-  .topbar { padding: 0 20px; }
+  .topbar { padding: 0 20px; gap: 12px; }
   .page-content { padding: 22px 20px 42px; }
   .topbar-actions .primary-button { width: 39px; padding: 0; font-size: 0; }
   .topbar-title .eyebrow { display: none; }
   .settings-grid { grid-template-columns: 1fr; }
+  .brand-mark .wazen-logo-icon { height: 32px; }
 }
 
 @media (max-width: 620px) {
