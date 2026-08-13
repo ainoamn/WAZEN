@@ -60,7 +60,7 @@ async function ensureUser(db: D1Database, user: RequestUser) {
   const createdAt = now();
   await db
     .prepare(`INSERT INTO users (id, email, display_name, locale, currency, created_at)
-      VALUES (?, ?, ?, 'ar', 'SAR', ?)
+      VALUES (?, ?, ?, 'ar', 'OMR', ?)
       ON CONFLICT(id) DO UPDATE SET email = excluded.email, display_name = excluded.display_name`)
     .bind(user.id, user.email, user.displayName, createdAt)
     .run();
@@ -68,7 +68,7 @@ async function ensureUser(db: D1Database, user: RequestUser) {
   const configuredAdmins = (process.env.WAZEN_ADMIN_EMAILS ?? "").split(",").map((email) => email.trim().toLowerCase());
   const role = configuredAdmins.includes(user.email.toLowerCase()) ? "super_admin" : "customer";
   await db.batch([
-    db.prepare(`INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','SA',?,?)
+    db.prepare(`INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','OM',?,?)
       ON CONFLICT(user_id) DO UPDATE SET last_seen_at=excluded.last_seen_at`).bind(user.id, createdAt, createdAt),
     db.prepare(`INSERT OR IGNORE INTO platform_roles (user_id,role,permissions_json,created_at,updated_at) VALUES (?,?,?,?,?)`)
       .bind(user.id, role, role === "super_admin" ? '["*"]' : '["wallets:own","documents:own"]', createdAt, createdAt),
@@ -92,16 +92,16 @@ async function ensureUser(db: D1Database, user: RequestUser) {
 
   await db.batch([
     db.prepare("INSERT INTO spaces VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(
-      personal, user.id, "محفظتي الشخصية", "Personal wallet", "personal", "SAR", 842000, 1500000, "navy", createdAt,
+      personal, user.id, "محفظتي الشخصية", "Personal wallet", "personal", "OMR", 842000, 1500000, "navy", createdAt,
     ),
     db.prepare("INSERT INTO spaces VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(
-      household, user.id, "ميزانية المنزل", "Home budget", "household", "SAR", 124700, 300000, "amber", createdAt,
+      household, user.id, "ميزانية المنزل", "Home budget", "household", "OMR", 124700, 300000, "amber", createdAt,
     ),
     db.prepare("INSERT INTO spaces VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(
-      trip, user.id, "رحلة العائلة 2027", "Family trip 2027", "trip", "SAR", 386000, 1200000, "emerald", createdAt,
+      trip, user.id, "رحلة العائلة 2027", "Family trip 2027", "trip", "OMR", 386000, 1200000, "emerald", createdAt,
     ),
     db.prepare("INSERT INTO spaces VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(
-      society, user.id, "جمعية الإخوة", "Siblings circle", "society", "SAR", 210000, 1200000, "purple", createdAt,
+      society, user.id, "جمعية الإخوة", "Siblings circle", "society", "OMR", 210000, 1200000, "purple", createdAt,
     ),
     db.prepare("INSERT INTO contribution_plans (id,space_id,amount_minor,interval,due_day,extra_policy,duration_months,starts_at) VALUES (?, ?, ?, 'monthly', 1, 'personal_reserve', 60, ?)").bind(`${trip}-plan`, trip, 2000, createdAt),
     db.prepare("INSERT INTO contribution_plans (id,space_id,amount_minor,interval,due_day,extra_policy,duration_months,starts_at) VALUES (?, ?, ?, 'monthly', 5, 'personal_reserve', 60, ?)").bind(`${society}-plan`, society, 20000, createdAt),
@@ -257,7 +257,7 @@ export async function POST(request: Request) {
       const count = await db.prepare("SELECT COUNT(*) AS count FROM spaces WHERE owner_user_id=?").bind(user.id).first<{ count: number }>();
       if (Number(count?.count ?? 0) >= Number(limits?.wallet_limit ?? 1)) throw new ApiError(403, "PLAN_WALLET_LIMIT");
       const id = `${cleanId(user.id)}-${crypto.randomUUID()}`; const createdAt = now();
-      const profile = await db.prepare("SELECT currency FROM users WHERE id=?").bind(user.id).first<{ currency: string }>(); const currency = profile?.currency ?? "SAR";
+      const profile = await db.prepare("SELECT currency FROM users WHERE id=?").bind(user.id).first<{ currency: string }>(); const currency = profile?.currency ?? "OMR";
       let goalMinor: number; try { goalMinor = parseNonNegativeMoneyToMinor(parsed.data.goal, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
       const tenantId = await ensureDefaultTenant(db, user);
       const statements: D1PreparedStatement[] = [

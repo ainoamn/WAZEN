@@ -66,10 +66,10 @@ async function seedCoupons(db: D1Database) {
 async function ensureIdentity(db: D1Database, user: RequestUser) {
   const now = isoNow();
   await db.batch([
-    db.prepare(`INSERT INTO users (id,email,display_name,locale,currency,created_at) VALUES (?,?,?,'ar','SAR',?)
-      ON CONFLICT(id) DO UPDATE SET email=excluded.email, display_name=excluded.display_name`).bind(user.id, user.email, user.displayName, now),
-    db.prepare(`INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','SA',?,?)
-      ON CONFLICT(user_id) DO UPDATE SET last_seen_at=excluded.last_seen_at`).bind(user.id, now, now),
+    db.prepare(`INSERT INTO users (id,email,display_name,locale,currency,created_at) VALUES (?,?,?,'ar','OMR',?)
+      ON CONFLICT(id) DO UPDATE SET email=excluded.email, display_name=excluded.display_name, currency='OMR'`).bind(user.id, user.email, user.displayName, now),
+    db.prepare(`INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','OM',?,?)
+      ON CONFLICT(user_id) DO UPDATE SET last_seen_at=excluded.last_seen_at, country='OM'`).bind(user.id, now, now),
   ]);
 
   const role = await db.prepare("SELECT role FROM platform_roles WHERE user_id=?").bind(user.id).first<{ role: string }>();
@@ -109,7 +109,7 @@ async function seedCommercialData(db: D1Database, user: RequestUser) {
       const userId = demo[0];
       const subId = `demo-sub-${index + 1}`;
       statements.push(
-        db.prepare("INSERT INTO users VALUES (?, ?, ?, 'ar', 'SAR', ?)").bind(userId, demo[2], demo[1], atOffset(-120 + index * 12)),
+        db.prepare("INSERT INTO users VALUES (?, ?, ?, 'ar', 'OMR', ?)").bind(userId, demo[2], demo[1], atOffset(-120 + index * 12)),
         db.prepare("INSERT INTO customer_profiles VALUES (?, ?, ?, NULL, ?, ?)").bind(userId, demo[4] === "suspended" ? "suspended" : "active", demo[5], atOffset(-index), atOffset(-120 + index * 12)),
         db.prepare("INSERT INTO platform_roles VALUES (?, 'customer', '[\"wallets:own\",\"documents:own\"]', ?, ?)").bind(userId, now, now),
         db.prepare("INSERT INTO subscriptions VALUES (?, ?, ?, ?, 'monthly', ?, ?, 0, ?, ?)").bind(subId, userId, demo[3], demo[4], atOffset(-20), atOffset(10), atOffset(-120), now),
@@ -119,8 +119,8 @@ async function seedCommercialData(db: D1Database, user: RequestUser) {
         const invoiceId = `demo-inv-${index + 1}`;
         const tax = calculatePercentMinor(amount, 1500);
         statements.push(
-          db.prepare("INSERT INTO invoices VALUES (?, ?, ?, ?, ?, 0, ?, ?, 'SAR', ?, ?, ?, ?)").bind(invoiceId, userId, subId, `WZN-INV-2026-00${index + 1}`, amount, tax, amount + tax, index === 2 ? "pending" : "paid", atOffset(8), index === 2 ? null : atOffset(-2 - index), atOffset(-5 - index)),
-          db.prepare("INSERT INTO payments VALUES (?, ?, ?, ?, ?, 'SAR', ?, ?, ?, ?, ?)").bind(`demo-pay-${index + 1}`, userId, invoiceId, `WZN-PAY-2026-00${index + 1}`, amount + tax, index === 1 ? "card" : "bank_transfer", index === 2 ? "pending" : "succeeded", index === 2 ? "unsettled" : "settled", atOffset(-3 - index), atOffset(-3 - index)),
+          db.prepare("INSERT INTO invoices VALUES (?, ?, ?, ?, ?, 0, ?, ?, 'OMR', ?, ?, ?, ?)").bind(invoiceId, userId, subId, `WZN-INV-2026-00${index + 1}`, amount, tax, amount + tax, index === 2 ? "pending" : "paid", atOffset(8), index === 2 ? null : atOffset(-2 - index), atOffset(-5 - index)),
+          db.prepare("INSERT INTO payments VALUES (?, ?, ?, ?, ?, 'OMR', ?, ?, ?, ?, ?)").bind(`demo-pay-${index + 1}`, userId, invoiceId, `WZN-PAY-2026-00${index + 1}`, amount + tax, index === 1 ? "card" : "bank_transfer", index === 2 ? "pending" : "succeeded", index === 2 ? "unsettled" : "settled", atOffset(-3 - index), atOffset(-3 - index)),
         );
       }
     });
@@ -136,7 +136,7 @@ async function seedCommercialData(db: D1Database, user: RequestUser) {
       ["member_statement", "WZN-STM-2026-0001", "فاطمة محمد", "كشف حساب عضو حتى أغسطس 2026", 0],
     ] as const;
     await db.batch(docs.map((doc, index) => db.prepare(
-      "INSERT INTO documents VALUES (?,?,NULL,?,?,?,?,?,'SAR','issued','bank_transfer',?,?,?)",
+      "INSERT INTO documents VALUES (?,?,NULL,?,?,?,?,?,'OMR','issued','bank_transfer',?,?,?)",
     ).bind(id(), user.id, doc[0], doc[1], doc[2], doc[3], doc[4], user.displayName, atOffset(-index * 2), now)));
     for (const key of ["receipt-2026", "disbursement-2026", "handover-2026", "member_statement-2026"]) {
       await db.prepare("INSERT OR IGNORE INTO document_sequences VALUES (?,1)").bind(key).run();
@@ -380,7 +380,7 @@ export async function POST(request: Request) {
       const { type, personName, description } = parsed.data;
       const space = parsed.data.spaceId ? await authorizeSpace(db, user, parsed.data.spaceId, "transact") : null;
       const ownCurrency = await db.prepare("SELECT currency FROM users WHERE id=?").bind(user.id).first<{ currency: string }>();
-      const currency = space?.currency ?? ownCurrency?.currency ?? "SAR";
+      const currency = space?.currency ?? ownCurrency?.currency ?? "OMR";
       let amountMinor: number; try { amountMinor = parseNonNegativeMoneyToMinor(parsed.data.amount, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
       const reference = await nextReference(db, type, documentPrefixes[type] ?? "DOC");
       const documentId = id(); const now = isoNow();

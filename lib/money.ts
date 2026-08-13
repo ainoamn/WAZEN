@@ -16,8 +16,30 @@ function parse(value: string | number, currency: string, allowZero: boolean) {
   return Number(result);
 }
 
-export function parseMoneyToMinor(value: string | number, currency = "SAR") { return parse(value, currency, false); }
-export function parseNonNegativeMoneyToMinor(value: string | number, currency = "SAR") { return parse(value, currency, true); }
+export function parseMoneyToMinor(value: string | number, currency = "OMR") { return parse(value, currency, false); }
+export function parseNonNegativeMoneyToMinor(value: string | number, currency = "OMR") { return parse(value, currency, true); }
+
+export function formatMoneyMinor(
+  minor: number,
+  currency = "OMR",
+  locale: "ar" | "en" = "ar",
+  options?: { compact?: boolean },
+) {
+  const scale = currencyScale(currency);
+  const divisor = 10 ** scale;
+  return new Intl.NumberFormat(locale === "ar" ? "ar-OM" : "en-OM", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: scale,
+    maximumFractionDigits: scale,
+    notation: options?.compact ? "compact" : "standard",
+  }).format((minor ?? 0) / divisor);
+}
+
+export const DEFAULT_CURRENCY = "OMR";
+export const DEFAULT_COUNTRY = "OM";
+export const DEFAULT_TIMEZONE = "Asia/Muscat";
+
 
 export function calculatePercentMinor(amountMinor: number, basisPoints: number) {
   if (!Number.isSafeInteger(amountMinor) || amountMinor < 0 || !Number.isSafeInteger(basisPoints) || basisPoints < 0) throw new Error("INVALID_MONEY_INPUT");

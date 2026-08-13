@@ -48,7 +48,7 @@ async function initializeSchema(db: D1Database) {
       email TEXT NOT NULL,
       display_name TEXT NOT NULL,
       locale TEXT NOT NULL DEFAULT 'ar',
-      currency TEXT NOT NULL DEFAULT 'SAR',
+      currency TEXT NOT NULL DEFAULT 'OMR',
       created_at TEXT NOT NULL
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS spaces (
@@ -57,7 +57,7 @@ async function initializeSchema(db: D1Database) {
       name_ar TEXT NOT NULL,
       name_en TEXT NOT NULL,
       type TEXT NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'SAR',
+      currency TEXT NOT NULL DEFAULT 'OMR',
       balance_minor INTEGER NOT NULL DEFAULT 0,
       goal_minor INTEGER NOT NULL DEFAULT 0,
       accent TEXT NOT NULL DEFAULT 'emerald',
@@ -111,7 +111,7 @@ async function initializeSchema(db: D1Database) {
     db.prepare(`CREATE TABLE IF NOT EXISTS customer_profiles (
       user_id TEXT PRIMARY KEY,
       status TEXT NOT NULL DEFAULT 'active',
-      country TEXT NOT NULL DEFAULT 'SA',
+      country TEXT NOT NULL DEFAULT 'OM',
       phone TEXT,
       last_seen_at TEXT NOT NULL,
       created_at TEXT NOT NULL
@@ -152,7 +152,7 @@ async function initializeSchema(db: D1Database) {
       discount_minor INTEGER NOT NULL DEFAULT 0,
       tax_minor INTEGER NOT NULL DEFAULT 0,
       total_minor INTEGER NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'SAR',
+      currency TEXT NOT NULL DEFAULT 'OMR',
       status TEXT NOT NULL DEFAULT 'pending',
       due_at TEXT NOT NULL,
       paid_at TEXT,
@@ -164,7 +164,7 @@ async function initializeSchema(db: D1Database) {
       invoice_id TEXT,
       reference TEXT NOT NULL UNIQUE,
       amount_minor INTEGER NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'SAR',
+      currency TEXT NOT NULL DEFAULT 'OMR',
       method TEXT NOT NULL DEFAULT 'bank_transfer',
       status TEXT NOT NULL DEFAULT 'pending',
       settlement_status TEXT NOT NULL DEFAULT 'unsettled',
@@ -191,7 +191,7 @@ async function initializeSchema(db: D1Database) {
       person_name TEXT NOT NULL,
       description TEXT NOT NULL,
       amount_minor INTEGER NOT NULL DEFAULT 0,
-      currency TEXT NOT NULL DEFAULT 'SAR',
+      currency TEXT NOT NULL DEFAULT 'OMR',
       status TEXT NOT NULL DEFAULT 'issued',
       payment_method TEXT NOT NULL DEFAULT 'bank_transfer',
       approved_by TEXT,
@@ -385,8 +385,8 @@ async function initializeSchema(db: D1Database) {
       completed_at TEXT
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS tenants (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL DEFAULT 'SA', currency TEXT NOT NULL DEFAULT 'SAR',
-      locale TEXT NOT NULL DEFAULT 'ar', timezone TEXT NOT NULL DEFAULT 'Asia/Riyadh', created_by TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT, created_at TEXT NOT NULL
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL DEFAULT 'OM', currency TEXT NOT NULL DEFAULT 'OMR',
+      locale TEXT NOT NULL DEFAULT 'ar', timezone TEXT NOT NULL DEFAULT 'Asia/Muscat', created_by TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT, created_at TEXT NOT NULL
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS tenant_memberships (
       tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -455,7 +455,7 @@ async function initializeSchema(db: D1Database) {
   }
   await db.batch([
     db.prepare(`INSERT OR IGNORE INTO tenants (id,name,country,currency,locale,timezone,created_by,created_at)
-      SELECT 'tenant:'||id,display_name,'SA',currency,locale,'Asia/Riyadh',id,created_at FROM users`),
+      SELECT 'tenant:'||id,display_name,'OM',currency,locale,'Asia/Muscat',id,created_at FROM users`),
     db.prepare(`INSERT OR IGNORE INTO tenant_memberships (tenant_id,user_id,role,status,created_at)
       SELECT 'tenant:'||id,id,'owner','active',created_at FROM users`),
     db.prepare(`INSERT OR IGNORE INTO tenant_resources (tenant_id,resource_type,resource_id,created_at)

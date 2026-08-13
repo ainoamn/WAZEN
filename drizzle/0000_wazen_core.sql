@@ -3,7 +3,7 @@ CREATE TABLE `users` (
 	`email` text NOT NULL,
 	`display_name` text NOT NULL,
 	`locale` text DEFAULT 'ar' NOT NULL,
-	`currency` text DEFAULT 'SAR' NOT NULL,
+	`currency` text DEFAULT 'OMR' NOT NULL,
 	`created_at` text NOT NULL
 );
 --> statement-breakpoint
@@ -13,7 +13,7 @@ CREATE TABLE `spaces` (
 	`name_ar` text NOT NULL,
 	`name_en` text NOT NULL,
 	`type` text NOT NULL,
-	`currency` text DEFAULT 'SAR' NOT NULL,
+	`currency` text DEFAULT 'OMR' NOT NULL,
 	`balance_minor` integer DEFAULT 0 NOT NULL,
 	`goal_minor` integer DEFAULT 0 NOT NULL,
 	`accent` text DEFAULT 'emerald' NOT NULL,

@@ -51,7 +51,7 @@ export async function authorizeSpace(db: D1Database, user: RequestUser, spaceId:
 export async function ensureDefaultTenant(db: D1Database, user: Pick<RequestUser, "id" | "displayName">) {
   const tenantId = `tenant:${user.id}`; const now = new Date().toISOString();
   await db.batch([
-    db.prepare("INSERT OR IGNORE INTO tenants (id,name,country,currency,locale,timezone,created_by,created_at) VALUES (?,?, 'SA','SAR','ar','Asia/Riyadh',?,?)").bind(tenantId, user.displayName, user.id, now),
+    db.prepare("INSERT OR IGNORE INTO tenants (id,name,country,currency,locale,timezone,created_by,created_at) VALUES (?,?, 'OM','OMR','ar','Asia/Muscat',?,?)").bind(tenantId, user.displayName, user.id, now),
     db.prepare("INSERT OR IGNORE INTO tenant_memberships (tenant_id,user_id,role,status,created_at) VALUES (?,?,'owner','active',?)").bind(tenantId, user.id, now),
   ]);
   return tenantId;

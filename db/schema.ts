@@ -5,7 +5,7 @@ export const users = sqliteTable("users", {
   email: text("email").notNull(),
   displayName: text("display_name").notNull(),
   locale: text("locale").notNull().default("ar"),
-  currency: text("currency").notNull().default("SAR"),
+  currency: text("currency").notNull().default("OMR"),
   createdAt: text("created_at").notNull(),
 });
 
@@ -15,7 +15,7 @@ export const spaces = sqliteTable("spaces", {
   nameAr: text("name_ar").notNull(),
   nameEn: text("name_en").notNull(),
   type: text("type").notNull(),
-  currency: text("currency").notNull().default("SAR"),
+  currency: text("currency").notNull().default("OMR"),
   balanceMinor: integer("balance_minor").notNull().default(0),
   goalMinor: integer("goal_minor").notNull().default(0),
   accent: text("accent").notNull().default("emerald"),
@@ -74,7 +74,7 @@ export const platformRoles = sqliteTable("platform_roles", {
 export const customerProfiles = sqliteTable("customer_profiles", {
   userId: text("user_id").primaryKey(),
   status: text("status").notNull().default("active"),
-  country: text("country").notNull().default("SA"),
+  country: text("country").notNull().default("OM"),
   phone: text("phone"),
   lastSeenAt: text("last_seen_at").notNull(),
   createdAt: text("created_at").notNull(),
@@ -118,7 +118,7 @@ export const invoices = sqliteTable("invoices", {
   discountMinor: integer("discount_minor").notNull().default(0),
   taxMinor: integer("tax_minor").notNull().default(0),
   totalMinor: integer("total_minor").notNull(),
-  currency: text("currency").notNull().default("SAR"),
+  currency: text("currency").notNull().default("OMR"),
   status: text("status").notNull().default("pending"),
   dueAt: text("due_at").notNull(),
   paidAt: text("paid_at"),
@@ -131,7 +131,7 @@ export const payments = sqliteTable("payments", {
   invoiceId: text("invoice_id"),
   reference: text("reference").notNull().unique(),
   amountMinor: integer("amount_minor").notNull(),
-  currency: text("currency").notNull().default("SAR"),
+  currency: text("currency").notNull().default("OMR"),
   method: text("method").notNull().default("bank_transfer"),
   status: text("status").notNull().default("pending"),
   settlementStatus: text("settlement_status").notNull().default("unsettled"),
@@ -160,7 +160,7 @@ export const documents = sqliteTable("documents", {
   personName: text("person_name").notNull(),
   description: text("description").notNull(),
   amountMinor: integer("amount_minor").notNull().default(0),
-  currency: text("currency").notNull().default("SAR"),
+  currency: text("currency").notNull().default("OMR"),
   status: text("status").notNull().default("issued"),
   paymentMethod: text("payment_method").notNull().default("bank_transfer"),
   approvedBy: text("approved_by"),
@@ -207,8 +207,8 @@ export const authSessions = sqliteTable("auth_sessions", {
 });
 
 export const tenants = sqliteTable("tenants", {
-  id: text("id").primaryKey(), name: text("name").notNull(), country: text("country").notNull().default("SA"), currency: text("currency").notNull().default("SAR"),
-  locale: text("locale").notNull().default("ar"), timezone: text("timezone").notNull().default("Asia/Riyadh"), createdBy: text("created_by").notNull(), createdAt: text("created_at").notNull(),
+  id: text("id").primaryKey(), name: text("name").notNull(), country: text("country").notNull().default("OM"), currency: text("currency").notNull().default("OMR"),
+  locale: text("locale").notNull().default("ar"), timezone: text("timezone").notNull().default("Asia/Muscat"), createdBy: text("created_by").notNull(), createdAt: text("created_at").notNull(),
 });
 
 export const tenantMemberships = sqliteTable("tenant_memberships", {

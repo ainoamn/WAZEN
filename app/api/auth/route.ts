@@ -50,8 +50,8 @@ export async function POST(request: Request) {
       const createdAt = new Date().toISOString();
       const passwordData = await hashPassword(password);
       await db.batch([
-        db.prepare("INSERT INTO users (id,email,display_name,locale,currency,created_at) VALUES (?,?,?,'ar','SAR',?)").bind(userId, invite.email, displayName, createdAt),
-        db.prepare("INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','SA',?,?)").bind(userId, createdAt, createdAt),
+        db.prepare("INSERT INTO users (id,email,display_name,locale,currency,created_at) VALUES (?,?,?,'ar','OMR',?)").bind(userId, invite.email, displayName, createdAt),
+        db.prepare("INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','OM',?,?)").bind(userId, createdAt, createdAt),
         db.prepare("INSERT INTO platform_roles (user_id,role,permissions_json,created_at,updated_at) VALUES (?,?,?,?,?)").bind(userId, "super_admin", '["*"]', createdAt, createdAt),
         db.prepare("INSERT INTO auth_credentials (user_id,password_hash,password_salt,password_iterations,email_verified_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?)")
           .bind(userId, passwordData.hash, passwordData.salt, passwordData.iterations, createdAt, createdAt, createdAt),
@@ -165,8 +165,8 @@ export async function POST(request: Request) {
       const configuredAdmins = (process.env.WAZEN_ADMIN_EMAILS ?? "").split(",").map(normalizeEmail).filter(Boolean);
       const role = configuredAdmins.includes(email) ? "super_admin" : "customer";
       await db.batch([
-        db.prepare("INSERT INTO users (id,email,display_name,locale,currency,created_at) VALUES (?,?,?,'ar','SAR',?)").bind(userId, email, displayName, createdAt),
-        db.prepare("INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','SA',?,?)").bind(userId, createdAt, createdAt),
+        db.prepare("INSERT INTO users (id,email,display_name,locale,currency,created_at) VALUES (?,?,?,'ar','OMR',?)").bind(userId, email, displayName, createdAt),
+        db.prepare("INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','OM',?,?)").bind(userId, createdAt, createdAt),
         db.prepare("INSERT INTO platform_roles (user_id,role,permissions_json,created_at,updated_at) VALUES (?,?,?,?,?)").bind(userId, role, role === "super_admin" ? '["*"]' : '["wallets:own","documents:own"]', createdAt, createdAt),
         db.prepare("INSERT INTO auth_credentials (user_id,password_hash,password_salt,password_iterations,created_at,updated_at) VALUES (?,?,?,?,?,?)").bind(userId, passwordData.hash, passwordData.salt, passwordData.iterations, createdAt, createdAt),
         db.prepare("INSERT INTO email_verification_tokens (id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)").bind(crypto.randomUUID(), userId, verificationHash, new Date(Date.now() + 86_400_000).toISOString(), createdAt),

@@ -4,6 +4,7 @@ import { BarChart3, Building2, CreditCard, FileText, Globe2, LayoutDashboard, Me
 import Link from "next/link";
 import { ReactNode, useEffect, useState } from "react";
 import WazenLogo, { WazenIcon } from "../components/brand/WazenLogo";
+import { formatMoneyMinor } from "../lib/money";
 
 export type CommerceLocale = "ar" | "en";
 
@@ -99,8 +100,8 @@ export function ErrorCard({ message, retry }: { message: string; retry?: () => v
   return <div className="commerce-error"><X size={24} /><b>{message}</b>{retry && <button onClick={retry}>Try again</button>}</div>;
 }
 
-export function money(minor: number, locale: CommerceLocale, currency = "SAR") {
-  return new Intl.NumberFormat(locale === "ar" ? "ar-SA" : "en-US", { style: "currency", currency, maximumFractionDigits: 2 }).format((minor ?? 0) / 100);
+export function money(minor: number, locale: CommerceLocale, currency = "OMR") {
+  return formatMoneyMinor(minor ?? 0, currency, locale);
 }
 
 export function Status({ value, locale }: { value: string; locale: CommerceLocale }) {

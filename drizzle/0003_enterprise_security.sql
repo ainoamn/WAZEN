@@ -1,7 +1,7 @@
 ALTER TABLE auth_sessions ADD COLUMN csrf_token_hash TEXT;
 CREATE TABLE IF NOT EXISTS tenants (
-  id TEXT PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL DEFAULT 'SA', currency TEXT NOT NULL DEFAULT 'SAR', locale TEXT NOT NULL DEFAULT 'ar',
-  timezone TEXT NOT NULL DEFAULT 'Asia/Riyadh', created_by TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT, created_at TEXT NOT NULL
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL DEFAULT 'OM', currency TEXT NOT NULL DEFAULT 'OMR', locale TEXT NOT NULL DEFAULT 'ar',
+  timezone TEXT NOT NULL DEFAULT 'Asia/Muscat', created_by TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT, created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS tenant_memberships (
   tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -39,7 +39,7 @@ WHEN NEW.extra_minor < 0 OR NEW.paid_minor < 0 OR NEW.paid_minor > NEW.due_minor
 CREATE INDEX IF NOT EXISTS idx_tenant_memberships_user ON tenant_memberships(user_id,status);
 CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id,revoked_at);
 INSERT OR IGNORE INTO tenants (id,name,country,currency,locale,timezone,created_by,created_at)
-  SELECT 'tenant:'||id,display_name,'SA',currency,locale,'Asia/Riyadh',id,created_at FROM users;
+  SELECT 'tenant:'||id,display_name,'OM',currency,locale,'Asia/Muscat',id,created_at FROM users;
 INSERT OR IGNORE INTO tenant_memberships (tenant_id,user_id,role,status,created_at)
   SELECT 'tenant:'||id,id,'owner','active',created_at FROM users;
 INSERT OR IGNORE INTO tenant_resources (tenant_id,resource_type,resource_id,created_at)

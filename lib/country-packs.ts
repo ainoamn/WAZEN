@@ -6,5 +6,5 @@ export const countryPacks: Readonly<Record<string, CountryPack>> = Object.freeze
   OM: { country: "OM", currency: "OMR", locale: "ar", timezone: "Asia/Muscat", taxBasisPoints: 500, supportedLocales: ["ar", "en"] },
 });
 
-export function countryPack(country: string) { return countryPacks[country.toUpperCase()] ?? countryPacks.SA; }
+export function countryPack(country: string) { return countryPacks[country.toUpperCase()] ?? countryPacks.OM; }
 
