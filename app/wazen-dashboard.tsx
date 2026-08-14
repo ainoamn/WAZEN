@@ -1071,15 +1071,15 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
     </div>
     <section className={`space-hero accent-${space.accent}`}><div><span>{typeLabels[locale][space.type as keyof typeof typeLabels.ar]}{(space.status ?? "active") === "archived" ? (locale === "ar" ? " · مؤرشفة" : " · archived") : ""}</span><h2>{nameOf(space, locale)}</h2><p>{space.type === "personal" ? (locale === "ar" ? "دخل، مصروف، ميزانيات وأهداف في مكان واحد" : "Income, spending, budgets and goals in one place") : (locale === "ar" ? "حسابات واضحة ومفصولة لكل فرد" : "Clear, separated balances for every member")}</p>
       <div className="space-hero-facts">
-        <div><small>{locale === "ar" ? "تاريخ الإنشاء" : "Created"}</small><b>{formatDay(space.created_at)}</b></div>
-        <div><small>{locale === "ar" ? "تاريخ البداية" : "Start date"}</small><b>{formatDay(space.starts_at)}</b></div>
-        <div><small>{locale === "ar" ? "عدد الأعضاء" : "Members"}</small><b>{members.filter((member) => (member.status ?? "active") === "active").length}</b></div>
-        <div><small>{locale === "ar" ? "إجمالي المدفوع" : "Total paid"}</small><b>{formatMoney(paidTotal, space.currency, locale)}</b></div>
-        <div><small>{locale === "ar" ? "المبلغ المصروف" : "Spent"}</small><b className={spentTotal ? "amount-negative" : ""}>{formatMoney(spentTotal, space.currency, locale)}</b></div>
-        <div><small>{locale === "ar" ? "إغلاق الميزانية" : "Budget closures"}</small><b>{closedBudgets}</b></div>
-        <div><small>{locale === "ar" ? "الهدف المالي" : "Goal"}</small><b>{goal ? formatMoney(goal, space.currency, locale) : "—"}</b></div>
-        <div><small>{locale === "ar" ? "تسويات معلّقة" : "Pending settlements"}</small><b>{pendingSettlements}</b></div>
-        <div><small>{locale === "ar" ? "الفترة الحالية" : "Current period"}</small><b>{periodLabel}</b></div>
+        <div><i><CalendarDays size={16} /></i><div><small>{locale === "ar" ? "تاريخ الإنشاء" : "Created"}</small><b>{formatDay(space.created_at)}</b></div></div>
+        <div><i><CalendarDays size={16} /></i><div><small>{locale === "ar" ? "تاريخ البداية" : "Start date"}</small><b>{formatDay(space.starts_at)}</b></div></div>
+        <div><i><Users size={16} /></i><div><small>{locale === "ar" ? "عدد الأعضاء" : "Members"}</small><b>{members.filter((member) => (member.status ?? "active") === "active").length}</b></div></div>
+        <div><i><HandCoins size={16} /></i><div><small>{locale === "ar" ? "إجمالي المدفوع" : "Total paid"}</small><b>{formatMoney(paidTotal, space.currency, locale)}</b></div></div>
+        <div><i><TrendingDown size={16} /></i><div><small>{locale === "ar" ? "المبلغ المصروف" : "Spent"}</small><b className={spentTotal ? "amount-negative" : ""}>{formatMoney(spentTotal, space.currency, locale)}</b></div></div>
+        <div><i><Landmark size={16} /></i><div><small>{locale === "ar" ? "إغلاق الميزانية" : "Budget closures"}</small><b>{closedBudgets}</b></div></div>
+        <div><i><Target size={16} /></i><div><small>{locale === "ar" ? "الهدف المالي" : "Goal"}</small><b>{goal ? formatMoney(goal, space.currency, locale) : "—"}</b></div></div>
+        <div><i><CircleDollarSign size={16} /></i><div><small>{locale === "ar" ? "تسويات معلّقة" : "Pending settlements"}</small><b>{pendingSettlements}</b></div></div>
+        <div><i><Clock3 size={16} /></i><div><small>{locale === "ar" ? "الفترة الحالية" : "Current period"}</small><b>{periodLabel}</b></div></div>
       </div>
     </div><div className="space-hero-balance"><span>{locale === "ar" ? "الرصيد المتاح" : "Available balance"}</span><strong className={space.balance_minor < 0 ? "amount-negative" : ""}>{formatMoney(space.balance_minor, space.currency, locale)}</strong></div></section>
     <section className="stat-grid compact">

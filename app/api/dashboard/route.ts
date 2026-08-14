@@ -444,6 +444,40 @@ async function installmentInsertStatements(
   );
 }
 
+async function rebuildSpaceInstallments(
+  db: D1Database,
+  spaceId: string,
+  plan: { amount_minor: number; duration_months: number; starts_at?: string } | null,
+  createdAt: string,
+) {
+  if (!plan || Number(plan.amount_minor) <= 0) return;
+  const members = await db.prepare("SELECT id,space_id,paid_minor FROM members WHERE space_id=? AND status='active'").bind(spaceId).all<{ id: string; space_id: string; paid_minor: number }>();
+  const duration = Number(plan.duration_months) || 12;
+  const dueMinor = Number(plan.amount_minor) * duration;
+  const statements: ReturnType<D1Database["prepare"]>[] = [
+    db.prepare("DELETE FROM member_installments WHERE space_id=?").bind(spaceId),
+  ];
+  for (const member of members.results) {
+    const paid = Number(member.paid_minor);
+    statements.push(db.prepare("UPDATE members SET due_minor=? WHERE id=?").bind(Math.max(dueMinor, paid), member.id));
+    const schedule = buildInstallmentSchedule({
+      memberId: member.id,
+      spaceId: member.space_id,
+      startAt: plan.starts_at || createdAt,
+      durationMonths: duration,
+      amountMinor: Number(plan.amount_minor),
+      paidMinor: paid,
+    });
+    for (const row of schedule.rows) {
+      statements.push(
+        db.prepare("INSERT INTO member_installments (id,member_id,space_id,period_index,period_key,due_at,amount_minor,paid_minor,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
+          .bind(row.id, member.id, member.space_id, row.period_index, row.period_key, row.due_at, row.amount_minor, row.paid_minor, row.status, createdAt),
+      );
+    }
+  }
+  if (statements.length) await db.batch(statements);
+}
+
 async function paymentInstallmentStatements(
   db: D1Database,
   member: { id: string; space_id: string; paid_minor: number },
@@ -799,6 +833,12 @@ export async function POST(request: Request) {
       }
       statements.push(prepareAudit(db, { userId: user.id, action: "wallet.updated", entityType: "space", entityId: parsed.data.spaceId, metadata: { name: parsed.data.name }, createdAt }));
       await db.batch(statements);
+      if (startsAt || contributionMinor !== undefined || durationMonths) {
+        const nextPlan = await db.prepare("SELECT amount_minor,duration_months,starts_at FROM contribution_plans WHERE space_id=? LIMIT 1")
+          .bind(parsed.data.spaceId)
+          .first<{ amount_minor: number; duration_months: number; starts_at: string }>();
+        await rebuildSpaceInstallments(db, parsed.data.spaceId, nextPlan, createdAt);
+      }
     } else if (action === "archiveWallet") {
       const parsed = z.object({ spaceId: z.string().min(1).max(120), archived: z.boolean().default(true) }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_WALLET");
