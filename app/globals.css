@@ -231,8 +231,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .transaction-list { margin-top: 9px; display: flex; flex-direction: column; }
 .transaction-row { min-height: 59px; display: grid; grid-template-columns: 35px 1fr auto auto; align-items: center; gap: 11px; border-bottom: 1px solid #eef0ee; }
 .transaction-row:last-child { border-bottom: 0; }
-.transaction-actions { display: flex; align-items: center; gap: 4px; }
-.transaction-actions button { width: 30px; height: 30px; border: 1px solid #dfe6e1; border-radius: 8px; background: white; color: #4f635c; display: grid; place-items: center; cursor: pointer; }
+.transaction-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.transaction-actions button { width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0; border: 1px solid #dfe6e1; border-radius: 8px; background: white; color: #4f635c; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; overflow: visible; }
+.transaction-actions button svg { width: 15px; height: 15px; flex-shrink: 0; display: block; stroke: currentColor; }
 .transaction-actions button:hover { border-color: var(--green); color: var(--green); }
 .transaction-actions button.danger:hover { border-color: #c45555; color: #c45555; }
 .transaction-list.dense .transaction-row { min-height: 64px; }
