@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, validateJournal } from "../lib/finance.ts";
+import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 
 test("equal expense splits preserve every minor unit", () => {
   const splits = splitEvenly(100, ["a", "b", "c"]);
@@ -72,4 +73,11 @@ test("electronic draw is deterministic and stores only a seed hash", async () =>
 test("hierarchical order moves the previous recipient to the end", async () => {
   const result = await buildCircleOrder([{ id: "1", name: "A" }, { id: "2", name: "B" }, { id: "3", name: "C" }], "hierarchical", { previousRecipientId: "1" });
   assert.deepEqual(result.members.map((member) => member.id), ["2", "3", "1"]);
+});
+
+test("closed accounting period locks dates inside its range until reopened", () => {
+  const closed = { id: "p1", space_id: "s1", starts_at: "2026-01-01T00:00:00.000Z", ends_at: "2026-08-13T00:00:00.000Z", closed_at: "2026-08-13T00:00:00.000Z", status: "closed" };
+  assert.equal(isPeriodLocked([closed], "2026-08-01T12:00:00.000Z"), true);
+  assert.equal(isPeriodLocked([{ ...closed, status: "reopened" }], "2026-08-01T12:00:00.000Z"), false);
+  assert.equal(coveringPeriod([{ ...closed, status: "reopened" }], "2026-08-01T12:00:00.000Z")?.status, "reopened");
 });

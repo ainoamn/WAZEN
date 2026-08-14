@@ -357,7 +357,14 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .settlement-alert button { height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: #805b1e; color: white; font-size: 10px; font-weight: 800; cursor: pointer; }
 .circle-order-list { display: grid; gap: 7px; }
 .circle-order-list > div { min-height: 48px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 12px; display: grid; grid-template-columns: 34px 1fr auto 72px 80px; align-items: center; gap: 10px; }
-.circle-order-list > div.period-row { grid-template-columns: auto 1fr auto auto; }
+.circle-order-list > div.period-row { grid-template-columns: auto 1fr auto auto auto; }
+.circle-order-list button.period-reopen { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; width: auto; background: #b45309; font-size: 11px; }
+.period-event-list { margin-top: 14px; display: grid; gap: 8px; }
+.period-event-list h3 { margin: 0; font-size: 14px; color: #244c56; }
+.period-event-list p { margin: 0; padding: 8px 10px; border: 1px solid #e5ebe7; border-radius: 10px; display: grid; gap: 2px; background: #fbfcfb; }
+.period-event-list strong { font-size: 13px; }
+.period-event-list span { color: #809089; font-size: 11px; }
+.period-event-list em { font-style: normal; font-size: 13px; color: #244c56; }
 .circle-order-list > div > b { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: #e9f4ef; color: #0d7a65; }
 .circle-order-list em { color: var(--muted); font-size: 10px; font-style: normal; text-align: end; }
 .circle-order-list button { height: 30px; border: 0; border-radius: 8px; background: #0d7a65; color: white; font-size: 9px; font-weight: 800; }

@@ -7,7 +7,7 @@ import { assertApiScope, authorizeSpace, ensureDefaultTenant } from "../../../li
 import { prepareAudit } from "../../../lib/audit";
 import { multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
 import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, type InstallmentLike } from "../../../lib/installments";
-import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
+import { coveringPeriod } from "../../../lib/accounting-periods";
 
 type SpaceRow = {
   id: string;
@@ -68,6 +68,77 @@ function parseStartDate(value?: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) throw new ApiError(400, "INVALID_START_DATE");
   return date.toISOString();
+}
+
+type PeriodRow = {
+  id: string;
+  space_id: string;
+  label: string;
+  starts_at: string;
+  ends_at?: string | null;
+  closed_at?: string | null;
+  status: string;
+};
+
+function preparePeriodLedgerEvent(db: D1Database, input: {
+  spaceId: string;
+  periodId?: string | null;
+  userId: string;
+  actorName: string;
+  action: string;
+  entityType?: string;
+  entityId?: string;
+  summaryAr: string;
+  summaryEn: string;
+  metadata?: unknown;
+  createdAt?: string;
+}) {
+  const createdAt = input.createdAt ?? now();
+  return db.prepare(`INSERT INTO period_ledger_events (id,space_id,period_id,user_id,actor_name,action,entity_type,entity_id,summary_ar,summary_en,metadata_json,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(
+      crypto.randomUUID(),
+      input.spaceId,
+      input.periodId ?? null,
+      input.userId,
+      input.actorName.slice(0, 120),
+      input.action.slice(0, 80),
+      input.entityType ?? null,
+      input.entityId ?? null,
+      input.summaryAr.slice(0, 400),
+      input.summaryEn.slice(0, 400),
+      JSON.stringify(input.metadata ?? {}),
+      createdAt,
+    );
+}
+
+async function assertPeriodWritable(db: D1Database, spaceId: string, occurredAt: string) {
+  const rows = await db.prepare("SELECT id,space_id,starts_at,ends_at,closed_at,status FROM accounting_periods WHERE space_id=?").bind(spaceId).all<PeriodRow>();
+  const period = coveringPeriod(rows.results, occurredAt);
+  if (period?.status === "closed") throw new ApiError(409, "PERIOD_CLOSED");
+  return period;
+}
+
+async function periodWriteEvent(
+  db: D1Database,
+  user: RequestUser,
+  spaceId: string,
+  occurredAt: string,
+  detail: { action: string; entityType: string; entityId: string; summaryAr: string; summaryEn: string; metadata?: unknown },
+) {
+  const period = await assertPeriodWritable(db, spaceId, occurredAt);
+  return preparePeriodLedgerEvent(db, {
+    spaceId,
+    periodId: period?.id,
+    userId: user.id,
+    actorName: user.displayName,
+    action: detail.action,
+    entityType: detail.entityType,
+    entityId: detail.entityId,
+    summaryAr: detail.summaryAr,
+    summaryEn: detail.summaryEn,
+    metadata: { ...detail.metadata, occurredAt, periodStatus: period?.status ?? "none" },
+  });
 }
 
 async function upsertSavedContact(
@@ -346,6 +417,8 @@ type TripExpenseRecord = {
   paid_by_member_id: string;
   amount_minor: number;
   description: string;
+  occurred_at?: string;
+  created_at?: string;
   transaction_id?: string | null;
   status?: string | null;
 };
@@ -455,7 +528,12 @@ async function loadDashboard(db: D1Database, userId: string) {
     LEFT JOIN members fm ON fm.id=s.from_member_id
     WHERE s.space_id IN (${placeholders}) AND s.status='pending' ORDER BY s.created_at DESC LIMIT 50`).bind(...ids).all();
   const installments = await db.prepare(`SELECT * FROM member_installments WHERE space_id IN (${placeholders}) ORDER BY member_id, period_index`).bind(...ids).all();
-  const periods = await db.prepare(`SELECT * FROM accounting_periods WHERE space_id IN (${placeholders}) ORDER BY starts_at DESC`).bind(...ids).all();
+  const periods = await db.prepare(`SELECT p.*, cu.display_name AS closed_by_name, ru.display_name AS reopened_by_name
+    FROM accounting_periods p
+    LEFT JOIN users cu ON cu.id = p.closed_by
+    LEFT JOIN users ru ON ru.id = p.reopened_by
+    WHERE p.space_id IN (${placeholders}) ORDER BY p.starts_at DESC`).bind(...ids).all();
+  const periodEvents = await db.prepare(`SELECT * FROM period_ledger_events WHERE space_id IN (${placeholders}) ORDER BY created_at DESC LIMIT 200`).bind(...ids).all();
 
   const memberDueBySpace = new Map<string, number>();
   for (const member of members.results) {
@@ -487,6 +565,7 @@ async function loadDashboard(db: D1Database, userId: string) {
     installments: installments.results,
     contacts: contacts.results,
     periods: periods.results,
+    periodEvents: periodEvents.results,
   };
 }
 
@@ -634,6 +713,7 @@ export async function POST(request: Request) {
       const { spaceId, allocation, description } = parsed.data;
       let kind = parsed.data.kind;
       const space = await authorizeSpace(db, user, spaceId, "transact"); const memberId = parsed.data.memberId ?? null;
+      await assertPeriodWritable(db, spaceId, parsed.data.occurredAt ?? now());
       // Group payments linked to a member count as contributions toward dues (not plain income).
       if (memberId && kind === "income" && ["household", "trip", "society", "group"].includes(space.type)) {
         kind = "contribution";
@@ -714,6 +794,14 @@ export async function POST(request: Request) {
           metadata: { spaceId, kind: "contribution", amountMinor, memberId, split },
           createdAt,
         }));
+        statements.push(await periodWriteEvent(db, user, spaceId, occurredAt, {
+          action: "transaction.created",
+          entityType: "transaction",
+          entityId: spaceId,
+          summaryAr: `${user.displayName} سجّل سداد/دخل ${description}`,
+          summaryEn: `${user.displayName} posted contribution ${description}`,
+          metadata: { amountMinor, memberId },
+        }));
         await db.batch(statements);
         await reconcileMemberLedgers(db, [spaceId]);
       } else {
@@ -748,6 +836,14 @@ export async function POST(request: Request) {
           .bind(amountMinor, memberId, spaceId));
       }
       statements.push(prepareAudit(db, { userId: user.id, action: "transaction.created", entityType: "transaction", entityId: transactionId, metadata: { spaceId, kind, allocation: bookedAllocation, amountMinor, memberId }, createdAt }));
+      statements.push(await periodWriteEvent(db, user, spaceId, occurredAt, {
+        action: "transaction.created",
+        entityType: "transaction",
+        entityId: transactionId,
+        summaryAr: `${user.displayName} أضاف حركة: ${description}`,
+        summaryEn: `${user.displayName} added transaction: ${description}`,
+        metadata: { kind, amountMinor },
+      }));
       await db.batch(statements);
       await reconcileMemberLedgers(db, [spaceId]);
       }
@@ -757,7 +853,16 @@ export async function POST(request: Request) {
       const txn = await db.prepare("SELECT * FROM transactions WHERE id=?").bind(parsed.data.transactionId).first<TransactionRow>();
       if (!txn) throw new ApiError(404, "TRANSACTION_NOT_FOUND");
       await authorizeSpace(db, user, txn.space_id, "transact");
+      const voidEvent = await periodWriteEvent(db, user, txn.space_id, txn.occurred_at, {
+        action: "transaction.voided",
+        entityType: "transaction",
+        entityId: txn.id,
+        summaryAr: `${user.displayName} ألغى حركة ${txn.description_ar} (${txn.amount_minor})`,
+        summaryEn: `${user.displayName} voided ${txn.description_en} (${txn.amount_minor})`,
+        metadata: { amountMinor: txn.amount_minor, kind: txn.kind },
+      });
       await voidApprovedTransaction(db, txn, user.id);
+      await voidEvent.run();
     } else if (action === "updateTransaction") {
       const parsed = z.object({
         transactionId: z.string().min(1).max(120),
@@ -772,6 +877,7 @@ export async function POST(request: Request) {
       const existing = await db.prepare("SELECT * FROM transactions WHERE id=?").bind(parsed.data.transactionId).first<TransactionRow>();
       if (!existing) throw new ApiError(404, "TRANSACTION_NOT_FOUND");
       const space = await authorizeSpace(db, user, existing.space_id, "transact");
+      await assertPeriodWritable(db, existing.space_id, existing.occurred_at);
       await voidApprovedTransaction(db, existing, user.id);
 
       let kind = parsed.data.kind ?? existing.kind;
@@ -807,6 +913,14 @@ export async function POST(request: Request) {
         db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
           .bind(crypto.randomUUID(), entryId, creditAccount, memberId, 0, amountMinor, createdAt),
         prepareAudit(db, { userId: user.id, action: "transaction.updated", entityType: "transaction", entityId: transactionId, metadata: { replaces: existing.id, spaceId: existing.space_id, kind, allocation, amountMinor, memberId }, createdAt }),
+        await periodWriteEvent(db, user, existing.space_id, occurredAt, {
+          action: "transaction.updated",
+          entityType: "transaction",
+          entityId: transactionId,
+          summaryAr: `${user.displayName} عدّل حركة ${existing.description_ar} ← ${description}`,
+          summaryEn: `${user.displayName} edited ${existing.description_en} → ${description}`,
+          metadata: { replaces: existing.id, beforeAmount: existing.amount_minor, afterAmount: amountMinor, beforeKind: existing.kind, afterKind: kind },
+        }),
       ]);
       await reconcileMemberLedgers(db, [existing.space_id]);
     } else if (action === "completeCircleTurn") {
@@ -953,6 +1067,7 @@ export async function POST(request: Request) {
       const entryId = crypto.randomUUID();
       const createdAt = now();
       const occurredAt = parsed.data.occurredAt ?? createdAt;
+      await assertPeriodWritable(db, parsed.data.spaceId, occurredAt);
       const statements: D1PreparedStatement[] = [
         db.prepare("INSERT INTO trip_expenses (id,space_id,paid_by_member_id,amount_minor,description,occurred_at,created_by,created_at,transaction_id,status) VALUES (?,?,?,?,?,?,?,?,?,'posted')")
           .bind(expenseId, parsed.data.spaceId, paidByMemberId, amountMinor, parsed.data.description, occurredAt, user.id, createdAt, transactionId),
@@ -1003,6 +1118,14 @@ export async function POST(request: Request) {
         metadata: { amountMinor, paidFrom, paidByMemberId, splits },
         createdAt,
       }));
+      statements.push(await periodWriteEvent(db, user, parsed.data.spaceId, occurredAt, {
+        action: "trip.expense_created",
+        entityType: "trip_expense",
+        entityId: expenseId,
+        summaryAr: `${user.displayName} أضاف مصروفاً جماعياً: ${parsed.data.description}`,
+        summaryEn: `${user.displayName} added group expense: ${parsed.data.description}`,
+        metadata: { amountMinor },
+      }));
       await db.batch(statements);
       await rebuildSpaceBalance(db, [parsed.data.spaceId]);
     } else if (action === "voidTripExpense") {
@@ -1012,7 +1135,7 @@ export async function POST(request: Request) {
         .first<{ id: string; space_id: string; transaction_id?: string | null; description: string; amount_minor: number; created_at: string; paid_by_member_id: string }>();
       if (!expense) throw new ApiError(404, "EXPENSE_NOT_FOUND");
       await authorizeSpace(db, user, expense.space_id, "transact", ["household", "trip", "society", "group"]);
-      const linkedTxn = expense.transaction_id
+      await assertPeriodWritable(db, expense.space_id, expense.created_at);
         ? await db.prepare("SELECT * FROM transactions WHERE id=?").bind(expense.transaction_id).first<TransactionRow>()
         : await db.prepare("SELECT * FROM transactions WHERE space_id=? AND description_ar=? AND amount_minor=? AND status='approved' ORDER BY occurred_at DESC LIMIT 1")
           .bind(expense.space_id, expense.description, expense.amount_minor).first<TransactionRow>();
@@ -1038,7 +1161,7 @@ export async function POST(request: Request) {
       const expense = await db.prepare("SELECT * FROM trip_expenses WHERE id=?").bind(parsed.data.expenseId).first<TripExpenseRecord>();
       if (!expense) throw new ApiError(404, "EXPENSE_NOT_FOUND");
       const space = await authorizeSpace(db, user, expense.space_id, "transact", ["household", "trip", "society", "group"]);
-      let amountMinor = Number(expense.amount_minor);
+      await assertPeriodWritable(db, expense.space_id, expense.occurred_at || expense.created_at);
       if (parsed.data.amount !== undefined) {
         try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
       }
@@ -1317,15 +1440,58 @@ export async function POST(request: Request) {
       if (!parsed.success) throw new ApiError(400, "INVALID_PERIOD");
       await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["household", "trip", "society", "group"]);
       const createdAt = now();
-      const open = await db.prepare("SELECT id FROM accounting_periods WHERE space_id=? AND status='open' ORDER BY starts_at DESC LIMIT 1").bind(parsed.data.spaceId).first<{ id: string }>();
+      const open = await db.prepare("SELECT id,status FROM accounting_periods WHERE space_id=? AND status IN ('open','reopened') ORDER BY starts_at DESC LIMIT 1").bind(parsed.data.spaceId).first<{ id: string; status: string }>();
+      let periodId = open?.id;
       if (open) {
-        await db.prepare("UPDATE accounting_periods SET status='closed', ends_at=?, closed_at=?, label=COALESCE(NULLIF(?,''), label) WHERE id=?")
-          .bind(createdAt, createdAt, parsed.data.label ?? "", open.id).run();
+        await db.prepare("UPDATE accounting_periods SET status='closed', ends_at=?, closed_at=?, closed_by=?, label=COALESCE(NULLIF(?,''), label) WHERE id=?")
+          .bind(createdAt, createdAt, user.id, parsed.data.label ?? "", open.id).run();
       } else {
+        periodId = crypto.randomUUID();
         const space = await db.prepare("SELECT name_ar,starts_at,created_at FROM spaces WHERE id=?").bind(parsed.data.spaceId).first<{ name_ar: string; starts_at?: string; created_at: string }>();
-        await db.prepare("INSERT INTO accounting_periods (id,space_id,label,starts_at,ends_at,status,closed_at,created_at) VALUES (?,?,?,?,?,'closed',?,?)")
-          .bind(crypto.randomUUID(), parsed.data.spaceId, parsed.data.label || `${space?.name_ar ?? "فترة"} · إغلاق`, space?.starts_at || space?.created_at || createdAt, createdAt, createdAt, createdAt).run();
+        await db.prepare("INSERT INTO accounting_periods (id,space_id,label,starts_at,ends_at,status,closed_at,created_at,closed_by) VALUES (?,?,?,?,?,'closed',?,?,?)")
+          .bind(periodId, parsed.data.spaceId, parsed.data.label || `${space?.name_ar ?? "فترة"} · إغلاق`, space?.starts_at || space?.created_at || createdAt, createdAt, createdAt, createdAt, user.id).run();
       }
+      await db.batch([
+        prepareAudit(db, { userId: user.id, action: "period.closed", entityType: "accounting_period", entityId: periodId ?? parsed.data.spaceId, metadata: { spaceId: parsed.data.spaceId, previousStatus: open?.status ?? "none" }, createdAt }),
+        preparePeriodLedgerEvent(db, {
+          spaceId: parsed.data.spaceId,
+          periodId,
+          userId: user.id,
+          actorName: user.displayName,
+          action: "period.closed",
+          entityType: "accounting_period",
+          entityId: periodId,
+          summaryAr: `${user.displayName} أغلق الفترة المحاسبية`,
+          summaryEn: `${user.displayName} closed the accounting period`,
+          createdAt,
+        }),
+      ]);
+    } else if (action === "reopenAccountingPeriod") {
+      const parsed = z.object({ spaceId: z.string().min(1).max(120), periodId: z.string().min(1).max(120), reason: z.string().trim().max(300).optional() }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_PERIOD");
+      await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["household", "trip", "society", "group"]);
+      const period = await db.prepare("SELECT id,status,label FROM accounting_periods WHERE id=? AND space_id=?").bind(parsed.data.periodId, parsed.data.spaceId).first<{ id: string; status: string; label: string }>();
+      if (!period) throw new ApiError(404, "PERIOD_NOT_FOUND");
+      if (period.status !== "closed") throw new ApiError(409, "PERIOD_NOT_CLOSED");
+      const createdAt = now();
+      await db.prepare("UPDATE accounting_periods SET status='reopened', reopened_at=?, reopened_by=?, reopen_count=COALESCE(reopen_count,0)+1 WHERE id=?")
+        .bind(createdAt, user.id, period.id).run();
+      await db.batch([
+        prepareAudit(db, { userId: user.id, action: "period.reopened", entityType: "accounting_period", entityId: period.id, metadata: { spaceId: parsed.data.spaceId, reason: parsed.data.reason ?? "", label: period.label }, createdAt }),
+        preparePeriodLedgerEvent(db, {
+          spaceId: parsed.data.spaceId,
+          periodId: period.id,
+          userId: user.id,
+          actorName: user.displayName,
+          action: "period.reopened",
+          entityType: "accounting_period",
+          entityId: period.id,
+          summaryAr: `${user.displayName} أعاد فتح الفترة للتعديل${parsed.data.reason ? ` — ${parsed.data.reason}` : ""}`,
+          summaryEn: `${user.displayName} reopened the period for corrections${parsed.data.reason ? ` — ${parsed.data.reason}` : ""}`,
+          metadata: { reason: parsed.data.reason ?? "" },
+          createdAt,
+        }),
+      ]);
     } else if (action === "sendReceipt") {
       const parsed = z.object({
         memberId: z.string().min(1).max(120),

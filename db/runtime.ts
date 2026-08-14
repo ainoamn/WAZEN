@@ -495,6 +495,21 @@ async function initializeSchema(db: D1Database) {
       closed_at TEXT,
       created_at TEXT NOT NULL
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS period_ledger_events (
+      id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      period_id TEXT,
+      user_id TEXT NOT NULL,
+      actor_name TEXT,
+      action TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id TEXT,
+      summary_ar TEXT,
+      summary_en TEXT,
+      metadata_json TEXT,
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_period_ledger_space_date ON period_ledger_events(space_id, created_at)"),
   ]);
   const memberColumns = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
   if (!memberColumns.results.some((column) => column.name === "phone")) {
@@ -537,6 +552,20 @@ async function initializeSchema(db: D1Database) {
   const spaceStart = await db.prepare("PRAGMA table_info(spaces)").all<{ name: string }>();
   if (!spaceStart.results.some((column) => column.name === "starts_at")) {
     try { await db.prepare("ALTER TABLE spaces ADD COLUMN starts_at TEXT").run(); } catch { /* exists */ }
+  }
+  const periodColumns = await db.prepare("PRAGMA table_info(accounting_periods)").all<{ name: string }>();
+  const periodNames = new Set(periodColumns.results.map((column) => column.name));
+  if (!periodNames.has("closed_by")) {
+    try { await db.prepare("ALTER TABLE accounting_periods ADD COLUMN closed_by TEXT").run(); } catch { /* exists */ }
+  }
+  if (!periodNames.has("reopened_at")) {
+    try { await db.prepare("ALTER TABLE accounting_periods ADD COLUMN reopened_at TEXT").run(); } catch { /* exists */ }
+  }
+  if (!periodNames.has("reopened_by")) {
+    try { await db.prepare("ALTER TABLE accounting_periods ADD COLUMN reopened_by TEXT").run(); } catch { /* exists */ }
+  }
+  if (!periodNames.has("reopen_count")) {
+    try { await db.prepare("ALTER TABLE accounting_periods ADD COLUMN reopen_count INTEGER NOT NULL DEFAULT 0").run(); } catch { /* exists */ }
   }
   const { ensureSubscriptionAdminColumns, ensurePaymentGateways } = await import("../services/admin/billing-service");
   await ensureSubscriptionAdminColumns(db);
