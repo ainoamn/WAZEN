@@ -7,7 +7,7 @@ import {
   selectThroughOldest,
   totalRemainingMinor,
 } from "../lib/installments.ts";
-import { toWhatsAppNumber } from "../lib/phone.ts";
+import { isLikelyPhone, toWhatsAppNumber } from "../lib/phone.ts";
 
 test("member schedule computes total and marks paid months from cash already received", () => {
   const schedule = buildInstallmentSchedule({
@@ -63,4 +63,7 @@ test("omani phones become WhatsApp numbers", () => {
   assert.equal(toWhatsAppNumber("91234567"), "96891234567");
   assert.equal(toWhatsAppNumber("091234567"), "96891234567");
   assert.equal(toWhatsAppNumber("+968 9123 4567"), "96891234567");
+  assert.equal(toWhatsAppNumber("9904406"), "9689904406");
+  assert.equal(isLikelyPhone("9904406"), true);
+  assert.equal(isLikelyPhone("12"), false);
 });

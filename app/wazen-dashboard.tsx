@@ -1165,7 +1165,11 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
       if (!response.ok) throw new Error(result.error ?? "Unable to create invitation");
       onDone(recordOnly ? (locale === "ar" ? `تمت إضافة ${displayName} — الإجمالي ${formatMoney(totalMinor, "OMR", locale)}` : `${displayName} added — total ${formatMoney(totalMinor, "OMR", locale)}`) : (locale === "ar" ? `تم إنشاء دعوة آمنة لـ ${email}` : `A secure invitation was created for ${email}`));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to create invitation");
+      const code = caught instanceof Error ? caught.message : "Unable to create invitation";
+      const messages: Record<string, string> = locale === "ar"
+        ? { INVALID_PHONE: "رقم الهاتف غير مكتمل. أدخل 7 أرقام على الأقل، مثل 9904406 أو 9689904406.", INVALID_MEMBER: "تعذر إضافة المساهم.", PLAN_MEMBER_LIMIT: "تم بلوغ حد الأعضاء في الخطة." }
+        : { INVALID_PHONE: "Phone number is too short. Enter at least 7 digits.", INVALID_MEMBER: "Could not add this member.", PLAN_MEMBER_LIMIT: "Member limit reached for this plan." };
+      setError(messages[code] ?? code);
     } finally {
       setSaving(false);
     }
@@ -1180,7 +1184,7 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
       <label><span>{locale === "ar" ? "اسم المساهم" : "Member name"}</span><input required minLength={2} maxLength={80} value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
       <div className="form-row">
         <label><span>{locale === "ar" ? `البريد${recordOnly ? " (اختياري)" : ""}` : `Email${recordOnly ? " (optional)" : ""}`}</span><input required={!recordOnly} type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="member@example.com" /></label>
-        <label><span>{locale === "ar" ? "رقم الهاتف" : "Phone"}</span><input required={recordOnly} value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="91234567" /></label>
+        <label><span>{locale === "ar" ? "رقم الهاتف" : "Phone"}</span><input required={recordOnly} value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="9904406" inputMode="tel" /></label>
       </div>
       <label><span>{locale === "ar" ? "الجمعية / المحفظة" : "Circle / wallet"}</span><select required value={spaceId} onChange={(event) => setSpaceId(event.target.value)}>{groupSpaces.map((space) => <option key={space.id} value={space.id}>{nameOf(space, locale)}</option>)}</select></label>
       {recordOnly && <div className="form-row">

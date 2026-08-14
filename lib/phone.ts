@@ -10,12 +10,14 @@ export function toWhatsAppNumber(phone: string, defaultCountry = "968") {
   if (digits.startsWith("00")) digits = digits.slice(2);
   if (digits.startsWith("+")) digits = digits.slice(1);
   if (digits.startsWith(defaultCountry)) return digits;
-  if (digits.startsWith("0") && digits.length >= 8) return `${defaultCountry}${digits.slice(1)}`;
-  if (digits.length === 8) return `${defaultCountry}${digits}`;
+  if (digits.startsWith("0") && digits.length >= 7) return `${defaultCountry}${digits.slice(1)}`;
+  if (digits.length >= 7 && digits.length <= 8) return `${defaultCountry}${digits}`;
   return digits;
 }
 
 export function isLikelyPhone(phone: string) {
   const digits = digitsOnly(phone);
-  return digits.length >= 8 && digits.length <= 15;
+  if (digits.length < 7 || digits.length > 15) return false;
+  if (digits.startsWith("968")) return digits.length >= 10 && digits.length <= 15;
+  return true;
 }

@@ -495,7 +495,7 @@ export async function POST(request: Request) {
       const durationMonths = parsed.data.durationMonths ?? Number(contribution?.duration_months ?? 12);
       const memberId = crypto.randomUUID(); const createdAt = now();
       const dueMinor = multiplyMinor(monthlyMinor, durationMonths);
-      const phone = parsed.data.phone?.trim() || null;
+      const phone = parsed.data.phone?.trim() ? toWhatsAppNumber(parsed.data.phone) || parsed.data.phone.trim() : null;
       const planForMember = { amount_minor: monthlyMinor, duration_months: durationMonths, starts_at: contribution?.starts_at || createdAt };
       await db.batch([
         db.prepare("INSERT INTO members (id,space_id,user_id,display_name,email,phone,role,status,due_minor,paid_minor,extra_minor,avatar,joined_at) VALUES (?,?,NULL,?,?,?,?,'active',?,0,0,'#0f766e',?)").bind(memberId, parsed.data.spaceId, parsed.data.displayName, parsed.data.email || null, phone, parsed.data.role, dueMinor, createdAt),
