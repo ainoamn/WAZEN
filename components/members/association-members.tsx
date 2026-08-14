@@ -99,7 +99,7 @@ export function MemberDetailModal({
           <div><span>{locale === "ar" ? "البريد" : "Email"}</span><b>{member.email || "—"}</b></div>
           <div><span>{locale === "ar" ? "الهاتف" : "Phone"}</span><b>{member.phone || "—"}</b></div>
           <div><span>{locale === "ar" ? "المدة" : "Duration"}</span><b>{months.length} {locale === "ar" ? "شهر" : "months"}</b></div>
-          <div><span>{locale === "ar" ? "الإجمالي" : "Total"}</span><b>{money(member.due_minor, space.currency, locale)}</b></div>
+          <div><span>{locale === "ar" ? "الهدف المالي" : "Financial goal"}</span><b>{money(member.due_minor, space.currency, locale)}</b></div>
           <div><span>{locale === "ar" ? "المدفوع" : "Paid"}</span><b>{money(member.paid_minor, space.currency, locale)}</b></div>
           <div><span>{locale === "ar" ? "المتبقي" : "Remaining"}</span><b>{money(remaining, space.currency, locale)}</b></div>
         </div>

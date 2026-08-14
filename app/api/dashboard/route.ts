@@ -353,8 +353,26 @@ async function loadDashboard(db: D1Database, userId: string) {
     WHERE s.space_id IN (${placeholders}) AND s.status='pending' ORDER BY s.created_at DESC LIMIT 50`).bind(...ids).all();
   const installments = await db.prepare(`SELECT * FROM member_installments WHERE space_id IN (${placeholders}) ORDER BY member_id, period_index`).bind(...ids).all();
 
+  const memberDueBySpace = new Map<string, number>();
+  for (const member of members.results) {
+    if (member.status !== "active") continue;
+    memberDueBySpace.set(member.space_id, (memberDueBySpace.get(member.space_id) ?? 0) + Number(member.due_minor ?? 0));
+  }
+  const planBySpace = new Map<string, { amount_minor: number; duration_months: number }>();
+  for (const plan of plans.results as Array<{ space_id: string; amount_minor: number; duration_months: number }>) {
+    planBySpace.set(String(plan.space_id), { amount_minor: Number(plan.amount_minor ?? 0), duration_months: Number(plan.duration_months ?? 0) });
+  }
+  const spacesWithGoals = refreshedSpaces.results.map((space) => {
+    const membersDue = memberDueBySpace.get(space.id) ?? 0;
+    const plan = planBySpace.get(space.id);
+    const planGoal = plan && plan.amount_minor > 0 && plan.duration_months > 0
+      ? Math.round(Number(plan.amount_minor)) * Math.max(1, Math.round(Number(plan.duration_months)))
+      : 0;
+    return { ...space, goal_minor: membersDue > 0 ? membersDue : (planGoal || space.goal_minor) };
+  });
+
   return {
-    spaces: refreshedSpaces.results,
+    spaces: spacesWithGoals,
     members: members.results,
     transactions: transactions.results,
     plans: plans.results,
@@ -425,17 +443,20 @@ export async function POST(request: Request) {
       const id = `${cleanId(user.id)}-${crypto.randomUUID()}`; const createdAt = now();
       const profile = await db.prepare("SELECT currency FROM users WHERE id=?").bind(user.id).first<{ currency: string }>(); const currency = profile?.currency ?? "OMR";
       let goalMinor: number; try { goalMinor = parseNonNegativeMoneyToMinor(parsed.data.goal, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      const isGroup = ["household", "trip", "society", "group"].includes(type);
+      let contributionMinor = 0;
+      const durationMonths = parsed.data.durationMonths ?? 12;
+      if (isGroup && parsed.data.monthlyContribution !== undefined && parsed.data.monthlyContribution !== "") {
+        try { contributionMinor = parseMoneyToMinor(parsed.data.monthlyContribution, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+        goalMinor = multiplyMinor(contributionMinor, durationMonths);
+      }
       const tenantId = await ensureDefaultTenant(db, user);
       const statements: D1PreparedStatement[] = [
         db.prepare("INSERT INTO spaces (id,owner_user_id,name_ar,name_en,type,currency,balance_minor,goal_minor,accent,created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'emerald', ?)").bind(id, user.id, name, name, type, currency, goalMinor, createdAt),
         db.prepare("INSERT INTO tenant_resources (tenant_id,resource_type,resource_id,created_at) VALUES (?,'space',?,?)").bind(tenantId, id, createdAt),
         prepareAudit(db, { userId: user.id, action: "wallet.created", entityType: "space", entityId: id, metadata: { type, currency }, createdAt }),
       ];
-      const isGroup = ["household", "trip", "society", "group"].includes(type);
-      if (isGroup && parsed.data.monthlyContribution !== undefined && parsed.data.monthlyContribution !== "") {
-        let contributionMinor: number;
-        try { contributionMinor = parseMoneyToMinor(parsed.data.monthlyContribution, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
-        const durationMonths = parsed.data.durationMonths ?? 12;
+      if (isGroup && contributionMinor > 0) {
         const dueDay = parsed.data.dueDay ?? 1;
         statements.push(
           db.prepare(`INSERT INTO contribution_plans (id,space_id,amount_minor,interval,due_day,extra_policy,duration_months,starts_at)
@@ -480,6 +501,7 @@ export async function POST(request: Request) {
         db.prepare("INSERT INTO members (id,space_id,user_id,display_name,email,phone,role,status,due_minor,paid_minor,extra_minor,avatar,joined_at) VALUES (?,?,NULL,?,?,?,?,'active',?,0,0,'#0f766e',?)").bind(memberId, parsed.data.spaceId, parsed.data.displayName, parsed.data.email || null, phone, parsed.data.role, dueMinor, createdAt),
         ...await installmentInsertStatements(db, { id: memberId, space_id: parsed.data.spaceId, paid_minor: 0 }, planForMember, createdAt),
         prepareAudit(db, { userId: user.id, action: "member.created", entityType: "member", entityId: memberId, metadata: { spaceId: parsed.data.spaceId, role: parsed.data.role, durationMonths, monthlyMinor }, createdAt }),
+        db.prepare(`UPDATE spaces SET goal_minor = COALESCE((SELECT SUM(due_minor) FROM members WHERE space_id=? AND status='active'), 0) WHERE id=?`).bind(parsed.data.spaceId, parsed.data.spaceId),
       ]);
     } else if (action === "addTransaction") {
       const parsed = z.object({ spaceId: z.string().min(1).max(120), kind: z.enum(["expense", "income", "contribution", "reimbursement"]), allocation: z.enum(["general", "mandatory", "personal_reserve"]), description: z.string().trim().min(2).max(300), amount: z.union([z.string(),z.number()]), memberId: z.string().max(120).optional(), occurredAt: z.iso.datetime().optional() }).safeParse(payload);
@@ -495,7 +517,7 @@ export async function POST(request: Request) {
         throw new ApiError(400, "MEMBER_REQUIRED");
       }
       let amountMinor: number; try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
-      const member = memberId ? await db.prepare("SELECT id,extra_minor,due_minor,paid_minor FROM members WHERE id=? AND space_id=? AND status='active'").bind(memberId, spaceId).first<{ id: string; extra_minor: number; due_minor: number; paid_minor: number }>() : null;
+      const member = memberId ? await db.prepare("SELECT id,space_id,extra_minor,due_minor,paid_minor FROM members WHERE id=? AND space_id=? AND status='active'").bind(memberId, spaceId).first<{ id: string; space_id: string; extra_minor: number; due_minor: number; paid_minor: number }>() : null;
       if (memberId && !member) throw new ApiError(400, "INVALID_MEMBER");
       if (allocation === "personal_reserve" && (!memberId || !["contribution", "reimbursement"].includes(kind))) throw new ApiError(400, "INVALID_RESERVE_OPERATION");
       if (allocation === "personal_reserve" && kind === "reimbursement" && Number(member?.extra_minor ?? 0) < amountMinor) throw new ApiError(409, "INSUFFICIENT_PERSONAL_RESERVE");
