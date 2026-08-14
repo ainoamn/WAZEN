@@ -429,6 +429,7 @@ type TripExpenseRecord = {
   created_at?: string;
   transaction_id?: string | null;
   status?: string | null;
+  paid_from?: string | null;
 };
 
 async function rebuildTripExpenseShares(
@@ -442,12 +443,12 @@ async function rebuildTripExpenseShares(
   if (Number(settled?.count ?? 0) > 0) throw new ApiError(409, "EXPENSE_ALREADY_SETTLED");
   const members = await db.prepare("SELECT id FROM members WHERE space_id=? AND status='active' ORDER BY joined_at").bind(expense.space_id).all<{ id: string }>();
   if (!members.results.length) throw new ApiError(400, "NO_ACTIVE_MEMBERS");
-  if (!members.results.some((member) => member.id === next.paidByMemberId)) throw new ApiError(400, "INVALID_PAYER");
   const space = await db.prepare("SELECT balance_minor FROM spaces WHERE id=?").bind(expense.space_id).first<{ balance_minor: number }>();
   const linked = expense.transaction_id
     ? await db.prepare("SELECT * FROM transactions WHERE id=?").bind(expense.transaction_id).first<TransactionRow>()
     : null;
-  const paidFromFund = linked?.kind === "expense";
+  const paidFromFund = linked?.kind === "expense" || expense.paid_from === "common_fund";
+  if (!paidFromFund && !members.results.some((member) => member.id === next.paidByMemberId)) throw new ApiError(400, "INVALID_PAYER");
   if (paidFromFund) {
     const delta = next.amountMinor - Number(expense.amount_minor);
     if (delta > 0 && Number(space?.balance_minor ?? 0) < delta) throw new ApiError(409, "INSUFFICIENT_FUNDS");
@@ -455,12 +456,12 @@ async function rebuildTripExpenseShares(
   const splits = splitEvenly(next.amountMinor, members.results.map((member) => member.id));
   const createdAt = now();
   const statements: D1PreparedStatement[] = [
-    db.prepare("UPDATE trip_expenses SET paid_by_member_id=?, amount_minor=?, description=? WHERE id=?").bind(next.paidByMemberId, next.amountMinor, next.description, expense.id),
+    db.prepare("UPDATE trip_expenses SET paid_by_member_id=?, amount_minor=?, description=? WHERE id=?").bind(paidFromFund ? expense.paid_by_member_id : next.paidByMemberId, next.amountMinor, next.description, expense.id),
     db.prepare("DELETE FROM expense_splits WHERE expense_id=?").bind(expense.id),
     db.prepare("UPDATE settlements SET status='voided' WHERE expense_id=? AND status='pending'").bind(expense.id),
   ];
   if (linked && linked.status === "approved") {
-    statements.push(db.prepare("UPDATE transactions SET amount_minor=?, description_ar=?, description_en=?, member_id=? WHERE id=?").bind(next.amountMinor, next.description, next.description, next.paidByMemberId, linked.id));
+    statements.push(db.prepare("UPDATE transactions SET amount_minor=?, description_ar=?, description_en=?, member_id=? WHERE id=?").bind(next.amountMinor, next.description, next.description, paidFromFund ? null : next.paidByMemberId, linked.id));
     if (paidFromFund) {
       const delta = next.amountMinor - Number(expense.amount_minor);
       if (delta !== 0) statements.push(db.prepare("UPDATE spaces SET balance_minor = balance_minor - ? WHERE id=?").bind(delta, expense.space_id));
@@ -524,7 +525,13 @@ async function loadDashboard(db: D1Database, userId: string) {
     .all();
   const circleTurns = await db.prepare(`SELECT ct.*,m.display_name FROM circle_turns ct JOIN members m ON m.id=ct.member_id
     WHERE ct.space_id IN (${placeholders}) ORDER BY ct.space_id,ct.turn_number`).bind(...ids).all();
-  const tripExpenses = await db.prepare(`SELECT te.*,m.display_name AS paid_by_name FROM trip_expenses te JOIN members m ON m.id=te.paid_by_member_id
+  const tripExpenses = await db.prepare(`SELECT te.id, te.space_id, te.paid_by_member_id, te.amount_minor, te.description, te.occurred_at, te.transaction_id, te.status,
+      CASE WHEN COALESCE(te.paid_from, CASE WHEN t.kind='expense' THEN 'common_fund' ELSE 'member' END)='common_fund'
+        THEN 'صندوق الجمعية' ELSE m.display_name END AS paid_by_name,
+      COALESCE(te.paid_from, CASE WHEN t.kind='expense' THEN 'common_fund' ELSE 'member' END) AS paid_from
+    FROM trip_expenses te
+    LEFT JOIN members m ON m.id=te.paid_by_member_id
+    LEFT JOIN transactions t ON t.id=te.transaction_id
     WHERE te.space_id IN (${placeholders}) AND COALESCE(te.status,'posted')<>'voided' ORDER BY te.occurred_at DESC LIMIT 50`).bind(...ids).all();
   const expenseSplits = await db.prepare(`SELECT es.*,m.display_name FROM expense_splits es JOIN trip_expenses te ON te.id=es.expense_id
     JOIN members m ON m.id=es.member_id WHERE te.space_id IN (${placeholders}) AND COALESCE(te.status,'posted')<>'voided' ORDER BY es.expense_id,m.joined_at`).bind(...ids).all();
@@ -1076,9 +1083,11 @@ export async function POST(request: Request) {
       const paidByMemberId = paidFrom === "member"
         ? parsed.data.paidByMemberId
         : (parsed.data.paidByMemberId ?? members.results[0]?.id);
-      if (!paidByMemberId || !members.results.some((member) => member.id === paidByMemberId)) {
+      if (paidFrom === "member" && (!paidByMemberId || !members.results.some((member) => member.id === paidByMemberId))) {
         throw new ApiError(400, "INVALID_PAYER");
       }
+      if (paidFrom === "common_fund" && !members.results[0]?.id) throw new ApiError(400, "NO_ACTIVE_MEMBERS");
+      const fundPayerId = paidFrom === "common_fund" ? members.results[0]!.id : paidByMemberId!;
       const cashOnHand = Math.max(0, Number(space.balance_minor));
       const cashSpent = paidFrom === "common_fund" ? Math.min(cashOnHand, amountMinor) : 0;
       const shortfall = paidFrom === "common_fund" ? Math.max(0, amountMinor - cashSpent) : 0;
@@ -1090,21 +1099,21 @@ export async function POST(request: Request) {
       const occurredAt = parsed.data.occurredAt ?? createdAt;
       await assertPeriodWritable(db, parsed.data.spaceId, occurredAt);
       const statements: D1PreparedStatement[] = [
-        db.prepare("INSERT INTO trip_expenses (id,space_id,paid_by_member_id,amount_minor,description,occurred_at,created_by,created_at,transaction_id,status) VALUES (?,?,?,?,?,?,?,?,?,'posted')")
-          .bind(expenseId, parsed.data.spaceId, paidByMemberId, amountMinor, parsed.data.description, occurredAt, user.id, createdAt, transactionId),
+        db.prepare("INSERT INTO trip_expenses (id,space_id,paid_by_member_id,amount_minor,description,occurred_at,created_by,created_at,transaction_id,status,paid_from) VALUES (?,?,?,?,?,?,?,?,?,'posted',?)")
+          .bind(expenseId, parsed.data.spaceId, fundPayerId, amountMinor, parsed.data.description, occurredAt, user.id, createdAt, transactionId, paidFrom),
       ];
       if (paidFrom === "common_fund") {
         if (cashSpent > 0) {
           statements.push(
             db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'general',?,?,?,'approved',?,?)")
-              .bind(transactionId, parsed.data.spaceId, user.id, paidByMemberId, "expense", cashSpent, parsed.data.description, parsed.data.description, occurredAt, createdAt),
+              .bind(transactionId, parsed.data.spaceId, user.id, null, "expense", cashSpent, parsed.data.description, parsed.data.description, occurredAt, createdAt),
             db.prepare("UPDATE spaces SET balance_minor = balance_minor - ? WHERE id = ?").bind(cashSpent, parsed.data.spaceId),
             db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
               .bind(entryId, parsed.data.spaceId, transactionId, user.id, parsed.data.description, occurredAt, createdAt),
             db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
-              .bind(crypto.randomUUID(), entryId, "expense:group", paidByMemberId, cashSpent, 0, createdAt),
+              .bind(crypto.randomUUID(), entryId, "expense:group", null, cashSpent, 0, createdAt),
             db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
-              .bind(crypto.randomUUID(), entryId, "asset:cash", paidByMemberId, 0, cashSpent, createdAt),
+              .bind(crypto.randomUUID(), entryId, "asset:cash", null, 0, cashSpent, createdAt),
           );
         }
         if (shortfall > 0) {
@@ -1146,7 +1155,7 @@ export async function POST(request: Request) {
         action: "trip.expense_split",
         entityType: "trip_expense",
         entityId: expenseId,
-        metadata: { amountMinor, paidFrom, paidByMemberId, splits },
+        metadata: { amountMinor, paidFrom, paidByMemberId: paidFrom === "member" ? paidByMemberId : null, splits },
         createdAt,
       }));
       statements.push(await periodWriteEvent(db, user, parsed.data.spaceId, occurredAt, {

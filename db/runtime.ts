@@ -541,6 +541,9 @@ async function initializeSchema(db: D1Database) {
   if (!tripExpenseNames.has("status")) {
     try { await db.prepare("ALTER TABLE trip_expenses ADD COLUMN status TEXT NOT NULL DEFAULT 'posted'").run(); } catch { /* exists */ }
   }
+  if (!tripExpenseNames.has("paid_from")) {
+    try { await db.prepare("ALTER TABLE trip_expenses ADD COLUMN paid_from TEXT NOT NULL DEFAULT 'member'").run(); } catch { /* exists */ }
+  }
   const settlementColumns = await db.prepare("PRAGMA table_info(settlements)").all<{ name: string }>();
   if (!settlementColumns.results.some((column) => column.name === "expense_id")) {
     try { await db.prepare("ALTER TABLE settlements ADD COLUMN expense_id TEXT").run(); } catch { /* exists */ }
