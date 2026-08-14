@@ -76,6 +76,7 @@ type Member = {
   due_minor: number;
   paid_minor: number;
   extra_minor: number;
+  addon_minor?: number;
   phone?: string | null;
   avatar: string;
   joined_at?: string;
@@ -96,7 +97,7 @@ type CircleTurn = { id: string; space_id: string; member_id: string; display_nam
 type TripExpense = { id: string; space_id: string; paid_by_member_id: string; paid_by_name: string; amount_minor: number; description: string; occurred_at: string };
 type ExpenseSplit = { id: string; expense_id: string; member_id: string; display_name: string; share_minor: number };
 type Settlement = { id: string; space_id: string; from_member_id: string; to_member_id: string; from_member_name: string | null; to_member_name: string | null; amount_minor: number; status: string };
-type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }> };
+type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; status: string }> };
 
 const copy = {
   ar: {
@@ -393,7 +394,7 @@ export function WazenDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [modal, setModal] = useState<"transaction" | "wallet" | "invite" | "tripExpense" | "circleOrder" | "withdrawSurplus" | "smartPay" | "memberDetail" | "sendReceipt" | null>(null);
+  const [modal, setModal] = useState<"transaction" | "wallet" | "invite" | "tripExpense" | "circleOrder" | "withdrawSurplus" | "smartPay" | "memberDetail" | "sendReceipt" | "clonePeriod" | null>(null);
   const [pickedSpaceId, setPickedSpaceId] = useState<Partial<Record<ViewId, string>>>({});
   const [activeMemberId, setActiveMemberId] = useState("");
   const [receiptTxnId, setReceiptTxnId] = useState<string | undefined>(undefined);
@@ -524,7 +525,7 @@ export function WazenDashboard() {
             </>
           )}
           {activeSpace && (
-            <SpaceDetail space={activeSpace} data={data} locale={locale} onAdd={() => setModal("transaction")} onInvite={() => setModal("invite")} onTripExpense={() => { setEditingExpenseId(""); setModal("tripExpense"); }} onEditExpense={(expenseId) => { setEditingExpenseId(expenseId); setModal("tripExpense"); }} onCircleOrder={() => setModal("circleOrder")} onSettle={(settlementId) => void settleReimbursement(settlementId)} onCompleteTurn={(turnId) => void completeCircleTurn(turnId)} onOpenMember={(memberId) => { setActiveMemberId(memberId); setModal("memberDetail"); }} onTxnChanged={(next) => { setData({ ...data, ...next }); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />
+            <SpaceDetail space={activeSpace} data={data} locale={locale} onAdd={() => setModal("transaction")} onInvite={() => setModal("invite")} onTripExpense={() => { setEditingExpenseId(""); setModal("tripExpense"); }} onEditExpense={(expenseId) => { setEditingExpenseId(expenseId); setModal("tripExpense"); }} onCircleOrder={() => setModal("circleOrder")} onClonePeriod={() => setModal("clonePeriod")} onClosePeriod={() => { if (window.confirm(locale === "ar" ? "إغلاق الفترة المحاسبية الحالية مع استمرار الجمعية؟" : "Close the current accounting period while the association continues?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "closeAccountingPeriod", idempotencyKey: crypto.randomUUID(), spaceId: activeSpace.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "CLOSE_FAILED"); setData({ ...data, ...result }); flash(locale === "ar" ? "أُغلقت الفترة المحاسبية. الجمعية مستمرة حتى نهايتها." : "Accounting period closed. The association continues."); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "CLOSE_FAILED")); }} onSettle={(settlementId) => void settleReimbursement(settlementId)} onCompleteTurn={(turnId) => void completeCircleTurn(turnId)} onOpenMember={(memberId) => { setActiveMemberId(memberId); setModal("memberDetail"); }} onTxnChanged={(next) => { setData({ ...data, ...next }); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />
           )}
           {activeView === "groups" && <MembersView data={data} locale={locale} onInvite={() => setModal("invite")} onWithdraw={(memberId) => { setWithdrawMemberId(memberId); setModal("withdrawSurplus"); }} onOpenMember={(memberId) => { setActiveMemberId(memberId); setModal("memberDetail"); }} onSmartPay={(memberId) => { setActiveMemberId(memberId); setModal("smartPay"); }} />}
           {activeView === "transactions" && <TransactionsView data={data} locale={locale} onChanged={(next) => { setData({ ...data, ...next }); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />}
@@ -556,6 +557,7 @@ export function WazenDashboard() {
       {modal === "invite" && <InviteModal data={data} locale={locale} preferredSpaceId={activeSpace?.id} onClose={() => setModal(null)} onDone={(message) => { setModal(null); flash(message); void load(); }} />}
       {modal === "tripExpense" && <TripExpenseModal data={data} locale={locale} preferredSpaceId={activeSpace?.id} expenseId={editingExpenseId || undefined} onClose={() => { setModal(null); setEditingExpenseId(""); }} onSaved={(next) => { setData({ ...data, ...next }); setModal(null); setEditingExpenseId(""); flash(locale === "ar" ? "تم حفظ المصروف وتحديث الحصص" : "Expense saved and shares updated"); }} />}
       {modal === "circleOrder" && <CircleOrderModal data={data} locale={locale} onClose={() => setModal(null)} onSaved={(next) => { setData({ ...data, ...next }); setModal(null); flash(locale === "ar" ? "تم اعتماد ترتيب الأدوار" : "Turn order saved"); }} />}
+      {modal === "clonePeriod" && activeSpace && <ClonePeriodModal data={data} locale={locale} space={activeSpace} onClose={() => setModal(null)} onSaved={(next) => { setData({ ...data, ...next }); setModal(null); flash(locale === "ar" ? "فُتحت فترة / جمعية جديدة بنفس الشروط" : "A new period was opened with the same terms"); }} />}
       {modal === "withdrawSurplus" && <SurplusWithdrawModal data={data} locale={locale} memberId={withdrawMemberId} onClose={() => setModal(null)} onSaved={(next) => { setData({ ...data, ...next }); setModal(null); flash(locale === "ar" ? "تم صرف الفائض الشخصي" : "Personal surplus withdrawn"); }} />}
       {modal === "smartPay" && (
         <SmartAccountantModal
@@ -839,7 +841,7 @@ function Obligations({ data, locale, onView }: { data: DashboardData; locale: Lo
   );
 }
 
-function SpaceDetail({ space, data, locale, onAdd, onInvite, onTripExpense, onEditExpense, onCircleOrder, onSettle, onCompleteTurn, onTxnChanged, onOpenMember }: { space: Space; data: DashboardData; locale: Locale; onAdd: () => void; onInvite: () => void; onTripExpense: () => void; onEditExpense: (expenseId: string) => void; onCircleOrder: () => void; onSettle: (settlementId: string) => void; onCompleteTurn: (turnId: string) => void; onTxnChanged: (next: Partial<DashboardData>) => void; onOpenMember: (memberId: string) => void }) {
+function SpaceDetail({ space, data, locale, onAdd, onInvite, onTripExpense, onEditExpense, onCircleOrder, onClonePeriod, onClosePeriod, onSettle, onCompleteTurn, onTxnChanged, onOpenMember }: { space: Space; data: DashboardData; locale: Locale; onAdd: () => void; onInvite: () => void; onTripExpense: () => void; onEditExpense: (expenseId: string) => void; onCircleOrder: () => void; onClonePeriod: () => void; onClosePeriod: () => void; onSettle: (settlementId: string) => void; onCompleteTurn: (turnId: string) => void; onTxnChanged: (next: Partial<DashboardData>) => void; onOpenMember: (memberId: string) => void }) {
   const t = copy[locale];
   const members = data.members.filter((member) => member.space_id === space.id);
   const transactions = data.transactions.filter((transaction) => transaction.space_id === space.id);
@@ -866,7 +868,7 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onTripExpense, onEd
           : `${settlement.from_member_name ?? "Member"} owes ${settlement.to_member_name ?? "member"}`);
       return <div className="settlement-alert" key={settlement.id}><ShieldCheck size={17} /><span>{label}</span><b>{formatMoney(settlement.amount_minor, space.currency, locale)}</b><button onClick={() => onSettle(settlement.id)}>{locale === "ar" ? "تم التسوية" : "Mark settled"}</button><button type="button" className="secondary-button compact" onClick={() => { if (window.confirm(locale === "ar" ? "إلغاء هذه التسوية؟" : "Cancel this settlement?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "voidSettlement", idempotencyKey: crypto.randomUUID(), settlementId: settlement.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "VOID_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "VOID_FAILED")); }}>{locale === "ar" ? "حذف" : "Delete"}</button></div>;
     })}</article>}
-    {(["society", "group"].includes(space.type) || /جمعي|circle|association/i.test(`${space.name_ar} ${space.name_en}`)) && <article className="panel workflow-panel"><div className="panel-heading"><div><span className="section-kicker"><Repeat2 size={15} />{locale === "ar" ? "نظام الأدوار" : "Turn system"}</span><h2>{locale === "ar" ? "ترتيب الاستلام" : "Payout order"}</h2></div><button className="primary-button" onClick={onCircleOrder}><Repeat2 size={15} />{locale === "ar" ? "إعداد الأدوار" : "Configure turns"}</button></div><div className="circle-order-list">{data.circleTurns.filter((turn) => turn.space_id === space.id).map((turn) => <div key={turn.id}><b>{turn.turn_number}</b><span>{turn.display_name}</span><strong>{formatMoney(turn.amount_minor, space.currency, locale)}</strong><em>{turn.status}</em>{turn.status === "scheduled" && <button disabled={turn.id !== nextCircleTurn?.id} onClick={() => onCompleteTurn(turn.id)}>{locale === "ar" ? "صرف الدور" : "Pay turn"}</button>}</div>)}{!data.circleTurns.some((turn) => turn.space_id === space.id) && <Empty locale={locale} />}</div></article>}
+    {(["society", "group"].includes(space.type) || /جمعي|circle|association/i.test(`${space.name_ar} ${space.name_en}`)) && <article className="panel workflow-panel"><div className="panel-heading"><div><span className="section-kicker"><Repeat2 size={15} />{locale === "ar" ? "الفترة المحاسبية والأدوار" : "Accounting period & turns"}</span><h2>{locale === "ar" ? "إغلاق الفترة أو فتح سنة جديدة" : "Close the period or open a new year"}</h2></div><div className="section-title-actions"><button type="button" className="secondary-button" onClick={onClosePeriod}>{locale === "ar" ? "إغلاق الفترة" : "Close period"}</button><button type="button" className="primary-button" onClick={onClonePeriod}>{locale === "ar" ? "فتح فترة جديدة / استنساخ" : "New period / clone"}</button><button className="primary-button" onClick={onCircleOrder}><Repeat2 size={15} />{locale === "ar" ? "إعداد الأدوار" : "Configure turns"}</button></div></div><p className="modal-note">{locale === "ar" ? "أغلق الفترة بعد السفر أو نهاية السنة دون إيقاف الجمعية، ثم افتح فترة جديدة بنفس الاشتراك مع اختيار الأعضاء من السجل." : "Close the period after a trip or year-end without stopping the association, then open a new period with the same dues and selected members."}</p><div className="circle-order-list">{(data.periods ?? []).filter((period) => period.space_id === space.id).map((period) => <div key={period.id}><b>{period.status === "open" ? (locale === "ar" ? "مفتوحة" : "Open") : (locale === "ar" ? "مغلقة" : "Closed")}</b><span>{period.label}</span><strong>{new Date(period.starts_at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB")}</strong></div>)}{data.circleTurns.filter((turn) => turn.space_id === space.id).map((turn) => <div key={turn.id}><b>{turn.turn_number}</b><span>{turn.display_name}</span><strong>{formatMoney(turn.amount_minor, space.currency, locale)}</strong><em>{turn.status}</em>{turn.status === "scheduled" && <button disabled={turn.id !== nextCircleTurn?.id} onClick={() => onCompleteTurn(turn.id)}>{locale === "ar" ? "صرف الدور" : "Pay turn"}</button>}</div>)}{!data.circleTurns.some((turn) => turn.space_id === space.id) && !(data.periods ?? []).some((period) => period.space_id === space.id) && <Empty locale={locale} />}</div></article>}
     <SpaceTransactionsPanel space={space} data={data} locale={locale} onAdd={onAdd} onTxnChanged={onTxnChanged} />
   </div>;
 }
@@ -886,12 +888,12 @@ function MembersView({ data, locale, onInvite, onWithdraw, onOpenMember, onSmart
 function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, onOpenMember }: { members: Member[]; locale: Locale; currency: string; data?: DashboardData; spaceId?: string; onWithdraw?: (memberId: string) => void; onOpenMember?: (memberId: string) => void }) {
   const t = copy[locale];
   const [query, setQuery] = useState(""); const visible = members.filter((member) => `${member.display_name} ${member.email ?? ""} ${member.phone ?? ""}`.toLowerCase().includes(query.toLowerCase()));
-  return <article className="panel members-panel"><div className="panel-heading"><h2>{t.members} <span className="count-badge">{members.length}</span></h2><label className="search-field member-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={locale === "ar" ? "ابحث باسم المساهم" : "Search member name"} /></label></div><div className="members-table"><div className="table-head"><span>{locale === "ar" ? "العضو" : "Member"}</span><span>{t.goal}</span><span>{t.paid}</span><span>{locale === "ar" ? "عليه" : "Owes"}</span><span>{locale === "ar" ? "له" : "Owed"}</span><span>{t.status}</span><span>{locale === "ar" ? "إجراء" : "Action"}</span></div>{visible.map((member) => {
+  return <article className="panel members-panel"><div className="panel-heading"><h2>{t.members} <span className="count-badge">{members.length}</span></h2><label className="search-field member-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={locale === "ar" ? "ابحث باسم المساهم" : "Search member name"} /></label></div><div className="members-table"><div className="table-head"><span>{locale === "ar" ? "العضو" : "Member"}</span><span>{t.goal}</span><span>{t.paid}</span><span>{locale === "ar" ? "إضافي" : "Extra"}</span><span>{locale === "ar" ? "عليه" : "Owes"}</span><span>{locale === "ar" ? "له" : "Owed"}</span><span>{t.status}</span><span>{locale === "ar" ? "إجراء" : "Action"}</span></div>{visible.map((member) => {
     const pos = memberPosition(member);
     const expenseNet = data && spaceId ? memberExpenseNet(member.id, data, spaceId) : 0;
     const debit = pos.debit + Math.max(0, -expenseNet);
     const credit = pos.credit + Math.max(0, expenseNet);
-    return <button type="button" className="member-row member-row-button" key={member.id} onClick={() => onOpenMember?.(member.id)}><div className="member-name"><i style={{ background: member.avatar }}>{member.display_name.slice(0, 1)}</i><div><strong>{member.display_name}</strong><span>{member.phone || member.email || (member.role === "owner" ? t.roleOwner : member.role === "treasurer" ? t.roleTreasurer : t.roleMember)}</span></div></div><strong>{formatMoney(personGoalMinor(member), currency, locale)}</strong><strong>{formatMoney(member.paid_minor, currency, locale)}</strong><strong className={debit ? "amount-negative" : "muted-amount"}>{formatMoney(debit, currency, locale)}</strong><strong className={credit ? "reserve-amount" : "muted-amount"}>{formatMoney(credit, currency, locale)}</strong><span className={`status-pill ${debit ? "pending" : "complete"}`}>{debit ? <Clock3 size={13} /> : <CheckCircle2 size={13} />}{debit ? (locale === "ar" ? "عليه مطالبات" : "Owes") : (credit ? (locale === "ar" ? "له رصيد" : "Credit") : t.paid)}</span><span onClick={(event) => event.stopPropagation()}>{member.extra_minor > 0 && onWithdraw ? <button type="button" className="secondary-button compact" onClick={() => onWithdraw(member.id)}>{locale === "ar" ? "صرف فائض" : "Withdraw"}</button> : "—"}</span></button>;
+    return <button type="button" className="member-row member-row-button" key={member.id} onClick={() => onOpenMember?.(member.id)}><div className="member-name"><i style={{ background: member.avatar }}>{member.display_name.slice(0, 1)}</i><div><strong>{member.display_name}</strong><span>{member.phone || member.email || (member.role === "owner" ? t.roleOwner : member.role === "treasurer" ? t.roleTreasurer : t.roleMember)}</span></div></div><strong>{formatMoney(personGoalMinor(member), currency, locale)}</strong><strong>{formatMoney(member.paid_minor, currency, locale)}</strong><strong>{formatMoney(Number(member.addon_minor ?? 0), currency, locale)}</strong><strong className={debit ? "amount-negative" : "muted-amount"}>{formatMoney(debit, currency, locale)}</strong><strong className={credit ? "reserve-amount" : "muted-amount"}>{formatMoney(credit, currency, locale)}</strong><span className={`status-pill ${debit ? "pending" : "complete"}`}>{debit ? <Clock3 size={13} /> : <CheckCircle2 size={13} />}{debit ? (locale === "ar" ? "عليه مطالبات" : "Owes") : (credit ? (locale === "ar" ? "له رصيد" : "Credit") : t.paid)}</span><span onClick={(event) => event.stopPropagation()}>{member.extra_minor > 0 && onWithdraw ? <button type="button" className="secondary-button compact" onClick={() => onWithdraw(member.id)}>{locale === "ar" ? "صرف فائض" : "Withdraw"}</button> : "—"}</span></button>;
   })}</div></article>;
 }
 
@@ -1165,6 +1167,7 @@ function WalletModal({ locale, defaultType = "trip", lockType = false, onClose, 
   const [type, setType] = useState(lockType ? defaultType : defaultType);
   const [monthlyContribution, setMonthlyContribution] = useState("20");
   const [durationMonths, setDurationMonths] = useState("12");
+  const [startsAt, setStartsAt] = useState(new Date().toISOString().slice(0, 10));
   const isGroup = ["household", "trip", "society", "group"].includes(type);
   const liveGoalMinor = Math.round(Number(monthlyContribution || 0) * 1000) * Math.max(1, Number(durationMonths) || 1);
   const submit = async (event: FormEvent) => {
@@ -1180,8 +1183,8 @@ function WalletModal({ locale, defaultType = "trip", lockType = false, onClose, 
           type: lockType ? defaultType : type,
           goal: isGroup ? String((liveGoalMinor / 1000).toFixed(3)) : "0",
           ...(isGroup && monthlyContribution
-            ? { monthlyContribution, durationMonths: Number(durationMonths) || 12, dueDay: 1 }
-            : {}),
+            ? { monthlyContribution, durationMonths: Number(durationMonths) || 12, dueDay: 1, startsAt }
+            : { startsAt }),
         }),
       });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
@@ -1197,7 +1200,7 @@ function WalletModal({ locale, defaultType = "trip", lockType = false, onClose, 
       setError(caught instanceof Error ? caught.message : "SAVE_FAILED");
     } finally { setSaving(false); }
   };
-  return <Modal title={t.newWallet} onClose={onClose}><form className="modal-form" onSubmit={submit}><label><span>{t.walletName}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={locale === "ar" ? "مثال: سفرة الإخوة 2027" : "e.g. Siblings trip 2027"} /></label>{!lockType && <label><span>{t.walletType}</span><select value={type} onChange={(event) => setType(event.target.value)}>{Object.entries(typeLabels[locale]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}{isGroup && <div className="form-row"><label><span>{locale === "ar" ? "المساهمة الشهرية الإلزامية" : "Mandatory monthly contribution"}</span><div className="money-input"><input required min="0.01" step="0.001" type="number" value={monthlyContribution} onChange={(event) => setMonthlyContribution(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label><label><span>{locale === "ar" ? "مدة الخطة (أشهر)" : "Plan duration (months)"}</span><input required type="number" min="1" max="120" value={durationMonths} onChange={(event) => setDurationMonths(event.target.value)} /></label></div>}{isGroup && <div className="modal-note split-preview"><span>{locale === "ar" ? "الهدف المالي للشخص = المساهمة × عدد الأشهر" : "Personal financial goal = contribution × months"}</span><strong>{formatMoney(Number.isFinite(liveGoalMinor) ? liveGoalMinor : 0, "OMR", locale)}</strong></div>}{isGroup && <p className="modal-note">{locale === "ar" ? "عند استلام مبلغ من عضو: يُخصم أولاً من المطالبات المتراكمة عليه، وأي زيادة تُسجَّل مقدّماً (له)." : "When a member pays: outstanding dues are cleared first, and any surplus is booked as advance credit."}</p>}{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : t.create}</button></div></form></Modal>;
+  return <Modal title={t.newWallet} onClose={onClose}><form className="modal-form" onSubmit={submit}><label><span>{t.walletName}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={locale === "ar" ? "مثال: سفرة الإخوة 2027" : "e.g. Siblings trip 2027"} /></label>{!lockType && <label><span>{t.walletType}</span><select value={type} onChange={(event) => setType(event.target.value)}>{Object.entries(typeLabels[locale]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}{isGroup && <div className="form-row"><label><span>{locale === "ar" ? "المساهمة الشهرية الإلزامية" : "Mandatory monthly contribution"}</span><div className="money-input"><input required min="0.01" step="0.001" type="number" value={monthlyContribution} onChange={(event) => setMonthlyContribution(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label><label><span>{locale === "ar" ? "مدة الخطة (أشهر)" : "Plan duration (months)"}</span><input required type="number" min="1" max="120" value={durationMonths} onChange={(event) => setDurationMonths(event.target.value)} /></label></div>}<label><span>{locale === "ar" ? "تاريخ بداية الجمعية / المحفظة" : "Association / wallet start date"}</span><input required type="date" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></label>{isGroup && <div className="modal-note split-preview"><span>{locale === "ar" ? "الهدف المالي للشخص = المساهمة × عدد الأشهر" : "Personal financial goal = contribution × months"}</span><strong>{formatMoney(Number.isFinite(liveGoalMinor) ? liveGoalMinor : 0, "OMR", locale)}</strong></div>}{isGroup && <p className="modal-note">{locale === "ar" ? "عند استلام مبلغ من عضو: يُخصم أولاً من المطالبات المتراكمة عليه، وأي زيادة تُسجَّل مقدّماً (له)." : "When a member pays: outstanding dues are cleared first, and any surplus is booked as advance credit."}</p>}{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : t.create}</button></div></form></Modal>;
 }
 
 function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data: DashboardData; locale: Locale; preferredSpaceId?: string; onClose: () => void; onDone: (message: string) => void }) {
@@ -1253,6 +1256,18 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
   return <Modal title={locale === "ar" ? "إضافة مساهم" : "Add member"} onClose={onClose}>
     <form className="modal-form" onSubmit={submit}>
       <div className="segmented-control"><button type="button" className={!recordOnly ? "active" : ""} onClick={() => setRecordOnly(false)}>{locale === "ar" ? "دعوة إلكترونية" : "Email invite"}</button><button type="button" className={recordOnly ? "active" : ""} onClick={() => setRecordOnly(true)}>{locale === "ar" ? "إضافة للسجل" : "Ledger member"}</button></div>
+      <label><span>{locale === "ar" ? "من سجل العناوين" : "From address book"}</span>
+        <select value="" onChange={(event) => {
+          const contact = (data.contacts ?? []).find((item) => item.id === event.target.value);
+          if (!contact) return;
+          setDisplayName(contact.display_name);
+          setEmail(contact.email ?? "");
+          setPhone(contact.phone ?? "");
+        }}>
+          <option value="">{locale === "ar" ? "اختر عضواً محفوظاً (اختياري)" : "Pick a saved member (optional)"}</option>
+          {(data.contacts ?? []).map((contact) => <option key={contact.id} value={contact.id}>{contact.display_name}{contact.phone ? ` · ${contact.phone}` : ""}</option>)}
+        </select>
+      </label>
       <label><span>{locale === "ar" ? "اسم المساهم" : "Member name"}</span><input required minLength={2} maxLength={80} value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
       <div className="form-row">
         <label><span>{locale === "ar" ? `البريد${recordOnly ? " (اختياري)" : ""}` : `Email${recordOnly ? " (optional)" : ""}`}</span><input required={!recordOnly} type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="member@example.com" /></label>
@@ -1341,6 +1356,66 @@ function TripExpenseModal({ data, locale, preferredSpaceId, expenseId, onClose, 
           : (locale === "ar" ? "يُقسَّم المصروف بالتساوي: الدافع يصبح له، وباقي الأعضاء عليهم حصصهم." : "Split equally: the payer is owed (credit), others owe their shares."))}</p>
         {error && <p className="modal-error">{error}</p>}
         <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{copy[locale].cancel}</button><button className="primary-button" disabled={saving || !spaceId || !members.length}>{saving ? copy[locale].saving : copy[locale].save}</button></div>
+      </form>
+    </Modal>
+  );
+}
+
+function ClonePeriodModal({ data, locale, space, onClose, onSaved }: { data: DashboardData; locale: Locale; space: Space; onClose: () => void; onSaved: (next: Partial<DashboardData>) => void }) {
+  const members = data.members.filter((member) => member.space_id === space.id && member.status === "active");
+  const plan = data.plans.find((item) => String(item.space_id) === space.id);
+  const [name, setName] = useState(`${space.name_ar} · ${new Date().getFullYear() + 1}`);
+  const [startsAt, setStartsAt] = useState(new Date().toISOString().slice(0, 10));
+  const [selected, setSelected] = useState<string[]>(members.map((member) => member.id));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const monthly = plan?.amount_minor ? String(Number(plan.amount_minor) / 1000) : "20";
+  const duration = String(plan?.duration_months ?? 12);
+  const toggle = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true); setError("");
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "addWallet",
+          idempotencyKey: crypto.randomUUID(),
+          name,
+          type: space.type === "trip" ? "society" : space.type,
+          monthlyContribution: monthly,
+          durationMonths: Number(duration) || 12,
+          dueDay: 1,
+          startsAt,
+          cloneFromSpaceId: space.id,
+          cloneMemberIds: selected,
+          goal: "0",
+        }),
+      });
+      const result = await response.json() as Partial<DashboardData> & { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "CLONE_FAILED");
+      onSaved(result);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "CLONE_FAILED");
+    } finally { setSaving(false); }
+  };
+  return (
+    <Modal title={locale === "ar" ? "فتح فترة جديدة / استنساخ الجمعية" : "Open new period / clone association"} wide onClose={onClose}>
+      <form className="modal-form" onSubmit={submit}>
+        <p className="modal-note">{locale === "ar" ? "تُنشأ جمعية جديدة بنفس الاشتراك والمدة. ألغِ تحديد من لن يشارك، أو أضف لاحقاً من سجل العناوين." : "Creates a new association with the same dues. Uncheck anyone who will not join; add others later from the address book."}</p>
+        <label><span>{locale === "ar" ? "اسم الفترة / الجمعية الجديدة" : "New period / association name"}</span><input required minLength={2} value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label><span>{locale === "ar" ? "تاريخ البداية" : "Start date"}</span><input required type="date" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></label>
+        <div className="month-grid selectable">
+          {members.map((member) => (
+            <button type="button" key={member.id} className={`month-chip ${selected.includes(member.id) ? "selected" : ""}`} onClick={() => toggle(member.id)}>
+              <strong>{member.display_name}</strong>
+              <span>{selected.includes(member.id) ? (locale === "ar" ? "سيُنقل" : "Included") : (locale === "ar" ? "مستبعد" : "Excluded")}</span>
+            </button>
+          ))}
+        </div>
+        {error && <p className="modal-error">{error}</p>}
+        <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{copy[locale].cancel}</button><button className="primary-button" disabled={saving || !selected.length}>{saving ? copy[locale].saving : (locale === "ar" ? "فتح الفترة الجديدة" : "Open new period")}</button></div>
       </form>
     </Modal>
   );

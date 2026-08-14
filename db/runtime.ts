@@ -477,6 +477,24 @@ async function initializeSchema(db: D1Database) {
     db.prepare("CREATE INDEX IF NOT EXISTS idx_audit_logs_user_date ON audit_logs(user_id, created_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_tenant_memberships_user ON tenant_memberships(user_id,status)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id,revoked_at)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS saved_contacts (
+      id TEXT PRIMARY KEY,
+      owner_user_id TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      email TEXT,
+      phone TEXT,
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS accounting_periods (
+      id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      starts_at TEXT NOT NULL,
+      ends_at TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      closed_at TEXT,
+      created_at TEXT NOT NULL
+    )`),
   ]);
   const memberColumns = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
   if (!memberColumns.results.some((column) => column.name === "phone")) {
@@ -511,6 +529,14 @@ async function initializeSchema(db: D1Database) {
   const settlementColumns = await db.prepare("PRAGMA table_info(settlements)").all<{ name: string }>();
   if (!settlementColumns.results.some((column) => column.name === "expense_id")) {
     try { await db.prepare("ALTER TABLE settlements ADD COLUMN expense_id TEXT").run(); } catch { /* exists */ }
+  }
+  const memberAddon = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
+  if (!memberAddon.results.some((column) => column.name === "addon_minor")) {
+    try { await db.prepare("ALTER TABLE members ADD COLUMN addon_minor INTEGER NOT NULL DEFAULT 0").run(); } catch { /* exists */ }
+  }
+  const spaceStart = await db.prepare("PRAGMA table_info(spaces)").all<{ name: string }>();
+  if (!spaceStart.results.some((column) => column.name === "starts_at")) {
+    try { await db.prepare("ALTER TABLE spaces ADD COLUMN starts_at TEXT").run(); } catch { /* exists */ }
   }
   const { ensureSubscriptionAdminColumns, ensurePaymentGateways } = await import("../services/admin/billing-service");
   await ensureSubscriptionAdminColumns(db);

@@ -33,6 +33,7 @@ type MemberRow = {
   due_minor: number;
   paid_minor: number;
   extra_minor: number;
+  addon_minor?: number;
   phone?: string | null;
   avatar: string;
   joined_at: string;
@@ -59,6 +60,34 @@ const now = () => new Date().toISOString();
 
 function cleanId(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+}
+
+function parseStartDate(value?: string) {
+  if (!value) return now();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00.000Z` : value;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) throw new ApiError(400, "INVALID_START_DATE");
+  return date.toISOString();
+}
+
+async function upsertSavedContact(
+  db: D1Database,
+  ownerUserId: string,
+  contact: { displayName: string; email?: string | null; phone?: string | null },
+  createdAt: string,
+) {
+  const email = contact.email?.trim() || null;
+  const phone = contact.phone?.trim() || null;
+  if (!email && !phone) return;
+  const existing = email
+    ? await db.prepare("SELECT id FROM saved_contacts WHERE owner_user_id=? AND email=? LIMIT 1").bind(ownerUserId, email).first<{ id: string }>()
+    : await db.prepare("SELECT id FROM saved_contacts WHERE owner_user_id=? AND phone=? LIMIT 1").bind(ownerUserId, phone).first<{ id: string }>();
+  if (existing) {
+    await db.prepare("UPDATE saved_contacts SET display_name=?, email=?, phone=? WHERE id=?").bind(contact.displayName, email, phone, existing.id).run();
+    return;
+  }
+  await db.prepare("INSERT INTO saved_contacts (id,owner_user_id,display_name,email,phone,created_at) VALUES (?,?,?,?,?,?)")
+    .bind(crypto.randomUUID(), ownerUserId, contact.displayName, email, phone, createdAt).run();
 }
 
 async function ensureUser(db: D1Database, user: RequestUser) {
@@ -394,7 +423,8 @@ async function loadDashboard(db: D1Database, userId: string) {
     .bind(userId, userId)
     .all<SpaceRow>();
   const ids = spaces.results.map((space) => space.id);
-  if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [] };
+  const contacts = await db.prepare("SELECT * FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name").bind(userId).all();
+  if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results, periods: [] };
 
   await rebuildSpaceBalance(db, ids);
   const placeholders = ids.map(() => "?").join(",");
@@ -404,7 +434,7 @@ async function loadDashboard(db: D1Database, userId: string) {
     .bind(...ids)
     .all<MemberRow>();
   const transactions = await db
-    .prepare(`SELECT * FROM transactions WHERE space_id IN (${placeholders}) AND status <> 'voided' ORDER BY occurred_at DESC LIMIT 80`)
+    .prepare(`SELECT * FROM transactions WHERE space_id IN (${placeholders}) AND status <> 'voided' ORDER BY occurred_at DESC LIMIT 250`)
     .bind(...ids)
     .all<TransactionRow>();
   const plans = await db
@@ -425,6 +455,7 @@ async function loadDashboard(db: D1Database, userId: string) {
     LEFT JOIN members fm ON fm.id=s.from_member_id
     WHERE s.space_id IN (${placeholders}) AND s.status='pending' ORDER BY s.created_at DESC LIMIT 50`).bind(...ids).all();
   const installments = await db.prepare(`SELECT * FROM member_installments WHERE space_id IN (${placeholders}) ORDER BY member_id, period_index`).bind(...ids).all();
+  const periods = await db.prepare(`SELECT * FROM accounting_periods WHERE space_id IN (${placeholders}) ORDER BY starts_at DESC`).bind(...ids).all();
 
   const memberDueBySpace = new Map<string, number>();
   for (const member of members.results) {
@@ -454,6 +485,8 @@ async function loadDashboard(db: D1Database, userId: string) {
     expenseSplits: expenseSplits.results,
     settlements: settlements.results,
     installments: installments.results,
+    contacts: contacts.results,
+    periods: periods.results,
   };
 }
 
@@ -502,6 +535,9 @@ export async function POST(request: Request) {
         monthlyContribution: z.union([z.string(), z.number()]).optional(),
         durationMonths: z.coerce.number().int().min(1).max(120).optional(),
         dueDay: z.coerce.number().int().min(1).max(28).optional(),
+        startsAt: z.string().min(8).max(40).optional(),
+        cloneFromSpaceId: z.string().min(1).max(120).optional(),
+        cloneMemberIds: z.array(z.string().min(1).max(120)).max(200).optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_WALLET");
       const { name, type } = parsed.data;
@@ -514,6 +550,7 @@ export async function POST(request: Request) {
       const walletLimit = isPlatformAdmin ? Math.max(entitlements.walletLimit, 100) : entitlements.walletLimit;
       if (Number(count?.count ?? 0) >= walletLimit) throw new ApiError(403, "PLAN_WALLET_LIMIT");
       const id = `${cleanId(user.id)}-${crypto.randomUUID()}`; const createdAt = now();
+      const startsAt = parseStartDate(parsed.data.startsAt);
       const profile = await db.prepare("SELECT currency FROM users WHERE id=?").bind(user.id).first<{ currency: string }>(); const currency = profile?.currency ?? "OMR";
       let goalMinor: number; try { goalMinor = parseNonNegativeMoneyToMinor(parsed.data.goal, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
       const isGroup = ["household", "trip", "society", "group"].includes(type);
@@ -525,17 +562,31 @@ export async function POST(request: Request) {
       }
       const tenantId = await ensureDefaultTenant(db, user);
       const statements: D1PreparedStatement[] = [
-        db.prepare("INSERT INTO spaces (id,owner_user_id,name_ar,name_en,type,currency,balance_minor,goal_minor,accent,created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'emerald', ?)").bind(id, user.id, name, name, type, currency, goalMinor, createdAt),
+        db.prepare("INSERT INTO spaces (id,owner_user_id,name_ar,name_en,type,currency,balance_minor,goal_minor,accent,created_at,starts_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'emerald', ?, ?)").bind(id, user.id, name, name, type, currency, goalMinor, createdAt, startsAt),
         db.prepare("INSERT INTO tenant_resources (tenant_id,resource_type,resource_id,created_at) VALUES (?,'space',?,?)").bind(tenantId, id, createdAt),
-        prepareAudit(db, { userId: user.id, action: "wallet.created", entityType: "space", entityId: id, metadata: { type, currency }, createdAt }),
+        db.prepare("INSERT INTO accounting_periods (id,space_id,label,starts_at,status,created_at) VALUES (?,?,?,?,'open',?)").bind(crypto.randomUUID(), id, name, startsAt, createdAt),
+        prepareAudit(db, { userId: user.id, action: "wallet.created", entityType: "space", entityId: id, metadata: { type, currency, startsAt }, createdAt }),
       ];
       if (isGroup && contributionMinor > 0) {
         const dueDay = parsed.data.dueDay ?? 1;
         statements.push(
           db.prepare(`INSERT INTO contribution_plans (id,space_id,amount_minor,interval,due_day,extra_policy,duration_months,starts_at)
             VALUES (?, ?, ?, 'monthly', ?, 'personal_reserve', ?, ?)`)
-            .bind(`${id}-plan`, id, contributionMinor, dueDay, durationMonths, createdAt),
+            .bind(`${id}-plan`, id, contributionMinor, dueDay, durationMonths, startsAt),
         );
+      }
+      if (parsed.data.cloneFromSpaceId && parsed.data.cloneMemberIds?.length) {
+        await authorizeSpace(db, user, parsed.data.cloneFromSpaceId, "transact", ["household", "trip", "society", "group"]);
+        const sourceMembers = await db.prepare("SELECT * FROM members WHERE space_id=? AND status='active'").bind(parsed.data.cloneFromSpaceId).all<MemberRow>();
+        const selected = new Set(parsed.data.cloneMemberIds);
+        for (const source of sourceMembers.results.filter((member) => selected.has(member.id))) {
+          const memberId = crypto.randomUUID();
+          const dueMinor = contributionMinor > 0 ? multiplyMinor(contributionMinor, durationMonths) : Number(source.due_minor ?? 0);
+          statements.push(
+            db.prepare("INSERT INTO members (id,space_id,user_id,display_name,email,phone,role,status,due_minor,paid_minor,extra_minor,avatar,joined_at,addon_minor) VALUES (?,?,?,?,?,?,?,'active',?,0,0,?, ?,0)")
+              .bind(memberId, id, source.user_id, source.display_name, source.email, source.phone ?? null, source.role, dueMinor, source.avatar, startsAt),
+          );
+        }
       }
       await db.batch(statements);
     } else if (action === "addMember") {
@@ -576,6 +627,7 @@ export async function POST(request: Request) {
         prepareAudit(db, { userId: user.id, action: "member.created", entityType: "member", entityId: memberId, metadata: { spaceId: parsed.data.spaceId, role: parsed.data.role, durationMonths, monthlyMinor }, createdAt }),
         db.prepare(`UPDATE spaces SET goal_minor = COALESCE((SELECT SUM(due_minor) FROM members WHERE space_id=? AND status='active'), 0) WHERE id=?`).bind(parsed.data.spaceId, parsed.data.spaceId),
       ]);
+      await upsertSavedContact(db, user.id, { displayName: parsed.data.displayName, email: parsed.data.email || null, phone }, createdAt);
     } else if (action === "addTransaction") {
       const parsed = z.object({ spaceId: z.string().min(1).max(120), kind: z.enum(["expense", "income", "contribution", "reimbursement"]), allocation: z.enum(["general", "mandatory", "personal_reserve"]), description: z.string().trim().min(2).max(300), amount: z.union([z.string(),z.number()]), memberId: z.string().max(120).optional(), selectedIds: z.array(z.string().min(1).max(160)).max(120).optional(), occurredAt: z.iso.datetime().optional() }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_TRANSACTION");
@@ -782,8 +834,8 @@ export async function POST(request: Request) {
     } else if (action === "settleReimbursement") {
       const parsed = z.object({ settlementId: z.string().min(1).max(120) }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_SETTLEMENT");
-      const settlement = await db.prepare(`SELECT st.id,st.space_id,st.from_member_id,st.to_member_id,st.amount_minor,s.balance_minor FROM settlements st
-        JOIN spaces s ON s.id=st.space_id WHERE st.id=? AND st.status='pending'`).bind(parsed.data.settlementId).first<{ id: string; space_id: string; from_member_id: string; to_member_id: string; amount_minor: number; balance_minor: number }>();
+      const settlement = await db.prepare(`SELECT st.id,st.space_id,st.from_member_id,st.to_member_id,st.amount_minor,st.expense_id,s.balance_minor FROM settlements st
+        JOIN spaces s ON s.id=st.space_id WHERE st.id=? AND st.status='pending'`).bind(parsed.data.settlementId).first<{ id: string; space_id: string; from_member_id: string; to_member_id: string; amount_minor: number; expense_id: string | null; balance_minor: number }>();
       if (!settlement) throw new ApiError(404, "SETTLEMENT_NOT_FOUND");
       await authorizeSpace(db, user, settlement.space_id, "settlements:write", ["household", "trip", "society", "group"]);
       const fromFund = String(settlement.from_member_id).startsWith("space:");
@@ -806,10 +858,27 @@ export async function POST(request: Request) {
           prepareAudit(db, { userId: user.id, action: "trip.reimbursement_settled", entityType: "settlement", entityId: settlement.id, metadata: { amountMinor: settlement.amount_minor }, createdAt }),
         ]);
       } else {
-        // Member-to-member settlement recorded as settled without moving the common fund.
+        const names = await db.prepare("SELECT id,display_name FROM members WHERE id IN (?,?)")
+          .bind(settlement.from_member_id, settlement.to_member_id)
+          .all<{ id: string; display_name: string }>();
+        const fromName = names.results.find((row) => row.id === settlement.from_member_id)?.display_name ?? "عضو";
+        const toName = names.results.find((row) => row.id === settlement.to_member_id)?.display_name ?? "عضو";
+        const expense = settlement.expense_id
+          ? await db.prepare("SELECT description FROM trip_expenses WHERE id=?").bind(settlement.expense_id).first<{ description: string }>()
+          : null;
+        const reason = expense?.description || "مصروف جماعي";
+        const descFrom = `مبلغ إضافي · تسوية حصة «${reason}» إلى ${toName}`;
+        const descTo = `استرداد مبلغ إضافي · تسوية حصة «${reason}» من ${fromName}`;
+        const fromTxn = crypto.randomUUID();
+        const toTxn = crypto.randomUUID();
         await db.batch([
           db.prepare("UPDATE settlements SET status='settled',settled_at=? WHERE id=? AND status='pending'").bind(createdAt, settlement.id),
-          prepareAudit(db, { userId: user.id, action: "member.settlement_recorded", entityType: "settlement", entityId: settlement.id, metadata: { fromMemberId: settlement.from_member_id, toMemberId: settlement.to_member_id, amountMinor: settlement.amount_minor }, createdAt }),
+          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'extra',?,?,?,'approved',?,?)")
+            .bind(fromTxn, settlement.space_id, user.id, settlement.from_member_id, "expense", settlement.amount_minor, descFrom, descFrom, createdAt, createdAt),
+          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'extra',?,?,?,'approved',?,?)")
+            .bind(toTxn, settlement.space_id, user.id, settlement.to_member_id, "income", settlement.amount_minor, descTo, descTo, createdAt, createdAt),
+          db.prepare("UPDATE members SET addon_minor = COALESCE(addon_minor,0) + ? WHERE id=?").bind(settlement.amount_minor, settlement.from_member_id),
+          prepareAudit(db, { userId: user.id, action: "member.settlement_recorded", entityType: "settlement", entityId: settlement.id, metadata: { fromMemberId: settlement.from_member_id, toMemberId: settlement.to_member_id, amountMinor: settlement.amount_minor, reason }, createdAt }),
         ]);
       }
     } else if (action === "setCircleOrder") {
@@ -1243,6 +1312,20 @@ export async function POST(request: Request) {
       if (!statements.length) throw new ApiError(400, "EMPTY_PAYMENT");
       statements.push(prepareAudit(db, { userId: user.id, action: "smart_pay.applied", entityType: "member", entityId: member.id, metadata: { spaceId: parsed.data.spaceId, amountMinor, lastTransactionId }, createdAt }));
       await db.batch(statements);
+    } else if (action === "closeAccountingPeriod") {
+      const parsed = z.object({ spaceId: z.string().min(1).max(120), label: z.string().trim().min(2).max(80).optional() }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_PERIOD");
+      await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["household", "trip", "society", "group"]);
+      const createdAt = now();
+      const open = await db.prepare("SELECT id FROM accounting_periods WHERE space_id=? AND status='open' ORDER BY starts_at DESC LIMIT 1").bind(parsed.data.spaceId).first<{ id: string }>();
+      if (open) {
+        await db.prepare("UPDATE accounting_periods SET status='closed', ends_at=?, closed_at=?, label=COALESCE(NULLIF(?,''), label) WHERE id=?")
+          .bind(createdAt, createdAt, parsed.data.label ?? "", open.id).run();
+      } else {
+        const space = await db.prepare("SELECT name_ar,starts_at,created_at FROM spaces WHERE id=?").bind(parsed.data.spaceId).first<{ name_ar: string; starts_at?: string; created_at: string }>();
+        await db.prepare("INSERT INTO accounting_periods (id,space_id,label,starts_at,ends_at,status,closed_at,created_at) VALUES (?,?,?,?,?,'closed',?,?)")
+          .bind(crypto.randomUUID(), parsed.data.spaceId, parsed.data.label || `${space?.name_ar ?? "فترة"} · إغلاق`, space?.starts_at || space?.created_at || createdAt, createdAt, createdAt, createdAt).run();
+      }
     } else if (action === "sendReceipt") {
       const parsed = z.object({
         memberId: z.string().min(1).max(120),

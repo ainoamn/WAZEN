@@ -236,18 +236,27 @@ function buildSections(input: ReportInput): { subtitle: string; kpis: { label: s
     case "member": {
       const member = input.member ?? members[0];
       const m = member ? memberMetrics(member) : { remaining: 0, advance: 0, credit: 0, rate: 0, grade: "—" };
+      const subscriptionTx = transactions.filter((row) => row.kind === "contribution" && row.allocation !== "extra");
+      const extraTx = transactions.filter((row) => row.allocation === "extra" || (row.kind === "expense" && row.allocation === "extra") || (row.kind === "income" && row.allocation === "extra"));
+      const extraPaid = extraTx.filter((row) => row.kind === "expense").reduce((sum, row) => sum + row.amount_minor, 0);
+      const extraIn = extraTx.filter((row) => row.kind === "income").reduce((sum, row) => sum + row.amount_minor, 0);
+      const subscriptionPaid = subscriptionTx.reduce((sum, row) => sum + row.amount_minor, 0);
       return {
         subtitle: t(locale, `تقرير خاص بالعميل: ${member?.display_name ?? "—"}`, `Client report: ${member?.display_name ?? "—"}`),
         kpis: [
-          { label: t(locale, "مدفوع", "Paid"), value: money(member?.paid_minor ?? 0, currency, locale) },
-          { label: t(locale, "عليه", "Owes"), value: money(m.remaining, currency, locale) },
-          { label: t(locale, "له", "Credit"), value: money(m.credit, currency, locale) },
-          { label: t(locale, "التقييم", "Grade"), value: m.grade },
+          { label: t(locale, "الاشتراك المدفوع", "Subscription paid"), value: money(subscriptionPaid || (member?.paid_minor ?? 0), currency, locale) },
+          { label: t(locale, "مبالغ إضافية دُفعت", "Extra amounts paid"), value: money(extraPaid, currency, locale) },
+          { label: t(locale, "مبالغ إضافية استُردت", "Extra amounts recovered"), value: money(extraIn, currency, locale) },
+          { label: t(locale, "عليه / له", "Owes / credit"), value: `${money(m.remaining, currency, locale)} / ${money(m.credit, currency, locale)}` },
         ],
         sections: [
           {
-            title: t(locale, "حركات العضو", "Member transactions"),
-            rows: [[t(locale, "التاريخ", "Date"), t(locale, "البيان", "Description"), t(locale, "النوع", "Type"), t(locale, "المبلغ", "Amount")], ...txnRows(transactions)],
+            title: t(locale, "المبلغ الأصلي (الاشتراك)", "Original subscription"),
+            rows: [[t(locale, "التاريخ", "Date"), t(locale, "البيان", "Description"), t(locale, "النوع", "Type"), t(locale, "المبلغ", "Amount")], ...txnRows(subscriptionTx)],
+          },
+          {
+            title: t(locale, "المبالغ الإضافية ومقابل ماذا دُفعت", "Additional amounts and what they were for"),
+            rows: [[t(locale, "التاريخ", "Date"), t(locale, "البيان", "Description"), t(locale, "النوع", "Type"), t(locale, "المبلغ", "Amount")], ...txnRows(extraTx)],
           },
         ],
       };
