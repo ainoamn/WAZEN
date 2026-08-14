@@ -4,7 +4,8 @@ import OmrSymbol from "../components/brand/OmrSymbol";
 import { WazenIcon } from "../components/brand/WazenLogo";
 import WazenPageLoader from "../components/brand/WazenPageLoader";
 import { ReportsPanel } from "../components/reports/ReportsPanel";
-import { MemberDetailModal, ReceiptChannelModal, RemainingInvoiceGrid, SmartAccountantModal, memberInstallments } from "../components/members/association-members";
+import { MemberDetailModal, MemberPersonProfile, ReceiptChannelModal, RemainingInvoiceGrid, SmartAccountantModal, memberInstallments, personIdentityKey } from "../components/members/association-members";
+import { buildReportHtml, openReportPreview } from "../lib/reports";
 import { allocateOldestFirst, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor } from "../lib/money";
 import {
@@ -97,7 +98,7 @@ type CircleTurn = { id: string; space_id: string; member_id: string; display_nam
 type TripExpense = { id: string; space_id: string; paid_by_member_id: string; paid_by_name: string; amount_minor: number; description: string; occurred_at: string };
 type ExpenseSplit = { id: string; expense_id: string; member_id: string; display_name: string; share_minor: number };
 type Settlement = { id: string; space_id: string; from_member_id: string; to_member_id: string; from_member_name: string | null; to_member_name: string | null; amount_minor: number; status: string };
-type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; status: string }> };
+type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; status: string }> };
 
 const copy = {
   ar: {
@@ -326,6 +327,37 @@ function memberPosition(member: Member) {
   return { remainingDue, advance, credit, debit };
 }
 
+function printAccountingPeriod(space: Space, period: NonNullable<DashboardData["periods"]>[number], data: DashboardData, locale: Locale) {
+  const start = new Date(period.starts_at).getTime();
+  const end = new Date(period.ends_at || period.closed_at || new Date().toISOString()).getTime();
+  const reportSpace = { id: space.id, name_ar: space.name_ar, name_en: space.name_en, type: space.type, currency: space.currency, balance_minor: space.balance_minor, goal_minor: space.goal_minor };
+  const html = buildReportHtml({
+    locale,
+    reportType: "period",
+    logoUrl: `${window.location.origin}/brand/wazen-lockup.svg`,
+    issuerName: period.label,
+    titleOverride: locale === "ar" ? `كشف الفترة المحاسبية — ${period.label}` : `Accounting period — ${period.label}`,
+    space: reportSpace,
+    spaces: [reportSpace],
+    members: data.members.filter((member) => member.space_id === space.id).map((member) => ({
+      id: member.id,
+      space_id: member.space_id,
+      display_name: member.display_name,
+      email: member.email,
+      role: member.role,
+      due_minor: member.due_minor,
+      paid_minor: member.paid_minor,
+      extra_minor: member.extra_minor + Number(member.addon_minor ?? 0),
+    })),
+    transactions: data.transactions.filter((txn) => {
+      if (txn.space_id !== space.id) return false;
+      const at = new Date(txn.occurred_at).getTime();
+      return at >= start && at <= end;
+    }),
+  });
+  if (!openReportPreview(html, true)) window.alert(locale === "ar" ? "اسمح بالنوافذ المنبثقة لطباعة الكشف." : "Allow pop-ups to print the statement.");
+}
+
 function memberExpenseNet(memberId: string, data: DashboardData, spaceId: string) {
   let net = 0;
   for (const settlement of data.settlements.filter((item) => item.space_id === spaceId && item.status === "pending")) {
@@ -394,7 +426,7 @@ export function WazenDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [modal, setModal] = useState<"transaction" | "wallet" | "invite" | "tripExpense" | "circleOrder" | "withdrawSurplus" | "smartPay" | "memberDetail" | "sendReceipt" | "clonePeriod" | null>(null);
+  const [modal, setModal] = useState<"transaction" | "wallet" | "invite" | "tripExpense" | "circleOrder" | "withdrawSurplus" | "smartPay" | "memberDetail" | "memberProfile" | "sendReceipt" | "clonePeriod" | null>(null);
   const [pickedSpaceId, setPickedSpaceId] = useState<Partial<Record<ViewId, string>>>({});
   const [activeMemberId, setActiveMemberId] = useState("");
   const [receiptTxnId, setReceiptTxnId] = useState<string | undefined>(undefined);
@@ -527,7 +559,7 @@ export function WazenDashboard() {
           {activeSpace && (
             <SpaceDetail space={activeSpace} data={data} locale={locale} onAdd={() => setModal("transaction")} onInvite={() => setModal("invite")} onTripExpense={() => { setEditingExpenseId(""); setModal("tripExpense"); }} onEditExpense={(expenseId) => { setEditingExpenseId(expenseId); setModal("tripExpense"); }} onCircleOrder={() => setModal("circleOrder")} onClonePeriod={() => setModal("clonePeriod")} onClosePeriod={() => { if (window.confirm(locale === "ar" ? "إغلاق الفترة المحاسبية الحالية مع استمرار الجمعية؟" : "Close the current accounting period while the association continues?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "closeAccountingPeriod", idempotencyKey: crypto.randomUUID(), spaceId: activeSpace.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "CLOSE_FAILED"); setData({ ...data, ...result }); flash(locale === "ar" ? "أُغلقت الفترة المحاسبية. الجمعية مستمرة حتى نهايتها." : "Accounting period closed. The association continues."); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "CLOSE_FAILED")); }} onSettle={(settlementId) => void settleReimbursement(settlementId)} onCompleteTurn={(turnId) => void completeCircleTurn(turnId)} onOpenMember={(memberId) => { setActiveMemberId(memberId); setModal("memberDetail"); }} onTxnChanged={(next) => { setData({ ...data, ...next }); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />
           )}
-          {activeView === "groups" && <MembersView data={data} locale={locale} onInvite={() => setModal("invite")} onWithdraw={(memberId) => { setWithdrawMemberId(memberId); setModal("withdrawSurplus"); }} onOpenMember={(memberId) => { setActiveMemberId(memberId); setModal("memberDetail"); }} onSmartPay={(memberId) => { setActiveMemberId(memberId); setModal("smartPay"); }} />}
+          {activeView === "groups" && <MembersView data={data} locale={locale} onInvite={() => setModal("invite")} onOpenPerson={(memberId) => { setActiveMemberId(memberId); setModal("memberProfile"); }} onSmartPay={(memberId) => { setActiveMemberId(memberId); setModal("smartPay"); }} />}
           {activeView === "transactions" && <TransactionsView data={data} locale={locale} onChanged={(next) => { setData({ ...data, ...next }); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />}
           {activeView === "reports" && <ReportsPanel data={data} locale={locale} totals={totals} />}
           {activeView === "settings" && <SettingsView locale={locale} onLogout={() => void logout()} />}
@@ -585,6 +617,24 @@ export function WazenDashboard() {
             onClose={() => setModal(null)}
             onSmartPay={() => setModal("smartPay")}
             onSendReceipt={() => { setReceiptTxnId(undefined); setModal("sendReceipt"); }}
+          />
+        );
+      })()}
+      {modal === "memberProfile" && (() => {
+        const seed = data.members.find((item) => item.id === activeMemberId);
+        if (!seed) return null;
+        const key = personIdentityKey(seed);
+        const records = data.members.filter((item) => personIdentityKey(item) === key && data.spaces.some((space) => space.id === item.space_id && space.type !== "personal"));
+        return (
+          <MemberPersonProfile
+            records={records.length ? records : [seed]}
+            spaces={data.spaces}
+            plans={data.plans}
+            installments={data.installments ?? []}
+            locale={locale}
+            onClose={() => setModal(null)}
+            onSmartPay={(memberId) => { setActiveMemberId(memberId); setModal("smartPay"); }}
+            onSendReceipt={(memberId) => { setActiveMemberId(memberId); setReceiptTxnId(undefined); setModal("sendReceipt"); }}
           />
         );
       })()}
@@ -868,20 +918,37 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onTripExpense, onEd
           : `${settlement.from_member_name ?? "Member"} owes ${settlement.to_member_name ?? "member"}`);
       return <div className="settlement-alert" key={settlement.id}><ShieldCheck size={17} /><span>{label}</span><b>{formatMoney(settlement.amount_minor, space.currency, locale)}</b><button onClick={() => onSettle(settlement.id)}>{locale === "ar" ? "تم التسوية" : "Mark settled"}</button><button type="button" className="secondary-button compact" onClick={() => { if (window.confirm(locale === "ar" ? "إلغاء هذه التسوية؟" : "Cancel this settlement?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "voidSettlement", idempotencyKey: crypto.randomUUID(), settlementId: settlement.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "VOID_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "VOID_FAILED")); }}>{locale === "ar" ? "حذف" : "Delete"}</button></div>;
     })}</article>}
-    {(["society", "group"].includes(space.type) || /جمعي|circle|association/i.test(`${space.name_ar} ${space.name_en}`)) && <article className="panel workflow-panel"><div className="panel-heading"><div><span className="section-kicker"><Repeat2 size={15} />{locale === "ar" ? "الفترة المحاسبية والأدوار" : "Accounting period & turns"}</span><h2>{locale === "ar" ? "إغلاق الفترة أو فتح سنة جديدة" : "Close the period or open a new year"}</h2></div><div className="section-title-actions"><button type="button" className="secondary-button" onClick={onClosePeriod}>{locale === "ar" ? "إغلاق الفترة" : "Close period"}</button><button type="button" className="primary-button" onClick={onClonePeriod}>{locale === "ar" ? "فتح فترة جديدة / استنساخ" : "New period / clone"}</button><button className="primary-button" onClick={onCircleOrder}><Repeat2 size={15} />{locale === "ar" ? "إعداد الأدوار" : "Configure turns"}</button></div></div><p className="modal-note">{locale === "ar" ? "أغلق الفترة بعد السفر أو نهاية السنة دون إيقاف الجمعية، ثم افتح فترة جديدة بنفس الاشتراك مع اختيار الأعضاء من السجل." : "Close the period after a trip or year-end without stopping the association, then open a new period with the same dues and selected members."}</p><div className="circle-order-list">{(data.periods ?? []).filter((period) => period.space_id === space.id).map((period) => <div key={period.id}><b>{period.status === "open" ? (locale === "ar" ? "مفتوحة" : "Open") : (locale === "ar" ? "مغلقة" : "Closed")}</b><span>{period.label}</span><strong>{new Date(period.starts_at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB")}</strong></div>)}{data.circleTurns.filter((turn) => turn.space_id === space.id).map((turn) => <div key={turn.id}><b>{turn.turn_number}</b><span>{turn.display_name}</span><strong>{formatMoney(turn.amount_minor, space.currency, locale)}</strong><em>{turn.status}</em>{turn.status === "scheduled" && <button disabled={turn.id !== nextCircleTurn?.id} onClick={() => onCompleteTurn(turn.id)}>{locale === "ar" ? "صرف الدور" : "Pay turn"}</button>}</div>)}{!data.circleTurns.some((turn) => turn.space_id === space.id) && !(data.periods ?? []).some((period) => period.space_id === space.id) && <Empty locale={locale} />}</div></article>}
+    {(["society", "group"].includes(space.type) || /جمعي|circle|association/i.test(`${space.name_ar} ${space.name_en}`)) && <article className="panel workflow-panel"><div className="panel-heading"><div><span className="section-kicker"><Repeat2 size={15} />{locale === "ar" ? "الفترة المحاسبية والأدوار" : "Accounting period & turns"}</span><h2>{locale === "ar" ? "إغلاق الفترة أو فتح سنة جديدة" : "Close the period or open a new year"}</h2></div><div className="section-title-actions"><button type="button" className="secondary-button" onClick={onClosePeriod}>{locale === "ar" ? "إغلاق الفترة" : "Close period"}</button><button type="button" className="primary-button" onClick={onClonePeriod}>{locale === "ar" ? "فتح فترة جديدة / استنساخ" : "New period / clone"}</button><button className="primary-button" onClick={onCircleOrder}><Repeat2 size={15} />{locale === "ar" ? "إعداد الأدوار" : "Configure turns"}</button></div></div><p className="modal-note">{locale === "ar" ? "أغلق الفترة بعد السفر أو نهاية السنة دون إيقاف الجمعية، ثم افتح فترة جديدة بنفس الاشتراك مع اختيار الأعضاء من السجل." : "Close the period after a trip or year-end without stopping the association, then open a new period with the same dues and selected members."}</p><div className="circle-order-list">{(data.periods ?? []).filter((period) => period.space_id === space.id).map((period) => <div key={period.id} className="period-row"><b>{period.status === "open" ? (locale === "ar" ? "مفتوحة" : "Open") : (locale === "ar" ? "مغلقة" : "Closed")}</b><span>{period.label}</span><strong>{new Date(period.starts_at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB")}</strong>{period.status === "closed" && <button type="button" className="period-print" onClick={() => printAccountingPeriod(space, period, data, locale)}><Printer size={14} />{locale === "ar" ? "طباعة" : "Print"}</button>}</div>)}{data.circleTurns.filter((turn) => turn.space_id === space.id).map((turn) => <div key={turn.id}><b>{turn.turn_number}</b><span>{turn.display_name}</span><strong>{formatMoney(turn.amount_minor, space.currency, locale)}</strong><em>{turn.status}</em>{turn.status === "scheduled" && <button disabled={turn.id !== nextCircleTurn?.id} onClick={() => onCompleteTurn(turn.id)}>{locale === "ar" ? "صرف الدور" : "Pay turn"}</button>}</div>)}{!data.circleTurns.some((turn) => turn.space_id === space.id) && !(data.periods ?? []).some((period) => period.space_id === space.id) && <Empty locale={locale} />}</div></article>}
     <SpaceTransactionsPanel space={space} data={data} locale={locale} onAdd={onAdd} onTxnChanged={onTxnChanged} />
   </div>;
 }
 
-function MembersView({ data, locale, onInvite, onWithdraw, onOpenMember, onSmartPay }: { data: DashboardData; locale: Locale; onInvite: () => void; onWithdraw: (memberId: string) => void; onOpenMember: (memberId: string) => void; onSmartPay: (memberId: string) => void }) {
+function MembersView({ data, locale, onInvite, onOpenPerson, onSmartPay }: { data: DashboardData; locale: Locale; onInvite: () => void; onOpenPerson: (memberId: string) => void; onSmartPay: (memberId: string) => void }) {
   const societies = data.spaces.filter((space) => space.type !== "personal");
-  const [spaceId, setSpaceId] = useState(societies.find((space) => space.type === "society")?.id ?? societies[0]?.id ?? "");
-  const trip = data.spaces.find((space) => space.id === spaceId) ?? societies[0];
-  const members = trip ? data.members.filter((member) => member.space_id === trip.id) : [];
+  const groupMembers = data.members.filter((member) => societies.some((space) => space.id === member.space_id));
+  const people = Array.from(new Map(groupMembers.map((member) => {
+    const key = personIdentityKey(member);
+    return [key, groupMembers.filter((row) => personIdentityKey(row) === key)];
+  })).values());
   const t = copy[locale];
-  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.memberProgress}</h2><p>{locale === "ar" ? "اضغط على المساهم لعرض الأشهر المدفوعة والمتبقية. المحاسب الذكي يصفّي الفواتير الأقدم أولاً." : "Open a member to see paid and unpaid months. Smart accountant clears the oldest invoices first."}</p></div><div className="section-title-actions"><button className="secondary-button" onClick={() => onSmartPay(members[0]?.id ?? "")}><Sparkles size={16} />{locale === "ar" ? "المحاسب الذكي" : "Smart accountant"}</button><button className="primary-button" onClick={onInvite}><UserPlus size={17} />{t.invite}</button></div></div>
-    {societies.length > 1 && <div className="space-switcher">{societies.map((space) => <button key={space.id} type="button" className={space.id === trip?.id ? "active" : ""} onClick={() => setSpaceId(space.id)}>{nameOf(space, locale)}</button>)}</div>}
-    <MembersTable members={members} locale={locale} currency={trip?.currency ?? "OMR"} data={data} spaceId={trip?.id} onWithdraw={onWithdraw} onOpenMember={onOpenMember} />
+  const [query, setQuery] = useState("");
+  const visible = people.filter((records) => `${records[0].display_name} ${records[0].email ?? ""} ${records[0].phone ?? ""}`.toLowerCase().includes(query.toLowerCase()));
+  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.memberProgress}</h2><p>{locale === "ar" ? "اضغط اسم العضو لفتح ملفه: حالته، الجمعيات المرتبطة، تقييم الانضباط، وما عليه وما استلمه." : "Open a member file: status, linked associations, discipline rating, amounts owed and received."}</p></div><div className="section-title-actions"><button className="secondary-button" onClick={() => onSmartPay(groupMembers[0]?.id ?? "")}><Sparkles size={16} />{locale === "ar" ? "المحاسب الذكي" : "Smart accountant"}</button><button className="primary-button" onClick={onInvite}><UserPlus size={17} />{t.invite}</button></div></div>
+    <article className="panel members-panel person-table"><div className="panel-heading"><h2>{t.members} <span className="count-badge">{people.length}</span></h2><label className="search-field member-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={locale === "ar" ? "ابحث باسم العضو" : "Search member name"} /></label></div><div className="members-table"><div className="table-head person-head"><span>{locale === "ar" ? "العضو" : "Member"}</span><span>{locale === "ar" ? "الحالة" : "Status"}</span><span>{locale === "ar" ? "الجمعيات" : "Associations"}</span><span>{locale === "ar" ? "الانضباط" : "Discipline"}</span><span>{locale === "ar" ? "عليه" : "Owes"}</span><span>{locale === "ar" ? "المستلم" : "Received"}</span></div>{visible.map((records) => {
+    const person = records[0];
+    const active = records.some((row) => (row.status ?? "active") === "active");
+    const due = records.reduce((sum, row) => sum + row.due_minor, 0);
+    const paid = records.reduce((sum, row) => sum + row.paid_minor, 0);
+    const extra = records.reduce((sum, row) => sum + row.extra_minor + Number(row.addon_minor ?? 0), 0);
+    const rate = Math.round((Math.min(paid, Math.max(due, 1)) / Math.max(due, 1)) * 100);
+    const remaining = Math.max(0, due - paid);
+    let grade = "D";
+    if (rate >= 95 && remaining === 0) grade = "A";
+    else if (rate >= 75) grade = "B";
+    else if (rate >= 50) grade = "C";
+    const currency = societies.find((space) => space.id === person.space_id)?.currency ?? "OMR";
+    return <button type="button" className="member-row member-row-button person-row" key={personIdentityKey(person)} onClick={() => onOpenPerson(person.id)}><div className="member-name"><i style={{ background: person.avatar }}>{person.display_name.slice(0, 1)}</i><div><strong>{person.display_name}</strong><span>{person.phone || person.email || (person.role === "owner" ? t.roleOwner : t.roleMember)}</span></div></div><span className={`status-pill ${active ? "complete" : "pending"}`}>{active ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}{active ? (locale === "ar" ? "نشط" : "Active") : (locale === "ar" ? "غير نشط" : "Inactive")}</span><strong>{records.length}</strong><strong>{grade} · {rate}%</strong><strong className={remaining ? "amount-negative" : "muted-amount"}>{formatMoney(remaining, currency, locale)}</strong><strong className="reserve-amount">{formatMoney(paid + extra, currency, locale)}</strong></button>;
+  })}</div></article>
     <section className="settings-grid"><InfoPanel icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} /><InfoPanel icon={<Users />} title={t.access} text={t.accessText} /></section></div>;
 }
 

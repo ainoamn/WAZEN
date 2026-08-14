@@ -24,12 +24,22 @@ export type AssociationMember = {
   email: string | null;
   phone?: string | null;
   role: string;
+  status?: string;
   due_minor: number;
   paid_minor: number;
   extra_minor: number;
+  addon_minor?: number;
   avatar: string;
   joined_at?: string;
 };
+
+export function personIdentityKey(member: Pick<AssociationMember, "phone" | "email" | "display_name">) {
+  const phone = String(member.phone ?? "").replace(/\D/g, "");
+  const email = String(member.email ?? "").trim().toLowerCase();
+  if (phone.length >= 7) return `p:${phone}`;
+  if (email) return `e:${email}`;
+  return `n:${member.display_name.trim().toLowerCase()}`;
+}
 
 export type AssociationInstallment = InstallmentLike & { member_id?: string; space_id?: string; due_at?: string };
 
@@ -149,6 +159,108 @@ export function MemberDetailModal({
           <button type="button" className="secondary-button" onClick={onSendReceipt}><Printer size={16} />{locale === "ar" ? "إرسال إيصال" : "Send receipt"}</button>
           <button type="button" className="primary-button" onClick={onSmartPay}><Sparkles size={16} />{locale === "ar" ? "المحاسب الذكي" : "Smart accountant"}</button>
         </div>
+      </div>
+    </Modal>
+  );
+}
+
+export function MemberPersonProfile({
+  records,
+  spaces,
+  plans,
+  installments,
+  locale,
+  onClose,
+  onSmartPay,
+  onSendReceipt,
+}: {
+  records: AssociationMember[];
+  spaces: AssociationSpace[];
+  plans: Array<{ space_id?: string; amount_minor?: number; duration_months?: number; starts_at?: string }>;
+  installments: AssociationInstallment[];
+  locale: Locale;
+  onClose: () => void;
+  onSmartPay: (memberId: string) => void;
+  onSendReceipt: (memberId: string) => void;
+}) {
+  const primary = records[0];
+  const [spaceId, setSpaceId] = useState<string | null>(null);
+  const selected = records.find((row) => row.space_id === spaceId) ?? null;
+  const space = spaces.find((item) => item.id === selected?.space_id);
+  const plan = plans.find((item) => item.space_id === selected?.space_id);
+  const months = selected ? memberInstallments(selected, installments, plan) : [];
+  const isActive = records.some((row) => (row.status ?? "active") === "active");
+  const due = records.reduce((sum, row) => sum + row.due_minor, 0);
+  const paid = records.reduce((sum, row) => sum + row.paid_minor, 0);
+  const extra = records.reduce((sum, row) => sum + row.extra_minor + Number(row.addon_minor ?? 0), 0);
+  const remaining = Math.max(0, due - paid);
+  const credit = Math.max(0, paid - due) + extra;
+  const rates = records.map((row) => {
+    const rate = Math.round((Math.min(row.paid_minor, Math.max(row.due_minor, 1)) / Math.max(row.due_minor, 1)) * 100);
+    const left = Math.max(0, row.due_minor - row.paid_minor);
+    let grade = "D";
+    if (rate >= 95 && left === 0) grade = "A";
+    else if (rate >= 75) grade = "B";
+    else if (rate >= 50) grade = "C";
+    return { rate, grade, left };
+  });
+  const avgRate = Math.round(rates.reduce((sum, row) => sum + row.rate, 0) / Math.max(rates.length, 1));
+  const gradeRank = { A: 0, B: 1, C: 2, D: 3 } as Record<string, number>;
+  const grade = rates.reduce((worst, row) => (gradeRank[row.grade] > gradeRank[worst] ? row.grade : worst), "A");
+  const currency = space?.currency || spaces.find((item) => item.id === primary?.space_id)?.currency || "OMR";
+  if (!primary) return null;
+  return (
+    <Modal title={primary.display_name} onClose={onClose}>
+      <div className="modal-form">
+        <div className="member-detail-meta">
+          <div><span>{locale === "ar" ? "البريد" : "Email"}</span><b>{primary.email || "—"}</b></div>
+          <div><span>{locale === "ar" ? "الهاتف" : "Phone"}</span><b>{primary.phone || "—"}</b></div>
+          <div><span>{locale === "ar" ? "الحالة" : "Status"}</span><b>{isActive ? (locale === "ar" ? "نشط" : "Active") : (locale === "ar" ? "غير نشط" : "Inactive")}</b></div>
+          <div><span>{locale === "ar" ? "تقييم الانضباط" : "Discipline"}</span><b>{grade} · {avgRate}%</b></div>
+          <div><span>{locale === "ar" ? "عليه" : "Owes"}</span><b>{money(remaining, currency, locale)}</b></div>
+          <div><span>{locale === "ar" ? "المستلم / له" : "Received / credit"}</span><b>{money(paid + extra, currency, locale)} · {money(credit, currency, locale)}</b></div>
+        </div>
+        <p className="modal-note">{locale === "ar" ? "اضغط جمعية لعرض حالة الدفع والأقساط داخلها." : "Tap an association to see payment status and installments."}</p>
+        <div className="assoc-chip-list">
+          {records.map((row) => {
+            const linked = spaces.find((item) => item.id === row.space_id);
+            const left = Math.max(0, row.due_minor - row.paid_minor);
+            const active = (row.status ?? "active") === "active";
+            const label = linked ? (locale === "ar" ? linked.name_ar : linked.name_en) : row.space_id;
+            return (
+              <button type="button" key={row.id} className={`assoc-chip ${spaceId === row.space_id ? "selected" : ""}`} onClick={() => setSpaceId(row.space_id)}>
+                <strong>{label}</strong>
+                <span>{active ? (locale === "ar" ? "نشط" : "Active") : (locale === "ar" ? "غير نشط" : "Inactive")}</span>
+                <em>{left > 0 ? (locale === "ar" ? `عليه ${money(left, linked?.currency || currency, locale)}` : `Owes ${money(left, linked?.currency || currency, locale)}`) : (locale === "ar" ? "مسدد" : "Settled")}</em>
+              </button>
+            );
+          })}
+        </div>
+        {selected && space && (
+          <>
+            <div className="member-detail-meta compact">
+              <div><span>{locale === "ar" ? "الهدف" : "Goal"}</span><b>{money(selected.due_minor, space.currency, locale)}</b></div>
+              <div><span>{locale === "ar" ? "مدفوع" : "Paid"}</span><b>{money(selected.paid_minor, space.currency, locale)}</b></div>
+              <div><span>{locale === "ar" ? "إضافي" : "Extra"}</span><b>{money(selected.extra_minor + Number(selected.addon_minor ?? 0), space.currency, locale)}</b></div>
+              <div><span>{locale === "ar" ? "حالة الدفع" : "Payment"}</span><b>{Math.max(0, selected.due_minor - selected.paid_minor) > 0 ? (locale === "ar" ? "عليه مطالبات" : "Outstanding") : (locale === "ar" ? "مكتمل" : "Complete")}</b></div>
+            </div>
+            <div className="month-grid">
+              {months.map((row) => (
+                <article key={row.id} className={`month-chip ${row.status}`}>
+                  <small>{locale === "ar" ? `شهر ${row.period_index}` : `Month ${row.period_index}`}</small>
+                  <strong>{row.period_key}</strong>
+                  <em>{row.status === "paid" ? (locale === "ar" ? "مدفوع" : "Paid") : row.status === "partial" ? (locale === "ar" ? "جزئي" : "Partial") : (locale === "ar" ? "غير مدفوع" : "Unpaid")}</em>
+                  <span>{money(remainingInstallmentMinor(row), space.currency, locale)}</span>
+                </article>
+              ))}
+              {!months.length && <p className="modal-note">{locale === "ar" ? "لا توجد أقساط مسجلة لهذه الجمعية." : "No installments recorded for this association."}</p>}
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="secondary-button" onClick={() => onSendReceipt(selected.id)}><Printer size={16} />{locale === "ar" ? "إرسال إيصال" : "Send receipt"}</button>
+              <button type="button" className="primary-button" onClick={() => onSmartPay(selected.id)}><Sparkles size={16} />{locale === "ar" ? "المحاسب الذكي" : "Smart accountant"}</button>
+            </div>
+          </>
+        )}
       </div>
     </Modal>
   );

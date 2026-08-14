@@ -18,7 +18,8 @@ export type ReportTypeId =
   | "arrears"
   | "discounts"
   | "benefits"
-  | "obligations";
+  | "obligations"
+  | "period";
 
 export type ReportSpace = {
   id: string;
@@ -66,6 +67,7 @@ export type ReportInput = {
   logoUrl: string;
   issuedAt?: string;
   issuerName?: string;
+  titleOverride?: string;
   space?: ReportSpace | null;
   member?: ReportMember | null;
   spaces: ReportSpace[];
@@ -101,6 +103,7 @@ export const REPORT_CATALOG: ReportCatalogItem[] = [
   { id: "discounts", titleAr: "تقرير التخفيضات", titleEn: "Discounts report", blurbAr: "التخفيضات المسجّلة (إن وُجدت).", blurbEn: "Recorded discounts if any." },
   { id: "benefits", titleAr: "تقرير الفوائد", titleEn: "Benefits / interest", blurbAr: "الفوائض والمقدّمات لصالح الأعضاء.", blurbEn: "Surplus and advances owed to members." },
   { id: "obligations", titleAr: "تقرير الالتزامات", titleEn: "Obligations report", blurbAr: "ما عليه وما له لكل عضو.", blurbEn: "What each member owes or is owed." },
+  { id: "period", titleAr: "كشف الفترة المحاسبية", titleEn: "Accounting period statement", blurbAr: "دخل ومصروفات وإضافات الفترة المغلقة.", blurbEn: "Income, expenses and extras for a closed period.", groupOnly: true },
 ];
 
 function t(locale: ReportLocale, ar: string, en: string) {
@@ -161,7 +164,7 @@ function filterScope(input: ReportInput) {
   return { spaces, members, transactions, plans };
 }
 
-function memberMetrics(member: ReportMember) {
+export function memberMetrics(member: ReportMember) {
   const remaining = Math.max(0, member.due_minor - member.paid_minor);
   const advance = Math.max(0, member.paid_minor - member.due_minor);
   const credit = advance + Math.max(0, member.extra_minor);
@@ -409,6 +412,44 @@ function buildSections(input: ReportInput): { subtitle: string; kpis: { label: s
           ],
         }],
       };
+    case "period": {
+      const extraExpenseTx = transactions.filter((row) => row.kind === "expense" && row.allocation === "extra");
+      const extraIncomeTx = transactions.filter((row) => row.kind === "income" && row.allocation === "extra");
+      const operatingExpenseTx = expenseTx.filter((row) => row.allocation !== "extra");
+      const extraExpenseTotal = extraExpenseTx.reduce((sum, row) => sum + row.amount_minor, 0);
+      const extraIncomeTotal = extraIncomeTx.reduce((sum, row) => sum + row.amount_minor, 0);
+      const operatingExpenseTotal = operatingExpenseTx.reduce((sum, row) => sum + row.amount_minor, 0);
+      return {
+        subtitle: t(locale, "كشف الفترة: الدخل، المصروفات، والمصروفات الإضافية", "Period statement: income, expenses, and extra expenses"),
+        kpis: [
+          { label: t(locale, "الدخل / الاشتراكات", "Income / dues"), value: money(incomeTotal, currency, locale) },
+          { label: t(locale, "المصروفات", "Expenses"), value: money(operatingExpenseTotal, currency, locale) },
+          { label: t(locale, "مصروفات إضافية", "Extra expenses"), value: money(extraExpenseTotal, currency, locale) },
+          { label: t(locale, "صافي الحركة", "Net movement"), value: money(incomeTotal + extraIncomeTotal - operatingExpenseTotal - extraExpenseTotal, currency, locale) },
+        ],
+        sections: [
+          {
+            title: t(locale, "الدخل والاشتراكات", "Income and contributions"),
+            rows: [[t(locale, "التاريخ", "Date"), t(locale, "البيان", "Description"), t(locale, "النوع", "Type"), t(locale, "المبلغ", "Amount")], ...txnRows(incomeTx)],
+            footer: t(locale, `الإجمالي: ${money(incomeTotal, currency, locale)}`, `Total: ${money(incomeTotal, currency, locale)}`),
+          },
+          {
+            title: t(locale, "المصروفات التشغيلية", "Operating expenses"),
+            rows: [[t(locale, "التاريخ", "Date"), t(locale, "البيان", "Description"), t(locale, "النوع", "Type"), t(locale, "المبلغ", "Amount")], ...txnRows(operatingExpenseTx)],
+            footer: t(locale, `الإجمالي: ${money(operatingExpenseTotal, currency, locale)}`, `Total: ${money(operatingExpenseTotal, currency, locale)}`),
+          },
+          {
+            title: t(locale, "المصروفات والمبالغ الإضافية", "Extra expenses and amounts"),
+            rows: [[t(locale, "التاريخ", "Date"), t(locale, "البيان", "Description"), t(locale, "النوع", "Type"), t(locale, "المبلغ", "Amount")], ...txnRows([...extraExpenseTx, ...extraIncomeTx])],
+            footer: t(locale, `إضافي مدفوع ${money(extraExpenseTotal, currency, locale)} · إضافي مستلم ${money(extraIncomeTotal, currency, locale)}`, `Extra paid ${money(extraExpenseTotal, currency, locale)} · Extra received ${money(extraIncomeTotal, currency, locale)}`),
+          },
+          {
+            title: t(locale, "أعضاء الجمعية في الفترة", "Members in the period"),
+            rows: [[t(locale, "العضو", "Member"), t(locale, "مدفوع", "Paid"), t(locale, "عليه", "Owes"), t(locale, "له", "Credit"), t(locale, "الالتزام", "Commitment"), t(locale, "التقييم", "Grade")], ...memberRows],
+          },
+        ],
+      };
+    }
     case "obligations":
       return {
         subtitle: t(locale, "تقرير الالتزامات (له / عليه)", "Obligations (owed / owes)"),
@@ -457,7 +498,7 @@ export function buildReportHtml(input: ReportInput) {
   const locale = input.locale;
   const dir = locale === "ar" ? "rtl" : "ltr";
   const meta = catalogItem(input.reportType);
-  const title = locale === "ar" ? meta.titleAr : meta.titleEn;
+  const title = input.titleOverride || (locale === "ar" ? meta.titleAr : meta.titleEn);
   const issuedAt = input.issuedAt ?? new Date().toISOString();
   const entityName = input.space
     ? spaceName(input.space, locale)

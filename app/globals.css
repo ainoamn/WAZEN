@@ -257,6 +257,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .count-badge { display: inline-grid; place-items: center; min-width: 22px; height: 22px; border-radius: 7px; background: var(--green-soft); color: var(--green); font-size: 12px; }
 .members-table { margin-top: 14px; overflow-x: auto; }
 .table-head, .member-row { min-width: 1040px; display: grid; grid-template-columns: 1.8fr repeat(6, .7fr) .9fr; align-items: center; gap: 15px; }
+.person-table .person-head, .person-table .person-row { min-width: 880px; grid-template-columns: 1.8fr .8fr .7fr .8fr .8fr .9fr; }
 .secondary-button.compact { min-height: 34px; padding: 0 12px; font-size: 13px; }
 .table-head { min-height: 40px; padding: 0 12px; background: #f5f7f4; border-radius: 9px; color: #86918d; font-size: 12px; font-weight: 700; }
 .member-row { min-height: 66px; padding: 0 10px; border-bottom: 1px solid #eef1ee; }
@@ -356,9 +357,17 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .settlement-alert button { height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: #805b1e; color: white; font-size: 10px; font-weight: 800; cursor: pointer; }
 .circle-order-list { display: grid; gap: 7px; }
 .circle-order-list > div { min-height: 48px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 12px; display: grid; grid-template-columns: 34px 1fr auto 72px 80px; align-items: center; gap: 10px; }
+.circle-order-list > div.period-row { grid-template-columns: auto 1fr auto auto; }
 .circle-order-list > div > b { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: #e9f4ef; color: #0d7a65; }
 .circle-order-list em { color: var(--muted); font-size: 10px; font-style: normal; text-align: end; }
-.circle-order-list button { height: 30px; border: 0; border-radius: 8px; background: #0d7a65; color: white; font-size: 9px; font-weight: 800; }.circle-order-list button:disabled { opacity: .35; }
+.circle-order-list button { height: 30px; border: 0; border-radius: 8px; background: #0d7a65; color: white; font-size: 9px; font-weight: 800; }
+.circle-order-list button:disabled { opacity: .35; }
+.circle-order-list button.period-print { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; width: auto; background: #143a36; font-size: 11px; }
+.assoc-chip-list { display: grid; gap: 8px; }
+.assoc-chip { text-align: inherit; border: 1px solid #d7e0db; background: #f8faf9; border-radius: 14px; padding: 10px 12px; display: grid; gap: 4px; cursor: pointer; color: inherit; font: inherit; }
+.assoc-chip.selected, .assoc-chip:hover { border-color: #0d7a65; background: #eef7f3; }
+.assoc-chip strong { font-size: 14px; }
+.assoc-chip span, .assoc-chip em { color: #66766f; font-size: 12px; font-style: normal; }
 .modal-note { margin: 0; padding: 11px; border-radius: 10px; display: flex; flex-direction: column; gap: 5px; background: #eef6f2; color: #4f655e; font-size: 11px; line-height: 1.7; }
 
 .report-actions { display: flex; flex-wrap: wrap; gap: 8px; }
