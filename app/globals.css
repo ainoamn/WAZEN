@@ -349,6 +349,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .trip-expense-row .transaction-row { border: 0; }
 .split-chips { padding: 0 50px 11px; display: flex; flex-wrap: wrap; gap: 6px; }
 .split-chips span { padding: 5px 8px; border-radius: 99px; background: #eef6f2; color: #4f655e; font-size: 9px; }
+.split-chips span.payer-share { background: #e7f4ee; color: #0d7a65; font-weight: 700; }
+.expense-split-note { margin: 0 18px 12px; color: #5d6f69; font-size: 12px; line-height: 1.55; }
 .settlement-alert { min-height: 48px; padding: 10px 13px; border-radius: 12px; display: flex; align-items: center; gap: 9px; background: #fff4df; color: #805b1e; font-size: 12px; }
 .settlement-alert b { margin-inline-start: auto; }
 .settlement-alert button { height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: #805b1e; color: white; font-size: 10px; font-weight: 800; cursor: pointer; }
