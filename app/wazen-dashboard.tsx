@@ -664,15 +664,11 @@ export function WazenDashboard() {
           {viewSpaceType[activeView] && (
             <>
               <div className="space-switcher">
-                <div className="space-switcher-row">
-                  {spacesForView.map((space) => (
-                    <button key={space.id} type="button" className={activeSpace?.id === space.id ? "active" : ""} onClick={() => setPickedSpaceId((current) => ({ ...current, [activeView]: space.id }))}>{nameOf(space, locale)}{(space.status ?? "active") === "archived" ? (locale === "ar" ? " · مؤرشفة" : " · archived") : ""}</button>
-                  ))}
-                </div>
-                <div className="space-switcher-row">
-                  <button type="button" onClick={() => setShowArchived((current) => !current)}>{showArchived ? (locale === "ar" ? "إخفاء المؤرشف" : "Hide archived") : (locale === "ar" ? "عرض المؤرشف" : "Show archived")}</button>
-                  <button type="button" onClick={openNewWallet}><Plus size={16} />{addWalletLabel}</button>
-                </div>
+                {spacesForView.map((space) => (
+                  <button key={space.id} type="button" className={activeSpace?.id === space.id ? "active" : ""} onClick={() => setPickedSpaceId((current) => ({ ...current, [activeView]: space.id }))}>{nameOf(space, locale)}{(space.status ?? "active") === "archived" ? (locale === "ar" ? " · مؤرشفة" : " · archived") : ""}</button>
+                ))}
+                <button type="button" onClick={() => setShowArchived((current) => !current)}>{showArchived ? (locale === "ar" ? "إخفاء المؤرشف" : "Hide archived") : (locale === "ar" ? "عرض المؤرشف" : "Show archived")}</button>
+                <button type="button" onClick={openNewWallet}><Plus size={16} />{addWalletLabel}</button>
               </div>
               {!activeSpace && (
                 <article className="panel"><div className="empty-state"><WalletCards size={28} /><strong>{addWalletLabel}</strong><p>{activeView === "society" ? (locale === "ar" ? "لا توجد جمعية بعد. أنشئ جمعية جديدة لإدارة الأقساط والأدوار والأعضاء." : "No savings circle yet. Create one to manage dues, turns, and members.") : (locale === "ar" ? "لا توجد محفظة في هذا القسم بعد." : "No wallet in this section yet.")}</p><button className="primary-button" onClick={openNewWallet}><Plus size={16} />{addWalletLabel}</button></div></article>
@@ -1066,6 +1062,13 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
         ? (locale === "ar" ? "مفتوحة للتعديل" : "Reopened")
         : (locale === "ar" ? "مفتوحة" : "Open");
   return <div className="dashboard-stack">
+    <div className="space-toolbar">
+      <button type="button" onClick={onAdd}><Plus size={16} />{t.add}</button>
+      {["trip", "society", "group"].includes(space.type) && <button type="button" onClick={onInvite}><UserPlus size={16} />{t.invite}</button>}
+      <button type="button" onClick={onEditWallet}><Pencil size={16} />{locale === "ar" ? "تعديل" : "Edit"}</button>
+      <button type="button" onClick={onArchiveWallet}><Archive size={16} />{(space.status ?? "active") === "archived" ? (locale === "ar" ? "استعادة" : "Restore") : (locale === "ar" ? "أرشفة" : "Archive")}</button>
+      <button type="button" onClick={onDeleteWallet}><Trash2 size={16} />{locale === "ar" ? "حذف" : "Delete"}</button>
+    </div>
     <section className={`space-hero accent-${space.accent}`}><div><span>{typeLabels[locale][space.type as keyof typeof typeLabels.ar]}{(space.status ?? "active") === "archived" ? (locale === "ar" ? " · مؤرشفة" : " · archived") : ""}</span><h2>{nameOf(space, locale)}</h2><p>{space.type === "personal" ? (locale === "ar" ? "دخل، مصروف، ميزانيات وأهداف في مكان واحد" : "Income, spending, budgets and goals in one place") : (locale === "ar" ? "حسابات واضحة ومفصولة لكل فرد" : "Clear, separated balances for every member")}</p>
       <div className="space-hero-facts">
         <div><small>{locale === "ar" ? "تاريخ الإنشاء" : "Created"}</small><b>{formatDay(space.created_at)}</b></div>
@@ -1078,7 +1081,7 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
         <div><small>{locale === "ar" ? "تسويات معلّقة" : "Pending settlements"}</small><b>{pendingSettlements}</b></div>
         <div><small>{locale === "ar" ? "الفترة الحالية" : "Current period"}</small><b>{periodLabel}</b></div>
       </div>
-    </div><div className="space-hero-balance"><span>{locale === "ar" ? "الرصيد المتاح" : "Available balance"}</span><strong className={space.balance_minor < 0 ? "amount-negative" : ""}>{formatMoney(space.balance_minor, space.currency, locale)}</strong><button onClick={onAdd}><Plus size={16} />{t.add}</button>{["trip", "society", "group"].includes(space.type) && <button onClick={onInvite}><UserPlus size={16} />{t.invite}</button>}<button type="button" onClick={onEditWallet}><Pencil size={16} />{locale === "ar" ? "تعديل" : "Edit"}</button><button type="button" onClick={onArchiveWallet}><Archive size={16} />{(space.status ?? "active") === "archived" ? (locale === "ar" ? "استعادة" : "Restore") : (locale === "ar" ? "أرشفة" : "Archive")}</button><button type="button" onClick={onDeleteWallet}><Trash2 size={16} />{locale === "ar" ? "حذف" : "Delete"}</button></div></section>
+    </div><div className="space-hero-balance"><span>{locale === "ar" ? "الرصيد المتاح" : "Available balance"}</span><strong className={space.balance_minor < 0 ? "amount-negative" : ""}>{formatMoney(space.balance_minor, space.currency, locale)}</strong></div></section>
     <section className="stat-grid compact">
       <StatCard icon={<WalletCards />} label={locale === "ar" ? "الرصيد المتاح" : "Available"} value={formatMoney(space.balance_minor, space.currency, locale)} accent="navy" note={locale === "ar" ? "محدّث الآن" : "updated now"} negative={space.balance_minor < 0} />
       <StatCard icon={<Target />} label={t.goal} value={goal ? formatMoney(goal, space.currency, locale) : "—"} accent="green" note={`${progress}%`} />
