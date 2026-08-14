@@ -71,6 +71,38 @@ export function memberInstallments(
   }).rows;
 }
 
+export function RemainingInvoiceGrid({
+  months,
+  selected,
+  locale,
+  currency,
+  onSelectPeriod,
+}: {
+  months: AssociationInstallment[];
+  selected: string[];
+  locale: Locale;
+  currency: string;
+  onSelectPeriod: (periodIndex: number) => void;
+}) {
+  const unpaid = months.filter((row) => remainingInstallmentMinor(row) > 0);
+  return (
+    <div>
+      <p className="modal-note">{locale === "ar" ? "الفواتير المتبقية. اضغط شهراً لتصفية الأقدم حتى ذلك الشهر، أو اترك النظام يصفّي الأقدم تلقائياً حسب المبلغ." : "Remaining invoices. Tap a month to clear oldest invoices through that month, or let the amount auto-clear oldest first."}</p>
+      <div className="month-grid selectable">
+        {unpaid.map((row) => (
+          <button type="button" key={row.id} className={`month-chip ${selected.includes(row.id) ? "selected" : row.status}`} onClick={() => onSelectPeriod(row.period_index)}>
+            <small>{locale === "ar" ? `شهر ${row.period_index}` : `Month ${row.period_index}`}</small>
+            <strong>{row.period_key}</strong>
+            <em>{row.status === "partial" ? (locale === "ar" ? "جزئي" : "Partial") : (locale === "ar" ? "غير مدفوع" : "Unpaid")}</em>
+            <span>{money(remainingInstallmentMinor(row), currency, locale)}</span>
+          </button>
+        ))}
+        {!unpaid.length && <p className="modal-note">{locale === "ar" ? "لا توجد فواتير متبقية على هذا المساهم." : "This member has no remaining invoices."}</p>}
+      </div>
+    </div>
+  );
+}
+
 export function MemberDetailModal({
   member,
   space,

@@ -504,7 +504,7 @@ export async function POST(request: Request) {
         db.prepare(`UPDATE spaces SET goal_minor = COALESCE((SELECT SUM(due_minor) FROM members WHERE space_id=? AND status='active'), 0) WHERE id=?`).bind(parsed.data.spaceId, parsed.data.spaceId),
       ]);
     } else if (action === "addTransaction") {
-      const parsed = z.object({ spaceId: z.string().min(1).max(120), kind: z.enum(["expense", "income", "contribution", "reimbursement"]), allocation: z.enum(["general", "mandatory", "personal_reserve"]), description: z.string().trim().min(2).max(300), amount: z.union([z.string(),z.number()]), memberId: z.string().max(120).optional(), occurredAt: z.iso.datetime().optional() }).safeParse(payload);
+      const parsed = z.object({ spaceId: z.string().min(1).max(120), kind: z.enum(["expense", "income", "contribution", "reimbursement"]), allocation: z.enum(["general", "mandatory", "personal_reserve"]), description: z.string().trim().min(2).max(300), amount: z.union([z.string(),z.number()]), memberId: z.string().max(120).optional(), selectedIds: z.array(z.string().min(1).max(160)).max(120).optional(), occurredAt: z.iso.datetime().optional() }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_TRANSACTION");
       const { spaceId, allocation, description } = parsed.data;
       let kind = parsed.data.kind;
@@ -546,7 +546,7 @@ export async function POST(request: Request) {
         const occurredAt = parsed.data.occurredAt ?? createdAt;
         const statements: D1PreparedStatement[] = [];
         if (split.mandatoryMinor > 0) {
-          const installmentWork = await paymentInstallmentStatements(db, member, plan, split.mandatoryMinor, createdAt);
+          const installmentWork = await paymentInstallmentStatements(db, member, plan, split.mandatoryMinor, createdAt, parsed.data.selectedIds);
           statements.push(...installmentWork.statements);
           const transactionId = crypto.randomUUID();
           const entryId = crypto.randomUUID();
@@ -901,17 +901,18 @@ export async function POST(request: Request) {
         amount: z.union([z.string(), z.number()]),
         description: z.string().trim().min(2).max(300).optional(),
         extraPolicy: z.enum(["personal_reserve", "voluntary_to_fund", "advance_credit"]).optional(),
+        selectedIds: z.array(z.string().min(1).max(160)).max(120).optional(),
         occurredAt: z.iso.datetime().optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_CONTRIBUTION_PAYMENT");
       const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["household", "trip", "society", "group"]);
-      const member = await db.prepare("SELECT id,display_name,due_minor,paid_minor,extra_minor FROM members WHERE id=? AND space_id=? AND status='active'")
+      const member = await db.prepare("SELECT id,space_id,display_name,due_minor,paid_minor,extra_minor FROM members WHERE id=? AND space_id=? AND status='active'")
         .bind(parsed.data.memberId, parsed.data.spaceId)
-        .first<{ id: string; display_name: string; due_minor: number; paid_minor: number; extra_minor: number }>();
+        .first<{ id: string; space_id: string; display_name: string; due_minor: number; paid_minor: number; extra_minor: number }>();
       if (!member) throw new ApiError(400, "INVALID_MEMBER");
-      const plan = await db.prepare("SELECT amount_minor,extra_policy FROM contribution_plans WHERE space_id=? ORDER BY starts_at LIMIT 1")
+      const plan = await db.prepare("SELECT amount_minor,extra_policy,duration_months,starts_at FROM contribution_plans WHERE space_id=? ORDER BY starts_at LIMIT 1")
         .bind(parsed.data.spaceId)
-        .first<{ amount_minor: number; extra_policy: string }>();
+        .first<{ amount_minor: number; extra_policy: string; duration_months: number; starts_at: string }>();
       if (!plan) throw new ApiError(400, "CONTRIBUTION_PLAN_REQUIRED");
       let amountMinor: number;
       try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
@@ -934,9 +935,12 @@ export async function POST(request: Request) {
         || `مساهمة ${member.display_name}`;
       const statements: D1PreparedStatement[] = [];
       if (split.mandatoryMinor > 0) {
+        const installmentWork = await paymentInstallmentStatements(db, member, plan, split.mandatoryMinor, createdAt, parsed.data.selectedIds);
+        statements.push(...installmentWork.statements);
         const transactionId = crypto.randomUUID();
         const entryId = crypto.randomUUID();
-        const description = `${baseDescription} · سداد مطالبة`;
+        const months = installmentWork.allocated.allocations.map((item) => item.periodKey).join(", ");
+        const description = `${baseDescription} · سداد ${months || "مطالبة"}`;
         statements.push(
           db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'mandatory',?,?,?,'approved',?,?)")
             .bind(transactionId, parsed.data.spaceId, user.id, member.id, "contribution", split.mandatoryMinor, description, description, occurredAt, createdAt),
