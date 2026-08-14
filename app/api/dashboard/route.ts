@@ -1136,6 +1136,7 @@ export async function POST(request: Request) {
       if (!expense) throw new ApiError(404, "EXPENSE_NOT_FOUND");
       await authorizeSpace(db, user, expense.space_id, "transact", ["household", "trip", "society", "group"]);
       await assertPeriodWritable(db, expense.space_id, expense.created_at);
+      const linkedTxn = expense.transaction_id
         ? await db.prepare("SELECT * FROM transactions WHERE id=?").bind(expense.transaction_id).first<TransactionRow>()
         : await db.prepare("SELECT * FROM transactions WHERE space_id=? AND description_ar=? AND amount_minor=? AND status='approved' ORDER BY occurred_at DESC LIMIT 1")
           .bind(expense.space_id, expense.description, expense.amount_minor).first<TransactionRow>();
