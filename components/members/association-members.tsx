@@ -7,6 +7,7 @@ import { apiFetch } from "../../lib/client-api";
 import {
   allocateOldestFirst,
   accruedDueMinor,
+  buildInstallmentSchedule,
   remainingInstallmentMinor,
   selectByAmount,
   selectThroughOldest,
@@ -65,8 +66,8 @@ export function memberInstallments(
   member: AssociationMember,
   installments: AssociationInstallment[],
   plan?: AssociationPlan | null,
-) {
-  const rows = installments.filter((row) => (row as { member_id?: string }).member_id === member.id);
+): AssociationInstallment[] {
+  const rows = installments.filter((row: AssociationInstallment) => (row as { member_id?: string }).member_id === member.id);
   if (rows.length) return rows.sort((a, b) => a.period_index - b.period_index);
   const monthly = Number(plan?.amount_minor ?? 0);
   const duration = Number(plan?.duration_months ?? 0);
@@ -114,7 +115,7 @@ export function RemainingInvoiceGrid({
   currency: string;
   onSelectPeriod: (periodIndex: number) => void;
 }) {
-  const unpaid = months.filter((row) => remainingInstallmentMinor(row) > 0);
+  const unpaid = months.filter((row: AssociationInstallment) => remainingInstallmentMinor(row) > 0);
   return (
     <div>
       <p className="modal-note">{locale === "ar" ? "الفواتير المتبقية. اضغط شهراً لتصفية الأقدم حتى ذلك الشهر، أو اترك النظام يصفّي الأقدم تلقائياً حسب المبلغ." : "Remaining invoices. Tap a month to clear oldest invoices through that month, or let the amount auto-clear oldest first."}</p>
@@ -166,7 +167,7 @@ export function MemberDetailModal({
           <div><span>{locale === "ar" ? "المتبقي" : "Remaining"}</span><b>{money(remaining, space.currency, locale)}</b></div>
         </div>
         <div className="month-grid">
-          {months.map((row) => (
+          {months.map((row: AssociationInstallment) => (
             <article key={row.id} className={`month-chip ${row.status}`}>
               <small>{locale === "ar" ? `شهر ${row.period_index}` : `Month ${row.period_index}`}</small>
               <strong>{row.period_key}</strong>
@@ -208,7 +209,7 @@ export function MemberPersonProfile({
   const selected = records.find((row) => row.space_id === spaceId) ?? null;
   const space = spaces.find((item) => item.id === selected?.space_id);
   const plan = plans.find((item) => item.space_id === selected?.space_id);
-  const months = selected ? memberInstallments(selected, installments, plan) : [];
+  const months: AssociationInstallment[] = selected ? memberInstallments(selected, installments, plan) : [];
   const isActive = records.some((row) => (row.status ?? "active") === "active");
   const paid = records.reduce((sum, row) => sum + row.paid_minor, 0);
   const extra = records.reduce((sum, row) => sum + row.extra_minor + Number(row.addon_minor ?? 0), 0);
@@ -269,7 +270,7 @@ export function MemberPersonProfile({
               <div><span>{locale === "ar" ? "حالة الدفع" : "Payment"}</span><b>{memberAccruedOwedMinor(selected, installments, plan) > 0 ? (locale === "ar" ? "عليه مطالبات" : "Outstanding") : (locale === "ar" ? "مكتمل حتى الشهر الحالي" : "Current through this month")}</b></div>
             </div>
             <div className="month-grid">
-              {months.map((row) => (
+              {months.map((row: AssociationInstallment) => (
                 <article key={row.id} className={`month-chip ${row.status}`}>
                   <small>{locale === "ar" ? `شهر ${row.period_index}` : `Month ${row.period_index}`}</small>
                   <strong>{row.period_key}</strong>
@@ -314,15 +315,15 @@ export function SmartAccountantModal({
   const member = groupMembers.find((item) => item.id === memberId);
   const space = spaces.find((item) => item.id === member?.space_id);
   const plan = plans.find((item) => item.space_id === member?.space_id);
-  const months = member ? memberInstallments(member, installments, plan) : [];
-  const unpaid = months.filter((row) => remainingInstallmentMinor(row) > 0);
+  const months: AssociationInstallment[] = member ? memberInstallments(member, installments, plan) : [];
+  const unpaid = months.filter((row: AssociationInstallment) => remainingInstallmentMinor(row) > 0);
   const [selected, setSelected] = useState<string[]>([]);
   const [amount, setAmount] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const ids = unpaid.map((row) => row.id);
+    const ids = unpaid.map((row: AssociationInstallment) => row.id);
     setSelected(ids.slice(0, 1));
     const first = unpaid[0];
     setAmount(first ? (remainingInstallmentMinor(first) / 1000).toFixed(3) : "");
@@ -394,7 +395,7 @@ export function SmartAccountantModal({
           </div>
         )}
         <div className="month-grid selectable">
-          {unpaid.map((row) => (
+          {unpaid.map((row: AssociationInstallment) => (
             <button type="button" key={row.id} className={`month-chip ${selected.includes(row.id) ? "selected" : row.status}`} onClick={() => toggleMonth(row.period_index)}>
               <small>{locale === "ar" ? `شهر ${row.period_index}` : `Month ${row.period_index}`}</small>
               <strong>{row.period_key}</strong>

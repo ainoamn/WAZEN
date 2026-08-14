@@ -1172,8 +1172,8 @@ function TransactionModal({ data, locale, preferredSpaceId, onClose, onSaved }: 
   const plan = data.plans.find((item) => String(item.space_id) === spaceId);
   const monthlyPlan = Number(plan?.amount_minor ?? 0);
   const selectedMember = members.find((member) => member.id === memberId);
-  const invoiceMonths = selectedMember
-    ? memberInstallments(selectedMember, data.installments ?? [], plan)
+  const invoiceMonths: Array<{ id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }> = selectedMember
+    ? memberInstallments(selectedMember, data.installments ?? [], plan as { space_id?: string; amount_minor?: number; duration_months?: number; starts_at?: string } | undefined)
     : [];
   const amountNumber = Number(amount || 0);
   const remainingDue = selectedMember ? Math.max(0, selectedMember.due_minor - selectedMember.paid_minor) : 0;
@@ -1193,8 +1193,8 @@ function TransactionModal({ data, locale, preferredSpaceId, onClose, onSaved }: 
     : 0;
 
   useEffect(() => {
-    const unpaid = invoiceMonths.filter((row) => remainingInstallmentMinor(row) > 0);
-    setSelectedInvoiceIds(unpaid.slice(0, 1).map((row) => row.id));
+    const unpaid = invoiceMonths.filter((row: { amount_minor: number; paid_minor: number; id: string }) => remainingInstallmentMinor(row) > 0);
+    setSelectedInvoiceIds(unpaid.slice(0, 1).map((row: { id: string }) => row.id));
   }, [memberId]);
 
   const onAmountChange = (value: string) => {
