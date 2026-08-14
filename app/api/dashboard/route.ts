@@ -113,6 +113,13 @@ function preparePeriodLedgerEvent(db: D1Database, input: {
     );
 }
 
+async function assertMembersSettledForClose(db: D1Database, spaceId: string) {
+  const members = await db.prepare("SELECT display_name,due_minor,paid_minor FROM members WHERE space_id=? AND status='active'").bind(spaceId).all<{ display_name: string; due_minor: number; paid_minor: number }>();
+  const owingDues = members.results.filter((member) => Number(member.due_minor) > Number(member.paid_minor));
+  const pending = await db.prepare("SELECT COUNT(*) AS count FROM settlements WHERE space_id=? AND status='pending'").bind(spaceId).first<{ count: number }>();
+  if (owingDues.length > 0 || Number(pending?.count ?? 0) > 0) throw new ApiError(409, "PERIOD_UNSETTLED");
+}
+
 async function assertPeriodWritable(db: D1Database, spaceId: string, occurredAt: string) {
   const rows = await db.prepare("SELECT id,space_id,starts_at,ends_at,closed_at,status FROM accounting_periods WHERE space_id=?").bind(spaceId).all<PeriodRow>();
   const period = coveringPeriod(rows.results, occurredAt);
@@ -957,9 +964,22 @@ export async function POST(request: Request) {
       const toFund = String(settlement.to_member_id).startsWith("space:");
       const entryId = crypto.randomUUID(); const createdAt = now();
       if (toFund) {
+        const payTxn = crypto.randomUUID();
+        const payEntry = crypto.randomUUID();
+        const desc = "تسوية حصة مصروف للصندوق";
         await db.batch([
           db.prepare("UPDATE settlements SET status='settled',settled_at=? WHERE id=? AND status='pending'").bind(createdAt, settlement.id),
-          prepareAudit(db, { userId: user.id, action: "expense.share_acknowledged", entityType: "settlement", entityId: settlement.id, metadata: { amountMinor: settlement.amount_minor }, createdAt }),
+          db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id=?").bind(settlement.amount_minor, settlement.space_id),
+          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'extra',?,?,?,'approved',?,?)")
+            .bind(payTxn, settlement.space_id, user.id, settlement.from_member_id, "income", settlement.amount_minor, desc, desc, createdAt, createdAt),
+          db.prepare("UPDATE members SET addon_minor = COALESCE(addon_minor,0) + ? WHERE id=?").bind(settlement.amount_minor, settlement.from_member_id),
+          db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+            .bind(payEntry, settlement.space_id, payTxn, user.id, desc, createdAt, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), payEntry, "asset:cash", settlement.from_member_id, settlement.amount_minor, 0, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), payEntry, "income:contribution", settlement.from_member_id, 0, settlement.amount_minor, createdAt),
+          prepareAudit(db, { userId: user.id, action: "expense.share_paid_to_fund", entityType: "settlement", entityId: settlement.id, metadata: { amountMinor: settlement.amount_minor }, createdAt }),
         ]);
       } else if (fromFund) {
         if (Number(settlement.balance_minor) < Number(settlement.amount_minor)) throw new ApiError(409, "INSUFFICIENT_FUNDS");
@@ -1059,9 +1079,9 @@ export async function POST(request: Request) {
       if (!paidByMemberId || !members.results.some((member) => member.id === paidByMemberId)) {
         throw new ApiError(400, "INVALID_PAYER");
       }
-      if (paidFrom === "common_fund" && Number(space.balance_minor) < amountMinor) {
-        throw new ApiError(409, "INSUFFICIENT_FUNDS");
-      }
+      const cashOnHand = Math.max(0, Number(space.balance_minor));
+      const cashSpent = paidFrom === "common_fund" ? Math.min(cashOnHand, amountMinor) : 0;
+      const shortfall = paidFrom === "common_fund" ? Math.max(0, amountMinor - cashSpent) : 0;
       const splits = splitEvenly(amountMinor, members.results.map((member) => member.id));
       const expenseId = crypto.randomUUID();
       const transactionId = crypto.randomUUID();
@@ -1074,18 +1094,28 @@ export async function POST(request: Request) {
           .bind(expenseId, parsed.data.spaceId, paidByMemberId, amountMinor, parsed.data.description, occurredAt, user.id, createdAt, transactionId),
       ];
       if (paidFrom === "common_fund") {
-        // Paid from group wallet: reduce common fund. Splits remain for له/عليه reporting only.
-        statements.push(
-          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'general',?,?,?,'approved',?,?)")
-            .bind(transactionId, parsed.data.spaceId, user.id, paidByMemberId, "expense", amountMinor, parsed.data.description, parsed.data.description, occurredAt, createdAt),
-          db.prepare("UPDATE spaces SET balance_minor = balance_minor - ? WHERE id = ?").bind(amountMinor, parsed.data.spaceId),
-          db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
-            .bind(entryId, parsed.data.spaceId, transactionId, user.id, parsed.data.description, occurredAt, createdAt),
-          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
-            .bind(crypto.randomUUID(), entryId, "expense:group", paidByMemberId, amountMinor, 0, createdAt),
-          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
-            .bind(crypto.randomUUID(), entryId, "asset:cash", paidByMemberId, 0, amountMinor, createdAt),
-        );
+        if (cashSpent > 0) {
+          statements.push(
+            db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'general',?,?,?,'approved',?,?)")
+              .bind(transactionId, parsed.data.spaceId, user.id, paidByMemberId, "expense", cashSpent, parsed.data.description, parsed.data.description, occurredAt, createdAt),
+            db.prepare("UPDATE spaces SET balance_minor = balance_minor - ? WHERE id = ?").bind(cashSpent, parsed.data.spaceId),
+            db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+              .bind(entryId, parsed.data.spaceId, transactionId, user.id, parsed.data.description, occurredAt, createdAt),
+            db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+              .bind(crypto.randomUUID(), entryId, "expense:group", paidByMemberId, cashSpent, 0, createdAt),
+            db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+              .bind(crypto.randomUUID(), entryId, "asset:cash", paidByMemberId, 0, cashSpent, createdAt),
+          );
+        }
+        if (shortfall > 0) {
+          const owing = splitEvenly(shortfall, members.results.map((member) => member.id));
+          owing.forEach((share) => {
+            statements.push(
+              db.prepare("INSERT INTO settlements (id,space_id,from_member_id,to_member_id,amount_minor,status,created_at,expense_id) VALUES (?,?,?,?,?,'pending',?,?)")
+                .bind(crypto.randomUUID(), parsed.data.spaceId, share.memberId, `space:${parsed.data.spaceId}`, share.shareMinor, createdAt, expenseId),
+            );
+          });
+        }
       } else {
         // Member paid from pocket: payer is owed (له); others owe their share (عليه).
         statements.push(
@@ -1442,6 +1472,7 @@ export async function POST(request: Request) {
       const parsed = z.object({ spaceId: z.string().min(1).max(120), label: z.string().trim().min(2).max(80).optional() }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_PERIOD");
       await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["household", "trip", "society", "group"]);
+      await assertMembersSettledForClose(db, parsed.data.spaceId);
       const createdAt = now();
       const open = await db.prepare("SELECT id,status FROM accounting_periods WHERE space_id=? AND status IN ('open','reopened') ORDER BY starts_at DESC LIMIT 1").bind(parsed.data.spaceId).first<{ id: string; status: string }>();
       let periodId = open?.id;
