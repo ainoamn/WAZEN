@@ -6,6 +6,8 @@ test("equal expense splits preserve every minor unit", () => {
   const splits = splitEvenly(100, ["a", "b", "c"]);
   assert.deepEqual(splits.map((item) => item.shareMinor), [34, 33, 33]);
   assert.equal(splits.reduce((sum, item) => sum + item.shareMinor, 0), 100);
+  const three = splitEvenly(60_000, ["abdul", "mohamed", "majed"]);
+  assert.deepEqual(three.map((item) => item.shareMinor), [20_000, 20_000, 20_000]);
 });
 
 test("contribution payment applies against full outstanding dues then advance", () => {
