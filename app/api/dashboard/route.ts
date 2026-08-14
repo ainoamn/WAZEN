@@ -114,8 +114,14 @@ function preparePeriodLedgerEvent(db: D1Database, input: {
 }
 
 async function assertMembersSettledForClose(db: D1Database, spaceId: string) {
-  const members = await db.prepare("SELECT display_name,due_minor,paid_minor FROM members WHERE space_id=? AND status='active'").bind(spaceId).all<{ display_name: string; due_minor: number; paid_minor: number }>();
-  const owingDues = members.results.filter((member) => Number(member.due_minor) > Number(member.paid_minor));
+  const members = await db.prepare("SELECT id,display_name,due_minor,paid_minor FROM members WHERE space_id=? AND status='active'").bind(spaceId).all<{ id: string; display_name: string; due_minor: number; paid_minor: number }>();
+  const asOf = now();
+  const owingDues: typeof members.results = [];
+  for (const member of members.results) {
+    const inst = await db.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(CASE WHEN due_at <= ? THEN amount_minor ELSE 0 END), 0) AS accrued FROM member_installments WHERE member_id=?").bind(asOf, member.id).first<{ count: number; accrued: number }>();
+    const accrued = Number(inst?.count ?? 0) > 0 ? Number(inst?.accrued ?? 0) : Number(member.due_minor);
+    if (accrued > Number(member.paid_minor)) owingDues.push(member);
+  }
   const pending = await db.prepare("SELECT COUNT(*) AS count FROM settlements WHERE space_id=? AND status='pending'").bind(spaceId).first<{ count: number }>();
   if (owingDues.length > 0 || Number(pending?.count ?? 0) > 0) throw new ApiError(409, "PERIOD_UNSETTLED");
 }
@@ -316,8 +322,38 @@ function transactionBalanceDelta(kind: string, allocation: string, amountMinor: 
   return 0;
 }
 
+async function syncFundExpenseCash(db: D1Database, spaceIds: string[]) {
+  if (!spaceIds.length) return;
+  for (const spaceId of spaceIds) {
+    await db.prepare("UPDATE settlements SET status='voided' WHERE space_id=? AND status='pending' AND to_member_id LIKE 'space:%'").bind(spaceId).run();
+    const rows = await db.prepare(`SELECT te.id, te.space_id, te.amount_minor, te.description, te.occurred_at, te.created_by, te.transaction_id, te.created_at,
+        t.id AS txn_id, t.amount_minor AS txn_amount, t.status AS txn_status, t.kind AS txn_kind
+      FROM trip_expenses te
+      LEFT JOIN transactions t ON t.id = te.transaction_id
+      WHERE te.space_id=? AND te.status='posted'
+        AND COALESCE(te.paid_from, CASE WHEN t.kind='expense' THEN 'common_fund' ELSE 'member' END)='common_fund'`).bind(spaceId).all<{
+      id: string; space_id: string; amount_minor: number; description: string; occurred_at: string; created_by: string; transaction_id: string | null; created_at: string;
+      txn_id: string | null; txn_amount: number | null; txn_status: string | null; txn_kind: string | null;
+    }>();
+    for (const row of rows.results) {
+      const amountMinor = Number(row.amount_minor);
+      if (!row.txn_id) {
+        const transactionId = crypto.randomUUID();
+        await db.batch([
+          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'general',?,?,?,'approved',?,?)")
+            .bind(transactionId, row.space_id, row.created_by, null, "expense", amountMinor, row.description, row.description, row.occurred_at, row.created_at),
+          db.prepare("UPDATE trip_expenses SET transaction_id=? WHERE id=?").bind(transactionId, row.id),
+        ]);
+      } else if (row.txn_status === "approved" && Number(row.txn_amount) !== amountMinor) {
+        await db.prepare("UPDATE transactions SET amount_minor=?, member_id=NULL WHERE id=?").bind(amountMinor, row.txn_id).run();
+      }
+    }
+  }
+}
+
 async function rebuildSpaceBalance(db: D1Database, spaceIds: string[]) {
   if (!spaceIds.length) return;
+  await syncFundExpenseCash(db, spaceIds);
   for (const spaceId of spaceIds) {
     const row = await db.prepare(`SELECT COALESCE(SUM(CASE
       WHEN allocation = 'personal_reserve' THEN 0
@@ -325,7 +361,7 @@ async function rebuildSpaceBalance(db: D1Database, spaceIds: string[]) {
       WHEN kind = 'expense' THEN -amount_minor
       ELSE 0
     END), 0) AS balance FROM transactions WHERE space_id=? AND status='approved'`).bind(spaceId).first<{ balance: number }>();
-    const next = Math.max(0, Number(row?.balance ?? 0));
+    const next = Number(row?.balance ?? 0);
     await db.prepare("UPDATE spaces SET balance_minor=? WHERE id=?").bind(next, spaceId).run();
   }
 }
@@ -443,16 +479,11 @@ async function rebuildTripExpenseShares(
   if (Number(settled?.count ?? 0) > 0) throw new ApiError(409, "EXPENSE_ALREADY_SETTLED");
   const members = await db.prepare("SELECT id FROM members WHERE space_id=? AND status='active' ORDER BY joined_at").bind(expense.space_id).all<{ id: string }>();
   if (!members.results.length) throw new ApiError(400, "NO_ACTIVE_MEMBERS");
-  const space = await db.prepare("SELECT balance_minor FROM spaces WHERE id=?").bind(expense.space_id).first<{ balance_minor: number }>();
   const linked = expense.transaction_id
     ? await db.prepare("SELECT * FROM transactions WHERE id=?").bind(expense.transaction_id).first<TransactionRow>()
     : null;
   const paidFromFund = linked?.kind === "expense" || expense.paid_from === "common_fund";
   if (!paidFromFund && !members.results.some((member) => member.id === next.paidByMemberId)) throw new ApiError(400, "INVALID_PAYER");
-  if (paidFromFund) {
-    const delta = next.amountMinor - Number(expense.amount_minor);
-    if (delta > 0 && Number(space?.balance_minor ?? 0) < delta) throw new ApiError(409, "INSUFFICIENT_FUNDS");
-  }
   const splits = splitEvenly(next.amountMinor, members.results.map((member) => member.id));
   const createdAt = now();
   const statements: D1PreparedStatement[] = [
@@ -824,7 +855,7 @@ export async function POST(request: Request) {
       const balanceDelta = allocation === "personal_reserve"
         ? 0
         : (positiveKinds.includes(kind) ? amountMinor : -amountMinor);
-      if (balanceDelta < 0 && Number(space.balance_minor) + balanceDelta < 0) throw new ApiError(409, "INSUFFICIENT_FUNDS");
+      if (space.type === "personal" && balanceDelta < 0 && Number(space.balance_minor) + balanceDelta < 0) throw new ApiError(409, "INSUFFICIENT_FUNDS");
       const transactionId = crypto.randomUUID();
       const occurredAt = parsed.data.occurredAt ?? now();
       const entryId = crypto.randomUUID(); const createdAt = now();
@@ -908,7 +939,7 @@ export async function POST(request: Request) {
       }
       const balanceDelta = transactionBalanceDelta(kind, allocation, amountMinor);
       const refreshed = await db.prepare("SELECT balance_minor FROM spaces WHERE id=?").bind(existing.space_id).first<{ balance_minor: number }>();
-      if (balanceDelta < 0 && Number(refreshed?.balance_minor ?? 0) + balanceDelta < 0) throw new ApiError(409, "INSUFFICIENT_FUNDS");
+      if (space.type === "personal" && balanceDelta < 0 && Number(refreshed?.balance_minor ?? 0) + balanceDelta < 0) throw new ApiError(409, "INSUFFICIENT_FUNDS");
       const transactionId = crypto.randomUUID();
       const occurredAt = parsed.data.occurredAt ?? existing.occurred_at;
       const createdAt = now();
@@ -1088,9 +1119,6 @@ export async function POST(request: Request) {
       }
       if (paidFrom === "common_fund" && !members.results[0]?.id) throw new ApiError(400, "NO_ACTIVE_MEMBERS");
       const fundPayerId = paidFrom === "common_fund" ? members.results[0]!.id : paidByMemberId!;
-      const cashOnHand = Math.max(0, Number(space.balance_minor));
-      const cashSpent = paidFrom === "common_fund" ? Math.min(cashOnHand, amountMinor) : 0;
-      const shortfall = paidFrom === "common_fund" ? Math.max(0, amountMinor - cashSpent) : 0;
       const splits = splitEvenly(amountMinor, members.results.map((member) => member.id));
       const expenseId = crypto.randomUUID();
       const transactionId = crypto.randomUUID();
@@ -1103,28 +1131,17 @@ export async function POST(request: Request) {
           .bind(expenseId, parsed.data.spaceId, fundPayerId, amountMinor, parsed.data.description, occurredAt, user.id, createdAt, transactionId, paidFrom),
       ];
       if (paidFrom === "common_fund") {
-        if (cashSpent > 0) {
-          statements.push(
-            db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'general',?,?,?,'approved',?,?)")
-              .bind(transactionId, parsed.data.spaceId, user.id, null, "expense", cashSpent, parsed.data.description, parsed.data.description, occurredAt, createdAt),
-            db.prepare("UPDATE spaces SET balance_minor = balance_minor - ? WHERE id = ?").bind(cashSpent, parsed.data.spaceId),
-            db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
-              .bind(entryId, parsed.data.spaceId, transactionId, user.id, parsed.data.description, occurredAt, createdAt),
-            db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
-              .bind(crypto.randomUUID(), entryId, "expense:group", null, cashSpent, 0, createdAt),
-            db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
-              .bind(crypto.randomUUID(), entryId, "asset:cash", null, 0, cashSpent, createdAt),
-          );
-        }
-        if (shortfall > 0) {
-          const owing = splitEvenly(shortfall, members.results.map((member) => member.id));
-          owing.forEach((share) => {
-            statements.push(
-              db.prepare("INSERT INTO settlements (id,space_id,from_member_id,to_member_id,amount_minor,status,created_at,expense_id) VALUES (?,?,?,?,?,'pending',?,?)")
-                .bind(crypto.randomUUID(), parsed.data.spaceId, share.memberId, `space:${parsed.data.spaceId}`, share.shareMinor, createdAt, expenseId),
-            );
-          });
-        }
+        statements.push(
+          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'general',?,?,?,'approved',?,?)")
+            .bind(transactionId, parsed.data.spaceId, user.id, null, "expense", amountMinor, parsed.data.description, parsed.data.description, occurredAt, createdAt),
+          db.prepare("UPDATE spaces SET balance_minor = balance_minor - ? WHERE id = ?").bind(amountMinor, parsed.data.spaceId),
+          db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+            .bind(entryId, parsed.data.spaceId, transactionId, user.id, parsed.data.description, occurredAt, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "expense:group", null, amountMinor, 0, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "asset:cash", null, 0, amountMinor, createdAt),
+        );
       } else {
         // Member paid from pocket: payer is owed (له); others owe their share (عليه).
         statements.push(

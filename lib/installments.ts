@@ -131,3 +131,21 @@ export function totalRemainingMinor(installments: InstallmentLike[], ids?: strin
     .filter((row) => !ids?.length || ids.includes(row.id))
     .reduce((sum, row) => sum + remainingInstallmentMinor(row), 0);
 }
+
+/** Sum of installment amounts that are due on or before asOf (future months are not yet owed). */
+export function accruedDueMinor(
+  installments: Array<InstallmentLike & { due_at?: string }>,
+  asOf: Date = new Date(),
+) {
+  const asOfMs = asOf.getTime();
+  const asOfKey = periodKeyFromDate(asOf.toISOString());
+  return installments.reduce((sum, row) => {
+    if (row.due_at) {
+      const dueMs = new Date(row.due_at).getTime();
+      if (!Number.isNaN(dueMs) && dueMs <= asOfMs) return sum + Number(row.amount_minor);
+      return sum;
+    }
+    if (row.period_key && row.period_key <= asOfKey) return sum + Number(row.amount_minor);
+    return sum;
+  }, 0);
+}

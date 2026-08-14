@@ -455,8 +455,7 @@ async function initializeSchema(db: D1Database) {
     db.prepare(`CREATE TRIGGER trg_payment_status_transition BEFORE UPDATE OF status ON payments
       WHEN NOT ((OLD.status='pending' AND NEW.status IN ('succeeded','failed')) OR (OLD.status='failed' AND NEW.status='pending') OR (OLD.status='succeeded' AND NEW.status='refunded'))
       BEGIN SELECT RAISE(ABORT, 'INVALID_PAYMENT_TRANSITION'); END`),
-    db.prepare(`CREATE TRIGGER IF NOT EXISTS trg_space_nonnegative_balance BEFORE UPDATE OF balance_minor ON spaces
-      WHEN NEW.balance_minor < 0 BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_FUNDS'); END`),
+    db.prepare("DROP TRIGGER IF EXISTS trg_space_nonnegative_balance"),
     db.prepare(`CREATE TRIGGER IF NOT EXISTS trg_member_financial_bounds BEFORE UPDATE OF paid_minor,extra_minor ON members
       WHEN NEW.extra_minor < 0 OR NEW.paid_minor < 0 OR NEW.paid_minor > NEW.due_minor BEGIN SELECT RAISE(ABORT, 'MEMBER_FINANCIAL_BOUNDS'); END`),
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email COLLATE NOCASE)"),

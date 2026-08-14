@@ -6,7 +6,7 @@ import OmrSymbol from "../brand/OmrSymbol";
 import { apiFetch } from "../../lib/client-api";
 import {
   allocateOldestFirst,
-  buildInstallmentSchedule,
+  accruedDueMinor,
   remainingInstallmentMinor,
   selectByAmount,
   selectThroughOldest,
@@ -81,6 +81,26 @@ export function memberInstallments(
   }).rows;
 }
 
+export function memberAccruedDueMinor(
+  member: AssociationMember,
+  installments: AssociationInstallment[],
+  plan?: AssociationPlan | null,
+  asOf?: Date,
+) {
+  const months = memberInstallments(member, installments, plan);
+  if (!months.length) return member.due_minor;
+  return accruedDueMinor(months, asOf);
+}
+
+export function memberAccruedOwedMinor(
+  member: AssociationMember,
+  installments: AssociationInstallment[],
+  plan?: AssociationPlan | null,
+  asOf?: Date,
+) {
+  return Math.max(0, memberAccruedDueMinor(member, installments, plan, asOf) - member.paid_minor);
+}
+
 export function RemainingInvoiceGrid({
   months,
   selected,
@@ -133,7 +153,7 @@ export function MemberDetailModal({
   onSendReceipt: () => void;
 }) {
   const months = memberInstallments(member, installments, plan);
-  const remaining = Math.max(0, member.due_minor - member.paid_minor);
+  const remaining = memberAccruedOwedMinor(member, installments, plan);
   return (
     <Modal title={member.display_name} onClose={onClose}>
       <div className="modal-form">
@@ -190,14 +210,18 @@ export function MemberPersonProfile({
   const plan = plans.find((item) => item.space_id === selected?.space_id);
   const months = selected ? memberInstallments(selected, installments, plan) : [];
   const isActive = records.some((row) => (row.status ?? "active") === "active");
-  const due = records.reduce((sum, row) => sum + row.due_minor, 0);
   const paid = records.reduce((sum, row) => sum + row.paid_minor, 0);
   const extra = records.reduce((sum, row) => sum + row.extra_minor + Number(row.addon_minor ?? 0), 0);
-  const remaining = Math.max(0, due - paid);
-  const credit = Math.max(0, paid - due) + extra;
+  const remaining = records.reduce((sum, row) => sum + memberAccruedOwedMinor(row, installments, plans.find((item) => item.space_id === row.space_id)), 0);
+  const credit = records.reduce((sum, row) => {
+    const accrued = memberAccruedDueMinor(row, installments, plans.find((item) => item.space_id === row.space_id));
+    return sum + Math.max(0, row.paid_minor - accrued) + row.extra_minor + Number(row.addon_minor ?? 0);
+  }, 0);
   const rates = records.map((row) => {
-    const rate = Math.round((Math.min(row.paid_minor, Math.max(row.due_minor, 1)) / Math.max(row.due_minor, 1)) * 100);
-    const left = Math.max(0, row.due_minor - row.paid_minor);
+    const planForRow = plans.find((item) => item.space_id === row.space_id);
+    const accrued = memberAccruedDueMinor(row, installments, planForRow);
+    const rate = Math.round((Math.min(row.paid_minor, Math.max(accrued, 1)) / Math.max(accrued, 1)) * 100);
+    const left = memberAccruedOwedMinor(row, installments, planForRow);
     let grade = "D";
     if (rate >= 95 && left === 0) grade = "A";
     else if (rate >= 75) grade = "B";
@@ -224,7 +248,7 @@ export function MemberPersonProfile({
         <div className="assoc-chip-list">
           {records.map((row) => {
             const linked = spaces.find((item) => item.id === row.space_id);
-            const left = Math.max(0, row.due_minor - row.paid_minor);
+            const left = memberAccruedOwedMinor(row, installments, plans.find((item) => item.space_id === row.space_id));
             const active = (row.status ?? "active") === "active";
             const label = linked ? (locale === "ar" ? linked.name_ar : linked.name_en) : row.space_id;
             return (
@@ -242,7 +266,7 @@ export function MemberPersonProfile({
               <div><span>{locale === "ar" ? "الهدف" : "Goal"}</span><b>{money(selected.due_minor, space.currency, locale)}</b></div>
               <div><span>{locale === "ar" ? "مدفوع" : "Paid"}</span><b>{money(selected.paid_minor, space.currency, locale)}</b></div>
               <div><span>{locale === "ar" ? "إضافي" : "Extra"}</span><b>{money(selected.extra_minor + Number(selected.addon_minor ?? 0), space.currency, locale)}</b></div>
-              <div><span>{locale === "ar" ? "حالة الدفع" : "Payment"}</span><b>{Math.max(0, selected.due_minor - selected.paid_minor) > 0 ? (locale === "ar" ? "عليه مطالبات" : "Outstanding") : (locale === "ar" ? "مكتمل" : "Complete")}</b></div>
+              <div><span>{locale === "ar" ? "حالة الدفع" : "Payment"}</span><b>{memberAccruedOwedMinor(selected, installments, plan) > 0 ? (locale === "ar" ? "عليه مطالبات" : "Outstanding") : (locale === "ar" ? "مكتمل حتى الشهر الحالي" : "Current through this month")}</b></div>
             </div>
             <div className="month-grid">
               {months.map((row) => (
@@ -365,7 +389,7 @@ export function SmartAccountantModal({
         </label>
         {member && space && (
           <div className="member-detail-meta compact">
-            <div><span>{locale === "ar" ? "عليه" : "Owes"}</span><b>{money(Math.max(0, member.due_minor - member.paid_minor), space.currency, locale)}</b></div>
+            <div><span>{locale === "ar" ? "عليه" : "Owes"}</span><b>{money(memberAccruedOwedMinor(member, installments, plan), space.currency, locale)}</b></div>
             <div><span>{locale === "ar" ? "أشهر متبقية" : "Open months"}</span><b>{unpaid.length}</b></div>
           </div>
         )}

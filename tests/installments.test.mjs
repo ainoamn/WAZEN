@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   allocateOldestFirst,
+  accruedDueMinor,
   buildInstallmentSchedule,
   selectByAmount,
   selectThroughOldest,
@@ -57,6 +58,19 @@ test("selecting a later month still auto-includes older unpaid months", () => {
   assert.equal(totalRemainingMinor(schedule.rows, ids), 30_000);
   const byAmount = selectByAmount(schedule.rows, 10_000);
   assert.equal(byAmount.length, 1);
+});
+
+test("accrued dues stop at the current month and ignore future installments", () => {
+  const schedule = buildInstallmentSchedule({
+    memberId: "m1",
+    spaceId: "s1",
+    startAt: "2026-01-15T00:00:00.000Z",
+    durationMonths: 12,
+    amountMinor: 20_000,
+  });
+  const asOf = new Date("2026-03-20T00:00:00.000Z");
+  assert.equal(accruedDueMinor(schedule.rows, asOf), 60_000);
+  assert.equal(accruedDueMinor(schedule.rows, new Date("2026-01-15T12:00:00.000Z")), 20_000);
 });
 
 test("omani phones become WhatsApp numbers", () => {
