@@ -373,6 +373,7 @@ export function WazenDashboard() {
   const [error, setError] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [modal, setModal] = useState<"transaction" | "wallet" | "invite" | "tripExpense" | "circleOrder" | "withdrawSurplus" | null>(null);
+  const [pickedSpaceId, setPickedSpaceId] = useState<Partial<Record<ViewId, string>>>({});
   const [withdrawMemberId, setWithdrawMemberId] = useState<string>("");
   const [toast, setToast] = useState("");
   const t = copy[locale];
@@ -397,11 +398,9 @@ export function WazenDashboard() {
     document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
   }, [locale]);
 
-  const spacesByType = useMemo(() => {
-    const result: Record<string, Space | undefined> = {};
-    data?.spaces.forEach((space) => { if (!result[space.type]) result[space.type] = space; });
-    return result;
-  }, [data]);
+  const viewSpaceType: Partial<Record<ViewId, Space["type"]>> = { personal: "personal", household: "household", trip: "trip", society: "society" };
+  const spacesForView = data?.spaces.filter((space) => space.type === viewSpaceType[activeView]) ?? [];
+  const walletDefaultType = viewSpaceType[activeView] ?? "trip";
 
   const totals = useMemo(() => {
     if (!data) return { net: 0, groups: 0, reserves: 0, spend: 0 };
@@ -437,10 +436,15 @@ export function WazenDashboard() {
   if (loading) return <LoadingScreen locale={locale} />;
   if (error || !data) return <ErrorScreen message={t.error} retry={load} />;
 
-  const activeSpace = activeView === "personal" ? spacesByType.personal
-    : activeView === "household" ? spacesByType.household
-      : activeView === "trip" ? spacesByType.trip
-        : activeView === "society" ? spacesByType.society : undefined;
+  const activeSpace = spacesForView.find((space) => space.id === pickedSpaceId[activeView]) ?? spacesForView[0];
+  const openNewWallet = () => setModal("wallet");
+  const addWalletLabel = activeView === "society"
+    ? (locale === "ar" ? "إضافة جمعية" : "Add circle")
+    : activeView === "household"
+      ? (locale === "ar" ? "إضافة محفظة منزل" : "Add household wallet")
+      : activeView === "trip"
+        ? (locale === "ar" ? "إضافة محفظة سفر" : "Add trip wallet")
+        : (locale === "ar" ? "إضافة محفظة" : "Add wallet");
 
   return (
     <div className="app-shell">
@@ -467,7 +471,20 @@ export function WazenDashboard() {
 
         <div className="page-content">
           {activeView === "overview" && (
-            <Overview data={data} locale={locale} totals={totals} onView={changeView} onAddWallet={() => setModal("wallet")} />
+            <Overview data={data} locale={locale} totals={totals} onView={changeView} onAddWallet={openNewWallet} />
+          )}
+          {viewSpaceType[activeView] && (
+            <>
+              <div className="space-switcher">
+                {spacesForView.map((space) => (
+                  <button key={space.id} type="button" className={activeSpace?.id === space.id ? "active" : ""} onClick={() => setPickedSpaceId((current) => ({ ...current, [activeView]: space.id }))}>{nameOf(space, locale)}</button>
+                ))}
+                <button type="button" className="primary-button" onClick={openNewWallet}><Plus size={16} />{addWalletLabel}</button>
+              </div>
+              {!activeSpace && (
+                <article className="panel"><div className="empty-state"><WalletCards size={28} /><strong>{addWalletLabel}</strong><p>{activeView === "society" ? (locale === "ar" ? "لا توجد جمعية بعد. أنشئ جمعية جديدة لإدارة الأقساط والأدوار والأعضاء." : "No savings circle yet. Create one to manage dues, turns, and members.") : (locale === "ar" ? "لا توجد محفظة في هذا القسم بعد." : "No wallet in this section yet.")}</p><button className="primary-button" onClick={openNewWallet}><Plus size={16} />{addWalletLabel}</button></div></article>
+              )}
+            </>
           )}
           {activeSpace && (
             <SpaceDetail space={activeSpace} data={data} locale={locale} onAdd={() => setModal("transaction")} onInvite={() => setModal("invite")} onTripExpense={() => setModal("tripExpense")} onCircleOrder={() => setModal("circleOrder")} onSettle={(settlementId) => void settleReimbursement(settlementId)} onCompleteTurn={(turnId) => void completeCircleTurn(turnId)} onTxnChanged={(next) => { setData({ ...data, ...next }); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />
@@ -487,7 +504,9 @@ export function WazenDashboard() {
         }} />
       )}
       {modal === "wallet" && (
-        <WalletModal data={data} locale={locale} onClose={() => setModal(null)} onSaved={(next) => {
+        <WalletModal data={data} locale={locale} defaultType={walletDefaultType} onClose={() => setModal(null)} onSaved={(next) => {
+          const created = (next.spaces ?? []).find((space) => !data.spaces.some((existing) => existing.id === space.id));
+          if (created) setPickedSpaceId((current) => ({ ...current, [created.type as ViewId]: created.id }));
           setData({ ...data, ...next });
           setModal(null);
           flash(locale === "ar" ? "تم إنشاء المحفظة" : "Wallet created");
@@ -985,12 +1004,12 @@ function TransactionModal({ data, locale, preferredSpaceId, onClose, onSaved }: 
   return <Modal title={t.add} onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="segmented-control">{["expense", "income", "contribution", "reimbursement"].map((item) => <button type="button" key={item} className={kind === item ? "active" : ""} onClick={() => setKind(item)}>{t[item as keyof typeof t] as string}</button>)}</div><label><span>{t.wallet}</span><select value={spaceId} onChange={(event) => { const next = event.target.value; setSpaceId(next); setMemberId(""); const meta = data.spaces.find((item) => item.id === next); if (meta && meta.type !== "personal") setKind("contribution"); }}>{data.spaces.map((item) => <option key={item.id} value={item.id}>{nameOf(item, locale)}</option>)}</select></label><div className="form-row"><label><span>{t.amount}</span><div className="money-input"><input required min="0.01" step="0.001" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.000" /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>{kind !== "contribution" && kind !== "expense" && <label><span>{t.allocation}</span><select value={allocation} onChange={(event) => setAllocation(event.target.value)}><option value="general">{t.general}</option><option value="mandatory">{t.mandatory}</option><option value="personal_reserve">{t.personalReserve}</option></select></label>}{kind === "contribution" && <label><span>{locale === "ar" ? "سياسة الزيادة" : "Surplus policy"}</span><select value={extraPolicy} onChange={(event) => setExtraPolicy(event.target.value)}><option value="advance_credit">{locale === "ar" ? "مقدّم (افتراضي)" : "Advance (default)"}</option><option value="personal_reserve">{locale === "ar" ? "فائض شخصي محمي" : "Protected personal reserve"}</option><option value="voluntary_to_fund">{locale === "ar" ? "تطوع للصندوق" : "Voluntary to common fund"}</option></select></label>}{kind === "expense" && space && space.type !== "personal" && <label><span>{locale === "ar" ? "دُفع من" : "Paid from"}</span><select value={paidFrom} onChange={(event) => setPaidFrom(event.target.value as "common_fund" | "member")}><option value="common_fund">{locale === "ar" ? "صندوق المجموعة" : "Group fund"}</option><option value="member">{locale === "ar" ? "حساب عضو" : "Member account"}</option></select></label>}</div>{members.length > 0 && <label><span>{kind === "contribution" || (kind === "expense" && paidFrom === "member") ? (locale === "ar" ? "العضو (مطلوب)" : "Member (required)") : (locale === "ar" ? "العضو (اختياري — للدخل يخصم من المستحق)" : "Member (optional — income applies to dues)")}</span><select required={kind === "contribution" || (kind === "expense" && paidFrom === "member")} value={memberId} onChange={(event) => setMemberId(event.target.value)}><option value="">—</option>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}{member.due_minor > member.paid_minor ? (locale === "ar" ? ` · عليه ${currencyMajor(member.due_minor - member.paid_minor, space?.currency ?? "OMR").toFixed(3)}` : ` · owes ${currencyMajor(member.due_minor - member.paid_minor, space?.currency ?? "OMR").toFixed(3)}`) : (member.paid_minor > member.due_minor ? (locale === "ar" ? ` · له مقدّم` : ` · advance`) : "")}</option>)}</select></label>}{isGroupMemberPayment && amountNumber > 0 && <div className="modal-note split-preview"><span>{locale === "ar" ? "القاعدة: خصم المطالبات المتراكمة أولاً ثم أي زيادة كمقدّم" : "Rule: apply to outstanding dues first; surplus becomes advance"}</span><strong>{locale === "ar" ? `سداد مطالبة: ${previewMandatory.toFixed(3)}` : `Toward dues: ${previewMandatory.toFixed(3)}`}</strong><strong>{locale === "ar" ? `مقدّم: ${previewSurplus.toFixed(3)}` : `Advance: ${previewSurplus.toFixed(3)}`}</strong>{remainingMajor > 0 && <span>{locale === "ar" ? `المتبقي عليه قبل العملية: ${remainingMajor.toFixed(3)}` : `Outstanding before: ${remainingMajor.toFixed(3)}`}</span>}</div>}<label><span>{t.description}</span><input required={kind !== "contribution"} value={description} onChange={(event) => setDescription(event.target.value)} placeholder={locale === "ar" ? "مثال: مساهمة أغسطس" : "e.g. August contribution"} /></label>{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : t.save}</button></div></form></Modal>;
 }
 
-function WalletModal({ locale, onClose, onSaved }: { data: DashboardData; locale: Locale; onClose: () => void; onSaved: (next: Partial<DashboardData>) => void }) {
+function WalletModal({ locale, defaultType = "trip", onClose, onSaved }: { data: DashboardData; locale: Locale; defaultType?: string; onClose: () => void; onSaved: (next: Partial<DashboardData>) => void }) {
   const t = copy[locale];
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [name, setName] = useState("");
-  const [type, setType] = useState("trip");
+  const [type, setType] = useState(defaultType);
   const [goal, setGoal] = useState("");
   const [monthlyContribution, setMonthlyContribution] = useState("20");
   const [durationMonths, setDurationMonths] = useState("12");
@@ -1013,7 +1032,13 @@ function WalletModal({ locale, onClose, onSaved }: { data: DashboardData; locale
         }),
       });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "save failed");
+      if (!response.ok) {
+        const code = result.error ?? "save failed";
+        const messages: Record<string, string> = locale === "ar"
+          ? { PLAN_FEATURE_REQUIRED: "باقتك الحالية لا تسمح بإنشاء هذا النوع من المحافظ.", PLAN_WALLET_LIMIT: "وصلت إلى حد المحافظ في باقتك.", INVALID_WALLET: "بيانات المحفظة غير مكتملة." }
+          : { PLAN_FEATURE_REQUIRED: "Your current plan does not allow this wallet type.", PLAN_WALLET_LIMIT: "You reached the wallet limit on your plan.", INVALID_WALLET: "Wallet details are incomplete." };
+        throw new Error(messages[code] ?? code);
+      }
       onSaved(result);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "SAVE_FAILED");

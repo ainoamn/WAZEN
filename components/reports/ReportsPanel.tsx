@@ -114,7 +114,7 @@ export function ReportsPanel({
   const maximum = Math.max(0, ...flow.flatMap((row) => [row.income, row.expense]));
 
   const buildHtml = () => {
-    const logoUrl = `${window.location.origin}/brand/wazen-lockup-official.png`;
+    const logoUrl = `${window.location.origin}/brand/wazen-lockup.svg`;
     return buildReportHtml({
       locale,
       reportType,
@@ -141,8 +141,13 @@ export function ReportsPanel({
 
   const printReport = () => {
     if (!canGenerate) return;
-    const opened = openReportPreview(buildHtml(), true);
-    if (!opened) window.alert(locale === "ar" ? "اسمح بالنوافذ المنبثقة للطباعة" : "Allow pop-ups to print");
+    const html = buildHtml();
+    const opened = openReportPreview(html, true);
+    if (!opened) {
+      const slug = `${reportType}-${space?.id ?? "all"}`.slice(0, 80);
+      downloadReportHtml(html, `wazen-report-${slug}.html`);
+      window.alert(locale === "ar" ? "تم تنزيل التقرير لأن النافذة المنبثقة محظورة. افتح الملف ثم اطبعه." : "Report downloaded because pop-ups are blocked. Open the file and print it.");
+    }
   };
 
   return (

@@ -147,9 +147,10 @@ async function seedCommercialData(db: D1Database, user: RequestUser) {
       ["handover", "WZN-HND-2026-0001", "أحمد محمد", "تسليم فائض شخصي مسترد", 3000],
       ["member_statement", "WZN-STM-2026-0001", "فاطمة محمد", "كشف حساب عضو حتى أغسطس 2026", 0],
     ] as const;
+    const suffix = user.id.replace(/[^a-zA-Z0-9]/g, "").slice(-8) || "user";
     await db.batch(docs.map((doc, index) => db.prepare(
-      "INSERT INTO documents VALUES (?,?,NULL,?,?,?,?,?,'OMR','issued','bank_transfer',?,?,?)",
-    ).bind(id(), user.id, doc[0], doc[1], doc[2], doc[3], doc[4], user.displayName, atOffset(-index * 2), now)));
+      "INSERT OR IGNORE INTO documents VALUES (?,?,NULL,?,?,?,?,?,'OMR','issued','bank_transfer',?,?,?)",
+    ).bind(id(), user.id, doc[0], `${doc[1]}-${suffix}`, doc[2], doc[3], doc[4], user.displayName, atOffset(-index * 2), now)));
     for (const key of ["receipt-2026", "disbursement-2026", "handover-2026", "member_statement-2026"]) {
       await db.prepare("INSERT OR IGNORE INTO document_sequences VALUES (?,1)").bind(key).run();
     }
@@ -275,12 +276,19 @@ export async function GET(request: Request) {
     if (view === "documents") {
       assertApiScope(user, "documents:read");
       const [documents, spaces] = await Promise.all([
-        db.prepare(`SELECT DISTINCT d.* FROM documents d LEFT JOIN spaces s ON s.id=d.space_id LEFT JOIN members m ON m.space_id=s.id AND m.status='active'
-          WHERE d.owner_user_id=? OR (d.space_id IS NOT NULL AND (s.owner_user_id=? OR m.user_id=?)) ORDER BY d.issued_at DESC`).bind(user.id, user.id, user.id).all(),
-        db.prepare(`SELECT DISTINCT s.id,s.name_ar,s.name_en,s.type,s.currency FROM spaces s LEFT JOIN members m ON m.space_id=s.id AND m.status='active'
-          WHERE s.owner_user_id=? OR m.user_id=? ORDER BY s.created_at`).bind(user.id, user.id).all(),
+        db.prepare(`SELECT * FROM documents
+          WHERE owner_user_id=? OR space_id IN (
+            SELECT s.id FROM spaces s LEFT JOIN members m ON m.space_id=s.id AND m.status='active'
+            WHERE s.owner_user_id=? OR m.user_id=?
+          )
+          ORDER BY issued_at DESC`).bind(user.id, user.id, user.id).all(),
+        db.prepare(`SELECT s.id,s.name_ar,s.name_en,s.type,s.currency FROM spaces s
+          WHERE s.owner_user_id=? OR EXISTS (
+            SELECT 1 FROM members m WHERE m.space_id=s.id AND m.status='active' AND m.user_id=?
+          )
+          ORDER BY s.created_at`).bind(user.id, user.id).all(),
       ]);
-      return Response.json({ user, role, documents: documents.results, spaces: spaces.results }, { headers: responseHeaders });
+      return Response.json({ user, role, documents: documents.results ?? [], spaces: spaces.results ?? [] }, { headers: responseHeaders });
     }
     if (view === "billing") {
       assertApiScope(user, "billing:read");

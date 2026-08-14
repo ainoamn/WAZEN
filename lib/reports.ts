@@ -546,19 +546,21 @@ export function buildReportHtml(input: ReportInput) {
 }
 
 export function openReportPreview(html: string, autoPrint = false) {
-  const popup = window.open("", "_blank", "noopener,noreferrer,width=960,height=900");
-  if (!popup) return false;
-  popup.document.write(html);
-  popup.document.close();
-  if (autoPrint) {
-    popup.addEventListener("load", () => {
-      try { popup.focus(); popup.print(); } catch { /* ignore */ }
-    });
-    // Fallback if load already fired
-    setTimeout(() => {
-      try { popup.focus(); popup.print(); } catch { /* ignore */ }
-    }, 400);
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const popup = window.open(url, "_blank", "width=960,height=900");
+  if (!popup) {
+    URL.revokeObjectURL(url);
+    return false;
   }
+  if (autoPrint) {
+    const triggerPrint = () => {
+      try { popup.focus(); popup.print(); } catch { /* ignore */ }
+    };
+    popup.addEventListener("load", triggerPrint);
+    window.setTimeout(triggerPrint, 600);
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   return true;
 }
 
@@ -568,6 +570,8 @@ export function downloadReportHtml(html: string, filename: string) {
   const link = document.createElement("a");
   link.href = url;
   link.download = filename.endsWith(".html") ? filename : `${filename}.html`;
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 }

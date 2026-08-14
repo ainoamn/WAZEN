@@ -336,9 +336,12 @@ export async function POST(request: Request) {
       const { name, type } = parsed.data;
       const { getActivePlanEntitlements, planAllowsSpaceType } = await import("../../../services/admin/billing-service");
       const entitlements = await getActivePlanEntitlements(db, user.id);
-      if (!planAllowsSpaceType(entitlements.features, type)) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
+      const platformRole = await db.prepare("SELECT role FROM platform_roles WHERE user_id=?").bind(user.id).first<{ role: string }>();
+      const isPlatformAdmin = ["super_admin", "admin"].includes(platformRole?.role ?? "");
+      if (!isPlatformAdmin && !planAllowsSpaceType(entitlements.features, type)) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
       const count = await db.prepare("SELECT COUNT(*) AS count FROM spaces WHERE owner_user_id=?").bind(user.id).first<{ count: number }>();
-      if (Number(count?.count ?? 0) >= entitlements.walletLimit) throw new ApiError(403, "PLAN_WALLET_LIMIT");
+      const walletLimit = isPlatformAdmin ? Math.max(entitlements.walletLimit, 100) : entitlements.walletLimit;
+      if (Number(count?.count ?? 0) >= walletLimit) throw new ApiError(403, "PLAN_WALLET_LIMIT");
       const id = `${cleanId(user.id)}-${crypto.randomUUID()}`; const createdAt = now();
       const profile = await db.prepare("SELECT currency FROM users WHERE id=?").bind(user.id).first<{ currency: string }>(); const currency = profile?.currency ?? "OMR";
       let goalMinor: number; try { goalMinor = parseNonNegativeMoneyToMinor(parsed.data.goal, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }

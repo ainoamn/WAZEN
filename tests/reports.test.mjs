@@ -30,7 +30,7 @@ test("branded report html includes logo, wallet name and member scope", () => {
   const html = buildReportHtml({
     locale: "ar",
     reportType: "member",
-    logoUrl: "https://example.com/brand/wazen-lockup-official.png",
+    logoUrl: "https://example.com/brand/wazen-lockup.svg",
     issuerName: "أمين الصندوق",
     space: {
       id: "space-1",
@@ -75,7 +75,7 @@ test("branded report html includes logo, wallet name and member scope", () => {
     }],
   });
 
-  assert.match(html, /wazen-lockup-official\.png/);
+  assert.match(html, /wazen-lockup\.svg/);
   assert.match(html, /جمعية الإخوة/);
   assert.match(html, /عبد الحميد/);
   assert.match(html, /تقرير العميل/);
