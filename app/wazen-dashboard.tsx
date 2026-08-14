@@ -397,6 +397,7 @@ export function WazenDashboard() {
   const [pickedSpaceId, setPickedSpaceId] = useState<Partial<Record<ViewId, string>>>({});
   const [activeMemberId, setActiveMemberId] = useState("");
   const [receiptTxnId, setReceiptTxnId] = useState<string | undefined>(undefined);
+  const [withdrawMemberId, setWithdrawMemberId] = useState("");
   const [editingExpenseId, setEditingExpenseId] = useState("");
   const [toast, setToast] = useState("");
   const t = copy[locale];
