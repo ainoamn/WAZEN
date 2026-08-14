@@ -8,6 +8,7 @@ import { prepareAudit } from "../../../lib/audit";
 import { multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
 import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, type InstallmentLike } from "../../../lib/installments";
 import { coveringPeriod } from "../../../lib/accounting-periods";
+import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
 
 type SpaceRow = {
   id: string;
@@ -137,7 +138,7 @@ async function periodWriteEvent(
     entityId: detail.entityId,
     summaryAr: detail.summaryAr,
     summaryEn: detail.summaryEn,
-    metadata: { ...detail.metadata, occurredAt, periodStatus: period?.status ?? "none" },
+    metadata: { ...(detail.metadata && typeof detail.metadata === "object" ? detail.metadata as Record<string, unknown> : {}), occurredAt, periodStatus: period?.status ?? "none" },
   });
 }
 
@@ -1162,7 +1163,8 @@ export async function POST(request: Request) {
       const expense = await db.prepare("SELECT * FROM trip_expenses WHERE id=?").bind(parsed.data.expenseId).first<TripExpenseRecord>();
       if (!expense) throw new ApiError(404, "EXPENSE_NOT_FOUND");
       const space = await authorizeSpace(db, user, expense.space_id, "transact", ["household", "trip", "society", "group"]);
-      await assertPeriodWritable(db, expense.space_id, expense.occurred_at || expense.created_at);
+      await assertPeriodWritable(db, expense.space_id, expense.occurred_at || expense.created_at || now());
+      let amountMinor = Number(expense.amount_minor);
       if (parsed.data.amount !== undefined) {
         try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
       }
