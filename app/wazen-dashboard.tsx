@@ -28,6 +28,7 @@ import {
   House,
   Landmark,
   LayoutDashboard,
+  LogOut,
   Menu,
   Plane,
   Plus,
@@ -46,7 +47,7 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState, startTransition } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { apiFetch } from "../lib/client-api";
 
 type Locale = "ar" | "en";
@@ -110,6 +111,7 @@ const copy = {
     transactions: "العمليات",
     reports: "التقارير",
     settings: "الإعدادات",
+    logout: "تسجيل الخروج",
     workspace: "مساحتي المالية",
     add: "إضافة عملية",
     newWallet: "محفظة جديدة",
@@ -189,6 +191,7 @@ const copy = {
     transactions: "Transactions",
     reports: "Reports",
     settings: "Settings",
+    logout: "Sign out",
     workspace: "My money space",
     add: "Add transaction",
     newWallet: "New wallet",
@@ -443,6 +446,11 @@ export function WazenDashboard() {
     setToast(message);
     window.setTimeout(() => setToast(""), 2800);
   };
+  const logout = async () => {
+    await apiFetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
+    router.push("/login");
+    router.refresh();
+  };
   const settleReimbursement = async (settlementId: string) => {
     const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "settleReimbursement", idempotencyKey: crypto.randomUUID(), settlementId }) });
     if (!response.ok) { flash(locale === "ar" ? "تعذر اعتماد التسوية" : "Could not settle reimbursement"); return; }
@@ -476,7 +484,7 @@ export function WazenDashboard() {
 
   return (
     <div className="app-shell">
-      <Sidebar locale={locale} active={activeView} open={sidebarOpen} onNavigate={changeView} onClose={() => setSidebarOpen(false)} />
+      <Sidebar locale={locale} active={activeView} open={sidebarOpen} onNavigate={changeView} onClose={() => setSidebarOpen(false)} onLogout={() => void logout()} />
 
       <main className="main-shell">
         <header className="topbar">
@@ -493,7 +501,7 @@ export function WazenDashboard() {
             </button>
             <button className="icon-button notification-button" aria-label="Notifications"><Bell size={19} /><i /></button>
             <button className="primary-button" onClick={() => setModal("transaction")}><Plus size={18} />{t.add}</button>
-            <div className="user-avatar" title={data.user.email}>{data.user.displayName.slice(0, 1)}</div>
+            <UserMenu locale={locale} name={data.user.displayName} email={data.user.email} onSettings={() => changeView("settings")} onLogout={() => void logout()} />
           </div>
         </header>
 
@@ -520,7 +528,7 @@ export function WazenDashboard() {
           {activeView === "groups" && <MembersView data={data} locale={locale} onInvite={() => setModal("invite")} onWithdraw={(memberId) => { setWithdrawMemberId(memberId); setModal("withdrawSurplus"); }} onOpenMember={(memberId) => { setActiveMemberId(memberId); setModal("memberDetail"); }} onSmartPay={(memberId) => { setActiveMemberId(memberId); setModal("smartPay"); }} />}
           {activeView === "transactions" && <TransactionsView data={data} locale={locale} onChanged={(next) => { setData({ ...data, ...next }); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />}
           {activeView === "reports" && <ReportsPanel data={data} locale={locale} totals={totals} />}
-          {activeView === "settings" && <SettingsView locale={locale} />}
+          {activeView === "settings" && <SettingsView locale={locale} onLogout={() => void logout()} />}
         </div>
       </main>
 
@@ -595,7 +603,38 @@ export function WazenDashboard() {
   );
 }
 
-function Sidebar({ locale, active, open, onNavigate, onClose }: { locale: Locale; active: ViewId; open: boolean; onNavigate: (id: ViewId) => void; onClose: () => void }) {
+function UserMenu({ locale, name, email, onSettings, onLogout }: { locale: Locale; name: string; email: string; onSettings: () => void; onLogout: () => void }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (event: MouseEvent) => {
+      if (root.current && !root.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+  const t = copy[locale];
+  return (
+    <div className="user-menu" ref={root}>
+      <button type="button" className="user-avatar" title={email} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        {name.slice(0, 1)}
+      </button>
+      {open && (
+        <div className="user-menu-panel" role="menu">
+          <div className="user-menu-identity">
+            <strong>{name}</strong>
+            <small>{email}</small>
+          </div>
+          <a href="/account/security" role="menuitem" onClick={() => setOpen(false)}><ShieldCheck size={16} />{locale === "ar" ? "صفحة الحساب" : "Account page"}</a>
+          <button type="button" role="menuitem" onClick={() => { setOpen(false); onSettings(); }}><Settings size={16} />{t.settings}</button>
+          <button type="button" role="menuitem" className="user-menu-logout" onClick={() => { setOpen(false); onLogout(); }}><LogOut size={16} />{t.logout}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Sidebar({ locale, active, open, onNavigate, onClose, onLogout }: { locale: Locale; active: ViewId; open: boolean; onNavigate: (id: ViewId) => void; onClose: () => void; onLogout: () => void }) {
   const t = copy[locale];
   return (
     <>
@@ -622,6 +661,7 @@ function Sidebar({ locale, active, open, onNavigate, onClose }: { locale: Locale
         </div>
         <div className="sidebar-spacer" />
         <button className={`sidebar-setting ${active === "settings" ? "active" : ""}`} onClick={() => onNavigate("settings")}><Settings size={19} /><span>{t.settings}</span></button>
+        <button type="button" className="sidebar-setting sidebar-logout" onClick={onLogout}><LogOut size={19} /><span>{t.logout}</span></button>
         <div className="security-card"><ShieldCheck size={20} /><div><strong>{locale === "ar" ? "بياناتك محمية" : "Your data is protected"}</strong><small>{locale === "ar" ? "تشفير وسجل تدقيق لكل عملية" : "Encryption and an audit trail"}</small></div></div>
       </aside>
     </>
@@ -901,12 +941,11 @@ function TransactionsView({ data, locale, onChanged }: { data: DashboardData; lo
   </div>;
 }
 
-function SettingsView({ locale }: { locale: Locale }) {
+function SettingsView({ locale, onLogout }: { locale: Locale; onLogout: () => void }) {
   const router = useRouter();
   const t = copy[locale];
-  const logout = async () => { await apiFetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "logout" }) }); router.push("/login"); router.refresh(); };
   const exportData = async () => { const response = await fetch("/api/platform?view=export", { cache: "no-store" }); if (!response.ok) return; const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "wazen-data.json"; link.click(); URL.revokeObjectURL(url); };
-  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.settings}</h2><p>{locale === "ar" ? "تحكم في الخصوصية واللغة والصلاحيات" : "Control privacy, language and permissions"}</p></div><button className="secondary-button" onClick={() => void logout()}>{locale === "ar" ? "تسجيل الخروج" : "Sign out"}</button></div><section className="settings-grid"><InfoPanel icon={<Download />} title={locale === "ar" ? "تنزيل بياناتي" : "Export my data"} text={locale === "ar" ? "نسخة JSON كاملة من محافظك وحركاتك ومستنداتك." : "A complete JSON copy of your wallets, entries and documents."} onClick={() => void exportData()} /><InfoPanel icon={<ShieldCheck />} title={locale === "ar" ? "أمان الحساب" : "Account security"} text={locale === "ar" ? "كلمة المرور والمصادقة الثنائية ومفاتيح API." : "Password, two-factor authentication and API keys."} onClick={() => router.push("/account/security")} /><InfoPanel icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} onClick={() => router.push("/privacy")} /><InfoPanel icon={<Users />} title={t.access} text={t.accessText} /><InfoPanel icon={<Globe2 />} title={locale === "ar" ? "اللغة والمنطقة" : "Language & region"} text={locale === "ar" ? "العربية، الريال العماني، والمنطقة الزمنية لمسقط." : "English, Omani rial and Muscat time zone."} /><InfoPanel icon={<Bell />} title={locale === "ar" ? "التنبيهات" : "Notifications"} text={locale === "ar" ? "تذكير قبل الاستحقاق، إشعارات الدفع وطلبات الاسترداد." : "Due reminders, payment updates and withdrawal requests."} /></section></div>;
+  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.settings}</h2><p>{locale === "ar" ? "تحكم في الخصوصية واللغة والصلاحيات" : "Control privacy, language and permissions"}</p></div><button className="secondary-button" onClick={onLogout}><LogOut size={16} />{t.logout}</button></div><section className="settings-grid"><InfoPanel icon={<Download />} title={locale === "ar" ? "تنزيل بياناتي" : "Export my data"} text={locale === "ar" ? "نسخة JSON كاملة من محافظك وحركاتك ومستنداتك." : "A complete JSON copy of your wallets, entries and documents."} onClick={() => void exportData()} /><InfoPanel icon={<ShieldCheck />} title={locale === "ar" ? "أمان الحساب" : "Account security"} text={locale === "ar" ? "كلمة المرور والمصادقة الثنائية ومفاتيح API." : "Password, two-factor authentication and API keys."} onClick={() => router.push("/account/security")} /><InfoPanel icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} onClick={() => router.push("/privacy")} /><InfoPanel icon={<Users />} title={t.access} text={t.accessText} /><InfoPanel icon={<Globe2 />} title={locale === "ar" ? "اللغة والمنطقة" : "Language & region"} text={locale === "ar" ? "العربية، الريال العماني، والمنطقة الزمنية لمسقط." : "English, Omani rial and Muscat time zone."} /><InfoPanel icon={<Bell />} title={locale === "ar" ? "التنبيهات" : "Notifications"} text={locale === "ar" ? "تذكير قبل الاستحقاق، إشعارات الدفع وطلبات الاسترداد." : "Due reminders, payment updates and withdrawal requests."} /></section></div>;
 }
 
 function InfoPanel({ icon, title, text, onClick }: { icon: ReactNode; title: string; text: string; onClick?: () => void }) {
