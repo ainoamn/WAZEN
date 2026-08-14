@@ -80,6 +80,19 @@ async function initializeSchema(db: D1Database) {
       avatar TEXT NOT NULL DEFAULT '#0f766e',
       joined_at TEXT NOT NULL
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS member_installments (
+      id TEXT PRIMARY KEY,
+      member_id TEXT NOT NULL,
+      space_id TEXT NOT NULL,
+      period_index INTEGER NOT NULL,
+      period_key TEXT NOT NULL,
+      due_at TEXT NOT NULL,
+      amount_minor INTEGER NOT NULL,
+      paid_minor INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'unpaid',
+      created_at TEXT NOT NULL,
+      UNIQUE(member_id, period_index)
+    )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS contribution_plans (
       id TEXT PRIMARY KEY,
       space_id TEXT NOT NULL,
@@ -453,6 +466,8 @@ async function initializeSchema(db: D1Database) {
     db.prepare("CREATE INDEX IF NOT EXISTS idx_trip_expenses_space ON trip_expenses(space_id,occurred_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_spaces_owner_user_id ON spaces(owner_user_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_members_space_id ON members(space_id)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_member_installments_member ON member_installments(member_id, period_index)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_member_installments_space ON member_installments(space_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_transactions_space_date ON transactions(space_id, occurred_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_subscriptions_user_status ON subscriptions(user_id, status)"),
@@ -463,6 +478,14 @@ async function initializeSchema(db: D1Database) {
     db.prepare("CREATE INDEX IF NOT EXISTS idx_tenant_memberships_user ON tenant_memberships(user_id,status)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id,revoked_at)"),
   ]);
+  const memberColumns = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
+  if (!memberColumns.results.some((column) => column.name === "phone")) {
+    try { await db.prepare("ALTER TABLE members ADD COLUMN phone TEXT").run(); }
+    catch (error) {
+      const refreshed = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
+      if (!refreshed.results.some((column) => column.name === "phone")) throw error;
+    }
+  }
   const contributionColumns = await db.prepare("PRAGMA table_info(contribution_plans)").all<{ name: string }>();
   if (!contributionColumns.results.some((column) => column.name === "duration_months")) {
     try {
@@ -476,6 +499,18 @@ async function initializeSchema(db: D1Database) {
   if (!sessionColumns.results.some((column) => column.name === "csrf_token_hash")) {
     try { await db.prepare("ALTER TABLE auth_sessions ADD COLUMN csrf_token_hash TEXT").run(); }
     catch (error) { const refreshed = await db.prepare("PRAGMA table_info(auth_sessions)").all<{ name: string }>(); if (!refreshed.results.some((column) => column.name === "csrf_token_hash")) throw error; }
+  }
+  const tripExpenseColumns = await db.prepare("PRAGMA table_info(trip_expenses)").all<{ name: string }>();
+  const tripExpenseNames = new Set(tripExpenseColumns.results.map((column) => column.name));
+  if (!tripExpenseNames.has("transaction_id")) {
+    try { await db.prepare("ALTER TABLE trip_expenses ADD COLUMN transaction_id TEXT").run(); } catch { /* exists */ }
+  }
+  if (!tripExpenseNames.has("status")) {
+    try { await db.prepare("ALTER TABLE trip_expenses ADD COLUMN status TEXT NOT NULL DEFAULT 'posted'").run(); } catch { /* exists */ }
+  }
+  const settlementColumns = await db.prepare("PRAGMA table_info(settlements)").all<{ name: string }>();
+  if (!settlementColumns.results.some((column) => column.name === "expense_id")) {
+    try { await db.prepare("ALTER TABLE settlements ADD COLUMN expense_id TEXT").run(); } catch { /* exists */ }
   }
   const { ensureSubscriptionAdminColumns, ensurePaymentGateways } = await import("../services/admin/billing-service");
   await ensureSubscriptionAdminColumns(db);

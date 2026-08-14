@@ -251,6 +251,24 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .secondary-button.compact { min-height: 34px; padding: 0 12px; font-size: 13px; }
 .table-head { min-height: 40px; padding: 0 12px; background: #f5f7f4; border-radius: 9px; color: #86918d; font-size: 12px; font-weight: 700; }
 .member-row { min-height: 66px; padding: 0 10px; border-bottom: 1px solid #eef1ee; }
+.member-row-button { width: 100%; border: 0; background: transparent; text-align: inherit; cursor: pointer; color: inherit; font: inherit; }
+.member-row-button:hover { background: #f6faf8; }
+.section-title-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.wide-modal { width: min(720px, 100%); }
+.member-detail-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.member-detail-meta.compact { grid-template-columns: 1fr 1fr; }
+.member-detail-meta div { border: 1px solid #e5ebe7; border-radius: 12px; padding: 10px 12px; background: #fbfcfb; }
+.member-detail-meta span { display: block; color: #809089; font-size: 12px; }
+.member-detail-meta b { font-size: 14px; }
+.month-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.month-chip { border: 1px solid #e5ebe7; border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 4px; background: white; text-align: start; }
+.month-chip.paid { border-color: #9ad7c6; background: #f1fbf7; }
+.month-chip.unpaid { border-color: #f0d3b0; background: #fff8f0; }
+.month-chip.partial { border-color: #c9d4ef; background: #f4f6ff; }
+.month-chip.selected { border-color: var(--green); box-shadow: 0 0 0 2px rgba(13,122,101,.15); }
+.month-chip small, .month-chip em { color: #809089; font-size: 11px; font-style: normal; }
+.month-grid.selectable .month-chip { cursor: pointer; }
+.receipt-channel-grid { display: grid; gap: 8px; }
 .member-row > strong { font-size: 14px; direction: ltr; justify-self: start; }
 .member-name { display: flex; align-items: center; gap: 10px; }.member-name i { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: white; font-style: normal; font-size: 13px; font-weight: 700; }.member-name div { display: flex; flex-direction: column; gap: 4px; }.member-name strong { font-size: 14px; }.member-name span { color: #8a9590; font-size: 12px; }
 .status-pill { width: max-content; min-height: 28px; display: inline-flex; align-items: center; gap: 5px; padding: 0 10px; border-radius: 8px; font-size: 12px; font-weight: 700; }.status-pill.complete { color: var(--green); background: var(--green-soft); }.status-pill.pending { color: #b27120; background: var(--amber-soft); }

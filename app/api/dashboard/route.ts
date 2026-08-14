@@ -6,6 +6,8 @@ import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWr
 import { assertApiScope, authorizeSpace, ensureDefaultTenant } from "../../../lib/authorization";
 import { prepareAudit } from "../../../lib/audit";
 import { multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
+import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, type InstallmentLike } from "../../../lib/installments";
+import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
 
 type SpaceRow = {
   id: string;
@@ -31,9 +33,12 @@ type MemberRow = {
   due_minor: number;
   paid_minor: number;
   extra_minor: number;
+  phone?: string | null;
   avatar: string;
   joined_at: string;
 };
+
+type InstallmentRow = InstallmentLike & { member_id: string; space_id: string; due_at: string };
 
 type TransactionRow = {
   id: string;
@@ -198,7 +203,23 @@ async function reconcileMemberLedgers(db: D1Database, spaceIds: string[]) {
 
 function transactionBalanceDelta(kind: string, allocation: string, amountMinor: number) {
   if (allocation === "personal_reserve") return 0;
-  return ["income", "contribution"].includes(kind) ? amountMinor : -amountMinor;
+  if (["income", "contribution"].includes(kind)) return amountMinor;
+  if (kind === "expense") return -amountMinor;
+  return 0;
+}
+
+async function rebuildSpaceBalance(db: D1Database, spaceIds: string[]) {
+  if (!spaceIds.length) return;
+  for (const spaceId of spaceIds) {
+    const row = await db.prepare(`SELECT COALESCE(SUM(CASE
+      WHEN allocation = 'personal_reserve' THEN 0
+      WHEN kind IN ('income','contribution') THEN amount_minor
+      WHEN kind = 'expense' THEN -amount_minor
+      ELSE 0
+    END), 0) AS balance FROM transactions WHERE space_id=? AND status='approved'`).bind(spaceId).first<{ balance: number }>();
+    const next = Math.max(0, Number(row?.balance ?? 0));
+    await db.prepare("UPDATE spaces SET balance_minor=? WHERE id=?").bind(next, spaceId).run();
+  }
 }
 
 async function voidApprovedTransaction(
@@ -217,15 +238,9 @@ async function voidApprovedTransaction(
   if (txn.status === "voided") throw new ApiError(409, "ALREADY_VOIDED");
   if (txn.status !== "approved") throw new ApiError(409, "TRANSACTION_NOT_EDITABLE");
   const amountMinor = Number(txn.amount_minor);
-  const balanceDelta = -transactionBalanceDelta(txn.kind, txn.allocation, amountMinor);
-  if (balanceDelta < 0) {
-    const space = await db.prepare("SELECT balance_minor FROM spaces WHERE id=?").bind(txn.space_id).first<{ balance_minor: number }>();
-    if (Number(space?.balance_minor ?? 0) + balanceDelta < 0) throw new ApiError(409, "INSUFFICIENT_FUNDS");
-  }
   const createdAt = now();
   await db.batch([
     db.prepare("UPDATE transactions SET status='voided' WHERE id=? AND status='approved'").bind(txn.id),
-    db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id = ?").bind(balanceDelta, txn.space_id),
     prepareAudit(db, {
       userId: actorUserId,
       action: "transaction.voided",
@@ -235,20 +250,82 @@ async function voidApprovedTransaction(
       createdAt,
     }),
   ]);
+  await db.prepare("UPDATE trip_expenses SET status='voided' WHERE transaction_id=? AND COALESCE(status,'posted')<>'voided'").bind(txn.id).run();
+  await rebuildSpaceBalance(db, [txn.space_id]);
   await reconcileMemberLedgers(db, [txn.space_id]);
+}
+
+async function installmentInsertStatements(
+  db: D1Database,
+  member: { id: string; space_id: string; paid_minor: number },
+  plan: { amount_minor: number; duration_months: number; starts_at?: string } | null,
+  createdAt: string,
+) {
+  if (!plan || Number(plan.amount_minor) <= 0) return [];
+  const schedule = buildInstallmentSchedule({
+    memberId: member.id,
+    spaceId: member.space_id,
+    startAt: plan.starts_at || createdAt,
+    durationMonths: Number(plan.duration_months) || 12,
+    amountMinor: Number(plan.amount_minor),
+    paidMinor: Number(member.paid_minor),
+  });
+  return schedule.rows.map((row) =>
+    db.prepare("INSERT OR IGNORE INTO member_installments (id,member_id,space_id,period_index,period_key,due_at,amount_minor,paid_minor,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
+      .bind(row.id, member.id, member.space_id, row.period_index, row.period_key, row.due_at, row.amount_minor, row.paid_minor, row.status, createdAt),
+  );
+}
+
+async function paymentInstallmentStatements(
+  db: D1Database,
+  member: { id: string; space_id: string; paid_minor: number },
+  plan: { amount_minor: number; duration_months: number; starts_at?: string } | null,
+  paymentMinor: number,
+  createdAt: string,
+  selectedIds?: string[],
+) {
+  const existing = await db.prepare("SELECT * FROM member_installments WHERE member_id=? ORDER BY period_index").bind(member.id).all<InstallmentRow>();
+  const statements: ReturnType<D1Database["prepare"]>[] = [];
+  let rows: InstallmentLike[] = existing.results;
+  if (!rows.length) {
+    statements.push(...await installmentInsertStatements(db, member, plan, createdAt));
+    if (plan && Number(plan.amount_minor) > 0) {
+      rows = buildInstallmentSchedule({
+        memberId: member.id,
+        spaceId: member.space_id,
+        startAt: plan.starts_at || createdAt,
+        durationMonths: Number(plan.duration_months) || 12,
+        amountMinor: Number(plan.amount_minor),
+        paidMinor: Number(member.paid_minor),
+      }).rows;
+    }
+  }
+  if (!rows.length) return { statements, allocated: { allocations: [] as ReturnType<typeof allocateOldestFirst>["allocations"], appliedMinor: 0, leftoverMinor: paymentMinor } };
+  const allocated = allocateOldestFirst(rows, paymentMinor, selectedIds);
+  for (const item of allocated.allocations) {
+    const row = rows.find((entry) => entry.id === item.installmentId);
+    if (!row) continue;
+    const paid = Number(row.paid_minor) + item.amountMinor;
+    statements.push(db.prepare("UPDATE member_installments SET paid_minor=?, status=? WHERE id=?").bind(paid, installmentStatus(Number(row.amount_minor), paid), item.installmentId));
+  }
+  return { statements, allocated };
 }
 
 async function loadDashboard(db: D1Database, userId: string) {
   const spaces = await db
-    .prepare(`SELECT DISTINCT s.* FROM spaces s LEFT JOIN members m ON m.space_id=s.id AND m.status='active'
-      WHERE s.owner_user_id=? OR m.user_id=? ORDER BY s.created_at ASC`)
+    .prepare(`SELECT s.* FROM spaces s
+      WHERE s.owner_user_id=? OR EXISTS (
+        SELECT 1 FROM members m WHERE m.space_id=s.id AND m.status='active' AND m.user_id=?
+      )
+      ORDER BY s.created_at ASC`)
     .bind(userId, userId)
     .all<SpaceRow>();
   const ids = spaces.results.map((space) => space.id);
-  if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [] };
+  if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [] };
 
-  // Reconcile only on writes — running it on every GET made the dashboard feel slow.
+  await rebuildSpaceBalance(db, ids);
   const placeholders = ids.map(() => "?").join(",");
+  const refreshedSpaces = await db.prepare(`SELECT * FROM spaces WHERE id IN (${placeholders}) ORDER BY created_at ASC`).bind(...ids).all<SpaceRow>();
   const members = await db
     .prepare(`SELECT * FROM members WHERE space_id IN (${placeholders}) ORDER BY joined_at ASC`)
     .bind(...ids)
@@ -264,19 +341,20 @@ async function loadDashboard(db: D1Database, userId: string) {
   const circleTurns = await db.prepare(`SELECT ct.*,m.display_name FROM circle_turns ct JOIN members m ON m.id=ct.member_id
     WHERE ct.space_id IN (${placeholders}) ORDER BY ct.space_id,ct.turn_number`).bind(...ids).all();
   const tripExpenses = await db.prepare(`SELECT te.*,m.display_name AS paid_by_name FROM trip_expenses te JOIN members m ON m.id=te.paid_by_member_id
-    WHERE te.space_id IN (${placeholders}) ORDER BY te.occurred_at DESC LIMIT 50`).bind(...ids).all();
+    WHERE te.space_id IN (${placeholders}) AND COALESCE(te.status,'posted')<>'voided' ORDER BY te.occurred_at DESC LIMIT 50`).bind(...ids).all();
   const expenseSplits = await db.prepare(`SELECT es.*,m.display_name FROM expense_splits es JOIN trip_expenses te ON te.id=es.expense_id
-    JOIN members m ON m.id=es.member_id WHERE te.space_id IN (${placeholders}) ORDER BY es.expense_id,m.joined_at`).bind(...ids).all();
+    JOIN members m ON m.id=es.member_id WHERE te.space_id IN (${placeholders}) AND COALESCE(te.status,'posted')<>'voided' ORDER BY es.expense_id,m.joined_at`).bind(...ids).all();
   const settlements = await db.prepare(`SELECT s.*,
       tm.display_name AS to_member_name,
       fm.display_name AS from_member_name
     FROM settlements s
     LEFT JOIN members tm ON tm.id=s.to_member_id
     LEFT JOIN members fm ON fm.id=s.from_member_id
-    WHERE s.space_id IN (${placeholders}) ORDER BY s.created_at DESC LIMIT 50`).bind(...ids).all();
+    WHERE s.space_id IN (${placeholders}) AND s.status='pending' ORDER BY s.created_at DESC LIMIT 50`).bind(...ids).all();
+  const installments = await db.prepare(`SELECT * FROM member_installments WHERE space_id IN (${placeholders}) ORDER BY member_id, period_index`).bind(...ids).all();
 
   return {
-    spaces: spaces.results,
+    spaces: refreshedSpaces.results,
     members: members.results,
     transactions: transactions.results,
     plans: plans.results,
@@ -284,6 +362,7 @@ async function loadDashboard(db: D1Database, userId: string) {
     tripExpenses: tripExpenses.results,
     expenseSplits: expenseSplits.results,
     settlements: settlements.results,
+    installments: installments.results,
   };
 }
 
@@ -306,6 +385,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   let claimed: { db: D1Database; userId: string; key: string } | null = null;
+  let notification: { emailQueued: boolean; whatsappUrl: string | null; transactionId: string } | undefined;
   try {
     enforceWriteRequest(request);
     const db = getRawDb();
@@ -365,18 +445,41 @@ export async function POST(request: Request) {
       }
       await db.batch(statements);
     } else if (action === "addMember") {
-      const parsed = z.object({ spaceId: z.string().min(1).max(120), displayName: z.string().trim().min(2).max(80), email: z.union([z.email().max(254), z.literal("")]).optional(), role: z.enum(["member", "treasurer", "manager", "auditor", "viewer"]).default("member") }).safeParse(payload);
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        displayName: z.string().trim().min(2).max(80),
+        email: z.union([z.email().max(254), z.literal("")]).optional(),
+        phone: z.string().trim().max(20).optional(),
+        role: z.enum(["member", "treasurer", "manager", "auditor", "viewer"]).default("member"),
+        monthlyContribution: z.union([z.string(), z.number()]).optional(),
+        durationMonths: z.coerce.number().int().min(1).max(120).optional(),
+      }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_MEMBER");
+      if (parsed.data.phone && !isLikelyPhone(parsed.data.phone)) throw new ApiError(400, "INVALID_PHONE");
       await authorizeSpace(db, user, parsed.data.spaceId, "members:write", ["household", "trip", "society", "group"]);
       const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
       const entitlements = await getActivePlanEntitlements(db, user.id);
+      const platformRole = await db.prepare("SELECT role FROM platform_roles WHERE user_id=?").bind(user.id).first<{ role: string }>();
+      const isPlatformAdmin = ["super_admin", "admin"].includes(platformRole?.role ?? "");
       const count = await db.prepare("SELECT COUNT(*) AS count FROM members WHERE space_id=? AND status='active'").bind(parsed.data.spaceId).first<{ count: number }>();
-      if (Number(count?.count ?? 0) >= entitlements.memberLimit) throw new ApiError(403, "PLAN_MEMBER_LIMIT");
-      const contribution = await db.prepare("SELECT amount_minor,duration_months FROM contribution_plans WHERE space_id=? LIMIT 1").bind(parsed.data.spaceId).first<{ amount_minor: number; duration_months: number }>();
-      const memberId = crypto.randomUUID(); const createdAt = now(); const dueMinor = multiplyMinor(Number(contribution?.amount_minor ?? 0), Number(contribution?.duration_months ?? 0));
+      const memberLimit = isPlatformAdmin ? Math.max(entitlements.memberLimit, 200) : entitlements.memberLimit;
+      if (Number(count?.count ?? 0) >= memberLimit) throw new ApiError(403, "PLAN_MEMBER_LIMIT");
+      const space = await db.prepare("SELECT currency FROM spaces WHERE id=?").bind(parsed.data.spaceId).first<{ currency: string }>();
+      const currency = space?.currency ?? "OMR";
+      const contribution = await db.prepare("SELECT amount_minor,duration_months,starts_at FROM contribution_plans WHERE space_id=? LIMIT 1").bind(parsed.data.spaceId).first<{ amount_minor: number; duration_months: number; starts_at: string }>();
+      let monthlyMinor = Number(contribution?.amount_minor ?? 0);
+      if (parsed.data.monthlyContribution !== undefined && parsed.data.monthlyContribution !== "") {
+        try { monthlyMinor = parseMoneyToMinor(parsed.data.monthlyContribution, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      }
+      const durationMonths = parsed.data.durationMonths ?? Number(contribution?.duration_months ?? 12);
+      const memberId = crypto.randomUUID(); const createdAt = now();
+      const dueMinor = multiplyMinor(monthlyMinor, durationMonths);
+      const phone = parsed.data.phone?.trim() || null;
+      const planForMember = { amount_minor: monthlyMinor, duration_months: durationMonths, starts_at: contribution?.starts_at || createdAt };
       await db.batch([
-        db.prepare("INSERT INTO members (id,space_id,user_id,display_name,email,role,status,due_minor,paid_minor,extra_minor,avatar,joined_at) VALUES (?,?,NULL,?,?,?,'active',?,0,0,'#0f766e',?)").bind(memberId, parsed.data.spaceId, parsed.data.displayName, parsed.data.email || null, parsed.data.role, dueMinor, createdAt),
-        prepareAudit(db, { userId: user.id, action: "member.created", entityType: "member", entityId: memberId, metadata: { spaceId: parsed.data.spaceId, role: parsed.data.role }, createdAt }),
+        db.prepare("INSERT INTO members (id,space_id,user_id,display_name,email,phone,role,status,due_minor,paid_minor,extra_minor,avatar,joined_at) VALUES (?,?,NULL,?,?,?,?,'active',?,0,0,'#0f766e',?)").bind(memberId, parsed.data.spaceId, parsed.data.displayName, parsed.data.email || null, phone, parsed.data.role, dueMinor, createdAt),
+        ...await installmentInsertStatements(db, { id: memberId, space_id: parsed.data.spaceId, paid_minor: 0 }, planForMember, createdAt),
+        prepareAudit(db, { userId: user.id, action: "member.created", entityType: "member", entityId: memberId, metadata: { spaceId: parsed.data.spaceId, role: parsed.data.role, durationMonths, monthlyMinor }, createdAt }),
       ]);
     } else if (action === "addTransaction") {
       const parsed = z.object({ spaceId: z.string().min(1).max(120), kind: z.enum(["expense", "income", "contribution", "reimbursement"]), allocation: z.enum(["general", "mandatory", "personal_reserve"]), description: z.string().trim().min(2).max(300), amount: z.union([z.string(),z.number()]), memberId: z.string().max(120).optional(), occurredAt: z.iso.datetime().optional() }).safeParse(payload);
@@ -404,9 +507,9 @@ export async function POST(request: Request) {
         && ["household", "trip", "society", "group"].includes(space.type)
       ) {
         const remainingDueMinor = Math.max(0, Number(member.due_minor) - Number(member.paid_minor));
-        const plan = await db.prepare("SELECT amount_minor FROM contribution_plans WHERE space_id=? ORDER BY starts_at LIMIT 1")
+        const plan = await db.prepare("SELECT amount_minor,duration_months,starts_at FROM contribution_plans WHERE space_id=? ORDER BY starts_at LIMIT 1")
           .bind(spaceId)
-          .first<{ amount_minor: number }>();
+          .first<{ amount_minor: number; duration_months: number; starts_at: string }>();
         const monthlyPlanMinor = Number(plan?.amount_minor ?? remainingDueMinor);
         let split;
         try {
@@ -421,6 +524,8 @@ export async function POST(request: Request) {
         const occurredAt = parsed.data.occurredAt ?? createdAt;
         const statements: D1PreparedStatement[] = [];
         if (split.mandatoryMinor > 0) {
+          const installmentWork = await paymentInstallmentStatements(db, member, plan, split.mandatoryMinor, createdAt);
+          statements.push(...installmentWork.statements);
           const transactionId = crypto.randomUUID();
           const entryId = crypto.randomUUID();
           const lineDescription = `${description} · سداد مطالبة`;
@@ -685,8 +790,8 @@ export async function POST(request: Request) {
       const createdAt = now();
       const occurredAt = parsed.data.occurredAt ?? createdAt;
       const statements: D1PreparedStatement[] = [
-        db.prepare("INSERT INTO trip_expenses (id,space_id,paid_by_member_id,amount_minor,description,occurred_at,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)")
-          .bind(expenseId, parsed.data.spaceId, paidByMemberId, amountMinor, parsed.data.description, occurredAt, user.id, createdAt),
+        db.prepare("INSERT INTO trip_expenses (id,space_id,paid_by_member_id,amount_minor,description,occurred_at,created_by,created_at,transaction_id,status) VALUES (?,?,?,?,?,?,?,?,?,'posted')")
+          .bind(expenseId, parsed.data.spaceId, paidByMemberId, amountMinor, parsed.data.description, occurredAt, user.id, createdAt, transactionId),
       ];
       if (paidFrom === "common_fund") {
         // Paid from group wallet: reduce common fund. Splits remain for له/عليه reporting only.
@@ -720,8 +825,8 @@ export async function POST(request: Request) {
         });
         minimizeSettlements(balances).forEach((settlement) => {
           statements.push(
-            db.prepare("INSERT INTO settlements (id,space_id,from_member_id,to_member_id,amount_minor,status,created_at) VALUES (?,?,?,?,?,'pending',?)")
-              .bind(crypto.randomUUID(), parsed.data.spaceId, settlement.fromMemberId, settlement.toMemberId, settlement.amountMinor, createdAt),
+            db.prepare("INSERT INTO settlements (id,space_id,from_member_id,to_member_id,amount_minor,status,created_at,expense_id) VALUES (?,?,?,?,?,'pending',?,?)")
+              .bind(crypto.randomUUID(), parsed.data.spaceId, settlement.fromMemberId, settlement.toMemberId, settlement.amountMinor, createdAt, expenseId),
           );
         });
       }
@@ -735,6 +840,37 @@ export async function POST(request: Request) {
         createdAt,
       }));
       await db.batch(statements);
+      await rebuildSpaceBalance(db, [parsed.data.spaceId]);
+    } else if (action === "voidTripExpense") {
+      const parsed = z.object({ expenseId: z.string().min(1).max(120) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_TRIP_EXPENSE");
+      const expense = await db.prepare("SELECT * FROM trip_expenses WHERE id=?").bind(parsed.data.expenseId)
+        .first<{ id: string; space_id: string; transaction_id?: string | null; description: string; amount_minor: number; created_at: string; paid_by_member_id: string }>();
+      if (!expense) throw new ApiError(404, "EXPENSE_NOT_FOUND");
+      await authorizeSpace(db, user, expense.space_id, "transact", ["household", "trip", "society", "group"]);
+      const linkedTxn = expense.transaction_id
+        ? await db.prepare("SELECT * FROM transactions WHERE id=?").bind(expense.transaction_id).first<TransactionRow>()
+        : await db.prepare("SELECT * FROM transactions WHERE space_id=? AND description_ar=? AND amount_minor=? AND status='approved' ORDER BY occurred_at DESC LIMIT 1")
+          .bind(expense.space_id, expense.description, expense.amount_minor).first<TransactionRow>();
+      if (linkedTxn && linkedTxn.status === "approved") {
+        await voidApprovedTransaction(db, linkedTxn, user.id);
+      }
+      await db.batch([
+        db.prepare("UPDATE trip_expenses SET status='voided' WHERE id=?").bind(expense.id),
+        db.prepare("UPDATE settlements SET status='voided' WHERE expense_id=? AND status='pending'").bind(expense.id),
+        db.prepare("UPDATE settlements SET status='voided' WHERE space_id=? AND status='pending' AND created_at=? AND expense_id IS NULL").bind(expense.space_id, expense.created_at),
+        prepareAudit(db, { userId: user.id, action: "trip.expense_voided", entityType: "trip_expense", entityId: expense.id, metadata: { spaceId: expense.space_id }, createdAt: now() }),
+      ]);
+      await rebuildSpaceBalance(db, [expense.space_id]);
+    } else if (action === "voidSettlement") {
+      const parsed = z.object({ settlementId: z.string().min(1).max(120) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_SETTLEMENT");
+      const settlement = await db.prepare("SELECT id,space_id,status FROM settlements WHERE id=?").bind(parsed.data.settlementId)
+        .first<{ id: string; space_id: string; status: string }>();
+      if (!settlement) throw new ApiError(404, "SETTLEMENT_NOT_FOUND");
+      if (settlement.status !== "pending") throw new ApiError(409, "SETTLEMENT_NOT_PENDING");
+      await authorizeSpace(db, user, settlement.space_id, "settlements:write", ["household", "trip", "society", "group"]);
+      await db.prepare("UPDATE settlements SET status='voided' WHERE id=? AND status='pending'").bind(settlement.id).run();
     } else if (action === "recordContributionPayment") {
       // Foundation rule: cash received = mandatory (common fund) + surplus (policy).
       const parsed = z.object({
@@ -894,9 +1030,111 @@ export async function POST(request: Request) {
           createdAt,
         }),
       ]);
+    } else if (action === "smartPay") {
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        memberId: z.string().min(1).max(120),
+        amount: z.union([z.string(), z.number()]),
+        selectedIds: z.array(z.string().min(1).max(160)).max(120).optional(),
+        description: z.string().trim().max(300).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_SMART_PAY");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["household", "trip", "society", "group"]);
+      const member = await db.prepare("SELECT id,space_id,display_name,due_minor,paid_minor,extra_minor FROM members WHERE id=? AND space_id=? AND status='active'")
+        .bind(parsed.data.memberId, parsed.data.spaceId)
+        .first<{ id: string; space_id: string; display_name: string; due_minor: number; paid_minor: number; extra_minor: number }>();
+      if (!member) throw new ApiError(400, "INVALID_MEMBER");
+      let amountMinor: number;
+      try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      const plan = await db.prepare("SELECT amount_minor,duration_months,starts_at FROM contribution_plans WHERE space_id=? ORDER BY starts_at LIMIT 1")
+        .bind(parsed.data.spaceId)
+        .first<{ amount_minor: number; duration_months: number; starts_at: string }>();
+      const remainingDueMinor = Math.max(0, Number(member.due_minor) - Number(member.paid_minor));
+      let split;
+      try {
+        split = splitContributionPayment(amountMinor, Number(plan?.amount_minor ?? remainingDueMinor), { remainingDueMinor, extraPolicy: "advance_credit" });
+      } catch {
+        throw new ApiError(400, "INVALID_CONTRIBUTION_SPLIT");
+      }
+      const createdAt = now();
+      const description = parsed.data.description?.trim() || `محاسب ذكي · ${member.display_name}`;
+      const statements: D1PreparedStatement[] = [];
+      let lastTransactionId = "";
+      if (split.mandatoryMinor > 0) {
+        const installmentWork = await paymentInstallmentStatements(db, member, plan, split.mandatoryMinor, createdAt, parsed.data.selectedIds);
+        const applied = installmentWork.allocated.appliedMinor || split.mandatoryMinor;
+        const transactionId = crypto.randomUUID();
+        lastTransactionId = transactionId;
+        const entryId = crypto.randomUUID();
+        const months = installmentWork.allocated.allocations.map((item) => item.periodKey).join(", ");
+        const lineDescription = `${description} · سداد ${months || "مطالبات"}`;
+        statements.push(
+          ...installmentWork.statements,
+          db.prepare("INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)")
+            .bind(transactionId, parsed.data.spaceId, user.id, member.id, "contribution", "mandatory", applied, lineDescription, lineDescription, createdAt, createdAt),
+          db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id = ?").bind(applied, parsed.data.spaceId),
+          db.prepare("UPDATE members SET paid_minor = paid_minor + ? WHERE id = ? AND space_id = ?").bind(applied, member.id, parsed.data.spaceId),
+          db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+            .bind(entryId, parsed.data.spaceId, transactionId, user.id, lineDescription, createdAt, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "asset:cash", member.id, applied, 0, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "income:contribution", member.id, 0, applied, createdAt),
+        );
+      }
+      if (split.surplusMinor > 0) {
+        const transactionId = crypto.randomUUID();
+        lastTransactionId = lastTransactionId || transactionId;
+        const entryId = crypto.randomUUID();
+        const lineDescription = `${description} · مقدّم`;
+        statements.push(
+          db.prepare("INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)")
+            .bind(transactionId, parsed.data.spaceId, user.id, member.id, "contribution", "advance", split.surplusMinor, lineDescription, lineDescription, createdAt, createdAt),
+          db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id = ?").bind(split.surplusMinor, parsed.data.spaceId),
+          db.prepare("UPDATE members SET extra_minor = extra_minor + ? WHERE id = ? AND space_id = ?").bind(split.surplusMinor, member.id, parsed.data.spaceId),
+          db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+            .bind(entryId, parsed.data.spaceId, transactionId, user.id, lineDescription, createdAt, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "asset:cash", member.id, split.surplusMinor, 0, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), entryId, "liability:advance", member.id, 0, split.surplusMinor, createdAt),
+        );
+      }
+      if (!statements.length) throw new ApiError(400, "EMPTY_PAYMENT");
+      statements.push(prepareAudit(db, { userId: user.id, action: "smart_pay.applied", entityType: "member", entityId: member.id, metadata: { spaceId: parsed.data.spaceId, amountMinor, lastTransactionId }, createdAt }));
+      await db.batch(statements);
+    } else if (action === "sendReceipt") {
+      const parsed = z.object({
+        memberId: z.string().min(1).max(120),
+        transactionId: z.string().min(1).max(120).optional(),
+        channel: z.enum(["email", "whatsapp", "both"]),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_RECEIPT");
+      const member = await db.prepare("SELECT * FROM members WHERE id=? AND status='active'").bind(parsed.data.memberId).first<MemberRow>();
+      if (!member) throw new ApiError(404, "MEMBER_NOT_FOUND");
+      await authorizeSpace(db, user, member.space_id, "read");
+      const txn = parsed.data.transactionId
+        ? await db.prepare("SELECT * FROM transactions WHERE id=? AND member_id=?").bind(parsed.data.transactionId, member.id).first<TransactionRow>()
+        : await db.prepare("SELECT * FROM transactions WHERE member_id=? AND status<>'voided' ORDER BY occurred_at DESC LIMIT 1").bind(member.id).first<TransactionRow>();
+      if (!txn) throw new ApiError(404, "RECEIPT_NOT_FOUND");
+      const space = await db.prepare("SELECT name_ar,name_en,currency FROM spaces WHERE id=?").bind(member.space_id).first<{ name_ar: string; name_en: string; currency: string }>();
+      const createdAt = now();
+      const message = `إيصال وازن\nالمساهم: ${member.display_name}\nالجمعية: ${space?.name_ar ?? ""}\nالمبلغ: ${(txn.amount_minor / 1000).toFixed(3)} ${space?.currency ?? "OMR"}\nالبيان: ${txn.description_ar}\nالمرجع: ${txn.id.slice(0, 8).toUpperCase()}`;
+      if (parsed.data.channel === "email" || parsed.data.channel === "both") {
+        if (!member.email) throw new ApiError(400, "MEMBER_EMAIL_MISSING");
+        await db.prepare("INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)")
+          .bind(crypto.randomUUID(), member.email, "member_receipt", JSON.stringify({ displayName: member.display_name, message, html: message.replaceAll("\n", "<br/>"), transactionId: txn.id }), createdAt).run();
+      }
+      const whatsappNumber = member.phone ? toWhatsAppNumber(member.phone) : "";
+      if ((parsed.data.channel === "whatsapp" || parsed.data.channel === "both") && !whatsappNumber) throw new ApiError(400, "MEMBER_PHONE_MISSING");
+      notification = {
+        emailQueued: parsed.data.channel !== "whatsapp",
+        whatsappUrl: whatsappNumber ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}` : null,
+        transactionId: txn.id,
+      };
     } else throw new ApiError(400, "UNSUPPORTED_ACTION");
 
-    const response = { ok: true, ...(await loadDashboard(db, user.id)) };
+    const response = { ok: true, ...(await loadDashboard(db, user.id)), ...(notification ? { notification } : {}) };
     await completeIdempotency(db, user.id, idempotencyKey, response);
     claimed = null;
     return Response.json(response, { headers: { "Cache-Control": "no-store" } });

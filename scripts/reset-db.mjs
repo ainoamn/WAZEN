@@ -26,7 +26,7 @@ const DELETE_ORDER = [
   "data_requests", "audit_logs", "coupon_redemptions", "payments", "invoices",
   "subscriptions", "expense_splits", "trip_expenses", "settlements",
   "journal_lines", "journal_entries", "circle_turns", "circle_configs",
-  "transactions", "contribution_plans", "documents", "document_sequences", "invites",
+  "transactions", "contribution_plans", "member_installments", "documents", "document_sequences", "invites",
   "tenant_resources", "payment_provider_settings", "tenant_memberships",
   "members", "spaces", "customer_profiles", "platform_roles", "auth_credentials",
   "tenants", "users", "coupons",

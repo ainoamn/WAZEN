@@ -33,6 +33,7 @@ export const members = sqliteTable("members", {
   dueMinor: integer("due_minor").notNull().default(0),
   paidMinor: integer("paid_minor").notNull().default(0),
   extraMinor: integer("extra_minor").notNull().default(0),
+  phone: text("phone"),
   avatar: text("avatar").notNull().default("#0f766e"),
   joinedAt: text("joined_at").notNull(),
 });
