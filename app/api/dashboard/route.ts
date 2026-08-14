@@ -21,6 +21,8 @@ type SpaceRow = {
   goal_minor: number;
   accent: string;
   created_at: string;
+  starts_at?: string | null;
+  status?: string;
 };
 
 type MemberRow = {
@@ -548,6 +550,30 @@ async function rebuildTripExpenseShares(
   await rebuildSpaceBalance(db, [expense.space_id]);
 }
 
+async function deleteSpaceCascade(db: D1Database, spaceId: string, userId: string) {
+  const createdAt = now();
+  await db.batch([
+    db.prepare("DELETE FROM journal_lines WHERE entry_id IN (SELECT id FROM journal_entries WHERE space_id=?)").bind(spaceId),
+    db.prepare("DELETE FROM journal_entries WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM expense_splits WHERE expense_id IN (SELECT id FROM trip_expenses WHERE space_id=?)").bind(spaceId),
+    db.prepare("DELETE FROM settlements WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM trip_expenses WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM transactions WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM circle_turns WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM circle_configs WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM member_installments WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM members WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM invites WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM period_ledger_events WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM accounting_periods WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM contribution_plans WHERE space_id=?").bind(spaceId),
+    db.prepare("UPDATE documents SET space_id=NULL WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM tenant_resources WHERE resource_type='space' AND resource_id=?").bind(spaceId),
+    prepareAudit(db, { userId, action: "wallet.deleted", entityType: "space", entityId: spaceId, metadata: {}, createdAt }),
+    db.prepare("DELETE FROM spaces WHERE id=?").bind(spaceId),
+  ]);
+}
+
 async function loadDashboard(db: D1Database, userId: string) {
   const spaces = await db
     .prepare(`SELECT s.* FROM spaces s
@@ -693,7 +719,7 @@ export async function POST(request: Request) {
       const platformRole = await db.prepare("SELECT role FROM platform_roles WHERE user_id=?").bind(user.id).first<{ role: string }>();
       const isPlatformAdmin = ["super_admin", "admin"].includes(platformRole?.role ?? "");
       if (!isPlatformAdmin && !planAllowsSpaceType(entitlements.features, type)) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
-      const count = await db.prepare("SELECT COUNT(*) AS count FROM spaces WHERE owner_user_id=?").bind(user.id).first<{ count: number }>();
+      const count = await db.prepare("SELECT COUNT(*) AS count FROM spaces WHERE owner_user_id=? AND COALESCE(status,'active') <> 'archived'").bind(user.id).first<{ count: number }>();
       const walletLimit = isPlatformAdmin ? Math.max(entitlements.walletLimit, 100) : entitlements.walletLimit;
       if (Number(count?.count ?? 0) >= walletLimit) throw new ApiError(403, "PLAN_WALLET_LIMIT");
       const id = `${cleanId(user.id)}-${crypto.randomUUID()}`; const createdAt = now();
@@ -736,6 +762,60 @@ export async function POST(request: Request) {
         }
       }
       await db.batch(statements);
+    } else if (action === "updateWallet") {
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        name: z.string().trim().min(2).max(80),
+        goal: z.union([z.string(), z.number()]).optional(),
+        monthlyContribution: z.union([z.string(), z.number()]).optional(),
+        durationMonths: z.coerce.number().int().min(1).max(120).optional(),
+        startsAt: z.string().min(8).max(40).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_WALLET");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "members:write");
+      if (space.owner_user_id !== user.id && space.type === "personal") throw new ApiError(403, "FORBIDDEN");
+      const startsAt = parsed.data.startsAt ? parseStartDate(parsed.data.startsAt) : undefined;
+      let goalMinor: number | undefined;
+      if (parsed.data.goal !== undefined) {
+        try { goalMinor = parseNonNegativeMoneyToMinor(parsed.data.goal, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      }
+      let contributionMinor: number | undefined;
+      if (parsed.data.monthlyContribution !== undefined && parsed.data.monthlyContribution !== "") {
+        try { contributionMinor = parseMoneyToMinor(parsed.data.monthlyContribution, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      }
+      const durationMonths = parsed.data.durationMonths;
+      if (contributionMinor !== undefined && durationMonths) goalMinor = multiplyMinor(contributionMinor, durationMonths);
+      const createdAt = now();
+      const statements: D1PreparedStatement[] = [
+        db.prepare("UPDATE spaces SET name_ar=?, name_en=? WHERE id=?").bind(parsed.data.name, parsed.data.name, parsed.data.spaceId),
+      ];
+      if (startsAt) statements.push(db.prepare("UPDATE spaces SET starts_at=? WHERE id=?").bind(startsAt, parsed.data.spaceId));
+      if (goalMinor !== undefined) statements.push(db.prepare("UPDATE spaces SET goal_minor=? WHERE id=?").bind(goalMinor, parsed.data.spaceId));
+      const plan = await db.prepare("SELECT id FROM contribution_plans WHERE space_id=?").bind(parsed.data.spaceId).first<{ id: string }>();
+      if (plan && (contributionMinor !== undefined || durationMonths || startsAt)) {
+        if (contributionMinor !== undefined) statements.push(db.prepare("UPDATE contribution_plans SET amount_minor=? WHERE id=?").bind(contributionMinor, plan.id));
+        if (durationMonths) statements.push(db.prepare("UPDATE contribution_plans SET duration_months=? WHERE id=?").bind(durationMonths, plan.id));
+        if (startsAt) statements.push(db.prepare("UPDATE contribution_plans SET starts_at=? WHERE id=?").bind(startsAt, plan.id));
+      }
+      statements.push(prepareAudit(db, { userId: user.id, action: "wallet.updated", entityType: "space", entityId: parsed.data.spaceId, metadata: { name: parsed.data.name }, createdAt }));
+      await db.batch(statements);
+    } else if (action === "archiveWallet") {
+      const parsed = z.object({ spaceId: z.string().min(1).max(120), archived: z.boolean().default(true) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_WALLET");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "members:write");
+      if (space.owner_user_id !== user.id) throw new ApiError(403, "FORBIDDEN");
+      const status = parsed.data.archived ? "archived" : "active";
+      const createdAt = now();
+      await db.batch([
+        db.prepare("UPDATE spaces SET status=? WHERE id=?").bind(status, parsed.data.spaceId),
+        prepareAudit(db, { userId: user.id, action: parsed.data.archived ? "wallet.archived" : "wallet.unarchived", entityType: "space", entityId: parsed.data.spaceId, metadata: { status }, createdAt }),
+      ]);
+    } else if (action === "deleteWallet") {
+      const parsed = z.object({ spaceId: z.string().min(1).max(120) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_WALLET");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "members:write");
+      if (space.owner_user_id !== user.id) throw new ApiError(403, "FORBIDDEN");
+      await deleteSpaceCascade(db, parsed.data.spaceId, user.id);
     } else if (action === "addMember") {
       const parsed = z.object({
         spaceId: z.string().min(1).max(120),

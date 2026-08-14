@@ -555,6 +555,9 @@ async function initializeSchema(db: D1Database) {
   if (!spaceStart.results.some((column) => column.name === "starts_at")) {
     try { await db.prepare("ALTER TABLE spaces ADD COLUMN starts_at TEXT").run(); } catch { /* exists */ }
   }
+  if (!spaceStart.results.some((column) => column.name === "status")) {
+    try { await db.prepare("ALTER TABLE spaces ADD COLUMN status TEXT NOT NULL DEFAULT 'active'").run(); } catch { /* exists */ }
+  }
   const periodColumns = await db.prepare("PRAGMA table_info(accounting_periods)").all<{ name: string }>();
   const periodNames = new Set(periodColumns.results.map((column) => column.name));
   if (!periodNames.has("closed_by")) {
