@@ -127,7 +127,15 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .icon-button, .language-button, .ghost-icon { border: 1px solid var(--line); background: white; cursor: pointer; }
 .icon-button { width: 39px; height: 39px; border-radius: 12px; display: grid; place-items: center; }
 .notification-button { position: relative; }
-.notification-button i { position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; background: #e66a67; border: 1px solid white; border-radius: 50%; }
+.notification-button i { position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; background: #dc2626; border: 1px solid white; border-radius: 50%; }
+.notification-wrap { position: relative; }
+.notification-panel { position: absolute; top: calc(100% + 8px); inset-inline-end: 0; width: min(360px, calc(100vw - 32px)); max-height: min(420px, 70vh); overflow: auto; background: white; border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); z-index: 40; padding: 10px; }
+.notification-panel h3 { margin: 4px 8px 10px; font-size: 14px; }
+.notification-item { width: 100%; border: 0; background: #f8faf8; border-radius: 10px; padding: 10px 12px; text-align: start; cursor: pointer; display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; color: inherit; font: inherit; }
+.notification-item:hover { background: #eef5f2; }
+.notification-item strong { font-size: 13px; }
+.notification-item span { font-size: 12px; color: var(--muted); }
+.notification-empty { margin: 8px; color: var(--muted); font-size: 13px; }
 .language-button { height: 42px; padding: 0 14px; border-radius: 12px; display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; }
 .primary-button, .secondary-button { min-height: 42px; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; font-weight: 700; font-size: 14px; cursor: pointer; transition: 150ms ease; }
 .primary-button { border: 1px solid var(--green); background: var(--green); color: white; box-shadow: 0 7px 16px rgba(13, 122, 101, 0.15); }
@@ -234,7 +242,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .transaction-main strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .transaction-main span { color: #89948f; font-size: 12px; }
 .transaction-row > strong { font-size: 14px; white-space: nowrap; direction: ltr; }
-.amount-positive { color: var(--green) !important; }.amount-negative { color: var(--rose) !important; }.muted-amount { color: #89938f; }.reserve-amount { color: #b97824; }
+.amount-positive { color: var(--green) !important; }
+.amount-negative { color: #dc2626 !important; }
+.muted-amount { color: #89938f; }
+.reserve-amount { color: #b97824; }
+.stat-copy > strong.amount-negative,
+.wallet-card strong.amount-negative,
+.goal-number strong.amount-negative,
+.goal-wide-values .amount-negative,
+.space-hero-balance strong.amount-negative { color: #dc2626 !important; }
+.space-hero-balance strong.amount-negative { color: #ff4d4f !important; }
 .obligation-panel { display: flex; flex-direction: column; gap: 9px; }
 .obligation-row { width: 100%; min-height: 62px; border: 1px solid #e9ecea; border-radius: 13px; display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 10px; padding: 8px 11px; text-align: start; background: #fbfcfb; cursor: pointer; }
 .obligation-date { width: 39px; height: 42px; border-radius: 10px; display: grid; place-items: center; align-content: center; background: var(--green-soft); color: var(--green); }

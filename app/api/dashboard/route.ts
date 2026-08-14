@@ -325,7 +325,6 @@ function transactionBalanceDelta(kind: string, allocation: string, amountMinor: 
 async function syncFundExpenseCash(db: D1Database, spaceIds: string[]) {
   if (!spaceIds.length) return;
   for (const spaceId of spaceIds) {
-    await db.prepare("UPDATE settlements SET status='voided' WHERE space_id=? AND status='pending' AND to_member_id LIKE 'space:%'").bind(spaceId).run();
     const rows = await db.prepare(`SELECT te.id, te.space_id, te.amount_minor, te.description, te.occurred_at, te.created_by, te.transaction_id, te.created_at,
         t.id AS txn_id, t.amount_minor AS txn_amount, t.status AS txn_status, t.kind AS txn_kind
       FROM trip_expenses te
@@ -351,6 +350,28 @@ async function syncFundExpenseCash(db: D1Database, spaceIds: string[]) {
   }
 }
 
+async function syncFundDeficitShares(db: D1Database, spaceIds: string[]) {
+  if (!spaceIds.length) return;
+  const createdAt = now();
+  for (const spaceId of spaceIds) {
+    const space = await db.prepare("SELECT type, balance_minor FROM spaces WHERE id=?").bind(spaceId).first<{ type: string; balance_minor: number }>();
+    if (!space || space.type === "personal") continue;
+    const fundId = `space:${spaceId}`;
+    await db.prepare("UPDATE settlements SET status='voided' WHERE space_id=? AND status='pending' AND to_member_id=? AND expense_id IS NULL").bind(spaceId, fundId).run();
+    const deficit = Math.max(0, -Number(space.balance_minor));
+    if (deficit <= 0) continue;
+    const members = await db.prepare("SELECT id, due_minor FROM members WHERE space_id=? AND status='active' ORDER BY joined_at").bind(spaceId).all<{ id: string; due_minor: number }>();
+    const contributors = members.results.filter((member) => Number(member.due_minor) > 0);
+    const payers = (contributors.length ? contributors : members.results).map((member) => member.id);
+    if (!payers.length) continue;
+    for (const share of splitEvenly(deficit, payers)) {
+      if (share.shareMinor <= 0) continue;
+      await db.prepare("INSERT INTO settlements (id,space_id,from_member_id,to_member_id,amount_minor,status,created_at,expense_id) VALUES (?,?,?,?,?,'pending',?,NULL)")
+        .bind(crypto.randomUUID(), spaceId, share.memberId, fundId, share.shareMinor, createdAt).run();
+    }
+  }
+}
+
 async function rebuildSpaceBalance(db: D1Database, spaceIds: string[]) {
   if (!spaceIds.length) return;
   await syncFundExpenseCash(db, spaceIds);
@@ -364,6 +385,7 @@ async function rebuildSpaceBalance(db: D1Database, spaceIds: string[]) {
     const next = Number(row?.balance ?? 0);
     await db.prepare("UPDATE spaces SET balance_minor=? WHERE id=?").bind(next, spaceId).run();
   }
+  await syncFundDeficitShares(db, spaceIds);
 }
 
 async function voidApprovedTransaction(
