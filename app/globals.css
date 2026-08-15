@@ -182,6 +182,26 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .goal-card, .budget-card { padding: 22px; }
 .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
 .panel-heading h2 { margin: 5px 0 0; font-size: 18px; letter-spacing: -0.025em; }
+.fold-wrap { position: relative; }
+.fold-wrap:not(.is-collapsed) > .fold-title { display: none; }
+[dir="rtl"] .fold-title { padding: 12px 48px 4px 16px; }
+.fold-toggle, .panel-fold { border: 0; background: transparent; color: var(--ink); cursor: pointer; }
+.fold-toggle { position: absolute; z-index: 3; inset-inline-start: 10px; top: 14px; width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; color: var(--green); }
+.fold-toggle:hover, .panel-fold:hover { background: var(--green-soft); }
+.fold-wrap > .panel, .fold-wrap > .space-hero, .fold-wrap > .stat-grid, .fold-wrap > .personal-month-block { padding-inline-start: 28px; }
+.fold-wrap > .space-hero, .fold-wrap > .personal-month-block { position: relative; }
+.panel-fold { display: flex; align-items: flex-start; gap: 8px; min-width: 0; flex: 1; text-align: start; padding: 0; }
+.panel-fold-copy { min-width: 0; }
+.fold-icon { transition: transform .18s ease; transform: rotate(-90deg); }
+.fold-icon.is-open { transform: rotate(0deg); }
+[dir="rtl"] .fold-icon { transform: rotate(90deg); }
+[dir="rtl"] .fold-icon.is-open { transform: rotate(0deg); }
+.fold-wrap:not(.is-collapsed) > .fold-title { display: none; }
+.fold-wrap.is-collapsed > .panel > :not(.panel-heading),
+.fold-wrap.is-collapsed > .space-hero > .space-hero-facts,
+.fold-wrap.is-collapsed > .stat-grid,
+.fold-wrap.is-collapsed > .personal-month-block > .personal-occ-list { display: none !important; }
+.panel.is-collapsed > :not(.panel-heading) { display: none !important; }
 .section-kicker { display: flex; align-items: center; gap: 6px; color: var(--green); font-size: 12px; font-weight: 700; letter-spacing: .02em; }
 .ghost-icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; }
 .goal-number { margin-top: 22px; display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
@@ -471,7 +491,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .sidebar-external a { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 0 10px; border-radius: 10px; color: var(--icon); font-size: 12px; font-weight: 700; text-decoration: none; transition: .2s ease; }
 .sidebar-external a:hover { color: var(--green); background: var(--green-soft); }
 .modal-error { margin: 0; padding: 10px 12px; border: 1px solid #fecaca; border-radius: 10px; background: #fff1f2; color: #b42318; font-size: 12px; font-weight: 700; }
-.workflow-panel { display: grid; gap: 16px; }
+.workflow-panel { display: grid; gap: 16px; padding: 18px 20px; }
 .trip-expense-row { border-bottom: 1px solid var(--border); }
 .trip-expense-row .transaction-row { border: 0; }
 .split-chips { padding: 0 50px 11px; display: flex; flex-wrap: wrap; gap: 6px; }

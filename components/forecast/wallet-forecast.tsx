@@ -1,6 +1,7 @@
 "use client";
 
 import { TrendingUp } from "lucide-react";
+import { CollapsiblePanel } from "../ui/collapsible-panel";
 import { formatMoneyMinor } from "../../lib/money";
 import { projectCashflow } from "../../lib/wallet-forecast";
 
@@ -15,6 +16,7 @@ export function WalletForecastPanel({
   remainingInflowMinor,
   remainingOutflowMinor,
   title,
+  foldId = "wallet-forecast",
 }: {
   locale: Locale;
   currency: string;
@@ -24,6 +26,7 @@ export function WalletForecastPanel({
   remainingInflowMinor?: number;
   remainingOutflowMinor?: number;
   title?: string;
+  foldId?: string;
 }) {
   const forecast = projectCashflow({ balanceMinor, monthlyInflowMinor, monthlyOutflowMinor, months: 3 });
   const money = (minor: number) => formatMoneyMinor(minor, currency, locale);
@@ -31,13 +34,11 @@ export function WalletForecastPanel({
   const remainingOut = remainingOutflowMinor ?? monthlyOutflowMinor;
   const remainingNet = remainingIn - remainingOut;
   return (
-    <article className="panel">
-      <div className="panel-heading">
-        <div>
-          <span className="section-kicker"><TrendingUp size={15} />{locale === "ar" ? "تنبؤ 3 أشهر" : "3-month forecast"}</span>
-          <h2>{title ?? (locale === "ar" ? "الدخل المتوقع مقابل الخصم المتوقع" : "Expected inflows versus outflows")}</h2>
-        </div>
-      </div>
+    <CollapsiblePanel
+      id={foldId}
+      heading={<><span className="section-kicker"><TrendingUp size={15} />{locale === "ar" ? "تنبؤ 3 أشهر" : "3-month forecast"}</span><h2>{title ?? (locale === "ar" ? "الدخل المتوقع مقابل الخصم المتوقع" : "Expected inflows versus outflows")}</h2></>}
+      foldLabel={locale === "ar" ? "طي التنبؤ" : "Fold forecast"}
+    >
       <p className="modal-note">
         {locale === "ar"
           ? `المتبقي هذا الشهر (غير المرحّل): دخل ${money(remainingIn)} · خصم ${money(remainingOut)} · صافي ${money(remainingNet)}. الأشهر التالية تفترض الدخل والخصم غير الملغيين: ${money(monthlyInflowMinor)} − ${money(monthlyOutflowMinor)}.`
@@ -61,6 +62,6 @@ export function WalletForecastPanel({
             : `Alert: the fund may need a boost of about ${money(forecast.shortfallMinor)} within three months at this run-rate.`}
         </p>
       )}
-    </article>
+    </CollapsiblePanel>
   );
 }

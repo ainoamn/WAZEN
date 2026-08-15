@@ -5,7 +5,7 @@ import { AlertTriangle, CalendarDays, Landmark, Plus, X } from "lucide-react";
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
 import OmrSymbol from "../brand/OmrSymbol";
-import { DateField } from "../ui/date-field";
+import { CollapsiblePanel, FoldWrap } from "../ui/collapsible-panel";
 
 type Locale = "ar" | "en";
 type Member = { id: string; display_name: string; role: string };
@@ -65,31 +65,29 @@ export function HouseholdFamilyPanel({
   const alerts = events.filter((item) => item.space_id === spaceId && item.status === "planned" && item.needsBoost);
   return (
     <>
+      <FoldWrap id={`${spaceId}:fund-stats`} title={locale === "ar" ? "ملخص الصندوق" : "Fund summary"} label={locale === "ar" ? "طي الملخص" : "Fold summary"}>
       <section className="stat-grid compact">
         <article className="stat-card"><div className="stat-icon navy"><Landmark size={18} /></div><div className="stat-copy"><span>{locale === "ar" ? "دخل الصندوق" : "Fund income"}</span><strong>{money(incomeMinor, locale)}</strong><small>{locale === "ar" ? "مساهمات مرحلة" : "posted contributions"}</small></div></article>
         <article className="stat-card"><div className="stat-icon rose"><AlertTriangle size={18} /></div><div className="stat-copy"><span>{locale === "ar" ? "مصروف الصندوق" : "Fund spend"}</span><strong className={spendMinor ? "amount-negative" : ""}>{money(spendMinor, locale)}</strong><small>{locale === "ar" ? "من الصندوق نفسه" : "from the family fund"}</small></div></article>
         <article className="stat-card"><div className="stat-icon green"><CalendarDays size={18} /></div><div className="stat-copy"><span>{locale === "ar" ? "صافي الصندوق" : "Fund net"}</span><strong className={balanceMinor < 0 ? "amount-negative" : ""}>{money(balanceMinor, locale)}</strong><small>{locale === "ar" ? `${alerts.length} تنبيه عجز` : `${alerts.length} deficit alerts`}</small></div></article>
       </section>
-      <article className="panel">
-        <div className="panel-heading">
-          <div>
-            <span className="section-kicker"><Landmark size={15} />{locale === "ar" ? "حساب الصندوق" : "Fund account"}</span>
-            <h2>{locale === "ar" ? "رقم الحساب أو ربط حساب المدير / أمين السر" : "IBAN or manager / secretary bank"}</h2>
-          </div>
-          <button type="button" className="secondary-button" onClick={() => setBankOpen(true)}>{locale === "ar" ? "حفظ الحساب" : "Save account"}</button>
-        </div>
+      </FoldWrap>
+      <CollapsiblePanel
+        id={`${spaceId}:fund-account`}
+        heading={<><span className="section-kicker"><Landmark size={15} />{locale === "ar" ? "حساب الصندوق" : "Fund account"}</span><h2>{locale === "ar" ? "رقم الحساب أو ربط حساب المدير / أمين السر" : "IBAN or manager / secretary bank"}</h2></>}
+        actions={<button type="button" className="secondary-button" onClick={() => setBankOpen(true)}>{locale === "ar" ? "حفظ الحساب" : "Save account"}</button>}
+        foldLabel={locale === "ar" ? "طي حساب الصندوق" : "Fold fund account"}
+      >
         {payout
           ? <p className="modal-note">{payout.label}: {payout.account_number}{payout.linked_member_id ? ` · ${members.find((item) => item.id === payout.linked_member_id)?.display_name ?? ""}` : ""}</p>
           : <p className="modal-note">{locale === "ar" ? "خصم المصروف من صندوق المنزل نفسه. سجّل رقم الحساب البنكي للصندوق أو اربطه بحساب المدير." : "Expenses debit this family fund. Record the fund IBAN or link the manager’s bank."}</p>}
-      </article>
-      <article className="panel">
-        <div className="panel-heading">
-          <div>
-            <span className="section-kicker"><CalendarDays size={15} />{locale === "ar" ? "تذكير وطلعات" : "Reminders and outings"}</span>
-            <h2>{locale === "ar" ? "المبلغ المتوقع مقابل الصندوق والدخل حتى ذلك التاريخ" : "Expected cost vs cash and inflows to that date"}</h2>
-          </div>
-          <button type="button" className="primary-button" onClick={() => setEventOpen(true)}><Plus size={15} />{locale === "ar" ? "تذكير / طلعة" : "Reminder / outing"}</button>
-        </div>
+      </CollapsiblePanel>
+      <CollapsiblePanel
+        id={`${spaceId}:family-events`}
+        heading={<><span className="section-kicker"><CalendarDays size={15} />{locale === "ar" ? "تذكير وطلعات" : "Reminders and outings"}</span><h2>{locale === "ar" ? "المبلغ المتوقع مقابل الصندوق والدخل حتى ذلك التاريخ" : "Expected cost vs cash and inflows to that date"}</h2></>}
+        actions={<button type="button" className="primary-button" onClick={() => setEventOpen(true)}><Plus size={15} />{locale === "ar" ? "تذكير / طلعة" : "Reminder / outing"}</button>}
+        foldLabel={locale === "ar" ? "طي التذكيرات" : "Fold reminders"}
+      >
         <div className="personal-loan-list">
           {events.filter((item) => item.space_id === spaceId).map((event) => (
             <div className={`personal-loan-row ${event.needsBoost ? "family-alert" : ""}`} key={event.id}>
@@ -107,7 +105,7 @@ export function HouseholdFamilyPanel({
           ))}
           {!events.some((item) => item.space_id === spaceId) && <p className="empty-state">{locale === "ar" ? "أضف طلعة أو علاجاً بتاريخ ومبلغ متوقع ليحسب النظام العجز." : "Add an outing or treatment with a date and expected cost to forecast a shortfall."}</p>}
         </div>
-      </article>
+      </CollapsiblePanel>
       {bankOpen && <BankModal locale={locale} spaceId={spaceId} members={members} payout={payout} onClose={() => setBankOpen(false)} onChanged={(next) => { onChanged(next); setBankOpen(false); }} />}
       {eventOpen && <EventModal locale={locale} spaceId={spaceId} currency={currency} onClose={() => setEventOpen(false)} onChanged={(next) => { onChanged(next); setEventOpen(false); }} />}
     </>

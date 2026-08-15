@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Archive, Banknote, CalendarClock, Check, ChevronDown, Lock, Pause, Pencil, Play, Plus, Printer, Trash2, Unlock, WalletCards, X } from "lucide-react";
+import { CollapsiblePanel, FoldWrap } from "../ui/collapsible-panel";
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
 import { occurrenceVarianceCopy, occurrenceLedgerStatus } from "../../lib/personal-finance";
@@ -153,14 +154,12 @@ export function PersonalWalletPanel({
   };
   return (
     <>
-      <article className="panel">
-        <div className="panel-heading">
-          <div>
-            <span className="section-kicker"><WalletCards size={15} />{locale === "ar" ? "حساباتك" : "Your accounts"}</span>
-            <h2>{locale === "ar" ? "البنوك والنقد" : "Banks and cash"}</h2>
-          </div>
-          <button type="button" className="primary-button" onClick={() => setAccountOpen(true)}><Plus size={15} />{locale === "ar" ? "إضافة حساب" : "Add account"}</button>
-        </div>
+      <CollapsiblePanel
+        id={`${spaceId}:accounts`}
+        heading={<><span className="section-kicker"><WalletCards size={15} />{locale === "ar" ? "حساباتك" : "Your accounts"}</span><h2>{locale === "ar" ? "البنوك والنقد" : "Banks and cash"}</h2></>}
+        actions={<button type="button" className="primary-button" onClick={() => setAccountOpen(true)}><Plus size={15} />{locale === "ar" ? "إضافة حساب" : "Add account"}</button>}
+        foldLabel={locale === "ar" ? "طي الحسابات" : "Fold accounts"}
+      >
         <p className="modal-note">{locale === "ar" ? "كل حساب منفصل. الرصيد الافتتاحي هو ما لديك الآن، والدخل والخصم لا يُعتمدان إلا بعد «اعتماد الدخل» أو «اعتماد الخصم»، أو تجاهل، أو تأجيل للشهر التالي." : "Each account is separate. Opening is what you hold now. Income and bills post only after you approve, skip, or defer them."}</p>
         <div className="personal-account-grid">
           {spaceAccounts.map((account) => (
@@ -176,16 +175,13 @@ export function PersonalWalletPanel({
           ))}
           {!spaceAccounts.length && <p className="empty-state">{locale === "ar" ? "أضف حساب بنك نزوى أو مسقط أو النقد أولاً." : "Add Bank Nizwa, Muscat, or cash first."}</p>}
         </div>
-      </article>
-
+      </CollapsiblePanel>
       {byMonth.size > 0 && (
-        <article className="panel">
-          <div className="panel-heading">
-            <div>
-              <span className="section-kicker">{locale === "ar" ? "حساب الأشهر" : "Month ledgers"}</span>
-              <h2>{locale === "ar" ? "كل شهر يظهر الدخل والصرف المعتمد، والمعلّق ينتظر الاعتماد" : "Each month shows posted income and spend; pending items wait for approval"}</h2>
-            </div>
-          </div>
+        <CollapsiblePanel
+          id={`${spaceId}:months`}
+          heading={<><span className="section-kicker">{locale === "ar" ? "حساب الأشهر" : "Month ledgers"}</span><h2>{locale === "ar" ? "كل شهر يظهر الدخل والصرف المعتمد، والمعلّق ينتظر الاعتماد" : "Each month shows posted income and spend; pending items wait for approval"}</h2></>}
+          foldLabel={locale === "ar" ? "طي حساب الأشهر" : "Fold month ledgers"}
+        >
           {[...byMonth.entries()].map(([period, rows]) => {
             const postedIn = rows.filter((row) => row.rule_kind === "income" && row.status === "posted").reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
             const postedOut = rows.filter((row) => row.rule_kind !== "income" && row.status === "posted").reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
@@ -197,7 +193,8 @@ export function PersonalWalletPanel({
                 : ` · pending in ${money(pendingIn, locale)} · out ${money(pendingOut, locale)}`)
               : "";
             return (
-              <div className="personal-month-block" key={period}>
+              <FoldWrap key={period} id={`${spaceId}:month:${period}`} label={locale === "ar" ? `طي ${period}` : `Fold ${period}`}>
+              <div className="personal-month-block">
                 <div className="personal-month-head">
                   <strong>{period}</strong>
                   <span>{locale === "ar" ? `دخل ${money(postedIn, locale)} · صرف ${money(postedOut, locale)} · متبقي ${money(postedIn - postedOut, locale)}${pendingNote}` : `In ${money(postedIn, locale)} · out ${money(postedOut, locale)} · left ${money(postedIn - postedOut, locale)}${pendingNote}`}</span>
@@ -236,23 +233,22 @@ export function PersonalWalletPanel({
                   })}
                 </div>
               </div>
+              </FoldWrap>
             );
           })}
-        </article>
+        </CollapsiblePanel>
       )}
 
       {unscheduled.length > 0 && (
-        <article className="panel">
-          <div className="panel-heading"><h2>{locale === "ar" ? "دخل آخر بدون موعد" : "Other income — no due date"}</h2></div>
+        <CollapsiblePanel id={`${spaceId}:unscheduled`} heading={<h2>{locale === "ar" ? "دخل آخر بدون موعد" : "Other income — no due date"}</h2>} foldLabel={locale === "ar" ? "طي الدخل الآخر" : "Fold other income"}>
           {unscheduled.map((rule) => (
             <UnscheduledRow key={rule.id} rule={rule} locale={locale} onChanged={onChanged} />
           ))}
-        </article>
+        </CollapsiblePanel>
       )}
 
       {loans.length > 0 && (
-        <article className="panel">
-          <div className="panel-heading"><h2>{locale === "ar" ? "تقدم الأقساط" : "Installment progress"}</h2></div>
+        <CollapsiblePanel id={`${spaceId}:loans`} heading={<h2>{locale === "ar" ? "تقدم الأقساط" : "Installment progress"}</h2>} foldLabel={locale === "ar" ? "طي الأقساط" : "Fold installments"}>
           <div className="personal-loan-list">
             {loans.map((rule) => {
               const paid = Number(rule.paid_minor);
@@ -271,7 +267,7 @@ export function PersonalWalletPanel({
               );
             })}
           </div>
-        </article>
+        </CollapsiblePanel>
       )}
 
       {accountOpen && <AccountModal locale={locale} spaceId={spaceId} existing={accountOpen === true ? undefined : accountOpen} onClose={() => setAccountOpen(null)} onChanged={(next) => { onChanged(next); setAccountOpen(null); }} />}
