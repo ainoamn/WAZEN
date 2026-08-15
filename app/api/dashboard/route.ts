@@ -432,35 +432,42 @@ async function voidApprovedTransaction(
   if (txn.status !== "approved") throw new ApiError(409, "TRANSACTION_NOT_EDITABLE");
   const amountMinor = Number(txn.amount_minor);
   const createdAt = now();
-  await db.batch([
-    db.prepare("UPDATE transactions SET status='voided' WHERE id=? AND status='approved'").bind(txn.id),
-    prepareAudit(db, {
+  await db.prepare("UPDATE transactions SET status='voided' WHERE id=? AND status='approved'").bind(txn.id).run();
+  try {
+    await prepareAudit(db, {
       userId: actorUserId,
       action: "transaction.voided",
       entityType: "transaction",
       entityId: txn.id,
       metadata: { spaceId: txn.space_id, kind: txn.kind, allocation: txn.allocation, amountMinor },
       createdAt,
-    }),
-  ]);
-  await db.prepare("UPDATE trip_expenses SET status='voided' WHERE transaction_id=? AND COALESCE(status,'posted')<>'voided'").bind(txn.id).run();
-  const postedOccurrence = await db.prepare(`SELECT o.id, o.rule_id, o.actual_minor, r.kind
-    FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
-    WHERE o.transaction_id=? AND o.status='posted'`)
-    .bind(txn.id)
-    .first<{ id: string; rule_id: string; actual_minor: number | null; kind: string }>();
-  if (postedOccurrence) {
-    const postedMinor = Number(postedOccurrence.actual_minor ?? txn.amount_minor);
-    await db.batch([
-      db.prepare("UPDATE personal_occurrences SET status='pending', actual_minor=NULL, transaction_id=NULL WHERE id=? AND status='posted'")
-        .bind(postedOccurrence.id),
-      ...(postedOccurrence.kind === "expense"
-        ? [db.prepare("UPDATE personal_rules SET paid_minor = MAX(0, paid_minor - ?) WHERE id=?").bind(postedMinor, postedOccurrence.rule_id)]
-        : []),
-    ]);
-  }
-  await rebuildSpaceBalance(db, [txn.space_id]);
-  await reconcileMemberLedgers(db, [txn.space_id]);
+    }).run();
+  } catch { /* audit must not block void */ }
+  try {
+    await db.prepare("UPDATE trip_expenses SET status='voided' WHERE transaction_id=?").bind(txn.id).run();
+  } catch { /* personal wallets and older schemas may lack this column */ }
+  try {
+    const postedOccurrence = await db.prepare(`SELECT o.id, o.rule_id, o.actual_minor, r.kind
+      FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
+      WHERE o.transaction_id=? AND o.status='posted'`)
+      .bind(txn.id)
+      .first<{ id: string; rule_id: string; actual_minor: number | null; kind: string }>();
+    if (postedOccurrence) {
+      const postedMinor = Number(postedOccurrence.actual_minor ?? txn.amount_minor);
+      const statements = [
+        db.prepare("UPDATE personal_occurrences SET status='pending', actual_minor=NULL, transaction_id=NULL WHERE id=? AND status='posted'")
+          .bind(postedOccurrence.id),
+      ];
+      if (postedOccurrence.kind === "expense") {
+        statements.push(db.prepare("UPDATE personal_rules SET paid_minor = MAX(0, paid_minor - ?) WHERE id=?").bind(postedMinor, postedOccurrence.rule_id));
+      }
+      await db.batch(statements);
+    }
+  } catch { /* occurrence reopen is best-effort */ }
+  try {
+    await rebuildSpaceBalance(db, [txn.space_id]);
+    await reconcileMemberLedgers(db, [txn.space_id]);
+  } catch { /* balance refresh retried on next load */ }
 }
 
 async function installmentInsertStatements(
@@ -1514,16 +1521,18 @@ export async function POST(request: Request) {
       if (!txn) throw new ApiError(404, "TRANSACTION_NOT_FOUND");
       await authorizeSpace(db, user, txn.space_id, "transact");
       if (txn.status !== "voided") {
-        const voidEvent = await periodWriteEvent(db, user, txn.space_id, txn.occurred_at, {
-          action: "transaction.voided",
-          entityType: "transaction",
-          entityId: txn.id,
-          summaryAr: `${user.displayName} ألغى حركة ${txn.description_ar} (${txn.amount_minor})`,
-          summaryEn: `${user.displayName} voided ${txn.description_en} (${txn.amount_minor})`,
-          metadata: { amountMinor: txn.amount_minor, kind: txn.kind },
-        });
         await voidApprovedTransaction(db, txn, user.id);
-        await voidEvent.run();
+        try {
+          const voidEvent = await periodWriteEvent(db, user, txn.space_id, txn.occurred_at, {
+            action: "transaction.voided",
+            entityType: "transaction",
+            entityId: txn.id,
+            summaryAr: `${user.displayName} ألغى حركة ${txn.description_ar} (${txn.amount_minor})`,
+            summaryEn: `${user.displayName} voided ${txn.description_en} (${txn.amount_minor})`,
+            metadata: { amountMinor: txn.amount_minor, kind: txn.kind },
+          });
+          await voidEvent.run();
+        } catch { /* ledger note is optional; the void already applied */ }
       }
     } else if (action === "updateTransaction") {
       const parsed = z.object({

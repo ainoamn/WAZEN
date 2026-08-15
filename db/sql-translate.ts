@@ -23,7 +23,8 @@ export function translateSqliteToPostgres(sql: string): string {
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users (LOWER(email))",
   );
 
-  // Parameter placeholders: ? → $1, $2, ...
+  // SQLite scalar MAX(a,b) → Postgres GREATEST(a,b)
+  out = out.replace(/\bMAX\s*\(\s*(-?\d+)\s*,/gi, "GREATEST($1,");
   let index = 0;
   out = out.replace(/\?/g, () => `$${++index}`);
 

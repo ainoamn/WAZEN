@@ -433,6 +433,7 @@ function memberExpenseNet(memberId: string, data: DashboardData, spaceId: string
 function dashboardError(code: string, locale: Locale) {
   const table = locale === "ar"
     ? {
+      INTERNAL_ERROR: "تعذر إكمال الحذف. حدّث الصفحة وحاول مرة أخرى.",
       INSUFFICIENT_FUNDS: "رصيد الصندوق لا يكفي.",
       PERIOD_CLOSED: "الفترة مغلقة. أعد فتحها للتعديل.",
       PERIOD_UNSETTLED: "لا يمكن إغلاق الفترة قبل أن يسدّد كل الأعضاء ما عليهم (الاشتراك والتسويات المعلقة).",
@@ -445,6 +446,7 @@ function dashboardError(code: string, locale: Locale) {
       PHOTO_TOO_LARGE: "الصورة كبيرة. اختر صورة أوضح وأصغر.",
     }
     : {
+      INTERNAL_ERROR: "Could not complete the delete. Refresh and try again.",
       INSUFFICIENT_FUNDS: "Insufficient fund balance.",
       PERIOD_CLOSED: "The period is closed. Reopen it to edit.",
       PERIOD_UNSETTLED: "Close the period only after every member settles dues and pending shares.",
