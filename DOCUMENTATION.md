@@ -2,7 +2,7 @@
 
 **الإصدار:** 0.2.0 (`wazen-finance`)
 **تاريخ التوثيق الأصلي:** 11 أغسطس 2026  
-**آخر تسليم تشغيلي:** 14 أغسطس 2026 — **[docs/HANDOFF-2026-08-14.md](./docs/HANDOFF-2026-08-14.md)**  
+**آخر تسليم تشغيلي:** 15 أغسطس 2026 — **[docs/HANDOFF-2026-08-15.md](./docs/HANDOFF-2026-08-15.md)** (السابق: [14 أغسطس](./docs/HANDOFF-2026-08-14.md))  
 **المستودع:** https://github.com/ainoamn/WAZEN  
 **الفرع الرئيسي:** `main`  
 **الإنتاج:** https://wazen-roan.vercel.app  
@@ -128,6 +128,14 @@ fe6db47  fix: support Vercel Next.js build path   ← آخر نقطة في أر�
 - `db/node-sqlite-d1.ts` — تنفيذ واجهة شبيهة بـ D1 عبر `node:sqlite` على Vercel
 - `db/runtime.ts` — اختيار D1 إن وُجد، وإلا Node SQLite
 - مستخدم demo تلقائي عند `VERCEL=1` أو localhost
+
+### 2.7 15 أغسطس 2026 — طي الأقسام، ربط المحافظ، إصلاح البناء
+
+التفاصيل التشغيلية: **[docs/HANDOFF-2026-08-15.md](./docs/HANDOFF-2026-08-15.md)**
+
+- طي/فتح أقسام المحفظة مع حفظ الحالة في المتصفح.
+- ربط محفظة شخصية بمحافظ/جمعيات أخرى وحساب بنكي، مع فصل «أموالك» عن أموال كل محفظة، وتحويل بينهما.
+- إصلاح `DateField` في `household-family.tsx` بعد أن كسر `next build` على Vercel (`TS2304`).
 
 ---
 

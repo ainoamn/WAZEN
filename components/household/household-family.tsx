@@ -5,6 +5,7 @@ import { AlertTriangle, CalendarDays, Landmark, Plus, X } from "lucide-react";
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
 import OmrSymbol from "../brand/OmrSymbol";
+import { DateField } from "../ui/date-field";
 import { CollapsiblePanel, FoldWrap } from "../ui/collapsible-panel";
 
 type Locale = "ar" | "en";
