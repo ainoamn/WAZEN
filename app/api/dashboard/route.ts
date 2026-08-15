@@ -10,6 +10,7 @@ import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, type 
 import { coveringPeriod } from "../../../lib/accounting-periods";
 import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
 import { accountLiveBalance, dueAtForPeriod, monthKeysThroughNow } from "../../../lib/personal-finance";
+import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-forecast";
 
 type SpaceRow = {
   id: string;
@@ -643,6 +644,8 @@ async function deleteSpaceCascade(db: D1Database, spaceId: string, userId: strin
     db.prepare("DELETE FROM expense_splits WHERE expense_id IN (SELECT id FROM trip_expenses WHERE space_id=?)").bind(spaceId),
     db.prepare("DELETE FROM settlements WHERE space_id=?").bind(spaceId),
     db.prepare("DELETE FROM trip_expenses WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM family_events WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM space_payout_accounts WHERE space_id=?").bind(spaceId),
     db.prepare("DELETE FROM personal_occurrences WHERE space_id=?").bind(spaceId),
     db.prepare("DELETE FROM personal_rules WHERE space_id=?").bind(spaceId),
     db.prepare("DELETE FROM personal_accounts WHERE space_id=?").bind(spaceId),
@@ -673,7 +676,7 @@ async function loadDashboard(db: D1Database, userId: string) {
     .all<SpaceRow>();
   const ids = spaces.results.map((space) => space.id);
   const contacts = await db.prepare("SELECT * FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name").bind(userId).all();
-  if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results, periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [] };
+  if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results, periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [] };
 
   await rebuildSpaceBalance(db, ids);
   await generatePersonalOccurrences(db, ids);
@@ -726,6 +729,10 @@ async function loadDashboard(db: D1Database, userId: string) {
     ...account,
     balance_minor: accountLiveBalance(Number(account.opening_minor), transactions.results, account.id),
   }));
+  const payoutAccounts = await db.prepare(`SELECT * FROM space_payout_accounts WHERE space_id IN (${placeholders})`).bind(...ids).all();
+  const familyEventsRaw = await db.prepare(`SELECT * FROM family_events WHERE space_id IN (${placeholders}) ORDER BY target_at ASC`).bind(...ids).all<{
+    id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; notes: string | null; status: string;
+  }>();
 
   const memberDueBySpace = new Map<string, number>();
   for (const member of members.results) {
@@ -745,6 +752,27 @@ async function loadDashboard(db: D1Database, userId: string) {
     return { ...space, goal_minor: membersDue > 0 ? membersDue : (planGoal || space.goal_minor) };
   });
 
+  const unpaidBySpace = new Map<string, number>();
+  const contributorCount = new Map<string, number>();
+  for (const member of members.results) {
+    if (member.status !== "active") continue;
+    unpaidBySpace.set(member.space_id, (unpaidBySpace.get(member.space_id) ?? 0) + Math.max(0, Number(member.due_minor) - Number(member.paid_minor)));
+    if (Number(member.due_minor) > 0) contributorCount.set(member.space_id, (contributorCount.get(member.space_id) ?? 0) + 1);
+  }
+  const familyEvents = familyEventsRaw.results.map((event) => {
+    const space = refreshedSpaces.results.find((item) => item.id === event.space_id);
+    const plan = planBySpace.get(event.space_id);
+    const monthly = Number(plan?.amount_minor ?? 0) * (contributorCount.get(event.space_id) ?? 0);
+    const forecast = forecastFamilyEvent({
+      balanceMinor: Number(space?.balance_minor ?? 0),
+      expectedCostMinor: Number(event.expected_minor),
+      monthlyInflowMinor: monthly,
+      monthsUntil: monthCountUntil(event.target_at),
+      unpaidDuesMinor: unpaidBySpace.get(event.space_id) ?? 0,
+    });
+    return { ...event, ...forecast };
+  });
+
   return {
     spaces: spacesWithGoals,
     members: members.results,
@@ -761,6 +789,8 @@ async function loadDashboard(db: D1Database, userId: string) {
     personalAccounts,
     personalRules: personalRules.results,
     personalOccurrences: personalOccurrences.results,
+    payoutAccounts: payoutAccounts.results,
+    familyEvents,
   };
 }
 
@@ -1019,6 +1049,39 @@ export async function POST(request: Request) {
       if (occurrence.status !== "pending") throw new ApiError(409, "OCCURRENCE_NOT_PENDING");
       await authorizeSpace(db, user, occurrence.space_id, "transact", ["personal"]);
       await db.prepare("UPDATE personal_occurrences SET status='skipped' WHERE id=? AND status='pending'").bind(occurrence.id).run();
+    } else if (action === "saveSpacePayoutAccount") {
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        label: z.string().trim().min(2).max(80),
+        accountNumber: z.string().trim().min(4).max(80),
+        linkedMemberId: z.string().min(1).max(120).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_PAYOUT_ACCOUNT");
+      await authorizeSpace(db, user, parsed.data.spaceId, "members:write", ["household", "trip", "society", "group"]);
+      if (parsed.data.linkedMemberId) {
+        const linked = await db.prepare("SELECT id FROM members WHERE id=? AND space_id=? AND status='active'").bind(parsed.data.linkedMemberId, parsed.data.spaceId).first();
+        if (!linked) throw new ApiError(400, "INVALID_MEMBER");
+      }
+      const createdAt = now();
+      await db.prepare(`INSERT INTO space_payout_accounts (id,space_id,label,account_number,linked_member_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)
+        ON CONFLICT(space_id) DO UPDATE SET label=excluded.label, account_number=excluded.account_number, linked_member_id=excluded.linked_member_id, updated_at=excluded.updated_at`)
+        .bind(crypto.randomUUID(), parsed.data.spaceId, parsed.data.label, parsed.data.accountNumber, parsed.data.linkedMemberId ?? null, createdAt, createdAt).run();
+    } else if (action === "addFamilyEvent") {
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        title: z.string().trim().min(2).max(120),
+        kind: z.enum(["outing", "treatment", "aid", "person_payment", "other"]).default("outing"),
+        targetAt: z.string().min(8).max(40),
+        expected: z.union([z.string(), z.number()]),
+        notes: z.string().trim().max(400).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_FAMILY_EVENT");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["household"]);
+      let expectedMinor: number;
+      try { expectedMinor = parseMoneyToMinor(parsed.data.expected, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      const createdAt = now();
+      await db.prepare("INSERT INTO family_events (id,space_id,title,kind,target_at,expected_minor,notes,status,created_at) VALUES (?,?,?,?,?,?,?,'planned',?)")
+        .bind(crypto.randomUUID(), parsed.data.spaceId, parsed.data.title, parsed.data.kind, parseStartDate(parsed.data.targetAt), expectedMinor, parsed.data.notes ?? null, createdAt).run();
     } else if (action === "addMember") {
       const parsed = z.object({
         spaceId: z.string().min(1).max(120),

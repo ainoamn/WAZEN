@@ -552,6 +552,27 @@ async function initializeSchema(db: D1Database) {
       UNIQUE(rule_id, period_key)
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_personal_occ_space ON personal_occurrences(space_id, status, period_key)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS space_payout_accounts (
+      id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      account_number TEXT NOT NULL,
+      linked_member_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS family_events (
+      id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'outing',
+      target_at TEXT NOT NULL,
+      expected_minor INTEGER NOT NULL,
+      notes TEXT,
+      status TEXT NOT NULL DEFAULT 'planned',
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_family_events_space ON family_events(space_id, target_at)"),
   ]);
   const memberColumns = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
   if (!memberColumns.results.some((column) => column.name === "phone")) {

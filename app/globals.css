@@ -440,6 +440,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .personal-occ-row span, .personal-rule-row span, .personal-loan-row span { color: #809089; font-size: 12px; }
 .personal-rule-row, .personal-loan-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
 .personal-loan-row { grid-template-columns: 1.4fr 1fr auto; align-items: center; }
+.personal-loan-row.family-alert { border-color: #fecaca; background: #fff7f7; }
 @media (max-width: 900px) {
   .personal-account-grid { grid-template-columns: 1fr 1fr; }
   .personal-occ-row { grid-template-columns: 1fr; }
