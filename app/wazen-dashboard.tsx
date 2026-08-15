@@ -642,13 +642,14 @@ export function WazenDashboard() {
   const walletDefaultType = viewSpaceType[activeView] ?? "trip";
 
   const totals = useMemo(() => {
-    if (!data) return { net: 0, groups: 0, personal: 0, reserves: 0, spend: 0 };
+    if (!data) return { net: 0, groups: 0, personal: 0, reserves: 0, spend: 0, income: 0, remaining: 0 };
     const net = data.spaces.reduce((sum, item) => sum + item.balance_minor, 0);
     const groups = data.spaces.filter((item) => ["trip", "society", "group", "household"].includes(item.type)).reduce((sum, item) => sum + item.balance_minor, 0);
     const personal = data.spaces.filter((item) => item.type === "personal").reduce((sum, item) => sum + item.balance_minor, 0);
     const reserves = data.members.reduce((sum, member) => sum + member.extra_minor, 0);
     const spend = data.transactions.filter((item) => item.kind === "expense").reduce((sum, item) => sum + item.amount_minor, 0);
-    return { net, groups, personal, reserves, spend };
+    const income = data.transactions.filter((item) => ["income", "contribution"].includes(item.kind)).reduce((sum, item) => sum + item.amount_minor, 0);
+    return { net, groups, personal, reserves, spend, income, remaining: income - spend };
   }, [data]);
 
   const flash = (message: string) => {
@@ -924,7 +925,7 @@ function Sidebar({ locale, active, open, onNavigate, onClose, onLogout }: { loca
   );
 }
 
-function Overview({ data, locale, totals, onView, onAddWallet }: { data: DashboardData; locale: Locale; totals: { net: number; groups: number; personal: number; reserves: number; spend: number }; onView: (id: ViewId) => void; onAddWallet: () => void }) {
+function Overview({ data, locale, totals, onView, onAddWallet }: { data: DashboardData; locale: Locale; totals: { net: number; groups: number; personal: number; reserves: number; spend: number; income: number; remaining: number }; onView: (id: ViewId) => void; onAddWallet: () => void }) {
   const t = copy[locale];
 
   return (
@@ -934,10 +935,10 @@ function Overview({ data, locale, totals, onView, onAddWallet }: { data: Dashboa
         <div className="date-chip"><CalendarDays size={16} />{new Intl.DateTimeFormat(locale === "ar" ? "ar-AE" : "en-GB", { day: "numeric", month: "long", year: "numeric" }).format(new Date())}</div>
       </div>
       <section className="stat-grid">
-        <StatCard icon={<CircleDollarSign />} label={locale === "ar" ? "مجموع الأرصدة (عرض فقط)" : "Sum of balances (display only)"} value={formatMoney(totals.net, "OMR", locale)} accent="navy" note={locale === "ar" ? "كل محفظة منفصلة — لا خلط" : "Each wallet is separate — not pooled"} negative={totals.net < 0} />
-        <StatCard icon={<WalletCards />} label={locale === "ar" ? "المحفظة الشخصية" : "Personal wallet"} value={formatMoney(totals.personal, "OMR", locale)} accent="green" note={locale === "ar" ? "بنوكك ونقدك" : "your banks and cash"} negative={totals.personal < 0} />
-        <StatCard icon={<Landmark />} label={locale === "ar" ? "أرصدة الجمعيات والسفر" : "Circles and trips"} value={formatMoney(totals.groups, "OMR", locale)} accent="amber" note={locale === "ar" ? "كل جمعية بحسابها" : "each group on its own books"} negative={totals.groups < 0} />
-        <StatCard icon={<TrendingDown />} label={locale === "ar" ? "المصروف المسجّل" : "Recorded spend"} value={formatMoney(totals.spend, "OMR", locale)} accent="rose" note={locale === "ar" ? "من القيود المرحلة فقط" : "posted entries only"} />
+        <StatCard icon={<TrendingUp />} label={locale === "ar" ? "الدخل" : "Income"} value={formatMoney(totals.income, "OMR", locale)} accent="green" note={locale === "ar" ? "رواتب ومساهمات مرحلة" : "posted salary and contributions"} />
+        <StatCard icon={<TrendingDown />} label={locale === "ar" ? "الصرف" : "Spending"} value={formatMoney(totals.spend, "OMR", locale)} accent="rose" note={locale === "ar" ? "مصروفات مرحلة فقط" : "posted expenses only"} />
+        <StatCard icon={<CircleDollarSign />} label={locale === "ar" ? "المتبقي" : "Remaining"} value={formatMoney(totals.remaining, "OMR", locale)} accent="navy" note={locale === "ar" ? "الدخل − الصرف" : "income − spend"} negative={totals.remaining < 0} positive={totals.remaining > 0} />
+        <StatCard icon={<WalletCards />} label={locale === "ar" ? "أرصدة المحافظ" : "Wallet balances"} value={formatMoney(totals.net, "OMR", locale)} accent="amber" note={locale === "ar" ? "كل محفظة منفصلة — عرض فقط" : "each wallet separate — display only"} negative={totals.net < 0} />
       </section>
 
       <section className="wallet-section">
