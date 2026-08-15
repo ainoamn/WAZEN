@@ -998,6 +998,31 @@ export async function POST(request: Request) {
       const space = await authorizeSpace(db, user, parsed.data.spaceId, "members:write");
       if (space.owner_user_id !== user.id) throw new ApiError(403, "FORBIDDEN");
       await deleteSpaceCascade(db, parsed.data.spaceId, user.id);
+    } else if (action === "resetWalletData") {
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        confirm: z.literal("RESET"),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_WALLET");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "members:write");
+      if (space.owner_user_id !== user.id) throw new ApiError(403, "FORBIDDEN");
+      const createdAt = now();
+      await db.batch([
+        db.prepare("DELETE FROM journal_lines WHERE entry_id IN (SELECT id FROM journal_entries WHERE space_id=?)").bind(parsed.data.spaceId),
+        db.prepare("DELETE FROM journal_entries WHERE space_id=?").bind(parsed.data.spaceId),
+        db.prepare("DELETE FROM expense_splits WHERE expense_id IN (SELECT id FROM trip_expenses WHERE space_id=?)").bind(parsed.data.spaceId),
+        db.prepare("DELETE FROM settlements WHERE space_id=?").bind(parsed.data.spaceId),
+        db.prepare("DELETE FROM trip_expenses WHERE space_id=?").bind(parsed.data.spaceId),
+        db.prepare("DELETE FROM family_events WHERE space_id=?").bind(parsed.data.spaceId),
+        db.prepare("DELETE FROM personal_occurrences WHERE space_id=?").bind(parsed.data.spaceId),
+        db.prepare("DELETE FROM personal_rules WHERE space_id=?").bind(parsed.data.spaceId),
+        db.prepare("DELETE FROM personal_accounts WHERE space_id=?").bind(parsed.data.spaceId),
+        db.prepare("DELETE FROM transactions WHERE space_id=?").bind(parsed.data.spaceId),
+        db.prepare("DELETE FROM period_ledger_events WHERE space_id=?").bind(parsed.data.spaceId),
+        db.prepare("UPDATE members SET paid_minor=0, extra_minor=0, addon_minor=0 WHERE space_id=?").bind(parsed.data.spaceId),
+        db.prepare("UPDATE spaces SET balance_minor=0 WHERE id=?").bind(parsed.data.spaceId),
+        prepareAudit(db, { userId: user.id, action: "wallet.reset", entityType: "space", entityId: parsed.data.spaceId, metadata: {}, createdAt }),
+      ]);
     } else if (action === "addPersonalAccount") {
       const parsed = z.object({
         spaceId: z.string().min(1).max(120),
