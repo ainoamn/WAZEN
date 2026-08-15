@@ -328,6 +328,13 @@ function spaceGoalMinor(space: Space, data: DashboardData) {
   return space.goal_minor;
 }
 
+function spaceLedger(space: Space, data: DashboardData) {
+  const rows = data.transactions.filter((row) => row.space_id === space.id && (row.status ?? "approved") !== "void");
+  const income = rows.filter((row) => ["income", "contribution"].includes(row.kind)).reduce((sum, row) => sum + row.amount_minor, 0);
+  const spend = rows.filter((row) => row.kind === "expense").reduce((sum, row) => sum + row.amount_minor, 0);
+  return { income, spend, remaining: income - spend };
+}
+
 function spaceMonthlyFlow(space: Space, data: DashboardData) {
   if (space.type === "personal") {
     const rules = (data.personalRules ?? []).filter((rule) => rule.space_id === space.id && rule.status === "active" && (rule.schedule ?? "monthly") === "monthly");
@@ -935,14 +942,14 @@ function Overview({ data, locale, totals, onView, onAddWallet }: { data: Dashboa
         <div className="date-chip"><CalendarDays size={16} />{new Intl.DateTimeFormat(locale === "ar" ? "ar-AE" : "en-GB", { day: "numeric", month: "long", year: "numeric" }).format(new Date())}</div>
       </div>
       <section className="stat-grid">
-        <StatCard icon={<TrendingUp />} label={locale === "ar" ? "الدخل" : "Income"} value={formatMoney(totals.income, "OMR", locale)} accent="green" note={locale === "ar" ? "رواتب ومساهمات مرحلة" : "posted salary and contributions"} />
-        <StatCard icon={<TrendingDown />} label={locale === "ar" ? "الصرف" : "Spending"} value={formatMoney(totals.spend, "OMR", locale)} accent="rose" note={locale === "ar" ? "مصروفات مرحلة فقط" : "posted expenses only"} />
-        <StatCard icon={<CircleDollarSign />} label={locale === "ar" ? "المتبقي" : "Remaining"} value={formatMoney(totals.remaining, "OMR", locale)} accent="navy" note={locale === "ar" ? "الدخل − الصرف" : "income − spend"} negative={totals.remaining < 0} positive={totals.remaining > 0} />
-        <StatCard icon={<WalletCards />} label={locale === "ar" ? "أرصدة المحافظ" : "Wallet balances"} value={formatMoney(totals.net, "OMR", locale)} accent="amber" note={locale === "ar" ? "كل محفظة منفصلة — عرض فقط" : "each wallet separate — display only"} negative={totals.net < 0} />
+        <StatCard icon={<CircleDollarSign />} label={locale === "ar" ? "مجموع الأرصدة (عرض فقط)" : "Sum of balances (display only)"} value={formatMoney(totals.net, "OMR", locale)} accent="navy" note={locale === "ar" ? "كل محفظة منفصلة — لا خلط" : "Each wallet is separate — not pooled"} negative={totals.net < 0} />
+        <StatCard icon={<WalletCards />} label={locale === "ar" ? "المحفظة الشخصية" : "Personal wallet"} value={formatMoney(totals.personal, "OMR", locale)} accent="green" note={locale === "ar" ? "بنوكك ونقدك" : "your banks and cash"} negative={totals.personal < 0} />
+        <StatCard icon={<Landmark />} label={locale === "ar" ? "أرصدة الجمعيات والسفر" : "Circles and trips"} value={formatMoney(totals.groups, "OMR", locale)} accent="amber" note={locale === "ar" ? "كل جمعية بحسابها" : "each group on its own books"} negative={totals.groups < 0} />
+        <StatCard icon={<TrendingDown />} label={locale === "ar" ? "المصروف المسجّل" : "Recorded spend"} value={formatMoney(totals.spend, "OMR", locale)} accent="rose" note={locale === "ar" ? "من القيود المرحلة فقط" : "posted entries only"} />
       </section>
 
       <section className="wallet-section">
-        <div className="section-title"><div><h2>{t.wallets}</h2><p>{locale === "ar" ? "كل محفظة أو جمعية مستقلة: رصيدها، مصروفها، وأعضاؤها" : "Each wallet is independent: its cash, spend, and members"}</p></div><button className="secondary-button" onClick={onAddWallet}><Plus size={16} />{t.newWallet}</button></div>
+        <div className="section-title"><div><h2>{t.wallets}</h2><p>{locale === "ar" ? "كل محفظة مستقلة: دخلها، مصروفها، والمتبقي فيها" : "Each wallet is independent: its income, spend, and remaining"}</p></div><button className="secondary-button" onClick={onAddWallet}><Plus size={16} />{t.newWallet}</button></div>
         {data.spaces.length ? (
           <div className="wallet-grid">
             {data.spaces.map((space) => <WalletCard key={space.id} space={space} data={data} locale={locale} onOpen={() => onView(space.type === "group" || space.type === "society" || /جمعي|circle|association/i.test(`${space.name_ar} ${space.name_en}`) ? "society" : space.type as ViewId)} />)}
@@ -967,7 +974,7 @@ function StatCard({ icon, label, value, trend, note, accent, positive = false, n
 function WalletCard({ space, data, locale, onOpen }: { space: Space; data: DashboardData; locale: Locale; onOpen: () => void }) {
   const Icon = typeIcons[space.type] ?? WalletCards;
   const members = data.members.filter((member) => member.space_id === space.id && (member.status ?? "active") === "active").length;
-  const spend = data.transactions.filter((row) => row.space_id === space.id && row.kind === "expense").reduce((sum, row) => sum + row.amount_minor, 0);
+  const ledger = spaceLedger(space, data);
   const flow = spaceMonthlyFlow(space, data);
   const forecast = projectCashflow({ balanceMinor: space.balance_minor, monthlyInflowMinor: flow.inflow, monthlyOutflowMinor: flow.outflow, months: 3 });
   return <button className={`wallet-card accent-${space.accent}`} onClick={onOpen}>
@@ -975,8 +982,12 @@ function WalletCard({ space, data, locale, onOpen }: { space: Space; data: Dashb
     <span className="wallet-type">{typeLabels[locale][space.type as keyof typeof typeLabels.ar] ?? space.type}</span>
     <h3>{nameOf(space, locale)}</h3>
     <strong className={space.balance_minor < 0 ? "amount-negative" : ""}>{formatMoney(space.balance_minor, space.currency, locale)}</strong>
-    <small>{locale === "ar" ? `مصروف ${formatMoney(spend, space.currency, locale)} · أعضاء ${space.type === "personal" ? 1 : members}` : `Spend ${formatMoney(spend, space.currency, locale)} · members ${space.type === "personal" ? 1 : members}`}</small>
-    <small>{locale === "ar" ? `بعد 3 أشهر ${formatMoney(forecast.endProjectedMinor, space.currency, locale)}${forecast.needsBoost ? " · عجز متوقع" : ""}` : `In 3 months ${formatMoney(forecast.endProjectedMinor, space.currency, locale)}${forecast.needsBoost ? " · shortfall" : ""}`}</small>
+    <div className="wallet-card-metrics">
+      <span><small>{locale === "ar" ? "الدخل" : "Income"}</small><b>{formatMoney(ledger.income, space.currency, locale)}</b></span>
+      <span><small>{locale === "ar" ? "المصروف" : "Spend"}</small><b className={ledger.spend ? "amount-negative" : ""}>{formatMoney(ledger.spend, space.currency, locale)}</b></span>
+      <span><small>{locale === "ar" ? "المتبقي" : "Left"}</small><b className={ledger.remaining < 0 ? "amount-negative" : ""}>{formatMoney(ledger.remaining, space.currency, locale)}</b></span>
+    </div>
+    <small>{locale === "ar" ? `أعضاء ${space.type === "personal" ? 1 : members} · بعد 3 أشهر ${formatMoney(forecast.endProjectedMinor, space.currency, locale)}${forecast.needsBoost ? " · عجز متوقع" : ""}` : `Members ${space.type === "personal" ? 1 : members} · in 3 months ${formatMoney(forecast.endProjectedMinor, space.currency, locale)}${forecast.needsBoost ? " · shortfall" : ""}`}</small>
   </button>;
 }
 
@@ -1043,12 +1054,13 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
   const t = copy[locale];
   const members = data.members.filter((member) => member.space_id === space.id);
   const transactions = data.transactions.filter((transaction) => transaction.space_id === space.id);
-  const reserves = members.reduce((sum, member) => sum + member.extra_minor, 0);
   const goal = spaceGoalMinor(space, data);
   const progress = goal ? Math.max(0, Math.min(100, Math.round((space.balance_minor / goal) * 100))) : 0;
   const nextCircleTurn = data.circleTurns.find((turn) => turn.space_id === space.id && turn.status === "scheduled");
   const paidTotal = members.reduce((sum, member) => sum + member.paid_minor, 0);
   const spentTotal = transactions.filter((txn) => txn.kind === "expense").reduce((sum, txn) => sum + txn.amount_minor, 0);
+  const incomeTotal = transactions.filter((txn) => ["income", "contribution"].includes(txn.kind)).reduce((sum, txn) => sum + txn.amount_minor, 0);
+  const remainingTotal = incomeTotal - spentTotal;
   const closedBudgets = (data.periods ?? []).filter((period) => period.space_id === space.id && period.status === "closed").length;
   const pendingSettlements = data.settlements.filter((item) => item.space_id === space.id && item.status === "pending").length;
   const currentPeriod = (data.periods ?? []).filter((period) => period.space_id === space.id).sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())[0];
@@ -1099,10 +1111,10 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
       </div>
     </section>
     <section className="stat-grid compact">
-      <StatCard icon={<WalletCards />} label={locale === "ar" ? "الرصيد المتاح" : "Available"} value={formatMoney(space.balance_minor, space.currency, locale)} accent="navy" note={locale === "ar" ? "محدّث الآن" : "updated now"} negative={space.balance_minor < 0} />
-      <StatCard icon={<Target />} label={t.goal} value={goal ? formatMoney(goal, space.currency, locale) : "—"} accent="green" note={`${progress}%`} />
-      <StatCard icon={<ShieldCheck />} label={t.personalReserves} value={formatMoney(reserves, space.currency, locale)} accent="amber" note={t.protected} />
-      <StatCard icon={<ReceiptText />} label={t.transactions} value={String(transactions.length)} accent="rose" note={locale === "ar" ? "عملية مسجلة" : "recorded entries"} />
+      <StatCard icon={<TrendingUp />} label={locale === "ar" ? "إجمالي الدخل" : "Total income"} value={formatMoney(incomeTotal, space.currency, locale)} accent="green" note={locale === "ar" ? "رواتب ومساهمات مرحلة" : "posted income and contributions"} />
+      <StatCard icon={<TrendingDown />} label={locale === "ar" ? "إجمالي المصروف" : "Total spend"} value={formatMoney(spentTotal, space.currency, locale)} accent="rose" note={locale === "ar" ? "مصروفات مرحلة فقط" : "posted expenses only"} />
+      <StatCard icon={<CircleDollarSign />} label={locale === "ar" ? "المتبقي في هذه المحفظة" : "Remaining in this wallet"} value={formatMoney(remainingTotal, space.currency, locale)} accent="navy" note={locale === "ar" ? "دخل هذه المحفظة − صرفها" : "this wallet’s income − spend"} negative={remainingTotal < 0} positive={remainingTotal > 0} />
+      <StatCard icon={<WalletCards />} label={locale === "ar" ? "الرصيد المتاح" : "Available"} value={formatMoney(space.balance_minor, space.currency, locale)} accent="amber" note={locale === "ar" ? "نقد هذه المحفظة فقط" : "this wallet’s cash only"} negative={space.balance_minor < 0} />
     </section>
     {(() => {
       const flow = spaceMonthlyFlow(space, data);

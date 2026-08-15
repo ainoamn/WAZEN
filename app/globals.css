@@ -224,7 +224,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .wallet-card h3 { margin: 4px 0 0; font-size: 15px; }
 .wallet-card > strong { margin-top: 11px; font-size: 20px; letter-spacing: -.035em; }
 .wallet-card .progress-track { margin-top: 13px; }
-.wallet-card small { margin-top: 6px; color: #88948f; font-size: 12px; }
+.wallet-card-metrics { margin-top: 12px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.wallet-card-metrics span { min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 7px 6px; border-radius: 10px; background: #f4f6f5; }
+.wallet-card-metrics small { margin: 0; font-size: 10px; font-weight: 800; color: #7d8884; }
+.wallet-card-metrics b { font-size: 11px; font-weight: 800; letter-spacing: -.03em; direction: ltr; unicode-bidi: plaintext; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lower-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(350px, .75fr); gap: 15px; }
 .list-panel, .obligation-panel, .members-panel, .transaction-table-panel, .report-chart { padding: 20px; }
 .text-button { border: 0; background: transparent; display: flex; align-items: center; gap: 4px; color: var(--green); font-size: 13px; font-weight: 700; cursor: pointer; }
