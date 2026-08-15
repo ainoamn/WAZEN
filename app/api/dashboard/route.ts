@@ -6,11 +6,10 @@ import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWr
 import { assertApiScope, authorizeSpace, ensureDefaultTenant } from "../../../lib/authorization";
 import { prepareAudit } from "../../../lib/audit";
 import { multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
-import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, type InstallmentLike } from "../../../lib/installments";
+import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, periodKeyFromDate, type InstallmentLike } from "../../../lib/installments";
 import { coveringPeriod } from "../../../lib/accounting-periods";
 import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
 import { accountLiveBalance, dueAtForPeriod, monthKeysForRule, occurrenceLedgerStatus } from "../../../lib/personal-finance";
-import { periodKeyFromDate } from "../../../lib/installments";
 import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-forecast";
 
 type SpaceRow = {
@@ -727,6 +726,8 @@ async function rebuildTripExpenseShares(
 async function deleteSpaceCascade(db: D1Database, spaceId: string, userId: string) {
   const createdAt = now();
   await db.batch([
+    db.prepare("DELETE FROM space_bank_links WHERE hub_space_id=? OR linked_space_id=?").bind(spaceId, spaceId),
+    db.prepare("DELETE FROM space_links WHERE hub_space_id=? OR linked_space_id=?").bind(spaceId, spaceId),
     db.prepare("DELETE FROM journal_lines WHERE entry_id IN (SELECT id FROM journal_entries WHERE space_id=?)").bind(spaceId),
     db.prepare("DELETE FROM journal_entries WHERE space_id=?").bind(spaceId),
     db.prepare("DELETE FROM expense_splits WHERE expense_id IN (SELECT id FROM trip_expenses WHERE space_id=?)").bind(spaceId),
@@ -766,7 +767,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     db.prepare("SELECT * FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name").bind(userId).all(),
   ]);
   const ids = spaces.results.map((space) => space.id);
-  if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results, periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [] };
+  if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results, periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [] };
 
   if (options?.refreshDerived !== false) {
     await generatePersonalOccurrences(db, ids);
@@ -789,6 +790,8 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     personalOccurrences,
     payoutAccounts,
     familyEventsRaw,
+    spaceLinks,
+    spaceBankLinks,
   ] = await Promise.all([
     db.prepare(`SELECT * FROM spaces WHERE id IN (${placeholders}) ORDER BY created_at ASC`).bind(...ids).all<SpaceRow>(),
     db.prepare(`SELECT * FROM members WHERE space_id IN (${placeholders}) ORDER BY joined_at ASC`).bind(...ids).all<MemberRow>(),
@@ -829,6 +832,8 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     db.prepare(`SELECT * FROM family_events WHERE space_id IN (${placeholders}) ORDER BY target_at ASC`).bind(...ids).all<{
       id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; notes: string | null; status: string;
     }>(),
+    db.prepare(`SELECT * FROM space_links WHERE hub_space_id IN (${placeholders}) OR linked_space_id IN (${placeholders})`).bind(...ids, ...ids).all<{ id: string; hub_space_id: string; linked_space_id: string; status: string; created_at: string }>(),
+    db.prepare(`SELECT * FROM space_bank_links WHERE hub_space_id IN (${placeholders}) OR linked_space_id IN (${placeholders})`).bind(...ids, ...ids).all<{ id: string; hub_space_id: string; linked_space_id: string; account_id: string; created_at: string }>(),
   ]);
   const personalAccounts = personalAccountsRaw.results.map((account) => ({
     ...account,
@@ -932,6 +937,8 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     personalOccurrences: syncedOccurrences,
     payoutAccounts: payoutAccounts.results,
     familyEvents,
+    spaceLinks: spaceLinks.results,
+    spaceBankLinks: spaceBankLinks.results,
   };
 }
 
@@ -977,7 +984,113 @@ export async function POST(request: Request) {
     }
     claimed = { db, userId: user.id, key: idempotencyKey };
 
-    if (action === "addWallet") {
+    if (action === "linkWallet") {
+      const parsed = z.object({ hubSpaceId: z.string().min(1).max(120), linkedSpaceId: z.string().min(1).max(120) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_LINK");
+      if (parsed.data.hubSpaceId === parsed.data.linkedSpaceId) throw new ApiError(400, "CANNOT_LINK_SELF");
+      const hub = await authorizeSpace(db, user, parsed.data.hubSpaceId, "members:write", ["personal"]);
+      const linked = await authorizeSpace(db, user, parsed.data.linkedSpaceId, "read");
+      if (hub.owner_user_id !== user.id || linked.owner_user_id !== user.id) throw new ApiError(403, "FORBIDDEN");
+      const existing = await db.prepare("SELECT id FROM space_links WHERE hub_space_id=? AND linked_space_id=?").bind(hub.id, linked.id).first();
+      if (existing) throw new ApiError(409, "WALLET_ALREADY_LINKED");
+      const createdAt = now();
+      await db.batch([
+        db.prepare("INSERT INTO space_links (id,hub_space_id,linked_space_id,status,created_at) VALUES (?,?,?,'active',?)")
+          .bind(crypto.randomUUID(), hub.id, linked.id, createdAt),
+        prepareAudit(db, { userId: user.id, action: "wallet.linked", entityType: "space", entityId: hub.id, metadata: { linkedSpaceId: linked.id }, createdAt }),
+      ]);
+    } else if (action === "unlinkWallet") {
+      const parsed = z.object({ hubSpaceId: z.string().min(1).max(120), linkedSpaceId: z.string().min(1).max(120) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_LINK");
+      await authorizeSpace(db, user, parsed.data.hubSpaceId, "members:write", ["personal"]);
+      await authorizeSpace(db, user, parsed.data.linkedSpaceId, "read");
+      const createdAt = now();
+      await db.batch([
+        db.prepare("DELETE FROM space_bank_links WHERE hub_space_id=? AND linked_space_id=?").bind(parsed.data.hubSpaceId, parsed.data.linkedSpaceId),
+        db.prepare("DELETE FROM space_links WHERE hub_space_id=? AND linked_space_id=?").bind(parsed.data.hubSpaceId, parsed.data.linkedSpaceId),
+        prepareAudit(db, { userId: user.id, action: "wallet.unlinked", entityType: "space", entityId: parsed.data.hubSpaceId, metadata: { linkedSpaceId: parsed.data.linkedSpaceId }, createdAt }),
+      ]);
+    } else if (action === "setWalletBankLink") {
+      const parsed = z.object({
+        hubSpaceId: z.string().min(1).max(120),
+        linkedSpaceId: z.string().min(1).max(120),
+        accountId: z.string().max(120).nullable(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_BANK_LINK");
+      await authorizeSpace(db, user, parsed.data.hubSpaceId, "members:write", ["personal"]);
+      await authorizeSpace(db, user, parsed.data.linkedSpaceId, "read");
+      const link = await db.prepare("SELECT id FROM space_links WHERE hub_space_id=? AND linked_space_id=? AND status='active'")
+        .bind(parsed.data.hubSpaceId, parsed.data.linkedSpaceId).first();
+      if (!link) throw new ApiError(409, "WALLET_NOT_LINKED");
+      const createdAt = now();
+      if (!parsed.data.accountId) {
+        await db.batch([
+          db.prepare("DELETE FROM space_bank_links WHERE hub_space_id=? AND linked_space_id=?").bind(parsed.data.hubSpaceId, parsed.data.linkedSpaceId),
+          prepareAudit(db, { userId: user.id, action: "wallet.bank_unlinked", entityType: "space", entityId: parsed.data.hubSpaceId, metadata: { linkedSpaceId: parsed.data.linkedSpaceId }, createdAt }),
+        ]);
+      } else {
+        const account = await db.prepare("SELECT id FROM personal_accounts WHERE id=? AND space_id=? AND status='active'")
+          .bind(parsed.data.accountId, parsed.data.hubSpaceId).first();
+        if (!account) throw new ApiError(400, "INVALID_ACCOUNT");
+        await db.batch([
+          db.prepare("DELETE FROM space_bank_links WHERE hub_space_id=? AND linked_space_id=?").bind(parsed.data.hubSpaceId, parsed.data.linkedSpaceId),
+          db.prepare("INSERT INTO space_bank_links (id,hub_space_id,linked_space_id,account_id,created_at) VALUES (?,?,?,?,?)")
+            .bind(crypto.randomUUID(), parsed.data.hubSpaceId, parsed.data.linkedSpaceId, parsed.data.accountId, createdAt),
+          prepareAudit(db, { userId: user.id, action: "wallet.bank_linked", entityType: "space", entityId: parsed.data.hubSpaceId, metadata: { linkedSpaceId: parsed.data.linkedSpaceId, accountId: parsed.data.accountId }, createdAt }),
+        ]);
+      }
+    } else if (action === "transferLinkedFunds") {
+      const parsed = z.object({
+        hubSpaceId: z.string().min(1).max(120),
+        linkedSpaceId: z.string().min(1).max(120),
+        accountId: z.string().min(1).max(120),
+        direction: z.enum(["to_linked", "to_hub"]),
+        amount: z.union([z.string(), z.number()]),
+        note: z.string().trim().max(200).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_TRANSFER");
+      const hub = await authorizeSpace(db, user, parsed.data.hubSpaceId, "transact", ["personal"]);
+      const linked = await authorizeSpace(db, user, parsed.data.linkedSpaceId, "transact");
+      const pair = await db.prepare("SELECT id FROM space_links WHERE hub_space_id=? AND linked_space_id=? AND status='active'")
+        .bind(hub.id, linked.id).first();
+      if (!pair) throw new ApiError(409, "WALLET_NOT_LINKED");
+      const account = await db.prepare("SELECT id,opening_minor FROM personal_accounts WHERE id=? AND space_id=? AND status='active'")
+        .bind(parsed.data.accountId, hub.id).first<{ id: string; opening_minor: number }>();
+      if (!account) throw new ApiError(400, "INVALID_ACCOUNT");
+      let amountMinor: number;
+      try { amountMinor = parseMoneyToMinor(parsed.data.amount, hub.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      if (amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
+      const hubTxns = (await db.prepare("SELECT account_id,kind,amount_minor,status FROM transactions WHERE space_id=? AND status='approved'").bind(hub.id).all<{ account_id?: string | null; kind: string; amount_minor: number; status: string }>()).results;
+      const ownMinor = accountLiveBalance(Number(account.opening_minor), hubTxns, account.id);
+      const linkedBalance = Number(linked.balance_minor ?? 0);
+      if (parsed.data.direction === "to_linked" && ownMinor < amountMinor) throw new ApiError(409, "INSUFFICIENT_FUNDS");
+      if (parsed.data.direction === "to_hub" && linkedBalance < amountMinor) throw new ApiError(409, "INSUFFICIENT_FUNDS");
+      const createdAt = now();
+      const outId = crypto.randomUUID();
+      const inId = crypto.randomUUID();
+      const note = parsed.data.note?.trim() || "";
+      const toLinked = parsed.data.direction === "to_linked";
+      const outSpace = toLinked ? hub.id : linked.id;
+      const inSpace = toLinked ? linked.id : hub.id;
+      const outAr = toLinked ? `تحويل إلى محفظة مرتبطة${note ? ` · ${note}` : ""}` : `تحويل إلى الحساب الشخصي${note ? ` · ${note}` : ""}`;
+      const outEn = toLinked ? `Transfer to linked wallet${note ? ` · ${note}` : ""}` : `Transfer to personal account${note ? ` · ${note}` : ""}`;
+      const inAr = toLinked ? `تحويل من المحفظة الشخصية${note ? ` · ${note}` : ""}` : `تحويل من محفظة مرتبطة${note ? ` · ${note}` : ""}`;
+      const inEn = toLinked ? `Transfer from personal wallet${note ? ` · ${note}` : ""}` : `Transfer from linked wallet${note ? ` · ${note}` : ""}`;
+      await db.batch([
+        db.prepare("INSERT INTO transactions VALUES (?, ?, ?, NULL, ?, 'general', ?, ?, ?, 'approved', ?, ?)")
+          .bind(outId, outSpace, user.id, "expense", amountMinor, outAr, outEn, createdAt, createdAt),
+        db.prepare("INSERT INTO transactions VALUES (?, ?, ?, NULL, ?, 'general', ?, ?, ?, 'approved', ?, ?)")
+          .bind(inId, inSpace, user.id, "income", amountMinor, inAr, inEn, createdAt, createdAt),
+        db.prepare("UPDATE transactions SET account_id=? WHERE id=?").bind(account.id, toLinked ? outId : inId),
+        prepareAudit(db, { userId: user.id, action: "wallet.transfer", entityType: "transaction", entityId: outId, metadata: { hubSpaceId: hub.id, linkedSpaceId: linked.id, amountMinor, direction: parsed.data.direction }, createdAt }),
+      ]);
+      const bank = await db.prepare("SELECT id FROM space_bank_links WHERE hub_space_id=? AND linked_space_id=?").bind(hub.id, linked.id).first();
+      if (!bank) {
+        await db.prepare("INSERT INTO space_bank_links (id,hub_space_id,linked_space_id,account_id,created_at) VALUES (?,?,?,?,?)")
+          .bind(crypto.randomUUID(), hub.id, linked.id, account.id, createdAt).run();
+      }
+      await rebuildSpaceBalance(db, [hub.id, linked.id]);
+    } else if (action === "addWallet") {
       assertApiScope(user, "wallets:write");
       const parsed = z.object({
         name: z.string().trim().min(2).max(80),

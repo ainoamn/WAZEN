@@ -132,7 +132,7 @@ type CircleTurn = { id: string; space_id: string; member_id: string; display_nam
 type TripExpense = { id: string; space_id: string; paid_by_member_id: string; paid_by_name: string; amount_minor: number; description: string; occurred_at: string; paid_from?: string };
 type ExpenseSplit = { id: string; expense_id: string; member_id: string; display_name: string; share_minor: number };
 type Settlement = { id: string; space_id: string; from_member_id: string; to_member_id: string; from_member_name: string | null; to_member_name: string | null; amount_minor: number; status: string };
-type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }> };
+type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
 
 const copy = {
   ar: {
@@ -470,6 +470,12 @@ function dashboardError(code: string, locale: Locale) {
     ? {
       INTERNAL_ERROR: "تعذر إكمال الحذف. حدّث الصفحة وحاول مرة أخرى.",
       INSUFFICIENT_FUNDS: "رصيد الصندوق لا يكفي.",
+      WALLET_NOT_LINKED: "اربط المحفظة أولاً.",
+      WALLET_ALREADY_LINKED: "هذه المحفظة مربوطة مسبقاً.",
+      CANNOT_LINK_SELF: "لا يمكن ربط المحفظة بنفسها.",
+      WALLET_NOT_LINKED: "اربط المحفظة أولاً.",
+      WALLET_ALREADY_LINKED: "هذه المحفظة مربوطة مسبقاً.",
+      CANNOT_LINK_SELF: "لا يمكن ربط المحفظة بنفسها.",
       PERIOD_CLOSED: "الفترة مغلقة. أعد فتحها للتعديل.",
       PERIOD_UNSETTLED: "لا يمكن إغلاق الفترة قبل أن يسدّد كل الأعضاء ما عليهم (الاشتراك والتسويات المعلقة).",
       INVALID_PAYER: "اختر حساب الدفع.",
@@ -483,6 +489,12 @@ function dashboardError(code: string, locale: Locale) {
     : {
       INTERNAL_ERROR: "Could not complete the delete. Refresh and try again.",
       INSUFFICIENT_FUNDS: "Insufficient fund balance.",
+      WALLET_NOT_LINKED: "Link the wallet first.",
+      WALLET_ALREADY_LINKED: "This wallet is already linked.",
+      CANNOT_LINK_SELF: "A wallet cannot link to itself.",
+      WALLET_NOT_LINKED: "Link the wallet first.",
+      WALLET_ALREADY_LINKED: "This wallet is already linked.",
+      CANNOT_LINK_SELF: "A wallet cannot link to itself.",
       PERIOD_CLOSED: "The period is closed. Reopen it to edit.",
       PERIOD_UNSETTLED: "Close the period only after every member settles dues and pending shares.",
       INVALID_PAYER: "Choose who paid.",
@@ -1334,6 +1346,9 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
         rules={data.personalRules ?? []}
         occurrences={data.personalOccurrences ?? []}
         transactions={data.transactions}
+        spaces={data.spaces}
+        spaceLinks={data.spaceLinks ?? []}
+        spaceBankLinks={data.spaceBankLinks ?? []}
         onChanged={(next) => onTxnChanged(next as Partial<DashboardData>)}
       />
     )}

@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -608,6 +608,23 @@ async function initializeSchema(db: D1Database) {
       created_at TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_family_events_space ON family_events(space_id, target_at)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS space_links (
+      id TEXT PRIMARY KEY,
+      hub_space_id TEXT NOT NULL,
+      linked_space_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      UNIQUE(hub_space_id, linked_space_id)
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_space_links_hub ON space_links(hub_space_id, status)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS space_bank_links (
+      id TEXT PRIMARY KEY,
+      hub_space_id TEXT NOT NULL,
+      linked_space_id TEXT NOT NULL UNIQUE,
+      account_id TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_space_bank_hub ON space_bank_links(hub_space_id, account_id)"),
   ]);
   const memberColumns = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
   if (!memberColumns.results.some((column) => column.name === "phone")) {

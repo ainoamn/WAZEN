@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, validateJournal } from "../lib/finance.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
+import { bankCustodySplit } from "../lib/wallet-links.ts";
 
 test("equal expense splits preserve every minor unit", () => {
   const splits = splitEvenly(100, ["a", "b", "c"]);
@@ -80,4 +81,15 @@ test("closed accounting period locks dates inside its range until reopened", () 
   assert.equal(isPeriodLocked([closed], "2026-08-01T12:00:00.000Z"), true);
   assert.equal(isPeriodLocked([{ ...closed, status: "reopened" }], "2026-08-01T12:00:00.000Z"), false);
   assert.equal(coveringPeriod([{ ...closed, status: "reopened" }], "2026-08-01T12:00:00.000Z")?.status, "reopened");
+});
+
+test("bank custody split keeps own money apart from linked wallets", () => {
+  const split = bankCustodySplit(800_000, [
+    { spaceId: "kids", accountId: "bank", balanceMinor: 150_000 },
+    { spaceId: "society", accountId: "bank", balanceMinor: 50_000 },
+  ]);
+  assert.equal(split.ownMinor, 800_000);
+  assert.equal(split.heldMinor, 200_000);
+  assert.equal(split.totalMinor, 1_000_000);
+  assert.equal(split.mixed, true);
 });

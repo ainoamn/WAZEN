@@ -557,7 +557,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .personal-occ-account .money-input input:focus { border-color: var(--green); outline: 0; background: #fff; }
 .personal-occ-account select, .personal-occ-row select { width: 100%; min-width: 0; height: 40px; border: 1px solid #dfe5e1; border-radius: 10px; padding: 0 8px; background: #fff; color: var(--ink); font-size: 13px; }
 .personal-account-card i { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--green-soft); color: var(--green); }
-.personal-account-card small { display: block; color: #809089; font-size: 11px; }
+.personal-account-card strong { display: block; }
+.account-custody { display: block; margin-top: 4px; color: #66766f; font-size: 11px; font-weight: 700; line-height: 1.45; }
+.wallet-link-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.wallet-link-row select, .wallet-link-row .money-input { min-height: 40px; min-width: 140px; }
+.wallet-link-row select { height: 40px; border: 1px solid #dfe5e1; border-radius: 10px; padding: 0 10px; background: #fff; }
+.wallet-transfer-box { margin-top: 14px; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; display: grid; gap: 8px; }
+.wallet-transfer-box strong { font-size: 13px; }
 .personal-occ-list, .personal-rule-list, .personal-loan-list { display: grid; gap: 8px; margin-top: 10px; }
 .personal-occ-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .personal-defer-box { grid-column: 1 / -1; display: grid; gap: 10px; padding: 10px; border: 1px dashed var(--line); border-radius: 12px; background: color-mix(in srgb, var(--panel) 88%, #eef3f0); }

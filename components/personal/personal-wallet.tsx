@@ -1,15 +1,22 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Archive, Banknote, CalendarClock, Check, ChevronDown, Lock, Pause, Pencil, Play, Plus, Printer, Trash2, Unlock, WalletCards, X } from "lucide-react";
+import { Archive, Banknote, CalendarClock, Check, ChevronDown, Link2, Lock, Pause, Pencil, Play, Plus, Printer, Trash2, Unlock, WalletCards, X } from "lucide-react";
 import { CollapsiblePanel, FoldWrap } from "../ui/collapsible-panel";
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
 import { occurrenceVarianceCopy, occurrenceLedgerStatus } from "../../lib/personal-finance";
+import { bankCustodySplit, holdingsForAccount } from "../../lib/wallet-links";
 import OmrSymbol from "../brand/OmrSymbol";
 import { DateField } from "../ui/date-field";
 
-type Locale = "ar" | "en";
+type LinkedSpace = { id: string; name_ar: string; name_en: string; type: string; balance_minor: number; status?: string };
+type SpaceLink = { hub_space_id: string; linked_space_id: string; status: string };
+type SpaceBankLink = { hub_space_id: string; linked_space_id: string; account_id: string };
+
+function spaceTitle(space: LinkedSpace, locale: Locale) {
+  return locale === "ar" ? space.name_ar : space.name_en;
+}
 
 export type PersonalAccount = {
   id: string;
@@ -103,6 +110,9 @@ export function PersonalWalletPanel({
   rules,
   occurrences,
   transactions = [],
+  spaces = [],
+  spaceLinks = [],
+  spaceBankLinks = [],
   onChanged,
 }: {
   spaceId: string;
@@ -120,9 +130,19 @@ export function PersonalWalletPanel({
     description_ar?: string;
     description_en?: string;
   }>;
+  spaces?: LinkedSpace[];
+  spaceLinks?: SpaceLink[];
+  spaceBankLinks?: SpaceBankLink[];
   onChanged: (next: Record<string, unknown>) => void;
 }) {
   const [accountOpen, setAccountOpen] = useState<PersonalAccount | true | null>(null);
+  const holdings = spaceBankLinks
+    .filter((row) => row.hub_space_id === spaceId)
+    .map((row) => {
+      const space = spaces.find((item) => item.id === row.linked_space_id);
+      return { spaceId: row.linked_space_id, accountId: row.account_id, balanceMinor: Number(space?.balance_minor ?? 0), name: space ? spaceTitle(space, locale) : row.linked_space_id };
+    });
+
   const spaceAccounts = accounts.filter((item) => item.space_id === spaceId);
   const activeAccounts = spaceAccounts.filter((item) => (item.status ?? "active") === "active");
   const spaceRules = rules.filter((item) => item.space_id === spaceId);
@@ -167,6 +187,7 @@ export function PersonalWalletPanel({
               key={account.id}
               account={account}
               locale={locale}
+              holdings={holdingsForAccount(account.id, holdings).map((row) => ({ name: row.name ?? row.spaceId, balanceMinor: row.balanceMinor }))}
               onEdit={() => setAccountOpen(account)}
               onPause={() => void mutateAccount(account.id, (account.status ?? "active") === "paused" ? "active" : "paused")}
               onArchive={() => void mutateAccount(account.id, (account.status ?? "active") === "archived" ? "active" : "archived")}
@@ -176,6 +197,15 @@ export function PersonalWalletPanel({
           {!spaceAccounts.length && <p className="empty-state">{locale === "ar" ? "أضف حساب بنك نزوى أو مسقط أو النقد أولاً." : "Add Bank Nizwa, Muscat, or cash first."}</p>}
         </div>
       </CollapsiblePanel>
+      <WalletLinksPanel
+        spaceId={spaceId}
+        locale={locale}
+        accounts={activeAccounts}
+        spaces={spaces}
+        spaceLinks={spaceLinks}
+        spaceBankLinks={spaceBankLinks}
+        onChanged={onChanged}
+      />
       {byMonth.size > 0 && (
         <CollapsiblePanel
           id={`${spaceId}:months`}
@@ -391,17 +421,147 @@ export function PersonalRulesSetup({
   );
 }
 
-function AccountCard({ account, locale, onEdit, onPause, onArchive, onDelete }: { account: PersonalAccount; locale: Locale; onEdit: () => void; onPause: () => void; onArchive: () => void; onDelete: () => void }) {
+function WalletLinksPanel({
+  spaceId,
+  locale,
+  accounts,
+  spaces,
+  spaceLinks,
+  spaceBankLinks,
+  onChanged,
+}: {
+  spaceId: string;
+  locale: Locale;
+  accounts: PersonalAccount[];
+  spaces: LinkedSpace[];
+  spaceLinks: SpaceLink[];
+  spaceBankLinks: SpaceBankLink[];
+  onChanged: (next: Record<string, unknown>) => void;
+}) {
+  const linkedIds = new Set(spaceLinks.filter((row) => row.hub_space_id === spaceId && row.status === "active").map((row) => row.linked_space_id));
+  const linkedSpaces = spaces.filter((space) => linkedIds.has(space.id));
+  const available = spaces.filter((space) => space.id !== spaceId && (space.status ?? "active") !== "archived" && !linkedIds.has(space.id));
+  const [pickId, setPickId] = useState(available[0]?.id ?? "");
+  const [transferSpace, setTransferSpace] = useState(linkedSpaces[0]?.id ?? "");
+  const [transferAccount, setTransferAccount] = useState(accounts[0]?.id ?? "");
+  const [direction, setDirection] = useState<"to_linked" | "to_hub">("to_linked");
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const typeLabel = (type: string) => {
+    const map: Record<string, [string, string]> = {
+      personal: ["شخصية", "personal"],
+      household: ["منزل", "household"],
+      trip: ["سفر", "trip"],
+      society: ["جمعية", "society"],
+      group: ["مجموعة", "group"],
+    };
+    const pair = map[type] ?? [type, type];
+    return locale === "ar" ? pair[0] : pair[1];
+  };
+  const post = async (body: Record<string, unknown>) => {
+    setBusy(true);
+    const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, idempotencyKey: crypto.randomUUID() }) });
+    const result = await response.json() as Record<string, unknown> & { error?: string };
+    setBusy(false);
+    if (!response.ok) {
+      const code = result.error ?? "FAILED";
+      const messages: Record<string, string> = locale === "ar"
+        ? { INSUFFICIENT_FUNDS: "الرصيد لا يكفي لهذا التحويل.", WALLET_NOT_LINKED: "اربط المحفظة أولاً.", WALLET_ALREADY_LINKED: "هذه المحفظة مربوطة مسبقاً.", CANNOT_LINK_SELF: "لا يمكن ربط المحفظة بنفسها." }
+        : { INSUFFICIENT_FUNDS: "Not enough balance for this transfer.", WALLET_NOT_LINKED: "Link the wallet first.", WALLET_ALREADY_LINKED: "This wallet is already linked.", CANNOT_LINK_SELF: "A wallet cannot link to itself." };
+      window.alert(messages[code] ?? code);
+      return;
+    }
+    onChanged(result);
+  };
+  return (
+    <CollapsiblePanel
+      id={`${spaceId}:links`}
+      heading={<><span className="section-kicker"><Link2 size={15} />{locale === "ar" ? "ربط المحافظ" : "Linked wallets"}</span><h2>{locale === "ar" ? "فصل أموالك عن أموال المحافظ والجمعيات المرتبطة" : "Keep your money separate from linked wallets and associations"}</h2></>}
+      foldLabel={locale === "ar" ? "طي الربط" : "Fold links"}
+    >
+      <p className="modal-note">
+        {locale === "ar"
+          ? "اربط محفظة الأطفال أو جمعية بحسابك البنكي. التحويل يخصم من أموالك ويضيف لمحفظتهم دون خلط الرصيد. على بطاقة الحساب يظهر: أموالك، ثم كل محفظة كم لها."
+          : "Link a children’s wallet or association to your bank. Transfers move from your pile to theirs without mixing. The account card shows your money, then each wallet’s share."}
+      </p>
+      <div className="wallet-link-row">
+        <select value={pickId} onChange={(event) => setPickId(event.target.value)} disabled={!available.length}>
+          {!available.length && <option value="">{locale === "ar" ? "لا توجد محافظ أخرى للربط" : "No other wallets to link"}</option>}
+          {available.map((space) => (
+            <option key={space.id} value={space.id}>{spaceTitle(space, locale)} · {typeLabel(space.type)}</option>
+          ))}
+        </select>
+        <button type="button" className="primary-button" disabled={busy || !pickId} onClick={() => void post({ action: "linkWallet", hubSpaceId: spaceId, linkedSpaceId: pickId })}>
+          <Link2 size={14} />{locale === "ar" ? "ربط" : "Link"}
+        </button>
+      </div>
+      <div className="personal-loan-list">
+        {linkedSpaces.map((space) => {
+          const bankId = spaceBankLinks.find((row) => row.hub_space_id === spaceId && row.linked_space_id === space.id)?.account_id ?? "";
+          return (
+            <div className="personal-loan-row" key={space.id}>
+              <div>
+                <strong>{spaceTitle(space, locale)}</strong>
+                <span>{typeLabel(space.type)} · {locale === "ar" ? "رصيد المحفظة" : "wallet balance"} {money(space.balance_minor, locale)}</span>
+              </div>
+              <select value={bankId} onChange={(event) => void post({ action: "setWalletBankLink", hubSpaceId: spaceId, linkedSpaceId: space.id, accountId: event.target.value || null })}>
+                <option value="">{locale === "ar" ? "بدون حساب بنكي" : "No bank account"}</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>{account.name}</option>
+                ))}
+              </select>
+              <button type="button" className="secondary-button compact" disabled={busy} onClick={() => void post({ action: "unlinkWallet", hubSpaceId: spaceId, linkedSpaceId: space.id })}>
+                <X size={14} />{locale === "ar" ? "فصل" : "Unlink"}
+              </button>
+            </div>
+          );
+        })}
+        {!linkedSpaces.length && <p className="empty-state">{locale === "ar" ? "لا محافظ مربوطة بعد. أنشئ محفظة للأطفال أو جمعية ثم اربطها هنا." : "No linked wallets yet. Create a children’s wallet or association, then link it here."}</p>}
+      </div>
+      {linkedSpaces.length > 0 && accounts.length > 0 && (
+        <div className="wallet-transfer-box">
+          <strong>{locale === "ar" ? "تحويل بين حسابك والمحفظة المرتبطة" : "Transfer between your account and a linked wallet"}</strong>
+          <div className="wallet-link-row">
+            <select value={transferSpace} onChange={(event) => setTransferSpace(event.target.value)}>
+              {linkedSpaces.map((space) => <option key={space.id} value={space.id}>{spaceTitle(space, locale)}</option>)}
+            </select>
+            <select value={transferAccount} onChange={(event) => setTransferAccount(event.target.value)}>
+              {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+            </select>
+            <select value={direction} onChange={(event) => setDirection(event.target.value as "to_linked" | "to_hub")}>
+              <option value="to_linked">{locale === "ar" ? "من أموالي إلى المحفظة" : "From mine to wallet"}</option>
+              <option value="to_hub">{locale === "ar" ? "من المحفظة إلى أموالي" : "From wallet to mine"}</option>
+            </select>
+            <div className="money-input"><input type="number" min="0.001" step="0.001" value={amount} onChange={(event) => setAmount(event.target.value)} /><b className="money-currency"><OmrSymbol size={12} /></b></div>
+            <button type="button" className="primary-button" disabled={busy || !amount || !transferSpace} onClick={() => void post({ action: "transferLinkedFunds", hubSpaceId: spaceId, linkedSpaceId: transferSpace, accountId: transferAccount, direction, amount })}>
+              {locale === "ar" ? "تحويل" : "Transfer"}
+            </button>
+          </div>
+        </div>
+      )}
+    </CollapsiblePanel>
+  );
+}
+
+function AccountCard({ account, locale, holdings = [], onEdit, onPause, onArchive, onDelete }: { account: PersonalAccount; locale: Locale; holdings?: Array<{ name: string; balanceMinor: number }>; onEdit: () => void; onPause: () => void; onArchive: () => void; onDelete: () => void }) {
   const [unlocked, setUnlocked] = useState(false);
   const status = account.status ?? "active";
+  const own = Number(account.balance_minor ?? account.opening_minor);
+  const split = bankCustodySplit(own, holdings.map((row, index) => ({ spaceId: String(index), accountId: account.id, balanceMinor: row.balanceMinor, name: row.name })));
   return (
     <div className={`personal-account-card ${status !== "active" ? "is-paused" : ""}`}>
       <i><Banknote size={16} /></i>
       <div>
         <small>{account.kind === "cash" ? (locale === "ar" ? "نقد" : "Cash") : account.kind === "wallet" ? (locale === "ar" ? "محفظة" : "Wallet") : (locale === "ar" ? "بنك" : "Bank")}{status === "paused" ? (locale === "ar" ? " · متوقف" : " · paused") : status === "archived" ? (locale === "ar" ? " · مؤرشف" : " · archived") : ""}</small>
         <strong>{account.name}</strong>
+        {split.mixed && (
+          <span className="account-custody">
+            {locale === "ar" ? `أموالك ${money(split.ownMinor, locale)}` : `Yours ${money(split.ownMinor, locale)}`}
+            {holdings.map((row) => ` · ${row.name} ${money(row.balanceMinor, locale)}`).join("")}
+          </span>
+        )}
       </div>
-      <b>{money(Number(account.balance_minor ?? account.opening_minor), locale)}</b>
+      <b>{money(split.totalMinor, locale)}</b>
       <div className="personal-account-guard">
         <button type="button" className={`account-lock ${unlocked ? "open" : ""}`} onClick={() => setUnlocked((current) => !current)}>
           {unlocked ? <Unlock size={14} /> : <Lock size={14} />}
