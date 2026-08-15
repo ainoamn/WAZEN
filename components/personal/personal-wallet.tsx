@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { Banknote, Check, ChevronDown, Plus, WalletCards, X } from "lucide-react";
+import { Archive, Banknote, Check, ChevronDown, Pause, Pencil, Play, Plus, Trash2, WalletCards, X } from "lucide-react";
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
 import OmrSymbol from "../brand/OmrSymbol";
@@ -74,19 +74,33 @@ export function PersonalWalletPanel({
   const [accountOpen, setAccountOpen] = useState(false);
   const [incomeMenu, setIncomeMenu] = useState(false);
   const [expenseMenu, setExpenseMenu] = useState(false);
-  const [ruleOpen, setRuleOpen] = useState<{ kind: "income" | "expense"; schedule: "monthly" | "once" | "unscheduled"; amountMode: "fixed" | "variable" } | null>(null);
+  const [ruleOpen, setRuleOpen] = useState<{ kind: "income" | "expense"; schedule: "monthly" | "once" | "unscheduled"; amountMode: "fixed" | "variable"; existing?: PersonalRule } | null>(null);
   const spaceAccounts = accounts.filter((item) => item.space_id === spaceId);
   const spaceRules = rules.filter((item) => item.space_id === spaceId);
   const spaceOcc = occurrences.filter((item) => item.space_id === spaceId);
   const pending = spaceOcc.filter((item) => item.status === "pending");
   const loans = spaceRules.filter((item) => Number(item.total_minor) > 0);
-  const unscheduled = spaceRules.filter((item) => (item.schedule ?? "monthly") === "unscheduled");
+  const unscheduled = spaceRules.filter((item) => (item.schedule ?? "monthly") === "unscheduled" && item.status === "active");
   const byMonth = [...spaceOcc].sort((a, b) => a.period_key.localeCompare(b.period_key)).reduce((map, item) => {
     const list = map.get(item.period_key) ?? [];
     list.push(item);
     map.set(item.period_key, list);
     return map;
   }, new Map<string, PersonalOccurrence[]>());
+
+  const mutateRule = async (ruleId: string, status: "active" | "paused" | "archived") => {
+    const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "setPersonalRuleStatus", idempotencyKey: crypto.randomUUID(), ruleId, status }) });
+    const result = await response.json() as Record<string, unknown> & { error?: string };
+    if (!response.ok) { window.alert(result.error ?? "FAILED"); return; }
+    onChanged(result);
+  };
+  const removeRule = async (ruleId: string) => {
+    if (!window.confirm(locale === "ar" ? "حذف هذا البند؟ القيود المرحلة تبقى، والاستحقاقات المعلقة تُلغى." : "Delete this rule? Posted entries stay; pending months are removed.")) return;
+    const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "deletePersonalRule", idempotencyKey: crypto.randomUUID(), ruleId }) });
+    const result = await response.json() as Record<string, unknown> & { error?: string };
+    if (!response.ok) { window.alert(result.error ?? "FAILED"); return; }
+    onChanged(result);
+  };
 
   return (
     <>
@@ -217,10 +231,18 @@ export function PersonalWalletPanel({
         </div>
         <div className="personal-rule-list">
           {spaceRules.map((rule) => (
-            <div className="personal-rule-row" key={rule.id}>
-              <strong>{rule.name}</strong>
-              <span>{rule.kind === "income" ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "مصروف" : "Expense")} · {(rule.schedule ?? "monthly") === "once" ? (locale === "ar" ? `مجدول ${rule.starts_at.slice(0, 7)}` : `scheduled ${rule.starts_at.slice(0, 7)}`) : (rule.schedule ?? "monthly") === "unscheduled" ? (locale === "ar" ? "بدون موعد" : "no date") : (rule.amount_mode === "variable" ? (locale === "ar" ? "متغير شهرياً" : "variable monthly") : (locale === "ar" ? "ثابت شهرياً" : "fixed monthly"))}</span>
+            <div className={`personal-rule-row ${rule.status !== "active" ? "is-paused" : ""}`} key={rule.id}>
+              <div>
+                <strong>{rule.name}</strong>
+                <span>{rule.kind === "income" ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "مصروف" : "Expense")} · {(rule.schedule ?? "monthly") === "once" ? (locale === "ar" ? `مجدول ${rule.starts_at.slice(0, 7)}` : `scheduled ${rule.starts_at.slice(0, 7)}`) : (rule.schedule ?? "monthly") === "unscheduled" ? (locale === "ar" ? "بدون موعد" : "no date") : (rule.amount_mode === "variable" ? (locale === "ar" ? "متغير شهرياً" : "variable monthly") : (locale === "ar" ? "ثابت شهرياً" : "fixed monthly"))}{rule.status === "paused" ? (locale === "ar" ? " · متوقف" : " · paused") : rule.status === "archived" ? (locale === "ar" ? " · مؤرشف" : " · archived") : ""}</span>
+              </div>
               <b>{rule.amount_minor ? money(rule.amount_minor, locale) : (locale === "ar" ? "يُدخل عند الترحيل" : "enter when posting")}</b>
+              <div className="personal-rule-actions">
+                <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => setRuleOpen({ kind: rule.kind === "expense" ? "expense" : "income", schedule: (rule.schedule === "once" || rule.schedule === "unscheduled" ? rule.schedule : "monthly"), amountMode: rule.amount_mode === "variable" ? "variable" : "fixed", existing: rule })}><Pencil size={14} /></button>
+                <button type="button" title={rule.status === "paused" ? (locale === "ar" ? "تشغيل" : "Resume") : (locale === "ar" ? "إيقاف" : "Pause")} onClick={() => void mutateRule(rule.id, rule.status === "paused" ? "active" : "paused")}>{rule.status === "paused" ? <Play size={14} /> : <Pause size={14} />}</button>
+                <button type="button" title={rule.status === "archived" ? (locale === "ar" ? "استعادة" : "Restore") : (locale === "ar" ? "أرشفة" : "Archive")} onClick={() => void mutateRule(rule.id, rule.status === "archived" ? "active" : "archived")}><Archive size={14} /></button>
+                <button type="button" className="danger" title={locale === "ar" ? "حذف" : "Delete"} onClick={() => void removeRule(rule.id)}><Trash2 size={14} /></button>
+              </div>
             </div>
           ))}
           {!spaceRules.length && <p className="empty-state">{locale === "ar" ? "أضف راتباً ثابتاً أو متغيراً أو دخلاً بلا موعد، وجدوِل مصروفاً لشهر معيّن مثل أكتوبر." : "Add fixed, variable, or undated income, and schedule an expense for a month such as October."}</p>}
@@ -228,7 +250,7 @@ export function PersonalWalletPanel({
       </article>
 
       {accountOpen && <AccountModal locale={locale} spaceId={spaceId} onClose={() => setAccountOpen(false)} onChanged={(next) => { onChanged(next); setAccountOpen(false); }} />}
-      {ruleOpen && <RuleModal locale={locale} spaceId={spaceId} kind={ruleOpen.kind} schedule={ruleOpen.schedule} amountMode={ruleOpen.amountMode} accounts={spaceAccounts} onClose={() => setRuleOpen(null)} onChanged={(next) => { onChanged(next); setRuleOpen(null); }} />}
+      {ruleOpen && <RuleModal locale={locale} spaceId={spaceId} kind={ruleOpen.kind} schedule={ruleOpen.schedule} amountMode={ruleOpen.amountMode} existing={ruleOpen.existing} accounts={spaceAccounts} onClose={() => setRuleOpen(null)} onChanged={(next) => { onChanged(next); setRuleOpen(null); }} />}
     </>
   );
 }
@@ -331,17 +353,17 @@ function AccountModal({ locale, spaceId, onClose, onChanged }: { locale: Locale;
   );
 }
 
-function RuleModal({ locale, spaceId, kind, schedule, amountMode: initialMode, accounts, onClose, onChanged }: { locale: Locale; spaceId: string; kind: "income" | "expense"; schedule: "monthly" | "once" | "unscheduled"; amountMode: "fixed" | "variable"; accounts: PersonalAccount[]; onClose: () => void; onChanged: (next: Record<string, unknown>) => void }) {
-  const [name, setName] = useState("");
+function RuleModal({ locale, spaceId, kind, schedule, amountMode: initialMode, existing, accounts, onClose, onChanged }: { locale: Locale; spaceId: string; kind: "income" | "expense"; schedule: "monthly" | "once" | "unscheduled"; amountMode: "fixed" | "variable"; existing?: PersonalRule; accounts: PersonalAccount[]; onClose: () => void; onChanged: (next: Record<string, unknown>) => void }) {
+  const [name, setName] = useState(existing?.name ?? "");
   const [expenseType, setExpenseType] = useState<"fixed" | "variable" | "once">(schedule === "once" ? "once" : initialMode === "variable" ? "variable" : "fixed");
   const amountMode = initialMode;
-  const [amount, setAmount] = useState("");
-  const [total, setTotal] = useState("");
-  const [duration, setDuration] = useState("");
-  const [dueDay, setDueDay] = useState("1");
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
-  const [startsAt, setStartsAt] = useState(new Date().toISOString().slice(0, 10));
-  const [endsAt, setEndsAt] = useState("");
+  const [amount, setAmount] = useState(existing?.amount_minor ? String(existing.amount_minor / 1000) : "");
+  const [total, setTotal] = useState(existing?.total_minor ? String(existing.total_minor / 1000) : "");
+  const [duration, setDuration] = useState(existing?.duration_months ? String(existing.duration_months) : "");
+  const [dueDay, setDueDay] = useState(String(existing?.due_day || 1));
+  const [accountId, setAccountId] = useState(existing?.account_id ?? accounts[0]?.id ?? "");
+  const [startsAt, setStartsAt] = useState((existing?.starts_at ?? new Date().toISOString()).slice(0, 10));
+  const [endsAt, setEndsAt] = useState(existing?.ends_at ? existing.ends_at.slice(0, 10) : "");
   const [saving, setSaving] = useState(false);
   const resolvedSchedule = kind === "expense" ? (expenseType === "once" ? "once" : "monthly") : schedule;
   const resolvedAmountMode = kind === "expense" ? (expenseType === "variable" ? "variable" : "fixed") : amountMode;
@@ -362,8 +384,9 @@ function RuleModal({ locale, spaceId, kind, schedule, amountMode: initialMode, a
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        action: "addPersonalRule",
+        action: existing ? "updatePersonalRule" : "addPersonalRule",
         idempotencyKey: crypto.randomUUID(),
+        ruleId: existing?.id,
         spaceId,
         accountId: accountId || undefined,
         kind,
@@ -421,7 +444,7 @@ function RuleModal({ locale, spaceId, kind, schedule, amountMode: initialMode, a
           </label>
           {resolvedSchedule === "once" && <p className="modal-note">{locale === "ar" ? "خصم مرة واحدة: يُدخل المبلغ ويظهر في حساب ذلك الشهر فقط، ثم تخصمه أو تتجاهله." : "One-time: enter the amount; it appears in that month only until you post or skip it."}</p>}
           {schedule === "unscheduled" && <p className="modal-note">{locale === "ar" ? "بلا تاريخ استحقاق. عندما يصل المبلغ اختر الشهر ثم «أضف للشهر»." : "No due date. When the money arrives, pick a month and add it."}</p>}
-          <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{locale === "ar" ? "إلغاء" : "Cancel"}</button><button className="primary-button" disabled={saving}>{saving ? "…" : (locale === "ar" ? "حفظ" : "Save")}</button></div>
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{locale === "ar" ? "إلغاء" : "Cancel"}</button><button className="primary-button" disabled={saving}>{saving ? "…" : (existing ? (locale === "ar" ? "حفظ التعديل" : "Save changes") : (locale === "ar" ? "حفظ" : "Save"))}</button></div>
         </form>
       </section>
     </div>

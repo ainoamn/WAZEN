@@ -790,7 +790,7 @@ export function WazenDashboard() {
 
         <div className="page-content">
           {activeView === "overview" && (
-            <Overview data={data} locale={locale} totals={totals} onView={changeView} onAddWallet={openNewWallet} />
+            <Overview data={data} locale={locale} totals={totals} onView={changeView} onAddWallet={openNewWallet} onTxnChanged={(next) => { setData({ ...data, ...next }); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />
           )}
           {viewSpaceType[activeView] && (
             <>
@@ -995,7 +995,7 @@ function Sidebar({ locale, active, open, onNavigate, onClose, onLogout }: { loca
   );
 }
 
-function Overview({ data, locale, totals, onView, onAddWallet }: { data: DashboardData; locale: Locale; totals: { net: number; groups: number; personal: number; reserves: number; spend: number; income: number; remaining: number }; onView: (id: ViewId) => void; onAddWallet: () => void }) {
+function Overview({ data, locale, totals, onView, onAddWallet, onTxnChanged }: { data: DashboardData; locale: Locale; totals: { net: number; groups: number; personal: number; reserves: number; spend: number; income: number; remaining: number }; onView: (id: ViewId) => void; onAddWallet: () => void; onTxnChanged: (next: Partial<DashboardData>) => void }) {
   const t = copy[locale];
 
   return (
@@ -1023,7 +1023,7 @@ function Overview({ data, locale, totals, onView, onAddWallet }: { data: Dashboa
       </section>
 
       <section className="lower-grid">
-        <RecentTransactions data={data} locale={locale} onView={() => onView("transactions")} />
+        <RecentTransactions data={data} locale={locale} onView={() => onView("transactions")} onChanged={onTxnChanged} />
         <Obligations data={data} locale={locale} onView={onView} />
       </section>
     </div>
@@ -1054,10 +1054,19 @@ function WalletCard({ space, data, locale, onOpen }: { space: Space; data: Dashb
   </button>;
 }
 
-function RecentTransactions({ data, locale, onView }: { data: DashboardData; locale: Locale; onView: () => void }) {
+function RecentTransactions({ data, locale, onView, onChanged }: { data: DashboardData; locale: Locale; onView: () => void; onChanged: (next: Partial<DashboardData>) => void }) {
   const t = copy[locale];
+  const [editing, setEditing] = useState<Transaction | null>(null);
+  const voidTxn = async (transaction: Transaction) => {
+    if (!window.confirm(locale === "ar" ? "حذف هذه العملية وإلغاء أثرها على الرصيد؟" : "Void this transaction and reverse its balance?")) return;
+    const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "voidTransaction", idempotencyKey: crypto.randomUUID(), transactionId: transaction.id }) });
+    const result = await response.json() as Partial<DashboardData> & { error?: string };
+    if (!response.ok) { window.alert(result.error ?? "VOID_FAILED"); return; }
+    onChanged(result);
+  };
   return <article className="panel list-panel"><div className="panel-heading"><h2>{t.recent}</h2><button className="text-button" onClick={onView}>{t.viewAll}<ArrowUpRight size={15} /></button></div>
-    <div className="transaction-list">{data.transactions.length ? data.transactions.slice(0, 5).map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} data={data} locale={locale} />) : <Empty locale={locale} />}</div>
+    <div className="transaction-list">{data.transactions.length ? data.transactions.slice(0, 5).map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} data={data} locale={locale} onEdit={setEditing} onVoid={(txn) => void voidTxn(txn)} />) : <Empty locale={locale} />}</div>
+    {editing && <EditTransactionModal data={data} locale={locale} transaction={editing} onClose={() => setEditing(null)} onSaved={(next) => { onChanged(next); setEditing(null); }} />}
   </article>;
 }
 

@@ -483,7 +483,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .personal-occ-row { display: grid; grid-template-columns: 1.4fr 140px 160px auto auto; gap: 8px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 12px; }
 .personal-occ-row > div:first-child { display: flex; flex-direction: column; gap: 3px; }
 .personal-occ-row span, .personal-rule-row span, .personal-loan-row span { color: #809089; font-size: 12px; }
-.personal-rule-row, .personal-loan-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.personal-rule-row, .personal-loan-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.personal-rule-row > div:first-child { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.personal-rule-row.is-paused { opacity: .62; }
+.personal-rule-actions { display: flex; gap: 4px; }
+.personal-rule-actions button { width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 8px; background: white; display: grid; place-items: center; cursor: pointer; color: #3e514b; }
+.personal-rule-actions button.danger { color: #b42318; }
 .personal-loan-row { grid-template-columns: 1.4fr 1fr auto; align-items: center; }
 .personal-month-block { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .personal-month-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; margin-bottom: 8px; }

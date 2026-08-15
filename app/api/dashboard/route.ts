@@ -1010,6 +1010,69 @@ export async function POST(request: Request) {
         prepareAudit(db, { userId: user.id, action: "personal.rule_added", entityType: "personal_rule", entityId: ruleId, metadata: { name: parsed.data.name, kind: parsed.data.kind }, createdAt }),
       ]);
       await generatePersonalOccurrences(db, [parsed.data.spaceId]);
+    } else if (action === "updatePersonalRule") {
+      const parsed = z.object({
+        ruleId: z.string().min(1).max(120),
+        accountId: z.string().min(1).max(120).optional(),
+        name: z.string().trim().min(2).max(80),
+        amountMode: z.enum(["fixed", "variable"]).default("fixed"),
+        schedule: z.enum(["monthly", "once", "unscheduled"]).default("monthly"),
+        amount: z.union([z.string(), z.number()]).optional(),
+        dueDay: z.coerce.number().int().min(1).max(28).default(1),
+        startsAt: z.string().min(8).max(40),
+        endsAt: z.string().min(8).max(40).optional(),
+        total: z.union([z.string(), z.number()]).optional(),
+        durationMonths: z.coerce.number().int().min(0).max(360).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_RULE");
+      const rule = await db.prepare("SELECT * FROM personal_rules WHERE id=?").bind(parsed.data.ruleId).first<PersonalRuleRow>();
+      if (!rule) throw new ApiError(404, "RULE_NOT_FOUND");
+      const space = await authorizeSpace(db, user, rule.space_id, "transact", ["personal"]);
+      let amountMinor = 0;
+      let totalMinor = 0;
+      try {
+        if (parsed.data.amount !== undefined && parsed.data.amount !== "") amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency);
+        if (parsed.data.total !== undefined && parsed.data.total !== "") totalMinor = parseNonNegativeMoneyToMinor(parsed.data.total, space.currency);
+      } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      const duration = parsed.data.durationMonths ?? 0;
+      if (totalMinor > 0 && duration > 0 && amountMinor <= 0) amountMinor = Math.round(totalMinor / duration);
+      if (parsed.data.schedule !== "unscheduled" && parsed.data.amountMode === "fixed" && amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
+      if (parsed.data.schedule === "unscheduled" && amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
+      const startsAt = parseStartDate(parsed.data.startsAt);
+      const endsAt = parsed.data.schedule === "once" ? startsAt : (parsed.data.endsAt ? parseStartDate(parsed.data.endsAt) : null);
+      const createdAt = now();
+      await db.batch([
+        db.prepare("UPDATE personal_rules SET account_id=?, name=?, amount_mode=?, schedule=?, amount_minor=?, due_day=?, starts_at=?, ends_at=?, total_minor=?, duration_months=? WHERE id=?")
+          .bind(parsed.data.accountId ?? null, parsed.data.name, parsed.data.amountMode, parsed.data.schedule, amountMinor, parsed.data.dueDay, startsAt, endsAt, totalMinor, duration, rule.id),
+        db.prepare("DELETE FROM personal_occurrences WHERE rule_id=? AND status='pending'").bind(rule.id),
+        prepareAudit(db, { userId: user.id, action: "personal.rule_updated", entityType: "personal_rule", entityId: rule.id, metadata: { name: parsed.data.name }, createdAt }),
+      ]);
+      await generatePersonalOccurrences(db, [rule.space_id]);
+    } else if (action === "setPersonalRuleStatus") {
+      const parsed = z.object({ ruleId: z.string().min(1).max(120), status: z.enum(["active", "paused", "archived"]) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_RULE");
+      const rule = await db.prepare("SELECT id,space_id FROM personal_rules WHERE id=?").bind(parsed.data.ruleId).first<{ id: string; space_id: string }>();
+      if (!rule) throw new ApiError(404, "RULE_NOT_FOUND");
+      await authorizeSpace(db, user, rule.space_id, "transact", ["personal"]);
+      const createdAt = now();
+      await db.batch([
+        db.prepare("UPDATE personal_rules SET status=? WHERE id=?").bind(parsed.data.status, rule.id),
+        db.prepare("DELETE FROM personal_occurrences WHERE rule_id=? AND status='pending'").bind(rule.id),
+        prepareAudit(db, { userId: user.id, action: "personal.rule_status", entityType: "personal_rule", entityId: rule.id, metadata: { status: parsed.data.status }, createdAt }),
+      ]);
+      if (parsed.data.status === "active") await generatePersonalOccurrences(db, [rule.space_id]);
+    } else if (action === "deletePersonalRule") {
+      const parsed = z.object({ ruleId: z.string().min(1).max(120) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_RULE");
+      const rule = await db.prepare("SELECT id,space_id FROM personal_rules WHERE id=?").bind(parsed.data.ruleId).first<{ id: string; space_id: string }>();
+      if (!rule) throw new ApiError(404, "RULE_NOT_FOUND");
+      await authorizeSpace(db, user, rule.space_id, "transact", ["personal"]);
+      const createdAt = now();
+      await db.batch([
+        db.prepare("DELETE FROM personal_occurrences WHERE rule_id=? AND status='pending'").bind(rule.id),
+        db.prepare("DELETE FROM personal_rules WHERE id=?").bind(rule.id),
+        prepareAudit(db, { userId: user.id, action: "personal.rule_deleted", entityType: "personal_rule", entityId: rule.id, metadata: {}, createdAt }),
+      ]);
     } else if (action === "confirmPersonalOccurrence") {
       const parsed = z.object({
         occurrenceId: z.string().min(1).max(120),
