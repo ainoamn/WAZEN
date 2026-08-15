@@ -1344,6 +1344,7 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
         accounts={data.personalAccounts ?? []}
         rules={data.personalRules ?? []}
         occurrences={data.personalOccurrences ?? []}
+        transactions={data.transactions}
         onChanged={(next) => onTxnChanged(next as Partial<DashboardData>)}
       />
     )}

@@ -9,7 +9,7 @@ import { multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "
 import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, type InstallmentLike } from "../../../lib/installments";
 import { coveringPeriod } from "../../../lib/accounting-periods";
 import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
-import { accountLiveBalance, dueAtForPeriod, monthKeysForRule } from "../../../lib/personal-finance";
+import { accountLiveBalance, dueAtForPeriod, monthKeysForRule, occurrenceLedgerStatus } from "../../../lib/personal-finance";
 import { periodKeyFromDate } from "../../../lib/installments";
 import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-forecast";
 
@@ -472,17 +472,22 @@ async function voidApprovedTransaction(
     } else {
       const postedOccurrence = await db.prepare(`SELECT o.id, o.rule_id, o.actual_minor, r.kind
         FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
-        WHERE o.transaction_id=? AND o.status='posted'`)
+        WHERE o.transaction_id=?`)
         .bind(txn.id)
         .first<{ id: string; rule_id: string; actual_minor: number | null; kind: string }>();
-      if (postedOccurrence) {
-        const postedMinor = Number(postedOccurrence.actual_minor ?? txn.amount_minor);
+      const occurrence = postedOccurrence ?? await db.prepare(`SELECT o.id, o.rule_id, o.actual_minor, r.kind
+        FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
+        WHERE o.space_id=? AND o.status='posted' AND COALESCE(o.actual_minor, o.expected_minor)=?`)
+        .bind(txn.space_id, amountMinor)
+        .first<{ id: string; rule_id: string; actual_minor: number | null; kind: string }>();
+      if (occurrence) {
+        const postedMinor = Number(occurrence.actual_minor ?? txn.amount_minor);
         const statements = [
-          db.prepare("UPDATE personal_occurrences SET status='voided' WHERE id=? AND status='posted'")
-            .bind(postedOccurrence.id),
+          db.prepare("UPDATE personal_occurrences SET status='voided' WHERE id=?")
+            .bind(occurrence.id),
         ];
-        if (postedOccurrence.kind === "expense") {
-          statements.push(db.prepare("UPDATE personal_rules SET paid_minor = MAX(0, paid_minor - ?) WHERE id=?").bind(postedMinor, postedOccurrence.rule_id));
+        if (occurrence.kind === "expense") {
+          statements.push(db.prepare("UPDATE personal_rules SET paid_minor = MAX(0, paid_minor - ?) WHERE id=?").bind(postedMinor, occurrence.rule_id));
         }
         await db.batch(statements);
       }
@@ -861,6 +866,11 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     return { ...event, ...forecast };
   });
 
+  const syncedOccurrences = personalOccurrences.results.map((row) => ({
+    ...row,
+    status: occurrenceLedgerStatus(row, transactions.results),
+  }));
+
   return {
     spaces: spacesWithGoals,
     members: members.results,
@@ -876,7 +886,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     periodEvents: periodEvents.results,
     personalAccounts,
     personalRules: personalRules.results,
-    personalOccurrences: personalOccurrences.results,
+    personalOccurrences: syncedOccurrences,
     payoutAccounts: payoutAccounts.results,
     familyEvents,
   };

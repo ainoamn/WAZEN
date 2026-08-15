@@ -54,6 +54,50 @@ export function occurrenceVarianceCopy(expectedMinor: number, actualMinor: numbe
   return `Paid ${omrMajor(actual)} of ${omrMajor(expected)} · short ${omrMajor(Math.abs(delta))}`;
 }
 
+export function occurrenceLedgerStatus(
+  item: {
+    status: string;
+    transaction_id?: string | null;
+    rule_name?: string;
+    space_id: string;
+    period_key: string;
+    expected_minor: number;
+    actual_minor?: number | null;
+    rule_kind?: string;
+  },
+  transactions: Array<{
+    id: string;
+    space_id: string;
+    status?: string;
+    kind: string;
+    amount_minor: number;
+    occurred_at: string;
+    description_ar?: string;
+    description_en?: string;
+  }>,
+) {
+  const linked = item.transaction_id ? transactions.find((row) => row.id === item.transaction_id) : undefined;
+  if (linked && (linked.status === "voided" || linked.status === "superseded")) {
+    return linked.status === "superseded" ? "superseded" : "voided";
+  }
+  const amount = Number(item.actual_minor ?? item.expected_minor);
+  const name = (item.rule_name ?? "").trim();
+  const matched = transactions.find((row) => {
+    if (row.space_id !== item.space_id) return false;
+    if (row.status !== "voided" && row.status !== "superseded") return false;
+    const month = (row.occurred_at || "").slice(0, 7);
+    if (month !== item.period_key) return false;
+    if (Number(row.amount_minor) !== amount) return false;
+    const incomeLike = item.rule_kind === "income";
+    const txnIncome = row.kind === "income" || row.kind === "contribution";
+    if (incomeLike !== txnIncome) return false;
+    if (!name) return true;
+    return `${row.description_ar ?? ""} ${row.description_en ?? ""}`.includes(name);
+  });
+  if (matched) return matched.status === "superseded" ? "superseded" : "voided";
+  return item.status;
+}
+
 export function accountLiveBalance(
   openingMinor: number,
   transactions: Array<{ account_id?: string | null; kind: string; amount_minor: number; status?: string }>,

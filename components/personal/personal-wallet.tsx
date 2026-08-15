@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Archive, Banknote, CalendarClock, Check, ChevronDown, Lock, Pause, Pencil, Play, Plus, Printer, Trash2, Unlock, WalletCards, X } from "lucide-react";
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
-import { occurrenceVarianceCopy } from "../../lib/personal-finance";
+import { occurrenceVarianceCopy, occurrenceLedgerStatus } from "../../lib/personal-finance";
 import OmrSymbol from "../brand/OmrSymbol";
 import { DateField } from "../ui/date-field";
 
@@ -101,6 +101,7 @@ export function PersonalWalletPanel({
   accounts,
   rules,
   occurrences,
+  transactions = [],
   onChanged,
 }: {
   spaceId: string;
@@ -108,13 +109,25 @@ export function PersonalWalletPanel({
   accounts: PersonalAccount[];
   rules: PersonalRule[];
   occurrences: PersonalOccurrence[];
+  transactions?: Array<{
+    id: string;
+    space_id: string;
+    status?: string;
+    kind: string;
+    amount_minor: number;
+    occurred_at: string;
+    description_ar?: string;
+    description_en?: string;
+  }>;
   onChanged: (next: Record<string, unknown>) => void;
 }) {
   const [accountOpen, setAccountOpen] = useState<PersonalAccount | true | null>(null);
   const spaceAccounts = accounts.filter((item) => item.space_id === spaceId);
   const activeAccounts = spaceAccounts.filter((item) => (item.status ?? "active") === "active");
   const spaceRules = rules.filter((item) => item.space_id === spaceId);
-  const spaceOcc = occurrences.filter((item) => item.space_id === spaceId);
+  const spaceOcc = occurrences
+    .filter((item) => item.space_id === spaceId)
+    .map((item) => ({ ...item, status: occurrenceLedgerStatus(item, transactions) }));
   const loans = spaceRules.filter((item) => Number(item.total_minor) > 0);
   const unscheduled = spaceRules.filter((item) => (item.schedule ?? "monthly") === "unscheduled" && item.status === "active");
   const byMonth = [...spaceOcc].sort((a, b) => (a.due_at || a.period_key).localeCompare(b.due_at || b.period_key)).reduce((map, item) => {
@@ -174,8 +187,9 @@ export function PersonalWalletPanel({
             </div>
           </div>
           {[...byMonth.entries()].map(([period, rows]) => {
-            const plannedIn = rows.filter((row) => row.rule_kind === "income" && !["skipped", "deferred", "voided"].includes(row.status)).reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
-            const plannedOut = rows.filter((row) => row.rule_kind !== "income" && !["skipped", "deferred", "voided"].includes(row.status)).reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
+            const counted = (status: string) => !["skipped", "deferred", "voided", "superseded"].includes(status);
+            const plannedIn = rows.filter((row) => row.rule_kind === "income" && counted(row.status)).reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
+            const plannedOut = rows.filter((row) => row.rule_kind !== "income" && counted(row.status)).reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
             return (
               <div className="personal-month-block" key={period}>
                 <div className="personal-month-head">
@@ -190,12 +204,18 @@ export function PersonalWalletPanel({
                     const expected = Number(item.expected_minor);
                     const actual = Number(item.actual_minor ?? item.expected_minor);
                     const showVariance = item.status === "posted" && item.amount_mode !== "variable" && expected > 0;
+                    const statusLabel = item.status === "posted" ? (locale === "ar" ? "معتمد" : "Posted")
+                      : item.status === "deferred" ? (locale === "ar" ? "مؤجّل" : "Deferred")
+                      : item.status === "voided" ? (locale === "ar" ? "ملغى" : "Voided")
+                      : item.status === "superseded" ? (locale === "ar" ? "مستبدل" : "Replaced")
+                      : item.status === "skipped" ? (locale === "ar" ? "موقوف" : "Paused")
+                      : (locale === "ar" ? "متجاهل" : "Skipped");
                     return (
-                    <div className="personal-rule-row" key={item.id}>
+                    <div className={`personal-rule-row${["voided", "superseded", "skipped"].includes(item.status) ? " is-inactive" : ""}`} key={item.id}>
                       <div>
                         <strong>{item.rule_name}</strong>
                         <span>
-                          {item.status === "posted" ? (locale === "ar" ? "معتمد" : "Posted") : item.status === "deferred" ? (locale === "ar" ? "مؤجّل" : "Deferred") : item.status === "voided" ? (locale === "ar" ? "ملغى" : "Voided") : item.status === "skipped" ? (locale === "ar" ? "موقوف" : "Paused") : (locale === "ar" ? "متجاهل" : "Skipped")}
+                          {statusLabel}
                           {showVariance ? ` · ${occurrenceVarianceCopy(expected, actual, locale)}` : ""}
                         </span>
                       </div>
