@@ -29,6 +29,7 @@ import {
   Download,
   Printer,
   Trash2,
+  Palette,
   Pencil,
   MessageCircle,
   Globe2,
@@ -63,6 +64,19 @@ import { apiFetch } from "../lib/client-api";
 
 type Locale = "ar" | "en";
 type ThemeMode = "light" | "dark";
+type AccentId = "emerald" | "teal" | "navy" | "amber" | "rose" | "purple" | "forest";
+const ACCENTS: { id: AccentId; labelAr: string; labelEn: string; swatch: string }[] = [
+  { id: "emerald", labelAr: "زمردي", labelEn: "Emerald", swatch: "#0d7a65" },
+  { id: "teal", labelAr: "فيروزي", labelEn: "Teal", swatch: "#0e7c86" },
+  { id: "navy", labelAr: "كحلي", labelEn: "Navy", swatch: "#1e5a6e" },
+  { id: "amber", labelAr: "ذهبي", labelEn: "Amber", swatch: "#b6751f" },
+  { id: "rose", labelAr: "وردي", labelEn: "Rose", swatch: "#a84d58" },
+  { id: "purple", labelAr: "بنفسجي", labelEn: "Purple", swatch: "#7356aa" },
+  { id: "forest", labelAr: "زيتي", labelEn: "Forest", swatch: "#4a6b32" },
+];
+function isAccentId(value: string | null | undefined): value is AccentId {
+  return Boolean(value && ACCENTS.some((item) => item.id === value));
+}
 type ViewId = "overview" | "personal" | "household" | "groups" | "trip" | "society" | "transactions" | "reports" | "settings";
 const VIEW_IDS: ViewId[] = ["overview", "personal", "household", "groups", "trip", "society", "transactions", "reports", "settings"];
 function isViewId(value: string | null | undefined): value is ViewId {
@@ -617,6 +631,7 @@ export function WazenDashboard() {
   const searchParams = useSearchParams();
   const [locale, setLocale] = useState<Locale>("ar");
   const [theme, setTheme] = useState<ThemeMode>("light");
+  const [accent, setAccent] = useState<AccentId>("emerald");
   const [activeView, setActiveView] = useState<ViewId>(() => (isViewId(searchParams.get("view")) ? searchParams.get("view") as ViewId : "overview"));
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -661,6 +676,10 @@ export function WazenDashboard() {
         : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       setTheme(nextTheme);
       document.documentElement.dataset.theme = nextTheme;
+      const savedAccent = window.localStorage.getItem("wazen-accent");
+      const nextAccent: AccentId = isAccentId(savedAccent) ? savedAccent : "emerald";
+      setAccent(nextAccent);
+      document.documentElement.dataset.accent = nextAccent;
       const urlView = new URLSearchParams(window.location.search).get("view");
       const urlSpace = new URLSearchParams(window.location.search).get("space");
       if (isViewId(urlView)) {
@@ -700,6 +719,11 @@ export function WazenDashboard() {
     setTheme(next);
     document.documentElement.dataset.theme = next;
     try { window.localStorage.setItem("wazen-theme", next); } catch { /* ignore */ }
+  };
+  const applyAccent = (next: AccentId) => {
+    setAccent(next);
+    document.documentElement.dataset.accent = next;
+    try { window.localStorage.setItem("wazen-accent", next); } catch { /* ignore */ }
   };
 
   const viewSpaceType: Partial<Record<ViewId, Space["type"]>> = { personal: "personal", household: "household", trip: "trip", society: "society" };
@@ -788,6 +812,7 @@ export function WazenDashboard() {
             <button type="button" className="icon-button" onClick={toggleTheme} aria-label={theme === "dark" ? (locale === "ar" ? "النهار" : "Light mode") : (locale === "ar" ? "الليل" : "Dark mode")} title={theme === "dark" ? (locale === "ar" ? "النهار" : "Day") : (locale === "ar" ? "الليل" : "Night")}>
               {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
             </button>
+            <AccentPicker locale={locale} accent={accent} onPick={applyAccent} />
             <NotificationBell data={data} locale={locale} onOpen={(view, spaceId) => {
               changeView(view, spaceId);
             }} />
@@ -933,6 +958,44 @@ export function WazenDashboard() {
         );
       })()}
       {toast && <div className="toast"><Check size={17} />{toast}</div>}
+    </div>
+  );
+}
+
+function AccentPicker({ locale, accent, onPick }: { locale: Locale; accent: AccentId; onPick: (id: AccentId) => void }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (event: MouseEvent) => {
+      if (root.current && !root.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+  return (
+    <div className="accent-picker" ref={root}>
+      <button type="button" className="icon-button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)} title={locale === "ar" ? "لون الموقع" : "Site color"} aria-label={locale === "ar" ? "اختيار لون الموقع" : "Choose site color"}>
+        <Palette size={17} />
+      </button>
+      {open && (
+        <div className="accent-picker-panel" role="menu">
+          <strong>{locale === "ar" ? "لون الواجهة" : "Interface color"}</strong>
+          <div className="accent-swatches">
+            {ACCENTS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={accent === item.id}
+                className={accent === item.id ? "active" : ""}
+                style={{ background: item.swatch }}
+                title={locale === "ar" ? item.labelAr : item.labelEn}
+                onClick={() => { onPick(item.id); setOpen(false); }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
