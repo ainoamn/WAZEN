@@ -389,15 +389,36 @@ function transactionStatusLabel(status: string | undefined, locale: Locale) {
 function spaceMonthlyFlow(space: Space, data: DashboardData) {
   if (space.type === "personal") {
     const currentKey = periodKeyFromDate(new Date().toISOString());
-    const dropped = new Set(
-      (data.personalOccurrences ?? [])
-        .filter((row) => row.space_id === space.id && row.period_key === currentKey && ["skipped", "deferred", "voided"].includes(row.status))
-        .map((row) => row.rule_id),
-    );
-    const rules = (data.personalRules ?? []).filter((rule) => rule.space_id === space.id && rule.status === "active" && (rule.schedule ?? "monthly") === "monthly" && !dropped.has(rule.id));
+    const occurrences = (data.personalOccurrences ?? []).filter((row) => row.space_id === space.id);
+    const voidedIds = new Set(data.transactions.filter((row) => row.space_id === space.id && ["voided", "superseded"].includes(row.status ?? "")).map((row) => row.id));
+    const voidedThisMonth = data.transactions.filter((row) => row.space_id === space.id && ["voided", "superseded"].includes(row.status ?? "") && periodKeyFromDate(row.occurred_at) === currentKey);
+    const isDropped = (row: NonNullable<DashboardData["personalOccurrences"]>[number]) => {
+      if (["skipped", "deferred", "voided"].includes(row.status)) return true;
+      if (row.transaction_id && voidedIds.has(row.transaction_id)) return true;
+      if (row.status === "pending") {
+        const incomeLike = row.rule_kind === "income";
+        return voidedThisMonth.some((txn) => {
+          const txnIncome = ["income", "contribution"].includes(txn.kind);
+          return txnIncome === incomeLike && Number(txn.amount_minor) === Number(row.actual_minor ?? row.expected_minor);
+        });
+      }
+      return false;
+    };
+    const cancelledRuleIds = new Set(occurrences.filter((row) => row.period_key === currentKey && isDropped(row)).map((row) => row.rule_id));
+    const monthlyRules = (data.personalRules ?? []).filter((rule) => rule.space_id === space.id && rule.status === "active" && (rule.schedule ?? "monthly") === "monthly");
+    for (const txn of voidedThisMonth) {
+      const txnIncome = ["income", "contribution"].includes(txn.kind);
+      for (const rule of monthlyRules) {
+        if ((rule.kind === "income") === txnIncome && Number(rule.amount_minor) === Number(txn.amount_minor)) cancelledRuleIds.add(rule.id);
+      }
+    }
+    const remaining = occurrences.filter((row) => row.period_key === currentKey && row.status === "pending" && !cancelledRuleIds.has(row.rule_id) && !isDropped(row));
+    const rules = monthlyRules.filter((rule) => !cancelledRuleIds.has(rule.id));
     return {
       inflow: rules.filter((rule) => rule.kind === "income").reduce((sum, rule) => sum + Number(rule.amount_minor), 0),
       outflow: rules.filter((rule) => rule.kind === "expense").reduce((sum, rule) => sum + Number(rule.amount_minor), 0),
+      remainingIn: remaining.filter((row) => row.rule_kind === "income").reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0),
+      remainingOut: remaining.filter((row) => row.rule_kind !== "income").reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0),
     };
   }
   const plan = data.plans.find((item) => String(item.space_id) === space.id);
@@ -407,10 +428,9 @@ function spaceMonthlyFlow(space: Space, data: DashboardData) {
   const recentSpend = data.transactions
     .filter((row) => row.space_id === space.id && row.kind === "expense" && isLiveTransaction(row) && new Date(row.occurred_at).getTime() >= since)
     .reduce((sum, row) => sum + row.amount_minor, 0);
-  return {
-    inflow: monthly * contributors,
-    outflow: Math.round(recentSpend / 3),
-  };
+  const inflow = monthly * contributors;
+  const outflow = Math.round(recentSpend / 3);
+  return { remainingIn: inflow, remainingOut: outflow, inflow, outflow };
 }
 
 function memberPosition(member: Member, data?: DashboardData) {
@@ -1315,7 +1335,7 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
     </section>
     {(() => {
       const flow = spaceMonthlyFlow(space, data);
-      return <WalletForecastPanel locale={locale} currency={space.currency} balanceMinor={space.balance_minor} monthlyInflowMinor={flow.inflow} monthlyOutflowMinor={flow.outflow} />;
+      return <WalletForecastPanel locale={locale} currency={space.currency} balanceMinor={space.balance_minor} monthlyInflowMinor={flow.inflow} monthlyOutflowMinor={flow.outflow} remainingInflowMinor={flow.remainingIn} remainingOutflowMinor={flow.remainingOut} />;
     })()}
     {space.type === "personal" && (
       <PersonalWalletPanel

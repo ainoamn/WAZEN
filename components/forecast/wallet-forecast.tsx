@@ -12,6 +12,8 @@ export function WalletForecastPanel({
   balanceMinor,
   monthlyInflowMinor,
   monthlyOutflowMinor,
+  remainingInflowMinor,
+  remainingOutflowMinor,
   title,
 }: {
   locale: Locale;
@@ -19,10 +21,15 @@ export function WalletForecastPanel({
   balanceMinor: number;
   monthlyInflowMinor: number;
   monthlyOutflowMinor: number;
+  remainingInflowMinor?: number;
+  remainingOutflowMinor?: number;
   title?: string;
 }) {
   const forecast = projectCashflow({ balanceMinor, monthlyInflowMinor, monthlyOutflowMinor, months: 3 });
   const money = (minor: number) => formatMoneyMinor(minor, currency, locale);
+  const remainingIn = remainingInflowMinor ?? monthlyInflowMinor;
+  const remainingOut = remainingOutflowMinor ?? monthlyOutflowMinor;
+  const remainingNet = remainingIn - remainingOut;
   return (
     <article className="panel">
       <div className="panel-heading">
@@ -33,8 +40,8 @@ export function WalletForecastPanel({
       </div>
       <p className="modal-note">
         {locale === "ar"
-          ? `التزامات الشهر الحالي بعد استبعاد الملغى والمؤجّل والموقوف: دخل ${money(monthlyInflowMinor)} · خصم ${money(monthlyOutflowMinor)} · صافي ${money(forecast.netMonthlyMinor)}`
-          : `This month’s remaining schedule (voided, deferred, and paused excluded): in ${money(monthlyInflowMinor)} · out ${money(monthlyOutflowMinor)} · net ${money(forecast.netMonthlyMinor)}`}
+          ? `المتبقي هذا الشهر (غير المرحّل): دخل ${money(remainingIn)} · خصم ${money(remainingOut)} · صافي ${money(remainingNet)}. الأشهر التالية تفترض الدخل والخصم غير الملغيين: ${money(monthlyInflowMinor)} − ${money(monthlyOutflowMinor)}.`
+          : `Still open this month: in ${money(remainingIn)} · out ${money(remainingOut)} · net ${money(remainingNet)}. Later months use uncancelled schedule ${money(monthlyInflowMinor)} − ${money(monthlyOutflowMinor)}.`}
       </p>
       <div className="personal-account-grid">
         {forecast.rows.map((row) => (
