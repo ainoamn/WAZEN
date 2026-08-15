@@ -7,6 +7,8 @@ import { ReportsPanel } from "../components/reports/ReportsPanel";
 import { MemberDetailModal, MemberPersonProfile, ReceiptChannelModal, RemainingInvoiceGrid, SmartAccountantModal, memberAccruedDueMinor, memberInstallments, personIdentityKey } from "../components/members/association-members";
 import { PersonalWalletPanel } from "../components/personal/personal-wallet";
 import { HouseholdFamilyPanel } from "../components/household/household-family";
+import { WalletForecastPanel } from "../components/forecast/wallet-forecast";
+import { projectCashflow } from "../lib/wallet-forecast";
 import { isPeriodLocked } from "../lib/accounting-periods";
 import { buildReportHtml, openReportPreview } from "../lib/reports";
 import { allocateOldestFirst, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
@@ -326,6 +328,27 @@ function spaceGoalMinor(space: Space, data: DashboardData) {
   return space.goal_minor;
 }
 
+function spaceMonthlyFlow(space: Space, data: DashboardData) {
+  if (space.type === "personal") {
+    const rules = (data.personalRules ?? []).filter((rule) => rule.space_id === space.id && rule.status === "active");
+    return {
+      inflow: rules.filter((rule) => rule.kind === "income").reduce((sum, rule) => sum + Number(rule.amount_minor), 0),
+      outflow: rules.filter((rule) => rule.kind === "expense").reduce((sum, rule) => sum + Number(rule.amount_minor), 0),
+    };
+  }
+  const plan = data.plans.find((item) => String(item.space_id) === space.id);
+  const monthly = Number(plan?.amount_minor ?? 0);
+  const contributors = data.members.filter((member) => member.space_id === space.id && (member.status ?? "active") === "active" && Number(member.due_minor) > 0).length;
+  const since = Date.now() - 90 * 24 * 60 * 60 * 1000;
+  const recentSpend = data.transactions
+    .filter((row) => row.space_id === space.id && row.kind === "expense" && new Date(row.occurred_at).getTime() >= since)
+    .reduce((sum, row) => sum + row.amount_minor, 0);
+  return {
+    inflow: monthly * contributors,
+    outflow: Math.round(recentSpend / 3),
+  };
+}
+
 function memberPosition(member: Member, data?: DashboardData) {
   const plan = data?.plans.find((item) => String(item.space_id) === member.space_id);
   const accruedDue = data ? memberAccruedDueMinor(member, data.installments ?? [], plan) : member.due_minor;
@@ -513,6 +536,18 @@ function NotificationBell({ data, locale, onOpen }: { data: DashboardData; local
         spaceId: space.id,
       });
     }
+    for (const space of data.spaces) {
+      const flow = spaceMonthlyFlow(space, data);
+      const forecast = projectCashflow({ balanceMinor: space.balance_minor, monthlyInflowMinor: flow.inflow, monthlyOutflowMinor: flow.outflow, months: 3 });
+      if (!forecast.needsBoost) continue;
+      rows.push({
+        id: `forecast:${space.id}`,
+        title: locale === "ar" ? `عجز متوقع في ${nameOf(space, locale)}` : `Forecast shortfall in ${nameOf(space, locale)}`,
+        detail: locale === "ar" ? `خلال 3 أشهر قد ينقص ${formatMoney(forecast.shortfallMinor, space.currency, locale)}` : `In 3 months a gap of ${formatMoney(forecast.shortfallMinor, space.currency, locale)} is likely`,
+        view: viewForSpaceType(space.type),
+        spaceId: space.id,
+      });
+    }
     return rows;
   }, [data, locale]);
 
@@ -607,12 +642,13 @@ export function WazenDashboard() {
   const walletDefaultType = viewSpaceType[activeView] ?? "trip";
 
   const totals = useMemo(() => {
-    if (!data) return { net: 0, groups: 0, personal: 0, spend: 0 };
+    if (!data) return { net: 0, groups: 0, personal: 0, reserves: 0, spend: 0 };
     const net = data.spaces.reduce((sum, item) => sum + item.balance_minor, 0);
     const groups = data.spaces.filter((item) => ["trip", "society", "group", "household"].includes(item.type)).reduce((sum, item) => sum + item.balance_minor, 0);
     const personal = data.spaces.filter((item) => item.type === "personal").reduce((sum, item) => sum + item.balance_minor, 0);
+    const reserves = data.members.reduce((sum, member) => sum + member.extra_minor, 0);
     const spend = data.transactions.filter((item) => item.kind === "expense").reduce((sum, item) => sum + item.amount_minor, 0);
-    return { net, groups, personal, spend };
+    return { net, groups, personal, reserves, spend };
   }, [data]);
 
   const flash = (message: string) => {
@@ -888,7 +924,7 @@ function Sidebar({ locale, active, open, onNavigate, onClose, onLogout }: { loca
   );
 }
 
-function Overview({ data, locale, totals, onView, onAddWallet }: { data: DashboardData; locale: Locale; totals: { net: number; groups: number; personal: number; spend: number }; onView: (id: ViewId) => void; onAddWallet: () => void }) {
+function Overview({ data, locale, totals, onView, onAddWallet }: { data: DashboardData; locale: Locale; totals: { net: number; groups: number; personal: number; reserves: number; spend: number }; onView: (id: ViewId) => void; onAddWallet: () => void }) {
   const t = copy[locale];
 
   return (
@@ -931,12 +967,15 @@ function WalletCard({ space, data, locale, onOpen }: { space: Space; data: Dashb
   const Icon = typeIcons[space.type] ?? WalletCards;
   const members = data.members.filter((member) => member.space_id === space.id && (member.status ?? "active") === "active").length;
   const spend = data.transactions.filter((row) => row.space_id === space.id && row.kind === "expense").reduce((sum, row) => sum + row.amount_minor, 0);
+  const flow = spaceMonthlyFlow(space, data);
+  const forecast = projectCashflow({ balanceMinor: space.balance_minor, monthlyInflowMinor: flow.inflow, monthlyOutflowMinor: flow.outflow, months: 3 });
   return <button className={`wallet-card accent-${space.accent}`} onClick={onOpen}>
     <div className="wallet-card-top"><span className="wallet-icon"><Icon size={19} /></span><ArrowUpRight size={17} /></div>
     <span className="wallet-type">{typeLabels[locale][space.type as keyof typeof typeLabels.ar] ?? space.type}</span>
     <h3>{nameOf(space, locale)}</h3>
     <strong className={space.balance_minor < 0 ? "amount-negative" : ""}>{formatMoney(space.balance_minor, space.currency, locale)}</strong>
     <small>{locale === "ar" ? `مصروف ${formatMoney(spend, space.currency, locale)} · أعضاء ${space.type === "personal" ? 1 : members}` : `Spend ${formatMoney(spend, space.currency, locale)} · members ${space.type === "personal" ? 1 : members}`}</small>
+    <small>{locale === "ar" ? `بعد 3 أشهر ${formatMoney(forecast.endProjectedMinor, space.currency, locale)}${forecast.needsBoost ? " · عجز متوقع" : ""}` : `In 3 months ${formatMoney(forecast.endProjectedMinor, space.currency, locale)}${forecast.needsBoost ? " · shortfall" : ""}`}</small>
   </button>;
 }
 
@@ -1064,6 +1103,10 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
       <StatCard icon={<ShieldCheck />} label={t.personalReserves} value={formatMoney(reserves, space.currency, locale)} accent="amber" note={t.protected} />
       <StatCard icon={<ReceiptText />} label={t.transactions} value={String(transactions.length)} accent="rose" note={locale === "ar" ? "عملية مسجلة" : "recorded entries"} />
     </section>
+    {(() => {
+      const flow = spaceMonthlyFlow(space, data);
+      return <WalletForecastPanel locale={locale} currency={space.currency} balanceMinor={space.balance_minor} monthlyInflowMinor={flow.inflow} monthlyOutflowMinor={flow.outflow} />;
+    })()}
     {space.type === "personal" && (
       <PersonalWalletPanel
         spaceId={space.id}

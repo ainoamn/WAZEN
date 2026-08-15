@@ -78,7 +78,7 @@ export function ReportsPanel({
 }: {
   data: DashboardData;
   locale: Locale;
-  totals: { net: number; groups: number; reserves: number; spend: number };
+  totals: { net: number; groups: number; personal?: number; reserves: number; spend: number };
 }) {
   const groupSpaces = data.spaces.filter((space) => space.type !== "personal");
   const [reportType, setReportType] = useState<ReportTypeId>("general");
