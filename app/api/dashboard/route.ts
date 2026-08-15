@@ -381,6 +381,26 @@ async function syncFundDeficitShares(db: D1Database, spaceIds: string[]) {
   }
 }
 
+function approvedCashMinor(rows: Array<{ account_id?: string | null; kind: string; amount_minor: number; allocation?: string }>, accountId?: string) {
+  return rows.reduce((sum, row) => {
+    if (accountId !== undefined && row.account_id !== accountId) return sum;
+    if (row.allocation === "personal_reserve") return sum;
+    if (row.kind === "income" || row.kind === "contribution") return sum + Number(row.amount_minor);
+    if (row.kind === "expense") return sum - Number(row.amount_minor);
+    return sum;
+  }, 0);
+}
+
+async function writeApprovedCashBalance(db: D1Database, spaceId: string) {
+  const row = await db.prepare(`SELECT COALESCE(SUM(CASE
+    WHEN COALESCE(allocation,'general') = 'personal_reserve' THEN 0
+    WHEN kind IN ('income','contribution') THEN amount_minor
+    WHEN kind = 'expense' THEN -amount_minor
+    ELSE 0
+  END), 0) AS balance FROM transactions WHERE space_id=? AND status='approved'`).bind(spaceId).first<{ balance: number }>();
+  await db.prepare("UPDATE spaces SET balance_minor=? WHERE id=?").bind(Number(row?.balance ?? 0), spaceId).run();
+}
+
 async function rebuildSpaceBalance(db: D1Database, spaceIds: string[]) {
   if (!spaceIds.length) return;
   const placeholders = spaceIds.map(() => "?").join(",");
@@ -389,28 +409,24 @@ async function rebuildSpaceBalance(db: D1Database, spaceIds: string[]) {
   if (groupIds.length) await syncFundExpenseCash(db, groupIds);
   for (const space of types.results) {
     const spaceId = space.id;
-    const row = await db.prepare(`SELECT COALESCE(SUM(CASE
-      WHEN allocation = 'personal_reserve' THEN 0
-      WHEN kind IN ('income','contribution') THEN amount_minor
-      WHEN kind = 'expense' THEN -amount_minor
-      ELSE 0
-    END), 0) AS balance FROM transactions WHERE space_id=? AND status='approved'`).bind(spaceId).first<{ balance: number }>();
-    const next = Number(row?.balance ?? 0);
     if (space.type === "personal") {
-      const accounts = await db.prepare("SELECT id,opening_minor FROM personal_accounts WHERE space_id=? AND status='active'").bind(spaceId).all<{ id: string; opening_minor: number }>();
-      if (accounts.results.length) {
-        const txns = await db.prepare("SELECT account_id,kind,amount_minor,status FROM transactions WHERE space_id=? AND status='approved'").bind(spaceId).all<{ account_id?: string | null; kind: string; amount_minor: number; status: string }>();
-        const unassigned = txns.results.filter((row) => !row.account_id).reduce((sum, row) => {
-          if (row.kind === "income" || row.kind === "contribution") return sum + Number(row.amount_minor);
-          if (row.kind === "expense") return sum - Number(row.amount_minor);
-          return sum;
-        }, 0);
-        const assigned = accounts.results.reduce((sum, account) => sum + accountLiveBalance(Number(account.opening_minor), txns.results, account.id), 0);
-        await db.prepare("UPDATE spaces SET balance_minor=? WHERE id=?").bind(assigned + unassigned, spaceId).run();
-        continue;
-      }
+      try {
+        const accounts = await db.prepare("SELECT id,opening_minor FROM personal_accounts WHERE space_id=? AND status='active'").bind(spaceId).all<{ id: string; opening_minor: number }>();
+        if (accounts.results.length) {
+          let txns: Array<{ account_id?: string | null; kind: string; amount_minor: number; status: string }>;
+          try {
+            txns = (await db.prepare("SELECT account_id,kind,amount_minor,status FROM transactions WHERE space_id=? AND status='approved'").bind(spaceId).all<{ account_id?: string | null; kind: string; amount_minor: number; status: string }>()).results;
+          } catch {
+            txns = (await db.prepare("SELECT kind,amount_minor,status FROM transactions WHERE space_id=? AND status='approved'").bind(spaceId).all<{ kind: string; amount_minor: number; status: string }>()).results;
+          }
+          const unassigned = approvedCashMinor(txns.filter((row) => !row.account_id));
+          const assigned = accounts.results.reduce((sum, account) => sum + accountLiveBalance(Number(account.opening_minor), txns, account.id), 0);
+          await db.prepare("UPDATE spaces SET balance_minor=? WHERE id=?").bind(assigned + unassigned, spaceId).run();
+          continue;
+        }
+      } catch { /* fall through to ledger sum */ }
     }
-    await db.prepare("UPDATE spaces SET balance_minor=? WHERE id=?").bind(next, spaceId).run();
+    await writeApprovedCashBalance(db, spaceId);
   }
   if (groupIds.length) await syncFundDeficitShares(db, groupIds);
 }
@@ -466,8 +482,12 @@ async function voidApprovedTransaction(
   } catch { /* occurrence reopen is best-effort */ }
   try {
     await rebuildSpaceBalance(db, [txn.space_id]);
+  } catch {
+    await writeApprovedCashBalance(db, txn.space_id);
+  }
+  try {
     await reconcileMemberLedgers(db, [txn.space_id]);
-  } catch { /* balance refresh retried on next load */ }
+  } catch { /* member ledgers are not used by personal cash */ }
 }
 
 async function installmentInsertStatements(
@@ -798,7 +818,18 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     const planGoal = plan && plan.amount_minor > 0 && plan.duration_months > 0
       ? Math.round(Number(plan.amount_minor)) * Math.max(1, Math.round(Number(plan.duration_months)))
       : 0;
-    return { ...space, goal_minor: membersDue > 0 ? membersDue : (planGoal || space.goal_minor) };
+    let balanceMinor = Number(space.balance_minor);
+    if (space.type === "personal") {
+      const spaceTxns = transactions.results.filter((row) => row.space_id === space.id);
+      const activeAccounts = personalAccounts.filter((account) => account.space_id === space.id && account.status === "active");
+      if (activeAccounts.length) {
+        const unassigned = approvedCashMinor(spaceTxns.filter((row) => !row.account_id));
+        balanceMinor = activeAccounts.reduce((sum, account) => sum + Number(account.balance_minor), 0) + unassigned;
+      } else {
+        balanceMinor = approvedCashMinor(spaceTxns);
+      }
+    }
+    return { ...space, balance_minor: balanceMinor, goal_minor: membersDue > 0 ? membersDue : (planGoal || space.goal_minor) };
   });
 
   const unpaidBySpace = new Map<string, number>();
