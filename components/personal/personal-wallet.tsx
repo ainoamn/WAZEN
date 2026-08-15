@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Archive, Banknote, CalendarClock, Check, ChevronDown, Lock, Pause, Pencil, Play, Plus, Printer, Trash2, Unlock, WalletCards, X } from "lucide-react";
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
@@ -452,6 +452,9 @@ function OccurrenceRow({ item, locale, accounts, onChanged }: { item: PersonalOc
   const [busy, setBusy] = useState(false);
   const [deferOpen, setDeferOpen] = useState(false);
   const [deferUntil, setDeferUntil] = useState((item.due_at || item.period_key).slice(0, 10) || addDaysIso(7));
+  useEffect(() => {
+    if (!accountId && accounts[0]?.id) setAccountId(accounts[0].id);
+  }, [accountId, accounts]);
   const variable = item.amount_mode === "variable";
   const income = item.rule_kind === "income";
   const act = async (mode: "confirm" | "skip" | "defer") => {
@@ -461,10 +464,15 @@ function OccurrenceRow({ item, locale, accounts, onChanged }: { item: PersonalOc
         ? { action: "skipPersonalOccurrence", idempotencyKey: crypto.randomUUID(), occurrenceId: item.id }
         : mode === "defer"
           ? { action: "deferPersonalOccurrence", idempotencyKey: crypto.randomUUID(), occurrenceId: item.id, deferUntil }
-          : { action: "confirmPersonalOccurrence", idempotencyKey: crypto.randomUUID(), occurrenceId: item.id, amount, accountId };
+          : { action: "confirmPersonalOccurrence", idempotencyKey: crypto.randomUUID(), occurrenceId: item.id, amount: amount || undefined, accountId: accountId || undefined };
       const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       const result = await response.json() as Record<string, unknown> & { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "FAILED");
+      if (!response.ok) {
+        const messages: Record<string, string> = locale === "ar"
+          ? { INVALID_OCCURRENCE: "تعذر اعتماد البند. حدّث الصفحة وحاول مرة أخرى.", INVALID_AMOUNT: "أدخل مبلغاً صحيحاً.", VARIABLE_AMOUNT_REQUIRED: "أدخل المبلغ قبل الاعتماد.", INVALID_ACCOUNT: "اختر حساباً لاستلام الدخل أو الخصم.", OCCURRENCE_NOT_PENDING: "هذا البند معتمد أو ملغى مسبقاً." }
+          : { INVALID_OCCURRENCE: "Could not post this item. Refresh and try again.", INVALID_AMOUNT: "Enter a valid amount.", VARIABLE_AMOUNT_REQUIRED: "Enter the amount before approving.", INVALID_ACCOUNT: "Choose an account.", OCCURRENCE_NOT_PENDING: "This item is already posted or cancelled." };
+        throw new Error(messages[result.error ?? ""] ?? (result.error ?? "FAILED"));
+      }
       onChanged(result);
       if (mode === "defer") setDeferOpen(false);
     } catch (error) {

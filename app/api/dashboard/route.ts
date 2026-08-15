@@ -77,6 +77,9 @@ function parseStartDate(value?: string) {
   return date.toISOString();
 }
 
+const optionalId = z.preprocess((value) => (value === "" || value == null ? undefined : value), z.string().min(1).max(120).optional());
+const optionalAmount = z.preprocess((value) => (value === "" || value == null ? undefined : value), z.union([z.string(), z.number()]).optional());
+
 type PeriodRow = {
   id: string;
   space_id: string;
@@ -1091,7 +1094,7 @@ export async function POST(request: Request) {
     } else if (action === "addPersonalRule") {
       const parsed = z.object({
         spaceId: z.string().min(1).max(120),
-        accountId: z.string().min(1).max(120).optional(),
+        accountId: optionalId,
         kind: z.enum(["income", "expense"]),
         name: z.string().trim().min(2).max(80),
         amountMode: z.enum(["fixed", "variable"]).default("fixed"),
@@ -1128,7 +1131,7 @@ export async function POST(request: Request) {
     } else if (action === "updatePersonalRule") {
       const parsed = z.object({
         ruleId: z.string().min(1).max(120),
-        accountId: z.string().min(1).max(120).optional(),
+        accountId: optionalId,
         name: z.string().trim().min(2).max(80),
         amountMode: z.enum(["fixed", "variable"]).default("fixed"),
         schedule: z.enum(["monthly", "once", "unscheduled"]).default("monthly"),
@@ -1191,8 +1194,8 @@ export async function POST(request: Request) {
     } else if (action === "confirmPersonalOccurrence") {
       const parsed = z.object({
         occurrenceId: z.string().min(1).max(120),
-        amount: z.union([z.string(), z.number()]).optional(),
-        accountId: z.string().min(1).max(120).optional(),
+        amount: optionalAmount,
+        accountId: optionalId,
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_OCCURRENCE");
       const occurrence = await db.prepare(`SELECT o.*, r.name AS rule_name, r.kind AS rule_kind, r.amount_mode, r.total_minor
@@ -1208,7 +1211,9 @@ export async function POST(request: Request) {
       } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
       if (occurrence.amount_mode === "variable" && (!parsed.data.amount || parsed.data.amount === "")) throw new ApiError(400, "VARIABLE_AMOUNT_REQUIRED");
       if (amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
-      const accountId = parsed.data.accountId || occurrence.account_id;
+      const accountId = parsed.data.accountId || occurrence.account_id
+        || (await db.prepare("SELECT id FROM personal_accounts WHERE space_id=? AND status='active' ORDER BY created_at LIMIT 1").bind(occurrence.space_id).first<{ id: string }>())?.id
+        || null;
       const createdAt = now();
       const transactionId = crypto.randomUUID();
       const expectedMinor = Number(occurrence.expected_minor);
