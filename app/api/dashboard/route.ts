@@ -438,6 +438,21 @@ async function voidApprovedTransaction(
     }),
   ]);
   await db.prepare("UPDATE trip_expenses SET status='voided' WHERE transaction_id=? AND COALESCE(status,'posted')<>'voided'").bind(txn.id).run();
+  const postedOccurrence = await db.prepare(`SELECT o.id, o.rule_id, o.actual_minor, r.kind
+    FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
+    WHERE o.transaction_id=? AND o.status='posted'`)
+    .bind(txn.id)
+    .first<{ id: string; rule_id: string; actual_minor: number | null; kind: string }>();
+  if (postedOccurrence) {
+    const postedMinor = Number(postedOccurrence.actual_minor ?? txn.amount_minor);
+    await db.batch([
+      db.prepare("UPDATE personal_occurrences SET status='pending', actual_minor=NULL, transaction_id=NULL WHERE id=? AND status='posted'")
+        .bind(postedOccurrence.id),
+      ...(postedOccurrence.kind === "expense"
+        ? [db.prepare("UPDATE personal_rules SET paid_minor = MAX(0, paid_minor - ?) WHERE id=?").bind(postedMinor, postedOccurrence.rule_id)]
+        : []),
+    ]);
+  }
   await rebuildSpaceBalance(db, [txn.space_id]);
   await reconcileMemberLedgers(db, [txn.space_id]);
 }
@@ -1484,6 +1499,9 @@ export async function POST(request: Request) {
       if (!existing) throw new ApiError(404, "TRANSACTION_NOT_FOUND");
       const space = await authorizeSpace(db, user, existing.space_id, "transact");
       await assertPeriodWritable(db, existing.space_id, existing.occurred_at);
+      const linkedOccurrence = await db.prepare(`SELECT o.id, o.rule_id, r.kind FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id WHERE o.transaction_id=?`)
+        .bind(existing.id)
+        .first<{ id: string; rule_id: string; kind: string }>();
       await voidApprovedTransaction(db, existing, user.id);
 
       let kind = parsed.data.kind ?? existing.kind;
@@ -1528,6 +1546,15 @@ export async function POST(request: Request) {
           metadata: { replaces: existing.id, beforeAmount: existing.amount_minor, afterAmount: amountMinor, beforeKind: existing.kind, afterKind: kind },
         }),
       ]);
+      if (linkedOccurrence) {
+        await db.batch([
+          db.prepare("UPDATE personal_occurrences SET status='posted', actual_minor=?, transaction_id=? WHERE id=?")
+            .bind(amountMinor, transactionId, linkedOccurrence.id),
+          ...(linkedOccurrence.kind === "expense"
+            ? [db.prepare("UPDATE personal_rules SET paid_minor = paid_minor + ? WHERE id=?").bind(amountMinor, linkedOccurrence.rule_id)]
+            : []),
+        ]);
+      }
       await reconcileMemberLedgers(db, [existing.space_id]);
     } else if (action === "completeCircleTurn") {
       const parsed = z.object({ turnId: z.string().min(1).max(120) }).safeParse(payload);

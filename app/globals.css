@@ -325,7 +325,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .action-menu-panel { position: absolute; top: calc(100% + 6px); inset-inline-start: 0; z-index: 20; min-width: 180px; padding: 6px; border-radius: 14px; background: white; border: 1px solid #e7eee9; box-shadow: 0 14px 32px rgba(17,31,27,.16); }
 .action-menu-panel button { width: 100%; border: 0; background: transparent; padding: 10px 12px; border-radius: 10px; color: #17332d; font: inherit; font-weight: 700; cursor: pointer; text-align: start; }
 .action-menu-panel button:hover { background: #f3f8f5; }
-.wide-modal { width: min(720px, 100%); }
+.wide-modal { width: min(860px, 100%); }
+.personal-setup-rules { padding: 8px 22px 22px; border-top: 1px solid var(--line); }
+.personal-setup-rules .panel-heading { padding: 12px 0; }
+.personal-setup-rules .modal-backdrop { z-index: 80; }
 .member-detail-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .member-detail-meta.compact { grid-template-columns: 1fr 1fr; }
 .member-detail-meta div { border: 1px solid #e5ebe7; border-radius: 12px; padding: 10px 12px; background: #fbfcfb; }

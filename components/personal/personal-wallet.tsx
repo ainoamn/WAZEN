@@ -111,14 +111,10 @@ export function PersonalWalletPanel({
   onChanged: (next: Record<string, unknown>) => void;
 }) {
   const [accountOpen, setAccountOpen] = useState<PersonalAccount | true | null>(null);
-  const [incomeMenu, setIncomeMenu] = useState(false);
-  const [expenseMenu, setExpenseMenu] = useState(false);
-  const [ruleOpen, setRuleOpen] = useState<{ kind: "income" | "expense"; schedule: "monthly" | "once" | "unscheduled"; amountMode: "fixed" | "variable"; existing?: PersonalRule } | null>(null);
   const spaceAccounts = accounts.filter((item) => item.space_id === spaceId);
   const activeAccounts = spaceAccounts.filter((item) => (item.status ?? "active") === "active");
   const spaceRules = rules.filter((item) => item.space_id === spaceId);
   const spaceOcc = occurrences.filter((item) => item.space_id === spaceId);
-  const pending = spaceOcc.filter((item) => item.status === "pending");
   const loans = spaceRules.filter((item) => Number(item.total_minor) > 0);
   const unscheduled = spaceRules.filter((item) => (item.schedule ?? "monthly") === "unscheduled" && item.status === "active");
   const byMonth = [...spaceOcc].sort((a, b) => (a.due_at || a.period_key).localeCompare(b.due_at || b.period_key)).reduce((map, item) => {
@@ -142,20 +138,6 @@ export function PersonalWalletPanel({
     if (!response.ok) { window.alert(result.error === "ACCOUNT_HAS_ACTIVITY" ? (locale === "ar" ? "لا يمكن الحذف: عليه حركات. أرشف الحساب بدلاً من ذلك." : "Cannot delete: it has posted activity. Archive it instead.") : (result.error ?? "FAILED")); return; }
     onChanged(result);
   };
-  const mutateRule = async (ruleId: string, status: "active" | "paused" | "archived") => {
-    const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "setPersonalRuleStatus", idempotencyKey: crypto.randomUUID(), ruleId, status }) });
-    const result = await response.json() as Record<string, unknown> & { error?: string };
-    if (!response.ok) { window.alert(result.error ?? "FAILED"); return; }
-    onChanged(result);
-  };
-  const removeRule = async (ruleId: string) => {
-    if (!window.confirm(locale === "ar" ? "حذف هذا البند؟ القيود المرحلة تبقى، والاستحقاقات المعلقة تُلغى." : "Delete this rule? Posted entries stay; pending months are removed.")) return;
-    const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "deletePersonalRule", idempotencyKey: crypto.randomUUID(), ruleId }) });
-    const result = await response.json() as Record<string, unknown> & { error?: string };
-    if (!response.ok) { window.alert(result.error ?? "FAILED"); return; }
-    onChanged(result);
-  };
-
   return (
     <>
       <article className="panel">
@@ -266,62 +248,97 @@ export function PersonalWalletPanel({
         </article>
       )}
 
-      <article className="panel">
-        <div className="panel-heading">
-          <div>
-            <span className="section-kicker">{locale === "ar" ? "القواعد الشهرية" : "Monthly rules"}</span>
-            <h2>{locale === "ar" ? "دخل ثابت ومتغير وآخر، وخصوم مجدولة" : "Fixed, variable and other income, plus scheduled bills"}</h2>
-          </div>
-          <div className="section-title-actions">
-            <div className="action-menu">
-              <button type="button" className="primary-button" onClick={() => { setExpenseMenu(false); setIncomeMenu((open) => !open); }} aria-expanded={incomeMenu}>
-                <Plus size={15} />{locale === "ar" ? "دخل" : "Income"}<ChevronDown size={15} />
-              </button>
-              {incomeMenu && (
-                <div className="action-menu-panel" role="menu">
-                  <button type="button" role="menuitem" onClick={() => { setIncomeMenu(false); setRuleOpen({ kind: "income", schedule: "monthly", amountMode: "fixed" }); }}>{locale === "ar" ? "دخل ثابت" : "Fixed income"}</button>
-                  <button type="button" role="menuitem" onClick={() => { setIncomeMenu(false); setRuleOpen({ kind: "income", schedule: "monthly", amountMode: "variable" }); }}>{locale === "ar" ? "دخل متغير" : "Variable income"}</button>
-                  <button type="button" role="menuitem" onClick={() => { setIncomeMenu(false); setRuleOpen({ kind: "income", schedule: "unscheduled", amountMode: "fixed" }); }}>{locale === "ar" ? "دخل آخر" : "Other income"}</button>
-                </div>
-              )}
-            </div>
-            <div className="action-menu">
-              <button type="button" className="primary-button" onClick={() => { setIncomeMenu(false); setExpenseMenu((open) => !open); }} aria-expanded={expenseMenu}>
-                <Plus size={15} />{locale === "ar" ? "خصم" : "Expense"}<ChevronDown size={15} />
-              </button>
-              {expenseMenu && (
-                <div className="action-menu-panel" role="menu">
-                  <button type="button" role="menuitem" onClick={() => { setExpenseMenu(false); setRuleOpen({ kind: "expense", schedule: "monthly", amountMode: "fixed" }); }}>{locale === "ar" ? "خصم ثابت كل شهر" : "Fixed monthly"}</button>
-                  <button type="button" role="menuitem" onClick={() => { setExpenseMenu(false); setRuleOpen({ kind: "expense", schedule: "monthly", amountMode: "variable" }); }}>{locale === "ar" ? "خصم متغير كل شهر" : "Variable monthly"}</button>
-                  <button type="button" role="menuitem" onClick={() => { setExpenseMenu(false); setRuleOpen({ kind: "expense", schedule: "once", amountMode: "fixed" }); }}>{locale === "ar" ? "خصم مرة واحدة" : "One-time expense"}</button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="personal-rule-list">
-          {spaceRules.map((rule) => (
-            <div className={`personal-rule-row ${rule.status !== "active" ? "is-paused" : ""}`} key={rule.id}>
-              <div>
-                <strong>{rule.name}</strong>
-                <span>{rule.kind === "income" ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "مصروف" : "Expense")} · {(rule.schedule ?? "monthly") === "once" ? (locale === "ar" ? `مجدول ${rule.starts_at.slice(0, 7)}` : `scheduled ${rule.starts_at.slice(0, 7)}`) : (rule.schedule ?? "monthly") === "unscheduled" ? (locale === "ar" ? "بدون موعد" : "no date") : (rule.amount_mode === "variable" ? (locale === "ar" ? "متغير شهرياً" : "variable monthly") : (locale === "ar" ? "ثابت شهرياً" : "fixed monthly"))}{rule.status === "paused" ? (locale === "ar" ? " · متوقف" : " · paused") : rule.status === "archived" ? (locale === "ar" ? " · مؤرشف" : " · archived") : ""}</span>
-              </div>
-              <b>{rule.amount_minor ? money(rule.amount_minor, locale) : (locale === "ar" ? "يُدخل عند الترحيل" : "enter when posting")}</b>
-              <div className="personal-rule-actions">
-                <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => setRuleOpen({ kind: rule.kind === "expense" ? "expense" : "income", schedule: (rule.schedule === "once" || rule.schedule === "unscheduled" ? rule.schedule : "monthly"), amountMode: rule.amount_mode === "variable" ? "variable" : "fixed", existing: rule })}><Pencil size={14} /></button>
-                <button type="button" title={rule.status === "paused" ? (locale === "ar" ? "تشغيل" : "Resume") : (locale === "ar" ? "إيقاف" : "Pause")} onClick={() => void mutateRule(rule.id, rule.status === "paused" ? "active" : "paused")}>{rule.status === "paused" ? <Play size={14} /> : <Pause size={14} />}</button>
-                <button type="button" title={rule.status === "archived" ? (locale === "ar" ? "استعادة" : "Restore") : (locale === "ar" ? "أرشفة" : "Archive")} onClick={() => void mutateRule(rule.id, rule.status === "archived" ? "active" : "archived")}><Archive size={14} /></button>
-                <button type="button" className="danger" title={locale === "ar" ? "حذف" : "Delete"} onClick={() => void removeRule(rule.id)}><Trash2 size={14} /></button>
-              </div>
-            </div>
-          ))}
-          {!spaceRules.length && <p className="empty-state">{locale === "ar" ? "أضف راتباً ثابتاً أو متغيراً أو دخلاً بلا موعد، وجدوِل مصروفاً لشهر معيّن مثل أكتوبر." : "Add fixed, variable, or undated income, and schedule an expense for a month such as October."}</p>}
-        </div>
-      </article>
-
       {accountOpen && <AccountModal locale={locale} spaceId={spaceId} existing={accountOpen === true ? undefined : accountOpen} onClose={() => setAccountOpen(null)} onChanged={(next) => { onChanged(next); setAccountOpen(null); }} />}
-      {ruleOpen && <RuleModal locale={locale} spaceId={spaceId} kind={ruleOpen.kind} schedule={ruleOpen.schedule} amountMode={ruleOpen.amountMode} existing={ruleOpen.existing} accounts={activeAccounts} onClose={() => setRuleOpen(null)} onChanged={(next) => { onChanged(next); setRuleOpen(null); }} />}
     </>
+  );
+}
+
+export function PersonalRulesSetup({
+  spaceId,
+  locale,
+  accounts,
+  rules,
+  onChanged,
+}: {
+  spaceId: string;
+  locale: Locale;
+  accounts: PersonalAccount[];
+  rules: PersonalRule[];
+  onChanged: (next: Record<string, unknown>) => void;
+}) {
+  const [incomeMenu, setIncomeMenu] = useState(false);
+  const [expenseMenu, setExpenseMenu] = useState(false);
+  const [ruleOpen, setRuleOpen] = useState<{ kind: "income" | "expense"; schedule: "monthly" | "once" | "unscheduled"; amountMode: "fixed" | "variable"; existing?: PersonalRule } | null>(null);
+  const spaceRules = rules.filter((item) => item.space_id === spaceId);
+  const activeAccounts = accounts.filter((item) => item.space_id === spaceId && (item.status ?? "active") === "active");
+  const mutateRule = async (ruleId: string, status: "active" | "paused" | "archived") => {
+    const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "setPersonalRuleStatus", idempotencyKey: crypto.randomUUID(), ruleId, status }) });
+    const result = await response.json() as Record<string, unknown> & { error?: string };
+    if (!response.ok) { window.alert(result.error ?? "FAILED"); return; }
+    onChanged(result);
+  };
+  const removeRule = async (ruleId: string) => {
+    if (!window.confirm(locale === "ar" ? "حذف هذا البند؟ القيود المرحلة تبقى، والاستحقاقات المعلقة تُلغى." : "Delete this rule? Posted entries stay; pending months are removed.")) return;
+    const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "deletePersonalRule", idempotencyKey: crypto.randomUUID(), ruleId }) });
+    const result = await response.json() as Record<string, unknown> & { error?: string };
+    if (!response.ok) { window.alert(result.error ?? "FAILED"); return; }
+    onChanged(result);
+  };
+  return (
+    <div className="personal-setup-rules">
+      <div className="panel-heading">
+        <div>
+          <span className="section-kicker">{locale === "ar" ? "ضبط المحفظة" : "Wallet setup"}</span>
+          <h2>{locale === "ar" ? "دخل ثابت ومتغير وآخر، وخصوم مجدولة" : "Fixed, variable and other income, plus scheduled bills"}</h2>
+        </div>
+        <div className="section-title-actions">
+          <div className="action-menu">
+            <button type="button" className="primary-button" onClick={() => { setExpenseMenu(false); setIncomeMenu((open) => !open); }} aria-expanded={incomeMenu}>
+              <Plus size={15} />{locale === "ar" ? "دخل" : "Income"}<ChevronDown size={15} />
+            </button>
+            {incomeMenu && (
+              <div className="action-menu-panel" role="menu">
+                <button type="button" role="menuitem" onClick={() => { setIncomeMenu(false); setRuleOpen({ kind: "income", schedule: "monthly", amountMode: "fixed" }); }}>{locale === "ar" ? "دخل ثابت" : "Fixed income"}</button>
+                <button type="button" role="menuitem" onClick={() => { setIncomeMenu(false); setRuleOpen({ kind: "income", schedule: "monthly", amountMode: "variable" }); }}>{locale === "ar" ? "دخل متغير" : "Variable income"}</button>
+                <button type="button" role="menuitem" onClick={() => { setIncomeMenu(false); setRuleOpen({ kind: "income", schedule: "unscheduled", amountMode: "fixed" }); }}>{locale === "ar" ? "دخل آخر" : "Other income"}</button>
+              </div>
+            )}
+          </div>
+          <div className="action-menu">
+            <button type="button" className="primary-button" onClick={() => { setIncomeMenu(false); setExpenseMenu((open) => !open); }} aria-expanded={expenseMenu}>
+              <Plus size={15} />{locale === "ar" ? "خصم" : "Expense"}<ChevronDown size={15} />
+            </button>
+            {expenseMenu && (
+              <div className="action-menu-panel" role="menu">
+                <button type="button" role="menuitem" onClick={() => { setExpenseMenu(false); setRuleOpen({ kind: "expense", schedule: "monthly", amountMode: "fixed" }); }}>{locale === "ar" ? "خصم ثابت كل شهر" : "Fixed monthly"}</button>
+                <button type="button" role="menuitem" onClick={() => { setExpenseMenu(false); setRuleOpen({ kind: "expense", schedule: "monthly", amountMode: "variable" }); }}>{locale === "ar" ? "خصم متغير كل شهر" : "Variable monthly"}</button>
+                <button type="button" role="menuitem" onClick={() => { setExpenseMenu(false); setRuleOpen({ kind: "expense", schedule: "once", amountMode: "fixed" }); }}>{locale === "ar" ? "خصم مرة واحدة" : "One-time expense"}</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      <p className="modal-note">{locale === "ar" ? "هنا تُعرَّف بنود الدخل والخصم. اعتماد الدفع والتأجيل يظهر في حساب الأشهر." : "Define income and bills here. Approving, skipping, and deferring stay in the month ledger."}</p>
+      <div className="personal-rule-list">
+        {spaceRules.map((rule) => (
+          <div className={`personal-rule-row ${rule.status !== "active" ? "is-paused" : ""}`} key={rule.id}>
+            <div>
+              <strong>{rule.name}</strong>
+              <span>{rule.kind === "income" ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "مصروف" : "Expense")} · {(rule.schedule ?? "monthly") === "once" ? (locale === "ar" ? `مجدول ${rule.starts_at.slice(0, 7)}` : `scheduled ${rule.starts_at.slice(0, 7)}`) : (rule.schedule ?? "monthly") === "unscheduled" ? (locale === "ar" ? "بدون موعد" : "no date") : (rule.amount_mode === "variable" ? (locale === "ar" ? "متغير شهرياً" : "variable monthly") : (locale === "ar" ? "ثابت شهرياً" : "fixed monthly"))}{rule.status === "paused" ? (locale === "ar" ? " · متوقف" : " · paused") : rule.status === "archived" ? (locale === "ar" ? " · مؤرشف" : " · archived") : ""}</span>
+            </div>
+            <b>{rule.amount_minor ? money(rule.amount_minor, locale) : (locale === "ar" ? "يُدخل عند الترحيل" : "enter when posting")}</b>
+            <div className="personal-rule-actions">
+              <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => setRuleOpen({ kind: rule.kind === "expense" ? "expense" : "income", schedule: (rule.schedule === "once" || rule.schedule === "unscheduled" ? rule.schedule : "monthly"), amountMode: rule.amount_mode === "variable" ? "variable" : "fixed", existing: rule })}><Pencil size={14} /></button>
+              <button type="button" title={rule.status === "paused" ? (locale === "ar" ? "تشغيل" : "Resume") : (locale === "ar" ? "إيقاف" : "Pause")} onClick={() => void mutateRule(rule.id, rule.status === "paused" ? "active" : "paused")}>{rule.status === "paused" ? <Play size={14} /> : <Pause size={14} />}</button>
+              <button type="button" title={rule.status === "archived" ? (locale === "ar" ? "استعادة" : "Restore") : (locale === "ar" ? "أرشفة" : "Archive")} onClick={() => void mutateRule(rule.id, rule.status === "archived" ? "active" : "archived")}><Archive size={14} /></button>
+              <button type="button" className="danger" title={locale === "ar" ? "حذف" : "Delete"} onClick={() => void removeRule(rule.id)}><Trash2 size={14} /></button>
+            </div>
+          </div>
+        ))}
+        {!spaceRules.length && <p className="empty-state">{locale === "ar" ? "أضف راتباً ثابتاً أو متغيراً أو دخلاً بلا موعد، وجدوِل مصروفاً لشهر معيّن مثل أكتوبر." : "Add fixed, variable, or undated income, and schedule an expense for a month such as October."}</p>}
+      </div>
+      {ruleOpen && <RuleModal locale={locale} spaceId={spaceId} kind={ruleOpen.kind} schedule={ruleOpen.schedule} amountMode={ruleOpen.amountMode} existing={ruleOpen.existing} accounts={activeAccounts} onClose={() => setRuleOpen(null)} onChanged={(next) => { onChanged(next); setRuleOpen(null); }} />}
+    </div>
   );
 }
 
