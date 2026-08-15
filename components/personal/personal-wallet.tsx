@@ -10,6 +10,7 @@ import { bankCustodySplit, holdingsForAccount } from "../../lib/wallet-links";
 import OmrSymbol from "../brand/OmrSymbol";
 import { DateField } from "../ui/date-field";
 
+type Locale = "ar" | "en";
 type LinkedSpace = { id: string; name_ar: string; name_en: string; type: string; balance_minor: number; status?: string };
 type SpaceLink = { hub_space_id: string; linked_space_id: string; status: string };
 type SpaceBankLink = { hub_space_id: string; linked_space_id: string; account_id: string };
