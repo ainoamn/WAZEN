@@ -1079,11 +1079,15 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
         : (locale === "ar" ? "مفتوحة" : "Open");
   return <div className="dashboard-stack">
     <div className="space-toolbar">
-      <button type="button" onClick={onAdd}><Plus size={16} />{t.add}</button>
-      {["trip", "society", "group"].includes(space.type) && <button type="button" onClick={onInvite}><UserPlus size={16} />{t.invite}</button>}
-      <button type="button" onClick={onEditWallet}><Pencil size={16} />{locale === "ar" ? "تعديل" : "Edit"}</button>
-      <button type="button" onClick={onArchiveWallet}><Archive size={16} />{(space.status ?? "active") === "archived" ? (locale === "ar" ? "استعادة" : "Restore") : (locale === "ar" ? "أرشفة" : "Archive")}</button>
-      <button type="button" onClick={onDeleteWallet}><Trash2 size={16} />{locale === "ar" ? "حذف" : "Delete"}</button>
+      <div className="space-toolbar-row">
+        <button type="button" onClick={onAdd}><Plus size={16} />{t.add}</button>
+        {["trip", "society", "group"].includes(space.type) ? <button type="button" onClick={onInvite}><UserPlus size={16} />{t.invite}</button> : <button type="button" onClick={onEditWallet}><Pencil size={16} />{locale === "ar" ? "تعديل" : "Edit"}</button>}
+      </div>
+      <div className="space-toolbar-row">
+        {["trip", "society", "group"].includes(space.type) && <button type="button" onClick={onEditWallet}><Pencil size={16} />{locale === "ar" ? "تعديل" : "Edit"}</button>}
+        <button type="button" onClick={onArchiveWallet}><Archive size={16} />{(space.status ?? "active") === "archived" ? (locale === "ar" ? "استعادة" : "Restore") : (locale === "ar" ? "أرشفة" : "Archive")}</button>
+        <button type="button" onClick={onDeleteWallet}><Trash2 size={16} />{locale === "ar" ? "حذف" : "Delete"}</button>
+      </div>
     </div>
     <section className={`space-hero accent-${space.accent}`}>
       <div className="space-hero-top">
