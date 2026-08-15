@@ -33,8 +33,8 @@ export function WalletForecastPanel({
       </div>
       <p className="modal-note">
         {locale === "ar"
-          ? `دخل شهري متوقع ${money(monthlyInflowMinor)} · خصم شهري متوقع ${money(monthlyOutflowMinor)} · صافي ${money(forecast.netMonthlyMinor)}`
-          : `Expected monthly in ${money(monthlyInflowMinor)} · out ${money(monthlyOutflowMinor)} · net ${money(forecast.netMonthlyMinor)}`}
+          ? `التزامات الشهر الحالي بعد استبعاد الملغى والمؤجّل والموقوف: دخل ${money(monthlyInflowMinor)} · خصم ${money(monthlyOutflowMinor)} · صافي ${money(forecast.netMonthlyMinor)}`
+          : `This month’s remaining schedule (voided, deferred, and paused excluded): in ${money(monthlyInflowMinor)} · out ${money(monthlyOutflowMinor)} · net ${money(forecast.netMonthlyMinor)}`}
       </p>
       <div className="personal-account-grid">
         {forecast.rows.map((row) => (

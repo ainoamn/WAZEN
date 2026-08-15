@@ -235,7 +235,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .list-panel, .obligation-panel, .members-panel, .transaction-table-panel, .report-chart { padding: 20px; }
 .text-button { border: 0; background: transparent; display: flex; align-items: center; gap: 4px; color: var(--green); font-size: 13px; font-weight: 700; cursor: pointer; }
 .transaction-list { margin-top: 9px; display: flex; flex-direction: column; }
-.transaction-row { min-height: 59px; display: grid; grid-template-columns: 35px 1fr auto auto; align-items: center; gap: 11px; border-bottom: 1px solid #eef0ee; }
+.transaction-row.is-inactive { opacity: .62; }
+.transaction-row.is-inactive > strong { text-decoration: line-through; }
 .transaction-row:last-child { border-bottom: 0; }
 .transaction-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .transaction-actions button { width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0; border: 1px solid #dfe6e1; border-radius: 8px; background: white; color: #4f635c; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; overflow: visible; }

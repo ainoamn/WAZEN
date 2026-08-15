@@ -12,7 +12,7 @@ import { WalletForecastPanel } from "../components/forecast/wallet-forecast";
 import { projectCashflow } from "../lib/wallet-forecast";
 import { isPeriodLocked } from "../lib/accounting-periods";
 import { buildReportHtml, openReportPreview } from "../lib/reports";
-import { allocateOldestFirst, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
+import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor } from "../lib/money";
 import { occurrenceVarianceCopy } from "../lib/personal-finance";
 import {
@@ -353,15 +353,48 @@ function spaceGoalMinor(space: Space, data: DashboardData) {
 }
 
 function spaceLedger(space: Space, data: DashboardData) {
-  const rows = data.transactions.filter((row) => row.space_id === space.id && (row.status ?? "approved") !== "void");
+  const rows = data.transactions.filter((row) => row.space_id === space.id && isLiveTransaction(row));
   const income = rows.filter((row) => ["income", "contribution"].includes(row.kind)).reduce((sum, row) => sum + row.amount_minor, 0);
   const spend = rows.filter((row) => row.kind === "expense").reduce((sum, row) => sum + row.amount_minor, 0);
   return { income, spend, remaining: income - spend };
 }
 
+function isLiveTransaction(transaction: { status?: string }) {
+  return (transaction.status ?? "approved") === "approved";
+}
+
+function transactionStatusLabel(status: string | undefined, locale: Locale) {
+  const key = status ?? "approved";
+  const ar: Record<string, string> = {
+    approved: "معتمدة",
+    voided: "ملغاة",
+    superseded: "مستبدلة",
+    deferred: "مؤجّلة",
+    skipped: "موقوفة",
+    pending: "معلّقة",
+    posted: "مرحلة",
+  };
+  const en: Record<string, string> = {
+    approved: "Posted",
+    voided: "Voided",
+    superseded: "Replaced",
+    deferred: "Deferred",
+    skipped: "Paused",
+    pending: "Pending",
+    posted: "Posted",
+  };
+  return (locale === "ar" ? ar : en)[key] ?? key;
+}
+
 function spaceMonthlyFlow(space: Space, data: DashboardData) {
   if (space.type === "personal") {
-    const rules = (data.personalRules ?? []).filter((rule) => rule.space_id === space.id && rule.status === "active" && (rule.schedule ?? "monthly") === "monthly");
+    const currentKey = periodKeyFromDate(new Date().toISOString());
+    const dropped = new Set(
+      (data.personalOccurrences ?? [])
+        .filter((row) => row.space_id === space.id && row.period_key === currentKey && ["skipped", "deferred", "voided"].includes(row.status))
+        .map((row) => row.rule_id),
+    );
+    const rules = (data.personalRules ?? []).filter((rule) => rule.space_id === space.id && rule.status === "active" && (rule.schedule ?? "monthly") === "monthly" && !dropped.has(rule.id));
     return {
       inflow: rules.filter((rule) => rule.kind === "income").reduce((sum, rule) => sum + Number(rule.amount_minor), 0),
       outflow: rules.filter((rule) => rule.kind === "expense").reduce((sum, rule) => sum + Number(rule.amount_minor), 0),
@@ -372,7 +405,7 @@ function spaceMonthlyFlow(space: Space, data: DashboardData) {
   const contributors = data.members.filter((member) => member.space_id === space.id && (member.status ?? "active") === "active" && Number(member.due_minor) > 0).length;
   const since = Date.now() - 90 * 24 * 60 * 60 * 1000;
   const recentSpend = data.transactions
-    .filter((row) => row.space_id === space.id && row.kind === "expense" && new Date(row.occurred_at).getTime() >= since)
+    .filter((row) => row.space_id === space.id && row.kind === "expense" && isLiveTransaction(row) && new Date(row.occurred_at).getTime() >= since)
     .reduce((sum, row) => sum + row.amount_minor, 0);
   return {
     inflow: monthly * contributors,
@@ -1144,13 +1177,13 @@ function RecentTransactions({ data, locale, onView, onChanged }: { data: Dashboa
   const [working, setWorking] = useState(false);
   const voidTxn = async (transaction: Transaction) => {
     if (working) return;
-    if (!window.confirm(locale === "ar" ? "حذف هذه العملية وإلغاء أثرها على الرصيد؟" : "Void this transaction and reverse its balance?")) return;
+    if (!window.confirm(locale === "ar" ? "إلغاء هذه العملية؟ تبقى في السجل بحالة ملغاة ويُعكس أثرها على الرصيد." : "Void this transaction? It stays in the ledger as voided and its balance effect is reversed.")) return;
     setWorking(true);
     try {
       const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "voidTransaction", idempotencyKey: crypto.randomUUID(), transactionId: transaction.id }) });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
       if (!response.ok) { window.alert(dashboardError(result.error ?? "VOID_FAILED", locale)); return; }
-      onChanged(result.spaces ? result : { transactions: data.transactions.filter((row) => row.id !== transaction.id) });
+      onChanged(result.spaces ? result : { transactions: data.transactions.map((row) => row.id === transaction.id ? { ...row, status: "voided" } : row) });
     } finally {
       setWorking(false);
     }
@@ -1167,18 +1200,18 @@ function TransactionRow({ transaction, data, locale, onEdit, onVoid }: { transac
   const space = data.spaces.find((item) => item.id === transaction.space_id);
   const member = data.members.find((item) => item.id === transaction.member_id);
   const locked = isPeriodLocked((data.periods ?? []).filter((period) => period.space_id === transaction.space_id), transaction.occurred_at);
-  return <div className="transaction-row">
+  return <div className={`transaction-row${isLiveTransaction(transaction) ? "" : " is-inactive"}`}>
     <div className={`transaction-icon ${transaction.kind}`}><Icon size={17} /></div>
     <div className="transaction-main">
       <strong>{transactionName(transaction, locale)}</strong>
-      <span>{space ? nameOf(space, locale) : "—"}{member ? ` · ${member.display_name}` : ""} · {new Intl.DateTimeFormat(locale === "ar" ? "ar-OM" : "en-GB", { day: "numeric", month: "short" }).format(new Date(transaction.occurred_at))}{locked ? (locale === "ar" ? " · الفترة مغلقة" : " · period closed") : ""}</span>
+      <span>{space ? nameOf(space, locale) : "—"}{member ? ` · ${member.display_name}` : ""} · {new Intl.DateTimeFormat(locale === "ar" ? "ar-OM" : "en-GB", { day: "numeric", month: "short" }).format(new Date(transaction.occurred_at))} · {transactionStatusLabel(transaction.status, locale)}{locked ? (locale === "ar" ? " · الفترة مغلقة" : " · period closed") : ""}</span>
     </div>
     <strong className={positive ? "amount-positive" : "amount-negative"}>{positive ? "+" : "−"}{formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale)}</strong>
     <div className="transaction-actions">
       <button type="button" title={locale === "ar" ? "إيصال" : "Receipt"} onClick={() => openTransactionReceipt(transaction, data, locale)}><Printer size={15} /></button>
       <button type="button" title="WhatsApp" onClick={() => shareTransactionWhatsApp(transaction, data, locale)}><MessageCircle size={15} /></button>
-      {onEdit && !locked && <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => onEdit(transaction)}><Pencil size={15} /></button>}
-      {onVoid && !locked && <button type="button" className="danger" title={locale === "ar" ? "حذف" : "Delete"} onClick={() => onVoid(transaction)}><Trash2 size={15} /></button>}
+      {onEdit && !locked && isLiveTransaction(transaction) && <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => onEdit(transaction)}><Pencil size={15} /></button>}
+      {onVoid && !locked && isLiveTransaction(transaction) && <button type="button" className="danger" title={locale === "ar" ? "إلغاء" : "Void"} onClick={() => onVoid(transaction)}><Trash2 size={15} /></button>}
     </div>
   </div>;
 }
@@ -1221,8 +1254,9 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
   const progress = goal ? Math.max(0, Math.min(100, Math.round((space.balance_minor / goal) * 100))) : 0;
   const nextCircleTurn = data.circleTurns.find((turn) => turn.space_id === space.id && turn.status === "scheduled");
   const paidTotal = members.reduce((sum, member) => sum + member.paid_minor, 0);
-  const spentTotal = transactions.filter((txn) => txn.kind === "expense").reduce((sum, txn) => sum + txn.amount_minor, 0);
-  const incomeTotal = transactions.filter((txn) => ["income", "contribution"].includes(txn.kind)).reduce((sum, txn) => sum + txn.amount_minor, 0);
+  const liveTransactions = transactions.filter(isLiveTransaction);
+  const spentTotal = liveTransactions.filter((txn) => txn.kind === "expense").reduce((sum, txn) => sum + txn.amount_minor, 0);
+  const incomeTotal = liveTransactions.filter((txn) => ["income", "contribution"].includes(txn.kind)).reduce((sum, txn) => sum + txn.amount_minor, 0);
   const remainingTotal = incomeTotal - spentTotal;
   const closedBudgets = (data.periods ?? []).filter((period) => period.space_id === space.id && period.status === "closed").length;
   const pendingSettlements = data.settlements.filter((item) => item.space_id === space.id && item.status === "pending").length;
@@ -1387,7 +1421,7 @@ function TransactionsView({ data, locale, onChanged }: { data: DashboardData; lo
   const t = copy[locale];
   const rows = data.transactions.filter((transaction) => transactionName(transaction, locale).toLowerCase().includes(query.toLowerCase()));
   const voidTxn = async (transaction: Transaction) => {
-    if (!window.confirm(locale === "ar" ? "حذف هذه العملية وإلغاء أثرها على الرصيد والعضو؟" : "Void this transaction and reverse its balance/member effect?")) return;
+    if (!window.confirm(locale === "ar" ? "إلغاء هذه العملية؟ تبقى في السجل بحالة ملغاة ويُعكس أثرها على الرصيد." : "Void this transaction? It stays in the ledger as voided and its balance effect is reversed.")) return;
     setWorking(true);
     try {
       const response = await apiFetch("/api/dashboard", {
@@ -1397,7 +1431,7 @@ function TransactionsView({ data, locale, onChanged }: { data: DashboardData; lo
       });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
       if (!response.ok) throw new Error(dashboardError(result.error ?? "VOID_FAILED", locale));
-      onChanged(result.spaces ? result : { transactions: data.transactions.filter((row) => row.id !== transaction.id) });
+      onChanged(result.spaces ? result : { transactions: data.transactions.map((row) => row.id === transaction.id ? { ...row, status: "voided" } : row) });
     } catch (caught) {
       window.alert(caught instanceof Error ? caught.message : "VOID_FAILED");
     } finally {
@@ -1541,7 +1575,7 @@ function SpaceTransactionsPanel({ space, data, locale, onAdd, onTxnChanged }: { 
   const [working, setWorking] = useState(false);
   const transactions = data.transactions.filter((transaction) => transaction.space_id === space.id);
   const voidTxn = async (transaction: Transaction) => {
-    if (!window.confirm(locale === "ar" ? "حذف هذه العملية وإلغاء أثرها على الرصيد والعضو؟" : "Void this transaction and reverse its balance/member effect?")) return;
+    if (!window.confirm(locale === "ar" ? "إلغاء هذه العملية؟ تبقى في السجل بحالة ملغاة ويُعكس أثرها على الرصيد." : "Void this transaction? It stays in the ledger as voided and its balance effect is reversed.")) return;
     setWorking(true);
     try {
       const response = await apiFetch("/api/dashboard", {
@@ -1551,7 +1585,7 @@ function SpaceTransactionsPanel({ space, data, locale, onAdd, onTxnChanged }: { 
       });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
       if (!response.ok) throw new Error(dashboardError(result.error ?? "VOID_FAILED", locale));
-      onTxnChanged(result.spaces ? result : { transactions: data.transactions.filter((row) => row.id !== transaction.id) });
+      onTxnChanged(result.spaces ? result : { transactions: data.transactions.map((row) => row.id === transaction.id ? { ...row, status: "voided" } : row) });
     } catch (caught) {
       window.alert(caught instanceof Error ? caught.message : "VOID_FAILED");
     } finally {

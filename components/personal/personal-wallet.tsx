@@ -174,8 +174,8 @@ export function PersonalWalletPanel({
             </div>
           </div>
           {[...byMonth.entries()].map(([period, rows]) => {
-            const plannedIn = rows.filter((row) => row.rule_kind === "income" && row.status !== "skipped" && row.status !== "deferred").reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
-            const plannedOut = rows.filter((row) => row.rule_kind !== "income" && row.status !== "skipped" && row.status !== "deferred").reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
+            const plannedIn = rows.filter((row) => row.rule_kind === "income" && !["skipped", "deferred", "voided"].includes(row.status)).reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
+            const plannedOut = rows.filter((row) => row.rule_kind !== "income" && !["skipped", "deferred", "voided"].includes(row.status)).reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
             return (
               <div className="personal-month-block" key={period}>
                 <div className="personal-month-head">
@@ -195,7 +195,7 @@ export function PersonalWalletPanel({
                       <div>
                         <strong>{item.rule_name}</strong>
                         <span>
-                          {item.status === "posted" ? (locale === "ar" ? "معتمد" : "Posted") : item.status === "deferred" ? (locale === "ar" ? "مؤجّل" : "Deferred") : (locale === "ar" ? "متجاهل" : "Skipped")}
+                          {item.status === "posted" ? (locale === "ar" ? "معتمد" : "Posted") : item.status === "deferred" ? (locale === "ar" ? "مؤجّل" : "Deferred") : item.status === "voided" ? (locale === "ar" ? "ملغى" : "Voided") : item.status === "skipped" ? (locale === "ar" ? "موقوف" : "Paused") : (locale === "ar" ? "متجاهل" : "Skipped")}
                           {showVariance ? ` · ${occurrenceVarianceCopy(expected, actual, locale)}` : ""}
                         </span>
                       </div>

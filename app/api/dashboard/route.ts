@@ -381,8 +381,9 @@ async function syncFundDeficitShares(db: D1Database, spaceIds: string[]) {
   }
 }
 
-function approvedCashMinor(rows: Array<{ account_id?: string | null; kind: string; amount_minor: number; allocation?: string }>, accountId?: string) {
+function approvedCashMinor(rows: Array<{ account_id?: string | null; kind: string; amount_minor: number; allocation?: string; status?: string }>, accountId?: string) {
   return rows.reduce((sum, row) => {
+    if ((row.status ?? "approved") !== "approved") return sum;
     if (accountId !== undefined && row.account_id !== accountId) return sum;
     if (row.allocation === "personal_reserve") return sum;
     if (row.kind === "income" || row.kind === "contribution") return sum + Number(row.amount_minor);
@@ -443,12 +444,15 @@ async function voidApprovedTransaction(
     status: string;
   },
   actorUserId: string,
+  options?: { recordStatus?: "voided" | "superseded"; closeOccurrence?: boolean },
 ) {
-  if (txn.status === "voided") throw new ApiError(409, "ALREADY_VOIDED");
+  if (txn.status === "voided" || txn.status === "superseded") throw new ApiError(409, "ALREADY_VOIDED");
   if (txn.status !== "approved") throw new ApiError(409, "TRANSACTION_NOT_EDITABLE");
+  const recordStatus = options?.recordStatus ?? "voided";
+  const closeOccurrence = options?.closeOccurrence !== false;
   const amountMinor = Number(txn.amount_minor);
   const createdAt = now();
-  await db.prepare("UPDATE transactions SET status='voided' WHERE id=? AND status='approved'").bind(txn.id).run();
+  await db.prepare("UPDATE transactions SET status=? WHERE id=? AND status='approved'").bind(recordStatus, txn.id).run();
   try {
     await prepareAudit(db, {
       userId: actorUserId,
@@ -463,23 +467,27 @@ async function voidApprovedTransaction(
     await db.prepare("UPDATE trip_expenses SET status='voided' WHERE transaction_id=?").bind(txn.id).run();
   } catch { /* personal wallets and older schemas may lack this column */ }
   try {
-    const postedOccurrence = await db.prepare(`SELECT o.id, o.rule_id, o.actual_minor, r.kind
-      FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
-      WHERE o.transaction_id=? AND o.status='posted'`)
-      .bind(txn.id)
-      .first<{ id: string; rule_id: string; actual_minor: number | null; kind: string }>();
-    if (postedOccurrence) {
-      const postedMinor = Number(postedOccurrence.actual_minor ?? txn.amount_minor);
-      const statements = [
-        db.prepare("UPDATE personal_occurrences SET status='pending', actual_minor=NULL, transaction_id=NULL WHERE id=? AND status='posted'")
-          .bind(postedOccurrence.id),
-      ];
-      if (postedOccurrence.kind === "expense") {
-        statements.push(db.prepare("UPDATE personal_rules SET paid_minor = MAX(0, paid_minor - ?) WHERE id=?").bind(postedMinor, postedOccurrence.rule_id));
+    if (!closeOccurrence) {
+      /* edit path relinks the occurrence to the replacement transaction */
+    } else {
+      const postedOccurrence = await db.prepare(`SELECT o.id, o.rule_id, o.actual_minor, r.kind
+        FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
+        WHERE o.transaction_id=? AND o.status='posted'`)
+        .bind(txn.id)
+        .first<{ id: string; rule_id: string; actual_minor: number | null; kind: string }>();
+      if (postedOccurrence) {
+        const postedMinor = Number(postedOccurrence.actual_minor ?? txn.amount_minor);
+        const statements = [
+          db.prepare("UPDATE personal_occurrences SET status='voided' WHERE id=? AND status='posted'")
+            .bind(postedOccurrence.id),
+        ];
+        if (postedOccurrence.kind === "expense") {
+          statements.push(db.prepare("UPDATE personal_rules SET paid_minor = MAX(0, paid_minor - ?) WHERE id=?").bind(postedMinor, postedOccurrence.rule_id));
+        }
+        await db.batch(statements);
       }
-      await db.batch(statements);
     }
-  } catch { /* occurrence reopen is best-effort */ }
+  } catch { /* occurrence close is best-effort */ }
   try {
     await rebuildSpaceBalance(db, [txn.space_id]);
   } catch {
@@ -760,7 +768,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
   ] = await Promise.all([
     db.prepare(`SELECT * FROM spaces WHERE id IN (${placeholders}) ORDER BY created_at ASC`).bind(...ids).all<SpaceRow>(),
     db.prepare(`SELECT * FROM members WHERE space_id IN (${placeholders}) ORDER BY joined_at ASC`).bind(...ids).all<MemberRow>(),
-    db.prepare(`SELECT * FROM transactions WHERE space_id IN (${placeholders}) AND status <> 'voided' ORDER BY occurred_at DESC LIMIT 250`).bind(...ids).all<TransactionRow>(),
+    db.prepare(`SELECT * FROM transactions WHERE space_id IN (${placeholders}) ORDER BY occurred_at DESC LIMIT 250`).bind(...ids).all<TransactionRow>(),
     db.prepare(`SELECT * FROM contribution_plans WHERE space_id IN (${placeholders})`).bind(...ids).all(),
     db.prepare(`SELECT ct.*,m.display_name FROM circle_turns ct JOIN members m ON m.id=ct.member_id
       WHERE ct.space_id IN (${placeholders}) ORDER BY ct.space_id,ct.turn_number`).bind(...ids).all(),
@@ -1551,8 +1559,8 @@ export async function POST(request: Request) {
       const txn = await db.prepare("SELECT * FROM transactions WHERE id=?").bind(parsed.data.transactionId).first<TransactionRow>();
       if (!txn) throw new ApiError(404, "TRANSACTION_NOT_FOUND");
       await authorizeSpace(db, user, txn.space_id, "transact");
-      if (txn.status !== "voided") {
-        await voidApprovedTransaction(db, txn, user.id);
+      if (txn.status !== "voided" && txn.status !== "superseded") {
+        await voidApprovedTransaction(db, txn, user.id, { recordStatus: "voided", closeOccurrence: true });
         try {
           const voidEvent = await periodWriteEvent(db, user, txn.space_id, txn.occurred_at, {
             action: "transaction.voided",
@@ -1583,7 +1591,7 @@ export async function POST(request: Request) {
       const linkedOccurrence = await db.prepare(`SELECT o.id, o.rule_id, r.kind FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id WHERE o.transaction_id=?`)
         .bind(existing.id)
         .first<{ id: string; rule_id: string; kind: string }>();
-      await voidApprovedTransaction(db, existing, user.id);
+      await voidApprovedTransaction(db, existing, user.id, { recordStatus: "superseded", closeOccurrence: false });
 
       let kind = parsed.data.kind ?? existing.kind;
       let allocation = parsed.data.allocation ?? existing.allocation;
