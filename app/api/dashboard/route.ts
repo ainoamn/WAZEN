@@ -502,7 +502,7 @@ async function voidApprovedTransaction(
       if (occurrence) {
         const postedMinor = Number(occurrence.actual_minor ?? txn.amount_minor);
         const statements = [
-          db.prepare("UPDATE personal_occurrences SET status='voided' WHERE id=?")
+          db.prepare("UPDATE personal_occurrences SET status='pending', actual_minor=NULL, transaction_id=NULL WHERE id=?")
             .bind(occurrence.id),
         ];
         if (occurrence.kind === "expense") {
@@ -885,18 +885,33 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     return { ...event, ...forecast };
   });
 
-  const syncedOccurrences = (personalOccurrences.results as PersonalOccurrenceRow[]).map((row) => ({
+  const occurrenceRows = personalOccurrences.results as PersonalOccurrenceRow[];
+  const txnRows = transactions.results as TransactionRow[];
+  const reopenIds = occurrenceRows
+    .filter((row) => {
+      if (row.status === "voided" || row.status === "superseded") return true;
+      const linked = row.transaction_id ? txnRows.find((txn) => txn.id === row.transaction_id) : undefined;
+      return Boolean(linked && (linked.status === "voided" || linked.status === "superseded"));
+    })
+    .map((row) => row.id);
+  if (reopenIds.length) {
+    try {
+      await db.batch(reopenIds.map((id) => db.prepare("UPDATE personal_occurrences SET status='pending', actual_minor=NULL, transaction_id=NULL WHERE id=?").bind(id)));
+    } catch { /* display still reopens the monthly item */ }
+  }
+  const syncedOccurrences = occurrenceRows.map((row) => ({
     ...row,
+    ...(reopenIds.includes(row.id) ? { status: "pending", actual_minor: null, transaction_id: null } : {}),
     status: occurrenceLedgerStatus({
-      status: String(row.status ?? "pending"),
-      transaction_id: row.transaction_id ?? null,
+      status: reopenIds.includes(row.id) ? "pending" : String(row.status ?? "pending"),
+      transaction_id: reopenIds.includes(row.id) ? null : row.transaction_id ?? null,
       rule_name: row.rule_name,
       space_id: String(row.space_id),
       period_key: String(row.period_key),
       expected_minor: Number(row.expected_minor ?? 0),
-      actual_minor: row.actual_minor == null ? null : Number(row.actual_minor),
+      actual_minor: reopenIds.includes(row.id) ? null : row.actual_minor == null ? null : Number(row.actual_minor),
       rule_kind: row.rule_kind,
-    }, transactions.results as TransactionRow[]),
+    }, txnRows),
   }));
 
   return {

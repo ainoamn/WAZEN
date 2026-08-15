@@ -58,50 +58,23 @@ export function occurrenceLedgerStatus(
   item: {
     status?: unknown;
     transaction_id?: unknown;
-    rule_name?: unknown;
     space_id?: unknown;
     period_key?: unknown;
     expected_minor?: unknown;
     actual_minor?: unknown;
     rule_kind?: unknown;
+    rule_name?: unknown;
   },
   transactions: Array<{
     id?: unknown;
-    space_id?: unknown;
     status?: unknown;
-    kind?: unknown;
-    amount_minor?: unknown;
-    occurred_at?: unknown;
-    description_ar?: unknown;
-    description_en?: unknown;
   }>,
 ) {
   const status = String(item.status ?? "pending");
   const transactionId = item.transaction_id == null ? null : String(item.transaction_id);
-  const spaceId = String(item.space_id ?? "");
-  const periodKey = String(item.period_key ?? "");
-  const expectedMinor = Number(item.expected_minor ?? 0);
-  const actualMinor = item.actual_minor == null ? null : Number(item.actual_minor);
-  const ruleKind = item.rule_kind == null ? undefined : String(item.rule_kind);
-  const name = String(item.rule_name ?? "").trim();
   const linked = transactionId ? transactions.find((row) => String(row.id) === transactionId) : undefined;
-  if (linked && (String(linked.status) === "voided" || String(linked.status) === "superseded")) {
-    return String(linked.status) === "superseded" ? "superseded" : "voided";
-  }
-  const amount = Number(actualMinor ?? expectedMinor);
-  const matched = transactions.find((row) => {
-    if (String(row.space_id) !== spaceId) return false;
-    if (String(row.status) !== "voided" && String(row.status) !== "superseded") return false;
-    const month = String(row.occurred_at || "").slice(0, 7);
-    if (month !== periodKey) return false;
-    if (Number(row.amount_minor) !== amount) return false;
-    const incomeLike = ruleKind === "income";
-    const txnIncome = String(row.kind) === "income" || String(row.kind) === "contribution";
-    if (incomeLike !== txnIncome) return false;
-    if (!name) return true;
-    return `${String(row.description_ar ?? "")} ${String(row.description_en ?? "")}`.includes(name);
-  });
-  if (matched) return String(matched.status) === "superseded" ? "superseded" : "voided";
+  if (status === "voided" || status === "superseded") return "pending";
+  if (linked && (String(linked.status) === "voided" || String(linked.status) === "superseded")) return "pending";
   return status;
 }
 

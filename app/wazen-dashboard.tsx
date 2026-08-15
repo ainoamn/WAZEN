@@ -390,29 +390,10 @@ function spaceMonthlyFlow(space: Space, data: DashboardData) {
   if (space.type === "personal") {
     const currentKey = periodKeyFromDate(new Date().toISOString());
     const occurrences = (data.personalOccurrences ?? []).filter((row) => row.space_id === space.id);
-    const voidedIds = new Set(data.transactions.filter((row) => row.space_id === space.id && ["voided", "superseded"].includes(row.status ?? "")).map((row) => row.id));
-    const voidedThisMonth = data.transactions.filter((row) => row.space_id === space.id && ["voided", "superseded"].includes(row.status ?? "") && periodKeyFromDate(row.occurred_at) === currentKey);
-    const isDropped = (row: NonNullable<DashboardData["personalOccurrences"]>[number]) => {
-      if (["skipped", "deferred", "voided"].includes(row.status)) return true;
-      if (row.transaction_id && voidedIds.has(row.transaction_id)) return true;
-      if (row.status === "pending") {
-        const incomeLike = row.rule_kind === "income";
-        return voidedThisMonth.some((txn) => {
-          const txnIncome = ["income", "contribution"].includes(txn.kind);
-          return txnIncome === incomeLike && Number(txn.amount_minor) === Number(row.actual_minor ?? row.expected_minor);
-        });
-      }
-      return false;
-    };
+    const isDropped = (row: NonNullable<DashboardData["personalOccurrences"]>[number]) => ["skipped", "deferred"].includes(row.status);
     const cancelledRuleIds = new Set(occurrences.filter((row) => row.period_key === currentKey && isDropped(row)).map((row) => row.rule_id));
     const monthlyRules = (data.personalRules ?? []).filter((rule) => rule.space_id === space.id && rule.status === "active" && (rule.schedule ?? "monthly") === "monthly");
-    for (const txn of voidedThisMonth) {
-      const txnIncome = ["income", "contribution"].includes(txn.kind);
-      for (const rule of monthlyRules) {
-        if ((rule.kind === "income") === txnIncome && Number(rule.amount_minor) === Number(txn.amount_minor)) cancelledRuleIds.add(rule.id);
-      }
-    }
-    const remaining = occurrences.filter((row) => row.period_key === currentKey && row.status === "pending" && !cancelledRuleIds.has(row.rule_id) && !isDropped(row));
+    const remaining = occurrences.filter((row) => row.period_key === currentKey && row.status === "pending" && !isDropped(row));
     const rules = monthlyRules.filter((rule) => !cancelledRuleIds.has(rule.id));
     return {
       inflow: rules.filter((rule) => rule.kind === "income").reduce((sum, rule) => sum + Number(rule.amount_minor), 0),
