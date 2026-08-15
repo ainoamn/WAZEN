@@ -380,8 +380,12 @@ async function syncFundDeficitShares(db: D1Database, spaceIds: string[]) {
 
 async function rebuildSpaceBalance(db: D1Database, spaceIds: string[]) {
   if (!spaceIds.length) return;
-  await syncFundExpenseCash(db, spaceIds);
-  for (const spaceId of spaceIds) {
+  const placeholders = spaceIds.map(() => "?").join(",");
+  const types = await db.prepare(`SELECT id, type FROM spaces WHERE id IN (${placeholders})`).bind(...spaceIds).all<{ id: string; type: string }>();
+  const groupIds = types.results.filter((row) => row.type !== "personal").map((row) => row.id);
+  if (groupIds.length) await syncFundExpenseCash(db, groupIds);
+  for (const space of types.results) {
+    const spaceId = space.id;
     const row = await db.prepare(`SELECT COALESCE(SUM(CASE
       WHEN allocation = 'personal_reserve' THEN 0
       WHEN kind IN ('income','contribution') THEN amount_minor
@@ -389,8 +393,7 @@ async function rebuildSpaceBalance(db: D1Database, spaceIds: string[]) {
       ELSE 0
     END), 0) AS balance FROM transactions WHERE space_id=? AND status='approved'`).bind(spaceId).first<{ balance: number }>();
     const next = Number(row?.balance ?? 0);
-    const space = await db.prepare("SELECT type FROM spaces WHERE id=?").bind(spaceId).first<{ type: string }>();
-    if (space?.type === "personal") {
+    if (space.type === "personal") {
       const accounts = await db.prepare("SELECT id,opening_minor FROM personal_accounts WHERE space_id=? AND status='active'").bind(spaceId).all<{ id: string; opening_minor: number }>();
       if (accounts.results.length) {
         const txns = await db.prepare("SELECT account_id,kind,amount_minor,status FROM transactions WHERE space_id=? AND status='approved'").bind(spaceId).all<{ account_id?: string | null; kind: string; amount_minor: number; status: string }>();
@@ -406,7 +409,7 @@ async function rebuildSpaceBalance(db: D1Database, spaceIds: string[]) {
     }
     await db.prepare("UPDATE spaces SET balance_minor=? WHERE id=?").bind(next, spaceId).run();
   }
-  await syncFundDeficitShares(db, spaceIds);
+  if (groupIds.length) await syncFundDeficitShares(db, groupIds);
 }
 
 async function voidApprovedTransaction(
@@ -2188,13 +2191,14 @@ export async function POST(request: Request) {
     } else throw new ApiError(400, "UNSUPPORTED_ACTION");
 
     const freshUser = await db.prepare("SELECT display_name, avatar_url FROM users WHERE id=?").bind(user.id).first<{ display_name: string; avatar_url: string | null }>();
+    const dashboard = await loadDashboard(db, user.id, { refreshDerived: false });
     const response = {
       ok: true,
       user: { ...user, displayName: freshUser?.display_name ?? user.displayName, avatarUrl: freshUser?.avatar_url ?? user.avatarUrl ?? null },
-      ...(await loadDashboard(db, user.id)),
+      ...dashboard,
       ...(notification ? { notification } : {}),
     };
-    await completeIdempotency(db, user.id, idempotencyKey, response);
+    await completeIdempotency(db, user.id, idempotencyKey, { ok: true });
     claimed = null;
     return Response.json(response, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
