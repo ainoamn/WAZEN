@@ -2034,9 +2034,32 @@ export async function POST(request: Request) {
         whatsappUrl: whatsappNumber ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}` : null,
         transactionId: txn.id,
       };
+    } else if (action === "updateUserProfile") {
+      const parsed = z.object({
+        displayName: z.string().trim().min(2).max(80),
+        avatarUrl: z.string().max(400_000).nullable().optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_PROFILE");
+      if (parsed.data.avatarUrl) {
+        if (!/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(parsed.data.avatarUrl)) throw new ApiError(400, "INVALID_PHOTO");
+      }
+      const createdAt = now();
+      await db.batch([
+        db.prepare("UPDATE users SET display_name=?, avatar_url=? WHERE id=?")
+          .bind(parsed.data.displayName, parsed.data.avatarUrl ?? null, user.id),
+        prepareAudit(db, { userId: user.id, action: "user.profile_updated", entityType: "user", entityId: user.id, metadata: { displayName: parsed.data.displayName, hasPhoto: Boolean(parsed.data.avatarUrl) }, createdAt }),
+      ]);
+      user.displayName = parsed.data.displayName;
+      user.avatarUrl = parsed.data.avatarUrl ?? null;
     } else throw new ApiError(400, "UNSUPPORTED_ACTION");
 
-    const response = { ok: true, ...(await loadDashboard(db, user.id)), ...(notification ? { notification } : {}) };
+    const freshUser = await db.prepare("SELECT display_name, avatar_url FROM users WHERE id=?").bind(user.id).first<{ display_name: string; avatar_url: string | null }>();
+    const response = {
+      ok: true,
+      user: { ...user, displayName: freshUser?.display_name ?? user.displayName, avatarUrl: freshUser?.avatar_url ?? user.avatarUrl ?? null },
+      ...(await loadDashboard(db, user.id)),
+      ...(notification ? { notification } : {}),
+    };
     await completeIdempotency(db, user.id, idempotencyKey, response);
     claimed = null;
     return Response.json(response, { headers: { "Cache-Control": "no-store" } });

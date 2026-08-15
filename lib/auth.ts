@@ -100,26 +100,26 @@ export async function authenticateRequest(db: D1Database, request: Request): Pro
   const authorization = request.headers.get("authorization") ?? "";
   if (authorization.startsWith("Bearer wzn_")) {
     const raw = authorization.slice(7); const now = new Date().toISOString();
-    const apiKey = await db.prepare(`SELECT k.id,k.scopes_json,u.id AS user_id,u.email,u.display_name,p.status FROM api_keys k
+    const apiKey = await db.prepare(`SELECT k.id,k.scopes_json,u.id AS user_id,u.email,u.display_name,u.avatar_url,p.status FROM api_keys k
       JOIN users u ON u.id=k.user_id LEFT JOIN customer_profiles p ON p.user_id=u.id
       WHERE k.token_hash=? AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>?) LIMIT 1`).bind(await sha256(raw), now)
-      .first<{ id: string; scopes_json: string; user_id: string; email: string; display_name: string; status: string | null }>();
+      .first<{ id: string; scopes_json: string; user_id: string; email: string; display_name: string; avatar_url: string | null; status: string | null }>();
     if (!apiKey || apiKey.status === "suspended" || apiKey.status === "closed") return null;
     await db.prepare("UPDATE api_keys SET last_used_at=? WHERE id=?").bind(now, apiKey.id).run();
     let scopes: string[] = []; try { scopes = JSON.parse(apiKey.scopes_json) as string[]; } catch { scopes = []; }
-    return { id: apiKey.user_id, email: apiKey.email, displayName: apiKey.display_name, isDemo: false, authType: "api_key", scopes };
+    return { id: apiKey.user_id, email: apiKey.email, displayName: apiKey.display_name, avatarUrl: apiKey.avatar_url, isDemo: false, authType: "api_key", scopes };
   }
   const token = cookieValue(request, SESSION_COOKIE);
   if (!token) return null;
-  const row = await db.prepare(`SELECT u.id,u.email,u.display_name,p.status,s.id AS session_id
+  const row = await db.prepare(`SELECT u.id,u.email,u.display_name,u.avatar_url,p.status,s.id AS session_id
     FROM auth_sessions s JOIN users u ON u.id=s.user_id
     LEFT JOIN customer_profiles p ON p.user_id=u.id
     WHERE s.token_hash=? AND s.expires_at>? LIMIT 1`)
     .bind(await sha256(token), new Date().toISOString())
-    .first<{ id: string; email: string; display_name: string; status: string | null; session_id: string }>();
+    .first<{ id: string; email: string; display_name: string; avatar_url: string | null; status: string | null; session_id: string }>();
   if (!row || row.status === "suspended" || row.status === "closed") return null;
   await db.prepare("UPDATE auth_sessions SET last_seen_at=? WHERE id=?").bind(new Date().toISOString(), row.session_id).run();
-  return { id: row.id, email: row.email, displayName: row.display_name, isDemo: false, authType: "session" };
+  return { id: row.id, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url, isDemo: false, authType: "session" };
 }
 
 export async function issueCsrfToken(db: D1Database, request: Request) {

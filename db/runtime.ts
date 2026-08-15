@@ -50,6 +50,7 @@ async function initializeSchema(db: D1Database) {
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL,
       display_name TEXT NOT NULL,
+      avatar_url TEXT,
       locale TEXT NOT NULL DEFAULT 'ar',
       currency TEXT NOT NULL DEFAULT 'OMR',
       created_at TEXT NOT NULL
@@ -645,6 +646,10 @@ async function initializeSchema(db: D1Database) {
   if (!personalRuleCols.results.some((column) => column.name === "schedule")) {
     try { await db.prepare("ALTER TABLE personal_rules ADD COLUMN schedule TEXT NOT NULL DEFAULT 'monthly'").run(); } catch { /* exists */ }
   }
+  const userCols = await db.prepare("PRAGMA table_info(users)").all<{ name: string }>();
+  if (!userCols.results.some((column) => column.name === "avatar_url")) {
+    try { await db.prepare("ALTER TABLE users ADD COLUMN avatar_url TEXT").run(); } catch { /* exists */ }
+  }
   const { ensureSubscriptionAdminColumns, ensurePaymentGateways } = await import("../services/admin/billing-service");
   await ensureSubscriptionAdminColumns(db);
   await ensurePaymentGateways(db);
@@ -668,6 +673,7 @@ export type RequestUser = {
   id: string;
   email: string;
   displayName: string;
+  avatarUrl?: string | null;
   isDemo: boolean;
   authType?: "session" | "api_key" | "hosted" | "demo";
   scopes?: string[];

@@ -4,6 +4,7 @@ export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull(),
   displayName: text("display_name").notNull(),
+  avatarUrl: text("avatar_url"),
   locale: text("locale").notNull().default("ar"),
   currency: text("currency").notNull().default("OMR"),
   createdAt: text("created_at").notNull(),

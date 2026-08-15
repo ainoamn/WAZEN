@@ -20,6 +20,7 @@ import {
   BarChart3,
   Bell,
   CalendarDays,
+  Camera,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -68,7 +69,7 @@ function isViewId(value: string | null | undefined): value is ViewId {
   return Boolean(value && VIEW_IDS.includes(value as ViewId));
 }
 
-type User = { id: string; email: string; displayName: string; isDemo: boolean };
+type User = { id: string; email: string; displayName: string; avatarUrl?: string | null; isDemo: boolean };
 type Space = {
   id: string;
   owner_user_id: string;
@@ -423,6 +424,9 @@ function dashboardError(code: string, locale: Locale) {
       PERIOD_NOT_CLOSED: "هذه الفترة ليست مغلقة.",
       FORBIDDEN: "لا تملك صلاحية تعديل هذه الجمعية. المالك فقط يمكنه الأرشفة أو الحذف.",
       WALLET_NOT_FOUND: "الجمعية غير موجودة.",
+      INVALID_PROFILE: "تحقق من الاسم (حرفان على الأقل).",
+      INVALID_PHOTO: "الصورة غير مدعومة. استخدم JPEG أو PNG أو WebP.",
+      PHOTO_TOO_LARGE: "الصورة كبيرة. اختر صورة أوضح وأصغر.",
     }
     : {
       INSUFFICIENT_FUNDS: "Insufficient fund balance.",
@@ -432,6 +436,9 @@ function dashboardError(code: string, locale: Locale) {
       PERIOD_NOT_CLOSED: "This period is not closed.",
       FORBIDDEN: "Only the owner can archive or delete this association.",
       WALLET_NOT_FOUND: "Association not found.",
+      INVALID_PROFILE: "Check the name (at least 2 characters).",
+      INVALID_PHOTO: "Unsupported photo. Use JPEG, PNG, or WebP.",
+      PHOTO_TOO_LARGE: "Photo is too large. Choose a smaller image.",
     };
   return table[code as keyof typeof table] ?? code;
 }
@@ -784,7 +791,7 @@ export function WazenDashboard() {
             <NotificationBell data={data} locale={locale} onOpen={(view, spaceId) => {
               changeView(view, spaceId);
             }} />
-            <UserMenu locale={locale} name={data.user.displayName} email={data.user.email} onSettings={() => changeView("settings")} onLogout={() => void logout()} />
+            <UserMenu locale={locale} name={data.user.displayName} email={data.user.email} avatarUrl={data.user.avatarUrl} onSettings={() => changeView("settings")} onLogout={() => void logout()} />
           </div>
         </header>
 
@@ -829,7 +836,7 @@ export function WazenDashboard() {
           {activeView === "groups" && <MembersView data={data} locale={locale} onInvite={() => setModal("invite")} onOpenPerson={(memberId) => { setActiveMemberId(memberId); setModal("memberProfile"); }} onSmartPay={(memberId) => { setActiveMemberId(memberId); setModal("smartPay"); }} />}
           {activeView === "transactions" && <TransactionsView data={data} locale={locale} onChanged={(next) => { setData({ ...data, ...next }); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />}
           {activeView === "reports" && <ReportsPanel data={data} locale={locale} totals={totals} />}
-          {activeView === "settings" && <SettingsView locale={locale} onLogout={() => void logout()} />}
+          {activeView === "settings" && <SettingsView user={data.user} locale={locale} onLogout={() => void logout()} onSaved={(next) => { setData({ ...data, ...next }); flash(locale === "ar" ? "تم حفظ بيانات الحساب" : "Profile saved"); }} />}
         </div>
       </main>
 
@@ -930,7 +937,7 @@ export function WazenDashboard() {
   );
 }
 
-function UserMenu({ locale, name, email, onSettings, onLogout }: { locale: Locale; name: string; email: string; onSettings: () => void; onLogout: () => void }) {
+function UserMenu({ locale, name, email, avatarUrl, onSettings, onLogout }: { locale: Locale; name: string; email: string; avatarUrl?: string | null; onSettings: () => void; onLogout: () => void }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -944,7 +951,7 @@ function UserMenu({ locale, name, email, onSettings, onLogout }: { locale: Local
   return (
     <div className="user-menu" ref={root}>
       <button type="button" className="user-avatar" title={email} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
-        {name.slice(0, 1)}
+        {avatarUrl ? <img src={avatarUrl} alt="" /> : name.slice(0, 1)}
       </button>
       {open && (
         <div className="user-menu-panel" role="menu">
@@ -1336,11 +1343,107 @@ function TransactionsView({ data, locale, onChanged }: { data: DashboardData; lo
   </div>;
 }
 
-function SettingsView({ locale, onLogout }: { locale: Locale; onLogout: () => void }) {
+function compressAvatar(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    if (!/^image\/(jpeg|jpg|png|webp)$/i.test(file.type)) {
+      reject(new Error("INVALID_PHOTO"));
+      return;
+    }
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const max = 320;
+      const scale = Math.min(1, max / Math.max(image.width, image.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      const context = canvas.getContext("2d");
+      if (!context) {
+        reject(new Error("INVALID_PHOTO"));
+        return;
+      }
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      let quality = 0.82;
+      let dataUrl = canvas.toDataURL("image/jpeg", quality);
+      while (dataUrl.length > 280_000 && quality > 0.4) {
+        quality -= 0.12;
+        dataUrl = canvas.toDataURL("image/jpeg", quality);
+      }
+      if (dataUrl.length > 350_000) reject(new Error("PHOTO_TOO_LARGE"));
+      else resolve(dataUrl);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("INVALID_PHOTO"));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function SettingsView({ user, locale, onLogout, onSaved }: { user: User; locale: Locale; onLogout: () => void; onSaved: (next: Partial<DashboardData>) => void }) {
   const router = useRouter();
   const t = copy[locale];
+  const [displayName, setDisplayName] = useState(user.displayName);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(user.avatarUrl ?? null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    setDisplayName(user.displayName);
+    setAvatarUrl(user.avatarUrl ?? null);
+  }, [user.displayName, user.avatarUrl]);
   const exportData = async () => { const response = await fetch("/api/platform?view=export", { cache: "no-store" }); if (!response.ok) return; const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "wazen-data.json"; link.click(); URL.revokeObjectURL(url); };
-  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.settings}</h2><p>{locale === "ar" ? "تحكم في الخصوصية واللغة والصلاحيات" : "Control privacy, language and permissions"}</p></div><button className="secondary-button" onClick={onLogout}><LogOut size={16} />{t.logout}</button></div><section className="settings-grid"><InfoPanel icon={<Download />} title={locale === "ar" ? "تنزيل بياناتي" : "Export my data"} text={locale === "ar" ? "نسخة JSON كاملة من محافظك وحركاتك ومستنداتك." : "A complete JSON copy of your wallets, entries and documents."} onClick={() => void exportData()} /><InfoPanel icon={<ShieldCheck />} title={locale === "ar" ? "أمان الحساب" : "Account security"} text={locale === "ar" ? "كلمة المرور والمصادقة الثنائية ومفاتيح API." : "Password, two-factor authentication and API keys."} onClick={() => router.push("/account/security")} /><InfoPanel icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} onClick={() => router.push("/privacy")} /><InfoPanel icon={<Users />} title={t.access} text={t.accessText} /><InfoPanel icon={<Globe2 />} title={locale === "ar" ? "اللغة والمنطقة" : "Language & region"} text={locale === "ar" ? "العربية، الريال العماني، والمنطقة الزمنية لمسقط." : "English, Omani rial and Muscat time zone."} /><InfoPanel icon={<Bell />} title={locale === "ar" ? "التنبيهات" : "Notifications"} text={locale === "ar" ? "تذكير قبل الاستحقاق، إشعارات الدفع وطلبات الاسترداد." : "Due reminders, payment updates and withdrawal requests."} /></section></div>;
+  const pickPhoto = async (file: File | undefined) => {
+    if (!file) return;
+    setError("");
+    try {
+      setAvatarUrl(await compressAvatar(file));
+    } catch (caught) {
+      setError(dashboardError(caught instanceof Error ? caught.message : "INVALID_PHOTO", locale));
+    }
+  };
+  const saveProfile = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "updateUserProfile", idempotencyKey: crypto.randomUUID(), displayName, avatarUrl }),
+      });
+      const result = await response.json() as Partial<DashboardData> & { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "INVALID_PROFILE");
+      onSaved(result);
+    } catch (caught) {
+      setError(dashboardError(caught instanceof Error ? caught.message : "INVALID_PROFILE", locale));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <div className="dashboard-stack">
+    <div className="section-title"><div><h2>{t.settings}</h2><p>{locale === "ar" ? "عدّل اسمك وصورتك، ثم الخصوصية والصلاحيات" : "Edit your name and photo, then privacy and permissions"}</p></div><button className="secondary-button" onClick={onLogout}><LogOut size={16} />{t.logout}</button></div>
+    <form className="panel profile-card" onSubmit={saveProfile}>
+      <div className="profile-photo">
+        <button type="button" className="user-avatar profile-avatar" onClick={() => fileRef.current?.click()} title={locale === "ar" ? "تغيير الصورة" : "Change photo"}>
+          {avatarUrl ? <img src={avatarUrl} alt="" /> : displayName.slice(0, 1)}
+          <span className="profile-camera"><Camera size={14} /></span>
+        </button>
+        <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(event) => { void pickPhoto(event.target.files?.[0]); event.target.value = ""; }} />
+        <div>
+          <strong>{locale === "ar" ? "بيانات الحساب" : "Account profile"}</strong>
+          <small>{locale === "ar" ? "الاسم يظهر في التحية والإيصالات. الصورة اختيارية." : "Your name appears in greetings and receipts. Photo is optional."}</small>
+          {avatarUrl && <button type="button" className="text-link" onClick={() => setAvatarUrl(null)}>{locale === "ar" ? "إزالة الصورة" : "Remove photo"}</button>}
+        </div>
+      </div>
+      <label><span>{locale === "ar" ? "الاسم" : "Name"}</span><input required minLength={2} maxLength={80} value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
+      <label><span>{locale === "ar" ? "البريد" : "Email"}</span><input value={user.email} readOnly disabled /></label>
+      {error && <p className="modal-error">{error}</p>}
+      <div className="modal-actions"><button className="primary-button" disabled={saving}>{saving ? t.saving : (locale === "ar" ? "حفظ البيانات" : "Save profile")}</button></div>
+    </form>
+    <section className="settings-grid"><InfoPanel icon={<Download />} title={locale === "ar" ? "تنزيل بياناتي" : "Export my data"} text={locale === "ar" ? "نسخة JSON كاملة من محافظك وحركاتك ومستنداتك." : "A complete JSON copy of your wallets, entries and documents."} onClick={() => void exportData()} /><InfoPanel icon={<ShieldCheck />} title={locale === "ar" ? "أمان الحساب" : "Account security"} text={locale === "ar" ? "كلمة المرور والمصادقة الثنائية ومفاتيح API." : "Password, two-factor authentication and API keys."} onClick={() => router.push("/account/security")} /><InfoPanel icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} onClick={() => router.push("/privacy")} /><InfoPanel icon={<Users />} title={t.access} text={t.accessText} /><InfoPanel icon={<Globe2 />} title={locale === "ar" ? "اللغة والمنطقة" : "Language & region"} text={locale === "ar" ? "العربية، الريال العماني، والمنطقة الزمنية لمسقط." : "English, Omani rial and Muscat time zone."} /><InfoPanel icon={<Bell />} title={locale === "ar" ? "التنبيهات" : "Notifications"} text={locale === "ar" ? "تذكير قبل الاستحقاق، إشعارات الدفع وطلبات الاسترداد." : "Due reminders, payment updates and withdrawal requests."} /></section>
+  </div>;
 }
 
 function InfoPanel({ icon, title, text, onClick }: { icon: ReactNode; title: string; text: string; onClick?: () => void }) {
