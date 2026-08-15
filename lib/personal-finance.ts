@@ -24,6 +24,12 @@ export function monthKeysForRule(input: { startsAt: string; endsAt?: string | nu
   return monthKeysThroughNow(input.startsAt, input.endsAt);
 }
 
+export function nextPeriodKey(periodKey: string) {
+  const [year, month] = periodKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year || 1970, (month || 1), 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 export function dueAtForPeriod(periodKey: string, dueDay: number) {
   const [year, month] = periodKey.split("-").map(Number);
   const day = Math.min(Math.max(1, dueDay || 1), 28);

@@ -495,7 +495,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .personal-account-card i { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--green-soft); color: var(--green); }
 .personal-account-card small { display: block; color: #809089; font-size: 11px; }
 .personal-occ-list, .personal-rule-list, .personal-loan-list { display: grid; gap: 8px; margin-top: 10px; }
-.personal-occ-row { display: grid; grid-template-columns: 1.4fr 140px 160px auto auto; gap: 8px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 12px; }
+.personal-occ-row { display: grid; grid-template-columns: 1.4fr 140px 160px minmax(220px, auto); gap: 8px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 12px; }
+.personal-occ-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.personal-occ-actions .primary-button, .personal-occ-actions .secondary-button { min-height: 36px; padding: 0 10px; font-size: 12px; }
 .personal-occ-row > div:first-child { display: flex; flex-direction: column; gap: 3px; }
 .personal-occ-row span, .personal-rule-row span, .personal-loan-row span { color: #809089; font-size: 12px; }
 .personal-rule-row, .personal-loan-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }

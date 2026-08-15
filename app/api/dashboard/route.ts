@@ -9,7 +9,7 @@ import { multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "
 import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, type InstallmentLike } from "../../../lib/installments";
 import { coveringPeriod } from "../../../lib/accounting-periods";
 import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
-import { accountLiveBalance, dueAtForPeriod, monthKeysForRule } from "../../../lib/personal-finance";
+import { accountLiveBalance, dueAtForPeriod, monthKeysForRule, nextPeriodKey } from "../../../lib/personal-finance";
 import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-forecast";
 
 type SpaceRow = {
@@ -1134,6 +1134,36 @@ export async function POST(request: Request) {
       if (occurrence.status !== "pending") throw new ApiError(409, "OCCURRENCE_NOT_PENDING");
       await authorizeSpace(db, user, occurrence.space_id, "transact", ["personal"]);
       await db.prepare("UPDATE personal_occurrences SET status='skipped' WHERE id=? AND status='pending'").bind(occurrence.id).run();
+    } else if (action === "deferPersonalOccurrence") {
+      const parsed = z.object({ occurrenceId: z.string().min(1).max(120) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_OCCURRENCE");
+      const occurrence = await db.prepare(`SELECT o.*, r.due_day FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id WHERE o.id=?`)
+        .bind(parsed.data.occurrenceId)
+        .first<{ id: string; rule_id: string; space_id: string; period_key: string; expected_minor: number; status: string; due_day: number }>();
+      if (!occurrence) throw new ApiError(404, "OCCURRENCE_NOT_FOUND");
+      if (occurrence.status !== "pending") throw new ApiError(409, "OCCURRENCE_NOT_PENDING");
+      await authorizeSpace(db, user, occurrence.space_id, "transact", ["personal"]);
+      let targetKey = nextPeriodKey(occurrence.period_key);
+      for (let step = 0; step < 24; step += 1) {
+        const existing = await db.prepare("SELECT id, expected_minor, status FROM personal_occurrences WHERE rule_id=? AND period_key=?")
+          .bind(occurrence.rule_id, targetKey)
+          .first<{ id: string; expected_minor: number; status: string }>();
+        if (!existing) {
+          await db.prepare("UPDATE personal_occurrences SET period_key=?, due_at=? WHERE id=? AND status='pending'")
+            .bind(targetKey, dueAtForPeriod(targetKey, Number(occurrence.due_day) || 1), occurrence.id)
+            .run();
+          break;
+        }
+        if (existing.id === occurrence.id) break;
+        if (existing.status === "pending") {
+          await db.batch([
+            db.prepare("UPDATE personal_occurrences SET expected_minor = expected_minor + ? WHERE id=?").bind(Number(occurrence.expected_minor), existing.id),
+            db.prepare("UPDATE personal_occurrences SET status='deferred' WHERE id=? AND status='pending'").bind(occurrence.id),
+          ]);
+          break;
+        }
+        targetKey = nextPeriodKey(targetKey);
+      }
     } else if (action === "queuePersonalOccurrence") {
       const parsed = z.object({
         ruleId: z.string().min(1).max(120),

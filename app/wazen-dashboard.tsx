@@ -555,7 +555,7 @@ function NotificationBell({ data, locale, onOpen }: { data: DashboardData; local
       rows.push({
         id: `occ:${occurrence.id}`,
         title: locale === "ar" ? `تأكيد: ${occurrence.rule_name ?? "بند"}` : `Confirm: ${occurrence.rule_name ?? "item"}`,
-        detail: locale === "ar" ? `${occurrence.period_key} — اضغط خصم أو تجاهل أو عدّل المبلغ` : `${occurrence.period_key} — post, skip, or edit amount`,
+        detail: locale === "ar" ? `${occurrence.period_key} — اعتماد أو تأجيل أو تجاهل` : `${occurrence.period_key} — approve, defer, or skip`,
         view: "personal",
         spaceId: space.id,
       });

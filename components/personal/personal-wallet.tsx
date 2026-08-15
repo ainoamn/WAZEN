@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { Archive, Banknote, Check, ChevronDown, Pause, Pencil, Play, Plus, Trash2, WalletCards, X } from "lucide-react";
+import { Archive, Banknote, CalendarClock, Check, ChevronDown, Pause, Pencil, Play, Plus, Trash2, WalletCards, X } from "lucide-react";
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
 import OmrSymbol from "../brand/OmrSymbol";
@@ -112,7 +112,7 @@ export function PersonalWalletPanel({
           </div>
           <button type="button" className="primary-button" onClick={() => setAccountOpen(true)}><Plus size={15} />{locale === "ar" ? "إضافة حساب" : "Add account"}</button>
         </div>
-        <p className="modal-note">{locale === "ar" ? "كل حساب منفصل. الرصيد الافتتاحي هو ما لديك الآن، والراتب والخصم لا يُرحَّلان إلا بعد زر «خصم» أو «تجاهل»." : "Each account is separate. Opening is what you hold now. Salary and bills post only after Deduct or Skip."}</p>
+        <p className="modal-note">{locale === "ar" ? "كل حساب منفصل. الرصيد الافتتاحي هو ما لديك الآن، والدخل والخصم لا يُعتمدان إلا بعد «اعتماد الدخل» أو «اعتماد الخصم»، أو تجاهل، أو تأجيل للشهر التالي." : "Each account is separate. Opening is what you hold now. Income and bills post only after you approve, skip, or defer them."}</p>
         <div className="personal-account-grid">
           {spaceAccounts.map((account) => (
             <div className="personal-account-card" key={account.id}>
@@ -137,8 +137,8 @@ export function PersonalWalletPanel({
             </div>
           </div>
           {[...byMonth.entries()].map(([period, rows]) => {
-            const plannedIn = rows.filter((row) => row.rule_kind === "income" && row.status !== "skipped").reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
-            const plannedOut = rows.filter((row) => row.rule_kind !== "income" && row.status !== "skipped").reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
+            const plannedIn = rows.filter((row) => row.rule_kind === "income" && row.status !== "skipped" && row.status !== "deferred").reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
+            const plannedOut = rows.filter((row) => row.rule_kind !== "income" && row.status !== "skipped" && row.status !== "deferred").reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
             return (
               <div className="personal-month-block" key={period}>
                 <div className="personal-month-head">
@@ -152,7 +152,7 @@ export function PersonalWalletPanel({
                   {rows.filter((row) => row.status !== "pending").map((item) => (
                     <div className="personal-rule-row" key={item.id}>
                       <strong>{item.rule_name}</strong>
-                      <span>{item.status === "posted" ? (locale === "ar" ? "مرحّل" : "Posted") : (locale === "ar" ? "متجاهل" : "Skipped")}</span>
+                      <span>{item.status === "posted" ? (locale === "ar" ? "معتمد" : "Posted") : item.status === "deferred" ? (locale === "ar" ? "مؤجّل" : "Deferred") : (locale === "ar" ? "متجاهل" : "Skipped")}</span>
                       <b>{money(Number(item.actual_minor ?? item.expected_minor), locale)}</b>
                     </div>
                   ))}
@@ -285,16 +285,16 @@ function OccurrenceRow({ item, locale, accounts, onChanged }: { item: PersonalOc
   const [accountId, setAccountId] = useState(item.account_id ?? accounts[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const variable = item.amount_mode === "variable";
-  const post = async (skip = false) => {
+  const income = item.rule_kind === "income";
+  const act = async (mode: "confirm" | "skip" | "defer") => {
     setBusy(true);
     try {
-      const response = await apiFetch("/api/dashboard", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(skip
-          ? { action: "skipPersonalOccurrence", idempotencyKey: crypto.randomUUID(), occurrenceId: item.id }
-          : { action: "confirmPersonalOccurrence", idempotencyKey: crypto.randomUUID(), occurrenceId: item.id, amount, accountId }),
-      });
+      const payload = mode === "skip"
+        ? { action: "skipPersonalOccurrence", idempotencyKey: crypto.randomUUID(), occurrenceId: item.id }
+        : mode === "defer"
+          ? { action: "deferPersonalOccurrence", idempotencyKey: crypto.randomUUID(), occurrenceId: item.id }
+          : { action: "confirmPersonalOccurrence", idempotencyKey: crypto.randomUUID(), occurrenceId: item.id, amount, accountId };
+      const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       const result = await response.json() as Record<string, unknown> & { error?: string };
       if (!response.ok) throw new Error(result.error ?? "FAILED");
       onChanged(result);
@@ -306,14 +306,17 @@ function OccurrenceRow({ item, locale, accounts, onChanged }: { item: PersonalOc
     <div className="personal-occ-row">
       <div>
         <strong>{item.rule_name}</strong>
-        <span>{item.period_key} · {item.rule_kind === "income" ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "خصم" : "Bill")}{variable ? (locale === "ar" ? " · متغيرة — أدخل المبلغ" : " · variable — enter amount") : ""}</span>
+        <span>{item.period_key} · {income ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "خصم" : "Bill")}{variable ? (locale === "ar" ? " · متغيرة — أدخل المبلغ" : " · variable — enter amount") : ""}</span>
       </div>
       <div className="money-input"><input type="number" min="0.001" step="0.001" required={variable} value={amount} onChange={(event) => setAmount(event.target.value)} /><b className="money-currency"><OmrSymbol size={12} /></b></div>
       <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
         {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
       </select>
-      <button type="button" className="primary-button" disabled={busy} onClick={() => void post(false)}><Check size={14} />{locale === "ar" ? "خصم" : "Post"}</button>
-      <button type="button" className="secondary-button" disabled={busy} onClick={() => void post(true)}><X size={14} />{locale === "ar" ? "تجاهل" : "Skip"}</button>
+      <div className="personal-occ-actions">
+        <button type="button" className="primary-button" disabled={busy} onClick={() => void act("confirm")}><Check size={14} />{income ? (locale === "ar" ? "اعتماد الدخل" : "Approve income") : (locale === "ar" ? "اعتماد الخصم" : "Approve debit")}</button>
+        <button type="button" className="secondary-button" disabled={busy} onClick={() => void act("defer")}><CalendarClock size={14} />{locale === "ar" ? "تأجيل" : "Defer"}</button>
+        <button type="button" className="secondary-button" disabled={busy} onClick={() => void act("skip")}><X size={14} />{locale === "ar" ? "تجاهل" : "Skip"}</button>
+      </div>
     </div>
   );
 }
