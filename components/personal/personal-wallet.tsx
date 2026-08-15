@@ -16,6 +16,7 @@ export type PersonalAccount = {
   kind: string;
   opening_minor: number;
   balance_minor?: number;
+  status?: string;
 };
 
 export type PersonalRule = {
@@ -72,11 +73,12 @@ export function PersonalWalletPanel({
   occurrences: PersonalOccurrence[];
   onChanged: (next: Record<string, unknown>) => void;
 }) {
-  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState<PersonalAccount | true | null>(null);
   const [incomeMenu, setIncomeMenu] = useState(false);
   const [expenseMenu, setExpenseMenu] = useState(false);
   const [ruleOpen, setRuleOpen] = useState<{ kind: "income" | "expense"; schedule: "monthly" | "once" | "unscheduled"; amountMode: "fixed" | "variable"; existing?: PersonalRule } | null>(null);
   const spaceAccounts = accounts.filter((item) => item.space_id === spaceId);
+  const activeAccounts = spaceAccounts.filter((item) => (item.status ?? "active") === "active");
   const spaceRules = rules.filter((item) => item.space_id === spaceId);
   const spaceOcc = occurrences.filter((item) => item.space_id === spaceId);
   const pending = spaceOcc.filter((item) => item.status === "pending");
@@ -89,6 +91,19 @@ export function PersonalWalletPanel({
     return map;
   }, new Map<string, PersonalOccurrence[]>());
 
+  const mutateAccount = async (accountId: string, status: "active" | "paused" | "archived") => {
+    const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "setPersonalAccountStatus", idempotencyKey: crypto.randomUUID(), accountId, status }) });
+    const result = await response.json() as Record<string, unknown> & { error?: string };
+    if (!response.ok) { window.alert(result.error ?? "FAILED"); return; }
+    onChanged(result);
+  };
+  const removeAccount = async (accountId: string) => {
+    if (!window.confirm(locale === "ar" ? "حذف هذا الحساب؟ لا يمكن الحذف إن وُجدت عليه حركات معتمدة." : "Delete this account? Posted activity blocks deletion.")) return;
+    const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "deletePersonalAccount", idempotencyKey: crypto.randomUUID(), accountId }) });
+    const result = await response.json() as Record<string, unknown> & { error?: string };
+    if (!response.ok) { window.alert(result.error === "ACCOUNT_HAS_ACTIVITY" ? (locale === "ar" ? "لا يمكن الحذف: عليه حركات. أرشف الحساب بدلاً من ذلك." : "Cannot delete: it has posted activity. Archive it instead.") : (result.error ?? "FAILED")); return; }
+    onChanged(result);
+  };
   const mutateRule = async (ruleId: string, status: "active" | "paused" | "archived") => {
     const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "setPersonalRuleStatus", idempotencyKey: crypto.randomUUID(), ruleId, status }) });
     const result = await response.json() as Record<string, unknown> & { error?: string };
@@ -116,13 +131,19 @@ export function PersonalWalletPanel({
         <p className="modal-note">{locale === "ar" ? "كل حساب منفصل. الرصيد الافتتاحي هو ما لديك الآن، والدخل والخصم لا يُعتمدان إلا بعد «اعتماد الدخل» أو «اعتماد الخصم»، أو تجاهل، أو تأجيل للشهر التالي." : "Each account is separate. Opening is what you hold now. Income and bills post only after you approve, skip, or defer them."}</p>
         <div className="personal-account-grid">
           {spaceAccounts.map((account) => (
-            <div className="personal-account-card" key={account.id}>
+            <div className={`personal-account-card ${(account.status ?? "active") !== "active" ? "is-paused" : ""}`} key={account.id}>
               <i><Banknote size={16} /></i>
               <div>
-                <small>{account.kind === "cash" ? (locale === "ar" ? "نقد" : "Cash") : account.kind === "wallet" ? (locale === "ar" ? "محفظة" : "Wallet") : (locale === "ar" ? "بنك" : "Bank")}</small>
+                <small>{account.kind === "cash" ? (locale === "ar" ? "نقد" : "Cash") : account.kind === "wallet" ? (locale === "ar" ? "محفظة" : "Wallet") : (locale === "ar" ? "بنك" : "Bank")}{(account.status ?? "active") === "paused" ? (locale === "ar" ? " · متوقف" : " · paused") : (account.status ?? "active") === "archived" ? (locale === "ar" ? " · مؤرشف" : " · archived") : ""}</small>
                 <strong>{account.name}</strong>
               </div>
               <b>{money(Number(account.balance_minor ?? account.opening_minor), locale)}</b>
+              <div className="personal-rule-actions">
+                <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => setAccountOpen(account)}><Pencil size={14} /></button>
+                <button type="button" title={(account.status ?? "active") === "paused" ? (locale === "ar" ? "تشغيل" : "Resume") : (locale === "ar" ? "إيقاف" : "Pause")} onClick={() => void mutateAccount(account.id, (account.status ?? "active") === "paused" ? "active" : "paused")}>{(account.status ?? "active") === "paused" ? <Play size={14} /> : <Pause size={14} />}</button>
+                <button type="button" title={(account.status ?? "active") === "archived" ? (locale === "ar" ? "استعادة" : "Restore") : (locale === "ar" ? "أرشفة" : "Archive")} onClick={() => void mutateAccount(account.id, (account.status ?? "active") === "archived" ? "active" : "archived")}><Archive size={14} /></button>
+                <button type="button" className="danger" title={locale === "ar" ? "حذف" : "Delete"} onClick={() => void removeAccount(account.id)}><Trash2 size={14} /></button>
+              </div>
             </div>
           ))}
           {!spaceAccounts.length && <p className="empty-state">{locale === "ar" ? "أضف حساب بنك نزوى أو مسقط أو النقد أولاً." : "Add Bank Nizwa, Muscat, or cash first."}</p>}
@@ -148,7 +169,7 @@ export function PersonalWalletPanel({
                 </div>
                 <div className="personal-occ-list">
                   {rows.filter((row) => row.status === "pending").map((item) => (
-                    <OccurrenceRow key={item.id} item={item} locale={locale} accounts={spaceAccounts} onChanged={onChanged} />
+                    <OccurrenceRow key={item.id} item={item} locale={locale} accounts={activeAccounts} onChanged={onChanged} />
                   ))}
                   {rows.filter((row) => row.status !== "pending").map((item) => (
                     <div className="personal-rule-row" key={item.id}>
@@ -250,8 +271,8 @@ export function PersonalWalletPanel({
         </div>
       </article>
 
-      {accountOpen && <AccountModal locale={locale} spaceId={spaceId} onClose={() => setAccountOpen(false)} onChanged={(next) => { onChanged(next); setAccountOpen(false); }} />}
-      {ruleOpen && <RuleModal locale={locale} spaceId={spaceId} kind={ruleOpen.kind} schedule={ruleOpen.schedule} amountMode={ruleOpen.amountMode} existing={ruleOpen.existing} accounts={spaceAccounts} onClose={() => setRuleOpen(null)} onChanged={(next) => { onChanged(next); setRuleOpen(null); }} />}
+      {accountOpen && <AccountModal locale={locale} spaceId={spaceId} existing={accountOpen === true ? undefined : accountOpen} onClose={() => setAccountOpen(null)} onChanged={(next) => { onChanged(next); setAccountOpen(null); }} />}
+      {ruleOpen && <RuleModal locale={locale} spaceId={spaceId} kind={ruleOpen.kind} schedule={ruleOpen.schedule} amountMode={ruleOpen.amountMode} existing={ruleOpen.existing} accounts={activeAccounts} onClose={() => setRuleOpen(null)} onChanged={(next) => { onChanged(next); setRuleOpen(null); }} />}
     </>
   );
 }
@@ -310,9 +331,20 @@ function OccurrenceRow({ item, locale, accounts, onChanged }: { item: PersonalOc
         <span>{item.period_key} · {income ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "خصم" : "Bill")}{variable ? (locale === "ar" ? " · متغيرة — أدخل المبلغ" : " · variable — enter amount") : ""}</span>
       </div>
       <div className="money-input"><input type="number" min="0.001" step="0.001" required={variable} value={amount} onChange={(event) => setAmount(event.target.value)} /><b className="money-currency"><OmrSymbol size={12} /></b></div>
-      <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
-        {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-      </select>
+      <label className="personal-occ-account">
+        <span>{income ? (locale === "ar" ? "إلى حساب" : "Into account") : (locale === "ar" ? "من حساب" : "From account")}</span>
+        <select value={accountId} onChange={(event) => {
+          const next = event.target.value;
+          setAccountId(next);
+          void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "assignPersonalOccurrenceAccount", idempotencyKey: crypto.randomUUID(), occurrenceId: item.id, accountId: next }) }).then(async (response) => {
+            const result = await response.json() as Record<string, unknown> & { error?: string };
+            if (!response.ok) throw new Error(result.error ?? "FAILED");
+            onChanged(result);
+          }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "FAILED"));
+        }}>
+          {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+        </select>
+      </label>
       <div className="personal-occ-actions">
         <button type="button" className="primary-button" disabled={busy} onClick={() => void act("confirm")}><Check size={14} />{income ? (locale === "ar" ? "اعتماد الدخل" : "Approve income") : (locale === "ar" ? "اعتماد الخصم" : "Approve debit")}</button>
         <button type="button" className="secondary-button" disabled={busy} onClick={() => void act("defer")}><CalendarClock size={14} />{locale === "ar" ? "تأجيل" : "Defer"}</button>
@@ -322,15 +354,15 @@ function OccurrenceRow({ item, locale, accounts, onChanged }: { item: PersonalOc
   );
 }
 
-function AccountModal({ locale, spaceId, onClose, onChanged }: { locale: Locale; spaceId: string; onClose: () => void; onChanged: (next: Record<string, unknown>) => void }) {
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState("bank");
-  const [opening, setOpening] = useState("");
+function AccountModal({ locale, spaceId, existing, onClose, onChanged }: { locale: Locale; spaceId: string; existing?: PersonalAccount; onClose: () => void; onChanged: (next: Record<string, unknown>) => void }) {
+  const [name, setName] = useState(existing?.name ?? "");
+  const [kind, setKind] = useState(existing?.kind ?? "bank");
+  const [opening, setOpening] = useState(existing ? String(Number(existing.opening_minor) / 1000) : "");
   const [saving, setSaving] = useState(false);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
-    const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "addPersonalAccount", idempotencyKey: crypto.randomUUID(), spaceId, name, kind, opening: opening || "0" }) });
+    const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: existing ? "updatePersonalAccount" : "addPersonalAccount", idempotencyKey: crypto.randomUUID(), accountId: existing?.id, spaceId, name, kind, opening: opening || "0" }) });
     const result = await response.json() as Record<string, unknown> & { error?: string };
     setSaving(false);
     if (!response.ok) { window.alert(result.error ?? "FAILED"); return; }
@@ -339,7 +371,7 @@ function AccountModal({ locale, spaceId, onClose, onChanged }: { locale: Locale;
   return (
     <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="modal-card" role="dialog">
-        <div className="modal-header"><h2>{locale === "ar" ? "حساب شخصي" : "Personal account"}</h2><button type="button" onClick={onClose}><X size={20} /></button></div>
+        <div className="modal-header"><h2>{existing ? (locale === "ar" ? "تعديل الحساب" : "Edit account") : (locale === "ar" ? "حساب شخصي" : "Personal account")}</h2><button type="button" onClick={onClose}><X size={20} /></button></div>
         <form className="modal-form" onSubmit={(event) => void submit(event)}>
           <label><span>{locale === "ar" ? "اسم الحساب" : "Account name"}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={locale === "ar" ? "بنك نزوى" : "Bank Nizwa"} /></label>
           <label><span>{locale === "ar" ? "النوع" : "Type"}</span>
@@ -349,7 +381,7 @@ function AccountModal({ locale, spaceId, onClose, onChanged }: { locale: Locale;
               <option value="wallet">{locale === "ar" ? "محفظة رقمية" : "E-wallet"}</option>
             </select>
           </label>
-          <label><span>{locale === "ar" ? "الرصيد الحالي" : "Current balance"}</span><div className="money-input"><input type="number" min="0" step="0.001" value={opening} onChange={(event) => setOpening(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>
+          <label><span>{locale === "ar" ? "الرصيد الافتتاحي" : "Opening balance"}</span><div className="money-input"><input type="number" min="0" step="0.001" value={opening} onChange={(event) => setOpening(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>
           <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{locale === "ar" ? "إلغاء" : "Cancel"}</button><button className="primary-button" disabled={saving}>{saving ? "…" : (locale === "ar" ? "حفظ" : "Save")}</button></div>
         </form>
       </section>
@@ -440,7 +472,7 @@ function RuleModal({ locale, spaceId, kind, schedule, amountMode: initialMode, e
               {resolvedSchedule === "monthly" && <label><span>{locale === "ar" ? "ينتهي في (اختياري)" : "Ends (optional)"}</span><DateField value={endsAt} onChange={setEndsAt} /></label>}
             </div>
           )}
-          <label><span>{locale === "ar" ? "الحساب" : "Account"}</span>
+          <label><span>{kind === "income" ? (locale === "ar" ? "يُضاف إلى الحساب" : "Credit account") : (locale === "ar" ? "يُخصم من الحساب" : "Debit account")}</span>
             <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
               <option value="">{locale === "ar" ? "بدون ربط" : "Unlinked"}</option>
               {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}

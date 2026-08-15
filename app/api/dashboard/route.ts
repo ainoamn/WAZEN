@@ -739,7 +739,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
       LEFT JOIN users ru ON ru.id = p.reopened_by
       WHERE p.space_id IN (${placeholders}) ORDER BY p.starts_at DESC`).bind(...ids).all(),
     db.prepare(`SELECT * FROM period_ledger_events WHERE space_id IN (${placeholders}) ORDER BY created_at DESC LIMIT 200`).bind(...ids).all(),
-    db.prepare(`SELECT * FROM personal_accounts WHERE space_id IN (${placeholders}) AND status='active' ORDER BY created_at`).bind(...ids).all<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; status: string; created_at: string }>(),
+    db.prepare(`SELECT * FROM personal_accounts WHERE space_id IN (${placeholders}) ORDER BY created_at`).bind(...ids).all<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; status: string; created_at: string }>(),
     db.prepare(`SELECT * FROM personal_rules WHERE space_id IN (${placeholders}) ORDER BY created_at`).bind(...ids).all(),
     db.prepare(`SELECT o.*, r.name AS rule_name, r.kind AS rule_kind, r.amount_mode, r.total_minor, r.paid_minor AS rule_paid_minor
       FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
@@ -991,6 +991,53 @@ export async function POST(request: Request) {
         prepareAudit(db, { userId: user.id, action: "personal.account_added", entityType: "space", entityId: parsed.data.spaceId, metadata: { name: parsed.data.name }, createdAt }),
       ]);
       await rebuildSpaceBalance(db, [parsed.data.spaceId]);
+    } else if (action === "updatePersonalAccount") {
+      const parsed = z.object({
+        accountId: z.string().min(1).max(120),
+        name: z.string().trim().min(2).max(80),
+        kind: z.enum(["bank", "cash", "wallet"]).default("bank"),
+        opening: z.union([z.string(), z.number()]).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_ACCOUNT");
+      const account = await db.prepare("SELECT id,space_id FROM personal_accounts WHERE id=?").bind(parsed.data.accountId).first<{ id: string; space_id: string }>();
+      if (!account) throw new ApiError(404, "ACCOUNT_NOT_FOUND");
+      const space = await authorizeSpace(db, user, account.space_id, "transact", ["personal"]);
+      let openingMinor = 0;
+      try { if (parsed.data.opening !== undefined && parsed.data.opening !== "") openingMinor = parseNonNegativeMoneyToMinor(parsed.data.opening, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      const createdAt = now();
+      await db.batch([
+        db.prepare("UPDATE personal_accounts SET name=?, kind=?, opening_minor=? WHERE id=?").bind(parsed.data.name, parsed.data.kind, openingMinor, account.id),
+        prepareAudit(db, { userId: user.id, action: "personal.account_updated", entityType: "personal_account", entityId: account.id, metadata: { name: parsed.data.name }, createdAt }),
+      ]);
+      await rebuildSpaceBalance(db, [account.space_id]);
+    } else if (action === "setPersonalAccountStatus") {
+      const parsed = z.object({ accountId: z.string().min(1).max(120), status: z.enum(["active", "paused", "archived"]) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_ACCOUNT");
+      const account = await db.prepare("SELECT id,space_id FROM personal_accounts WHERE id=?").bind(parsed.data.accountId).first<{ id: string; space_id: string }>();
+      if (!account) throw new ApiError(404, "ACCOUNT_NOT_FOUND");
+      await authorizeSpace(db, user, account.space_id, "transact", ["personal"]);
+      const createdAt = now();
+      await db.batch([
+        db.prepare("UPDATE personal_accounts SET status=? WHERE id=?").bind(parsed.data.status, account.id),
+        prepareAudit(db, { userId: user.id, action: "personal.account_status", entityType: "personal_account", entityId: account.id, metadata: { status: parsed.data.status }, createdAt }),
+      ]);
+      await rebuildSpaceBalance(db, [account.space_id]);
+    } else if (action === "deletePersonalAccount") {
+      const parsed = z.object({ accountId: z.string().min(1).max(120) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_ACCOUNT");
+      const account = await db.prepare("SELECT id,space_id FROM personal_accounts WHERE id=?").bind(parsed.data.accountId).first<{ id: string; space_id: string }>();
+      if (!account) throw new ApiError(404, "ACCOUNT_NOT_FOUND");
+      await authorizeSpace(db, user, account.space_id, "transact", ["personal"]);
+      const used = await db.prepare("SELECT id FROM transactions WHERE account_id=? AND status='approved' LIMIT 1").bind(account.id).first();
+      if (used) throw new ApiError(409, "ACCOUNT_HAS_ACTIVITY");
+      const createdAt = now();
+      await db.batch([
+        db.prepare("UPDATE personal_rules SET account_id=NULL WHERE account_id=?").bind(account.id),
+        db.prepare("UPDATE personal_occurrences SET account_id=NULL WHERE account_id=? AND status='pending'").bind(account.id),
+        db.prepare("DELETE FROM personal_accounts WHERE id=?").bind(account.id),
+        prepareAudit(db, { userId: user.id, action: "personal.account_deleted", entityType: "personal_account", entityId: account.id, metadata: {}, createdAt }),
+      ]);
+      await rebuildSpaceBalance(db, [account.space_id]);
     } else if (action === "addPersonalRule") {
       const parsed = z.object({
         spaceId: z.string().min(1).max(120),
@@ -1126,6 +1173,19 @@ export async function POST(request: Request) {
         prepareAudit(db, { userId: user.id, action: "personal.occurrence_posted", entityType: "transaction", entityId: transactionId, metadata: { occurrenceId: occurrence.id, amountMinor }, createdAt }),
       ]);
       await rebuildSpaceBalance(db, [occurrence.space_id]);
+    } else if (action === "assignPersonalOccurrenceAccount") {
+      const parsed = z.object({
+        occurrenceId: z.string().min(1).max(120),
+        accountId: z.string().min(1).max(120),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_OCCURRENCE");
+      const occurrence = await db.prepare("SELECT id,space_id,status FROM personal_occurrences WHERE id=?").bind(parsed.data.occurrenceId).first<{ id: string; space_id: string; status: string }>();
+      if (!occurrence) throw new ApiError(404, "OCCURRENCE_NOT_FOUND");
+      if (occurrence.status !== "pending") throw new ApiError(409, "OCCURRENCE_NOT_PENDING");
+      await authorizeSpace(db, user, occurrence.space_id, "transact", ["personal"]);
+      const account = await db.prepare("SELECT id FROM personal_accounts WHERE id=? AND space_id=? AND status='active'").bind(parsed.data.accountId, occurrence.space_id).first();
+      if (!account) throw new ApiError(400, "INVALID_ACCOUNT");
+      await db.prepare("UPDATE personal_occurrences SET account_id=? WHERE id=? AND status='pending'").bind(parsed.data.accountId, occurrence.id).run();
     } else if (action === "skipPersonalOccurrence") {
       const parsed = z.object({ occurrenceId: z.string().min(1).max(120) }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_OCCURRENCE");
