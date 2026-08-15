@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { Banknote, Check, Plus, WalletCards, X } from "lucide-react";
+import { Banknote, Check, ChevronDown, Plus, WalletCards, X } from "lucide-react";
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
 import OmrSymbol from "../brand/OmrSymbol";
@@ -72,6 +72,7 @@ export function PersonalWalletPanel({
   onChanged: (next: Record<string, unknown>) => void;
 }) {
   const [accountOpen, setAccountOpen] = useState(false);
+  const [incomeMenu, setIncomeMenu] = useState(false);
   const [ruleOpen, setRuleOpen] = useState<{ kind: "income" | "expense"; schedule: "monthly" | "once" | "unscheduled"; amountMode: "fixed" | "variable" } | null>(null);
   const spaceAccounts = accounts.filter((item) => item.space_id === spaceId);
   const spaceRules = rules.filter((item) => item.space_id === spaceId);
@@ -187,10 +188,19 @@ export function PersonalWalletPanel({
             <h2>{locale === "ar" ? "دخل ثابت ومتغير وآخر، وخصوم مجدولة" : "Fixed, variable and other income, plus scheduled bills"}</h2>
           </div>
           <div className="section-title-actions">
-            <button type="button" className="secondary-button" onClick={() => setRuleOpen({ kind: "income", schedule: "monthly", amountMode: "fixed" })}><Plus size={15} />{locale === "ar" ? "دخل ثابت" : "Fixed income"}</button>
-            <button type="button" className="secondary-button" onClick={() => setRuleOpen({ kind: "income", schedule: "monthly", amountMode: "variable" })}><Plus size={15} />{locale === "ar" ? "دخل متغير" : "Variable income"}</button>
-            <button type="button" className="secondary-button" onClick={() => setRuleOpen({ kind: "income", schedule: "unscheduled", amountMode: "fixed" })}><Plus size={15} />{locale === "ar" ? "دخل آخر" : "Other income"}</button>
-            <button type="button" className="primary-button" onClick={() => setRuleOpen({ kind: "expense", schedule: "once", amountMode: "fixed" })}><Plus size={15} />{locale === "ar" ? "جدولة مصروف" : "Schedule expense"}</button>
+            <div className="action-menu">
+              <button type="button" className="primary-button" onClick={() => setIncomeMenu((open) => !open)} aria-expanded={incomeMenu}>
+                <Plus size={15} />{locale === "ar" ? "دخل" : "Income"}<ChevronDown size={15} />
+              </button>
+              {incomeMenu && (
+                <div className="action-menu-panel" role="menu">
+                  <button type="button" role="menuitem" onClick={() => { setIncomeMenu(false); setRuleOpen({ kind: "income", schedule: "monthly", amountMode: "fixed" }); }}>{locale === "ar" ? "دخل ثابت" : "Fixed income"}</button>
+                  <button type="button" role="menuitem" onClick={() => { setIncomeMenu(false); setRuleOpen({ kind: "income", schedule: "monthly", amountMode: "variable" }); }}>{locale === "ar" ? "دخل متغير" : "Variable income"}</button>
+                  <button type="button" role="menuitem" onClick={() => { setIncomeMenu(false); setRuleOpen({ kind: "income", schedule: "unscheduled", amountMode: "fixed" }); }}>{locale === "ar" ? "دخل آخر" : "Other income"}</button>
+                </div>
+              )}
+            </div>
+            <button type="button" className="secondary-button" onClick={() => setRuleOpen({ kind: "expense", schedule: "once", amountMode: "fixed" })}><Plus size={15} />{locale === "ar" ? "جدولة مصروف" : "Schedule expense"}</button>
             <button type="button" className="primary-button" onClick={() => setRuleOpen({ kind: "expense", schedule: "monthly", amountMode: "fixed" })}><Plus size={15} />{locale === "ar" ? "خصم شهري" : "Monthly bill"}</button>
           </div>
         </div>
