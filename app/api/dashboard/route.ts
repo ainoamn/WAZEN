@@ -1519,7 +1519,8 @@ export async function POST(request: Request) {
         });
         await voidApprovedTransaction(db, txn, user.id);
         await voidEvent.run();
-      } else if (action === "updateTransaction") {
+      }
+    } else if (action === "updateTransaction") {
       const parsed = z.object({
         transactionId: z.string().min(1).max(120),
         description: z.string().trim().min(2).max(300),
