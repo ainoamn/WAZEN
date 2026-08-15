@@ -494,4 +494,53 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .personal-month-head { flex-direction: column; align-items: flex-start; }
 }
 
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+html[data-theme="dark"] {
+  --ink: #e7eeea;
+  --muted: #9aa8a2;
+  --line: #2c3c37;
+  --surface: #16211e;
+  --canvas: #0f1614;
+  --green-soft: #16352e;
+  --amber-soft: #3a2c16;
+  --rose-soft: #3a1d22;
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.38);
+  color-scheme: dark;
+}
+html[data-theme="dark"] body,
+html[data-theme="dark"] .app-shell { background: var(--canvas); color: var(--ink); }
+html[data-theme="dark"] .sidebar { background: #121c19; border-inline-end-color: var(--line); }
+html[data-theme="dark"] .workspace-pill { background: #1a2622; border-color: var(--line); }
+html[data-theme="dark"] .workspace-icon { background: #22302b; }
+html[data-theme="dark"] .sidebar-nav button:hover,
+html[data-theme="dark"] .sidebar-setting:hover { background: #1a2622; color: var(--ink); }
+html[data-theme="dark"] .topbar { background: rgba(15, 22, 20, 0.88); border-bottom-color: var(--line); }
+html[data-theme="dark"] .panel,
+html[data-theme="dark"] .stat-card,
+html[data-theme="dark"] .wallet-card,
+html[data-theme="dark"] .modal-card,
+html[data-theme="dark"] .icon-button,
+html[data-theme="dark"] .language-button,
+html[data-theme="dark"] .secondary-button,
+html[data-theme="dark"] .ghost-icon,
+html[data-theme="dark"] .space-switcher button,
+html[data-theme="dark"] .space-toolbar button,
+html[data-theme="dark"] .user-menu-panel,
+html[data-theme="dark"] .notification-panel,
+html[data-theme="dark"] .action-menu-panel,
+html[data-theme="dark"] .personal-account-card,
+html[data-theme="dark"] .personal-occ-row,
+html[data-theme="dark"] .personal-rule-row,
+html[data-theme="dark"] .personal-loan-row,
+html[data-theme="dark"] .month-chip,
+html[data-theme="dark"] .obligation-row { background: var(--surface); border-color: var(--line); color: var(--ink); }
+html[data-theme="dark"] .notification-item { background: #1a2622; }
+html[data-theme="dark"] .modal-form input,
+html[data-theme="dark"] .modal-form select { background: #121c19; border-color: var(--line); color: var(--ink); }
+html[data-theme="dark"] .space-hero { background: linear-gradient(180deg, #182420 0%, #15201d 42%); border-color: var(--line); }
+html[data-theme="dark"] .space-hero h2 { color: #e7eeea; }
+html[data-theme="dark"] .space-hero p,
+html[data-theme="dark"] .space-hero span { color: #9aa8a2; }
+html[data-theme="dark"] .table-head,
+html[data-theme="dark"] .full-table-head { background: #1a2622; color: #9aa8a2; }
+html[data-theme="dark"] .segmented-control { background: #1a2622; }
+html[data-theme="dark"] .segmented-control button.active { background: #22302b; }

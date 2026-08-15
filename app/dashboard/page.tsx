@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { WazenDashboard } from "../wazen-dashboard";
 
@@ -5,5 +6,9 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "لوحة المستخدم" };
 
 export default function DashboardPage() {
-  return <WazenDashboard />;
+  return (
+    <Suspense>
+      <WazenDashboard />
+    </Suspense>
+  );
 }

@@ -37,6 +37,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Moon,
   Plane,
   Plus,
   ReceiptText,
@@ -45,6 +46,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Sun,
   Target,
   TrendingDown,
   TrendingUp,
@@ -54,12 +56,17 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { apiFetch } from "../lib/client-api";
 
 type Locale = "ar" | "en";
+type ThemeMode = "light" | "dark";
 type ViewId = "overview" | "personal" | "household" | "groups" | "trip" | "society" | "transactions" | "reports" | "settings";
+const VIEW_IDS: ViewId[] = ["overview", "personal", "household", "groups", "trip", "society", "transactions", "reports", "settings"];
+function isViewId(value: string | null | undefined): value is ViewId {
+  return Boolean(value && VIEW_IDS.includes(value as ViewId));
+}
 
 type User = { id: string; email: string; displayName: string; isDemo: boolean };
 type Space = {
@@ -599,8 +606,11 @@ function NotificationBell({ data, locale, onOpen }: { data: DashboardData; local
 
 export function WazenDashboard() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [locale, setLocale] = useState<Locale>("ar");
-  const [activeView, setActiveView] = useState<ViewId>("overview");
+  const [theme, setTheme] = useState<ThemeMode>("light");
+  const [activeView, setActiveView] = useState<ViewId>(() => (isViewId(searchParams.get("view")) ? searchParams.get("view") as ViewId : "overview"));
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -634,6 +644,56 @@ export function WazenDashboard() {
     document.documentElement.lang = locale;
     document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
   }, [locale]);
+  useEffect(() => {
+    try {
+      const savedLocale = window.localStorage.getItem("wazen-locale");
+      if (savedLocale === "ar" || savedLocale === "en") setLocale(savedLocale);
+      const savedTheme = window.localStorage.getItem("wazen-theme");
+      const nextTheme: ThemeMode = savedTheme === "dark" || savedTheme === "light"
+        ? savedTheme
+        : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      setTheme(nextTheme);
+      document.documentElement.dataset.theme = nextTheme;
+      const urlView = new URLSearchParams(window.location.search).get("view");
+      const urlSpace = new URLSearchParams(window.location.search).get("space");
+      if (isViewId(urlView)) {
+        setActiveView(urlView);
+        if (urlSpace) setPickedSpaceId((current) => ({ ...current, [urlView]: urlSpace }));
+      } else {
+        const storedView = window.localStorage.getItem("wazen-view");
+        const storedSpace = window.localStorage.getItem("wazen-space") ?? undefined;
+        if (isViewId(storedView)) {
+          setActiveView(storedView);
+          if (storedSpace) setPickedSpaceId((current) => ({ ...current, [storedView]: storedSpace }));
+          const params = new URLSearchParams();
+          if (storedView !== "overview") params.set("view", storedView);
+          if (storedSpace) params.set("space", storedSpace);
+          const qs = params.toString();
+          router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+        }
+      }
+    } catch { /* ignore */ }
+  }, [pathname, router]);
+
+  const persistPlace = (view: ViewId, spaceId?: string) => {
+    try {
+      window.localStorage.setItem("wazen-view", view);
+      if (spaceId) window.localStorage.setItem("wazen-space", spaceId);
+      else window.localStorage.removeItem("wazen-space");
+    } catch { /* ignore */ }
+    const params = new URLSearchParams();
+    if (view !== "overview") params.set("view", view);
+    if (spaceId) params.set("space", spaceId);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+
+  const toggleTheme = () => {
+    const next: ThemeMode = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.dataset.theme = next;
+    try { window.localStorage.setItem("wazen-theme", next); } catch { /* ignore */ }
+  };
 
   const viewSpaceType: Partial<Record<ViewId, Space["type"]>> = { personal: "personal", household: "household", trip: "trip", society: "society" };
   const spacesForView = (data?.spaces ?? []).filter((space) => {
@@ -679,11 +739,13 @@ export function WazenDashboard() {
     setData({ ...data!, ...(await response.json()) }); flash(locale === "ar" ? "تم صرف الدور وتسجيل القيد" : "Turn paid and journaled");
   };
 
-  const changeView = (view: ViewId) => {
+  const changeView = (view: ViewId, spaceId?: string) => {
     startTransition(() => {
       setActiveView(view);
       setSidebarOpen(false);
+      if (spaceId) setPickedSpaceId((current) => ({ ...current, [view]: spaceId }));
     });
+    persistPlace(view, spaceId ?? pickedSpaceId[view]);
   };
 
   if (loading) return <LoadingScreen locale={locale} />;
@@ -713,14 +775,15 @@ export function WazenDashboard() {
             </div>
           </div>
           <div className="topbar-actions">
-            <button className="language-button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")} aria-label="Change language">
+            <button className="language-button" onClick={() => { const next = locale === "ar" ? "en" : "ar"; setLocale(next); try { window.localStorage.setItem("wazen-locale", next); } catch { /* ignore */ } }} aria-label="Change language">
               <Globe2 size={17} /><span>{locale === "ar" ? "EN" : "عربي"}</span>
             </button>
+            <button type="button" className="icon-button" onClick={toggleTheme} aria-label={theme === "dark" ? (locale === "ar" ? "النهار" : "Light mode") : (locale === "ar" ? "الليل" : "Dark mode")} title={theme === "dark" ? (locale === "ar" ? "النهار" : "Day") : (locale === "ar" ? "الليل" : "Night")}>
+              {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+            </button>
             <NotificationBell data={data} locale={locale} onOpen={(view, spaceId) => {
-              setPickedSpaceId((current) => ({ ...current, [view]: spaceId }));
-              changeView(view);
+              changeView(view, spaceId);
             }} />
-            <button className="primary-button" onClick={() => setModal("transaction")}><Plus size={18} />{t.add}</button>
             <UserMenu locale={locale} name={data.user.displayName} email={data.user.email} onSettings={() => changeView("settings")} onLogout={() => void logout()} />
           </div>
         </header>
@@ -733,7 +796,7 @@ export function WazenDashboard() {
             <>
               <div className="space-switcher">
                 {spacesForView.map((space) => (
-                  <button key={space.id} type="button" className={activeSpace?.id === space.id ? "active" : ""} onClick={() => setPickedSpaceId((current) => ({ ...current, [activeView]: space.id }))}>{nameOf(space, locale)}{(space.status ?? "active") === "archived" ? (locale === "ar" ? " · مؤرشفة" : " · archived") : ""}</button>
+                  <button key={space.id} type="button" className={activeSpace?.id === space.id ? "active" : ""} onClick={() => { setPickedSpaceId((current) => ({ ...current, [activeView]: space.id })); persistPlace(activeView, space.id); }}>{nameOf(space, locale)}{(space.status ?? "active") === "archived" ? (locale === "ar" ? " · مؤرشفة" : " · archived") : ""}</button>
                 ))}
                 <button type="button" onClick={() => setShowArchived((current) => !current)}>{showArchived ? (locale === "ar" ? "إخفاء المؤرشف" : "Hide archived") : (locale === "ar" ? "عرض المؤرشف" : "Show archived")}</button>
                 <button type="button" onClick={openNewWallet}><Plus size={16} />{addWalletLabel}</button>
