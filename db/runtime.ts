@@ -509,6 +509,49 @@ async function initializeSchema(db: D1Database) {
       created_at TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_period_ledger_space_date ON period_ledger_events(space_id, created_at)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS personal_accounts (
+      id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'bank',
+      opening_minor INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_personal_accounts_space ON personal_accounts(space_id, status)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS personal_rules (
+      id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      account_id TEXT,
+      kind TEXT NOT NULL,
+      name TEXT NOT NULL,
+      amount_mode TEXT NOT NULL DEFAULT 'fixed',
+      amount_minor INTEGER NOT NULL DEFAULT 0,
+      due_day INTEGER NOT NULL DEFAULT 1,
+      starts_at TEXT NOT NULL,
+      ends_at TEXT,
+      total_minor INTEGER NOT NULL DEFAULT 0,
+      duration_months INTEGER NOT NULL DEFAULT 0,
+      paid_minor INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_personal_rules_space ON personal_rules(space_id, status)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS personal_occurrences (
+      id TEXT PRIMARY KEY,
+      rule_id TEXT NOT NULL,
+      space_id TEXT NOT NULL,
+      account_id TEXT,
+      period_key TEXT NOT NULL,
+      due_at TEXT NOT NULL,
+      expected_minor INTEGER NOT NULL DEFAULT 0,
+      actual_minor INTEGER,
+      status TEXT NOT NULL DEFAULT 'pending',
+      transaction_id TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE(rule_id, period_key)
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_personal_occ_space ON personal_occurrences(space_id, status, period_key)"),
   ]);
   const memberColumns = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
   if (!memberColumns.results.some((column) => column.name === "phone")) {
@@ -571,6 +614,10 @@ async function initializeSchema(db: D1Database) {
   }
   if (!periodNames.has("reopen_count")) {
     try { await db.prepare("ALTER TABLE accounting_periods ADD COLUMN reopen_count INTEGER NOT NULL DEFAULT 0").run(); } catch { /* exists */ }
+  }
+  const txnColumns = await db.prepare("PRAGMA table_info(transactions)").all<{ name: string }>();
+  if (!txnColumns.results.some((column) => column.name === "account_id")) {
+    try { await db.prepare("ALTER TABLE transactions ADD COLUMN account_id TEXT").run(); } catch { /* exists */ }
   }
   const { ensureSubscriptionAdminColumns, ensurePaymentGateways } = await import("../services/admin/billing-service");
   await ensureSubscriptionAdminColumns(db);

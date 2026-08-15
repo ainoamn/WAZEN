@@ -9,6 +9,7 @@ import { multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "
 import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, type InstallmentLike } from "../../../lib/installments";
 import { coveringPeriod } from "../../../lib/accounting-periods";
 import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
+import { accountLiveBalance, dueAtForPeriod, monthKeysThroughNow } from "../../../lib/personal-finance";
 
 type SpaceRow = {
   id: string;
@@ -57,6 +58,7 @@ type TransactionRow = {
   status: string;
   occurred_at: string;
   created_at: string;
+  account_id?: string | null;
 };
 
 const now = () => new Date().toISOString();
@@ -385,6 +387,21 @@ async function rebuildSpaceBalance(db: D1Database, spaceIds: string[]) {
       ELSE 0
     END), 0) AS balance FROM transactions WHERE space_id=? AND status='approved'`).bind(spaceId).first<{ balance: number }>();
     const next = Number(row?.balance ?? 0);
+    const space = await db.prepare("SELECT type FROM spaces WHERE id=?").bind(spaceId).first<{ type: string }>();
+    if (space?.type === "personal") {
+      const accounts = await db.prepare("SELECT id,opening_minor FROM personal_accounts WHERE space_id=? AND status='active'").bind(spaceId).all<{ id: string; opening_minor: number }>();
+      if (accounts.results.length) {
+        const txns = await db.prepare("SELECT account_id,kind,amount_minor,status FROM transactions WHERE space_id=? AND status='approved'").bind(spaceId).all<{ account_id?: string | null; kind: string; amount_minor: number; status: string }>();
+        const unassigned = txns.results.filter((row) => !row.account_id).reduce((sum, row) => {
+          if (row.kind === "income" || row.kind === "contribution") return sum + Number(row.amount_minor);
+          if (row.kind === "expense") return sum - Number(row.amount_minor);
+          return sum;
+        }, 0);
+        const assigned = accounts.results.reduce((sum, account) => sum + accountLiveBalance(Number(account.opening_minor), txns.results, account.id), 0);
+        await db.prepare("UPDATE spaces SET balance_minor=? WHERE id=?").bind(assigned + unassigned, spaceId).run();
+        continue;
+      }
+    }
     await db.prepare("UPDATE spaces SET balance_minor=? WHERE id=?").bind(next, spaceId).run();
   }
   await syncFundDeficitShares(db, spaceIds);
@@ -472,6 +489,40 @@ async function rebuildSpaceInstallments(
       statements.push(
         db.prepare("INSERT INTO member_installments (id,member_id,space_id,period_index,period_key,due_at,amount_minor,paid_minor,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
           .bind(row.id, member.id, member.space_id, row.period_index, row.period_key, row.due_at, row.amount_minor, row.paid_minor, row.status, createdAt),
+      );
+    }
+  }
+  if (statements.length) await db.batch(statements);
+}
+
+type PersonalRuleRow = {
+  id: string;
+  space_id: string;
+  account_id: string | null;
+  kind: string;
+  name: string;
+  amount_mode: string;
+  amount_minor: number;
+  due_day: number;
+  starts_at: string;
+  ends_at: string | null;
+  total_minor: number;
+  duration_months: number;
+  paid_minor: number;
+  status: string;
+};
+
+async function generatePersonalOccurrences(db: D1Database, spaceIds: string[]) {
+  if (!spaceIds.length) return;
+  const placeholders = spaceIds.map(() => "?").join(",");
+  const rules = await db.prepare(`SELECT * FROM personal_rules WHERE space_id IN (${placeholders}) AND status='active'`).bind(...spaceIds).all<PersonalRuleRow>();
+  const createdAt = now();
+  const statements: ReturnType<D1Database["prepare"]>[] = [];
+  for (const rule of rules.results) {
+    for (const periodKey of monthKeysThroughNow(rule.starts_at, rule.ends_at)) {
+      statements.push(
+        db.prepare("INSERT OR IGNORE INTO personal_occurrences (id,rule_id,space_id,account_id,period_key,due_at,expected_minor,actual_minor,status,transaction_id,created_at) VALUES (?,?,?,?,?,?,?,NULL,'pending',NULL,?)")
+          .bind(crypto.randomUUID(), rule.id, rule.space_id, rule.account_id, periodKey, dueAtForPeriod(periodKey, Number(rule.due_day)), Number(rule.amount_minor), createdAt),
       );
     }
   }
@@ -592,6 +643,9 @@ async function deleteSpaceCascade(db: D1Database, spaceId: string, userId: strin
     db.prepare("DELETE FROM expense_splits WHERE expense_id IN (SELECT id FROM trip_expenses WHERE space_id=?)").bind(spaceId),
     db.prepare("DELETE FROM settlements WHERE space_id=?").bind(spaceId),
     db.prepare("DELETE FROM trip_expenses WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM personal_occurrences WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM personal_rules WHERE space_id=?").bind(spaceId),
+    db.prepare("DELETE FROM personal_accounts WHERE space_id=?").bind(spaceId),
     db.prepare("DELETE FROM transactions WHERE space_id=?").bind(spaceId),
     db.prepare("DELETE FROM circle_turns WHERE space_id=?").bind(spaceId),
     db.prepare("DELETE FROM circle_configs WHERE space_id=?").bind(spaceId),
@@ -619,9 +673,10 @@ async function loadDashboard(db: D1Database, userId: string) {
     .all<SpaceRow>();
   const ids = spaces.results.map((space) => space.id);
   const contacts = await db.prepare("SELECT * FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name").bind(userId).all();
-  if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results, periods: [] };
+  if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results, periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [] };
 
   await rebuildSpaceBalance(db, ids);
+  await generatePersonalOccurrences(db, ids);
   const placeholders = ids.map(() => "?").join(",");
   const refreshedSpaces = await db.prepare(`SELECT * FROM spaces WHERE id IN (${placeholders}) ORDER BY created_at ASC`).bind(...ids).all<SpaceRow>();
   const members = await db
@@ -662,6 +717,15 @@ async function loadDashboard(db: D1Database, userId: string) {
     LEFT JOIN users ru ON ru.id = p.reopened_by
     WHERE p.space_id IN (${placeholders}) ORDER BY p.starts_at DESC`).bind(...ids).all();
   const periodEvents = await db.prepare(`SELECT * FROM period_ledger_events WHERE space_id IN (${placeholders}) ORDER BY created_at DESC LIMIT 200`).bind(...ids).all();
+  const personalAccountsRaw = await db.prepare(`SELECT * FROM personal_accounts WHERE space_id IN (${placeholders}) AND status='active' ORDER BY created_at`).bind(...ids).all<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; status: string; created_at: string }>();
+  const personalRules = await db.prepare(`SELECT * FROM personal_rules WHERE space_id IN (${placeholders}) ORDER BY created_at`).bind(...ids).all();
+  const personalOccurrences = await db.prepare(`SELECT o.*, r.name AS rule_name, r.kind AS rule_kind, r.amount_mode, r.total_minor, r.paid_minor AS rule_paid_minor
+    FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
+    WHERE o.space_id IN (${placeholders}) ORDER BY o.due_at DESC, o.created_at DESC`).bind(...ids).all();
+  const personalAccounts = personalAccountsRaw.results.map((account) => ({
+    ...account,
+    balance_minor: accountLiveBalance(Number(account.opening_minor), transactions.results, account.id),
+  }));
 
   const memberDueBySpace = new Map<string, number>();
   for (const member of members.results) {
@@ -694,6 +758,9 @@ async function loadDashboard(db: D1Database, userId: string) {
     contacts: contacts.results,
     periods: periods.results,
     periodEvents: periodEvents.results,
+    personalAccounts,
+    personalRules: personalRules.results,
+    personalOccurrences: personalOccurrences.results,
   };
 }
 
@@ -856,6 +923,102 @@ export async function POST(request: Request) {
       const space = await authorizeSpace(db, user, parsed.data.spaceId, "members:write");
       if (space.owner_user_id !== user.id) throw new ApiError(403, "FORBIDDEN");
       await deleteSpaceCascade(db, parsed.data.spaceId, user.id);
+    } else if (action === "addPersonalAccount") {
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        name: z.string().trim().min(2).max(80),
+        kind: z.enum(["bank", "cash", "wallet"]).default("bank"),
+        opening: z.union([z.string(), z.number()]).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_ACCOUNT");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["personal"]);
+      let openingMinor = 0;
+      try { if (parsed.data.opening !== undefined && parsed.data.opening !== "") openingMinor = parseNonNegativeMoneyToMinor(parsed.data.opening, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      const createdAt = now();
+      await db.batch([
+        db.prepare("INSERT INTO personal_accounts (id,space_id,name,kind,opening_minor,status,created_at) VALUES (?,?,?,?,?,'active',?)")
+          .bind(crypto.randomUUID(), parsed.data.spaceId, parsed.data.name, parsed.data.kind, openingMinor, createdAt),
+        prepareAudit(db, { userId: user.id, action: "personal.account_added", entityType: "space", entityId: parsed.data.spaceId, metadata: { name: parsed.data.name }, createdAt }),
+      ]);
+      await rebuildSpaceBalance(db, [parsed.data.spaceId]);
+    } else if (action === "addPersonalRule") {
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        accountId: z.string().min(1).max(120).optional(),
+        kind: z.enum(["income", "expense"]),
+        name: z.string().trim().min(2).max(80),
+        amountMode: z.enum(["fixed", "variable"]).default("fixed"),
+        amount: z.union([z.string(), z.number()]).optional(),
+        dueDay: z.coerce.number().int().min(1).max(28).default(1),
+        startsAt: z.string().min(8).max(40),
+        endsAt: z.string().min(8).max(40).optional(),
+        total: z.union([z.string(), z.number()]).optional(),
+        durationMonths: z.coerce.number().int().min(0).max(360).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_RULE");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["personal"]);
+      let amountMinor = 0;
+      let totalMinor = 0;
+      try {
+        if (parsed.data.amount !== undefined && parsed.data.amount !== "") amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency);
+        if (parsed.data.total !== undefined && parsed.data.total !== "") totalMinor = parseNonNegativeMoneyToMinor(parsed.data.total, space.currency);
+      } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      const duration = parsed.data.durationMonths ?? 0;
+      if (totalMinor > 0 && duration > 0 && amountMinor <= 0) amountMinor = Math.round(totalMinor / duration);
+      if (parsed.data.amountMode === "fixed" && amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
+      const startsAt = parseStartDate(parsed.data.startsAt);
+      const endsAt = parsed.data.endsAt ? parseStartDate(parsed.data.endsAt) : null;
+      const createdAt = now();
+      const ruleId = crypto.randomUUID();
+      await db.batch([
+        db.prepare("INSERT INTO personal_rules (id,space_id,account_id,kind,name,amount_mode,amount_minor,due_day,starts_at,ends_at,total_minor,duration_months,paid_minor,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,'active',?)")
+          .bind(ruleId, parsed.data.spaceId, parsed.data.accountId ?? null, parsed.data.kind, parsed.data.name, parsed.data.amountMode, amountMinor, parsed.data.dueDay, startsAt, endsAt, totalMinor, duration, createdAt),
+        prepareAudit(db, { userId: user.id, action: "personal.rule_added", entityType: "personal_rule", entityId: ruleId, metadata: { name: parsed.data.name, kind: parsed.data.kind }, createdAt }),
+      ]);
+      await generatePersonalOccurrences(db, [parsed.data.spaceId]);
+    } else if (action === "confirmPersonalOccurrence") {
+      const parsed = z.object({
+        occurrenceId: z.string().min(1).max(120),
+        amount: z.union([z.string(), z.number()]).optional(),
+        accountId: z.string().min(1).max(120).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_OCCURRENCE");
+      const occurrence = await db.prepare(`SELECT o.*, r.name AS rule_name, r.kind AS rule_kind, r.amount_mode, r.total_minor
+        FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id WHERE o.id=?`)
+        .bind(parsed.data.occurrenceId)
+        .first<{ id: string; rule_id: string; space_id: string; account_id: string | null; period_key: string; expected_minor: number; status: string; rule_name: string; rule_kind: string; amount_mode: string; total_minor: number }>();
+      if (!occurrence) throw new ApiError(404, "OCCURRENCE_NOT_FOUND");
+      if (occurrence.status !== "pending") throw new ApiError(409, "OCCURRENCE_NOT_PENDING");
+      const space = await authorizeSpace(db, user, occurrence.space_id, "transact", ["personal"]);
+      let amountMinor = Number(occurrence.expected_minor);
+      try {
+        if (parsed.data.amount !== undefined && parsed.data.amount !== "") amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency);
+      } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      if (occurrence.amount_mode === "variable" && (!parsed.data.amount || parsed.data.amount === "")) throw new ApiError(400, "VARIABLE_AMOUNT_REQUIRED");
+      if (amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
+      const accountId = parsed.data.accountId || occurrence.account_id;
+      const createdAt = now();
+      const transactionId = crypto.randomUUID();
+      const description = `${occurrence.rule_name} · ${occurrence.period_key}`;
+      const kind = occurrence.rule_kind === "income" ? "income" : "expense";
+      await db.batch([
+        db.prepare("INSERT INTO transactions VALUES (?, ?, ?, NULL, ?, 'general', ?, ?, ?, 'approved', ?, ?)")
+          .bind(transactionId, occurrence.space_id, user.id, kind, amountMinor, description, description, createdAt, createdAt),
+        db.prepare("UPDATE transactions SET account_id=? WHERE id=?").bind(accountId, transactionId),
+        db.prepare("UPDATE personal_occurrences SET status='posted', actual_minor=?, account_id=?, transaction_id=? WHERE id=? AND status='pending'")
+          .bind(amountMinor, accountId, transactionId, occurrence.id),
+        db.prepare("UPDATE personal_rules SET paid_minor = paid_minor + ? WHERE id=?").bind(kind === "expense" ? amountMinor : 0, occurrence.rule_id),
+        prepareAudit(db, { userId: user.id, action: "personal.occurrence_posted", entityType: "transaction", entityId: transactionId, metadata: { occurrenceId: occurrence.id, amountMinor }, createdAt }),
+      ]);
+      await rebuildSpaceBalance(db, [occurrence.space_id]);
+    } else if (action === "skipPersonalOccurrence") {
+      const parsed = z.object({ occurrenceId: z.string().min(1).max(120) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_OCCURRENCE");
+      const occurrence = await db.prepare("SELECT id,space_id,status FROM personal_occurrences WHERE id=?").bind(parsed.data.occurrenceId).first<{ id: string; space_id: string; status: string }>();
+      if (!occurrence) throw new ApiError(404, "OCCURRENCE_NOT_FOUND");
+      if (occurrence.status !== "pending") throw new ApiError(409, "OCCURRENCE_NOT_PENDING");
+      await authorizeSpace(db, user, occurrence.space_id, "transact", ["personal"]);
+      await db.prepare("UPDATE personal_occurrences SET status='skipped' WHERE id=? AND status='pending'").bind(occurrence.id).run();
     } else if (action === "addMember") {
       const parsed = z.object({
         spaceId: z.string().min(1).max(120),

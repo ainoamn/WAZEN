@@ -430,4 +430,19 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .report-filters { grid-template-columns: 1fr; }
 }
 
+.personal-account-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.personal-account-card { min-height: 72px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; background: #fbfcfb; }
+.personal-account-card i { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--green-soft); color: var(--green); }
+.personal-account-card small { display: block; color: #809089; font-size: 11px; }
+.personal-occ-list, .personal-rule-list, .personal-loan-list { display: grid; gap: 8px; margin-top: 10px; }
+.personal-occ-row { display: grid; grid-template-columns: 1.4fr 140px 160px auto auto; gap: 8px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 12px; }
+.personal-occ-row > div:first-child { display: flex; flex-direction: column; gap: 3px; }
+.personal-occ-row span, .personal-rule-row span, .personal-loan-row span { color: #809089; font-size: 12px; }
+.personal-rule-row, .personal-loan-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.personal-loan-row { grid-template-columns: 1.4fr 1fr auto; align-items: center; }
+@media (max-width: 900px) {
+  .personal-account-grid { grid-template-columns: 1fr 1fr; }
+  .personal-occ-row { grid-template-columns: 1fr; }
+}
+
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
