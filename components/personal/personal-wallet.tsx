@@ -5,6 +5,7 @@ import { Archive, Banknote, CalendarClock, Check, ChevronDown, Pause, Pencil, Pl
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
 import OmrSymbol from "../brand/OmrSymbol";
+import { DateField } from "../ui/date-field";
 
 type Locale = "ar" | "en";
 
@@ -273,7 +274,7 @@ function UnscheduledRow({ rule, locale, onChanged }: { rule: PersonalRule; local
         <strong>{rule.name}</strong>
         <span>{locale === "ar" ? "اختر الشهر الذي يسجَّل فيه هذا الدخل" : "Pick the month this income belongs to"}</span>
       </div>
-      <input type="month" value={periodKey} onChange={(event) => setPeriodKey(event.target.value)} />
+      <DateField mode="month" value={periodKey} onChange={setPeriodKey} />
       <div className="money-input"><input type="number" min="0.001" step="0.001" value={amount} onChange={(event) => setAmount(event.target.value)} /><b className="money-currency"><OmrSymbol size={12} /></b></div>
       <button type="button" className="primary-button" disabled={busy} onClick={() => void queue()}>{locale === "ar" ? "أضف للشهر" : "Add to month"}</button>
     </div>
@@ -435,8 +436,8 @@ function RuleModal({ locale, spaceId, kind, schedule, amountMode: initialMode, e
           {schedule !== "unscheduled" && (
             <div className="form-row">
               {resolvedSchedule === "monthly" && <label><span>{locale === "ar" ? "يوم الاستحقاق" : "Due day"}</span><input type="number" min="1" max="28" value={dueDay} onChange={(event) => setDueDay(event.target.value)} /></label>}
-              <label><span>{resolvedSchedule === "once" ? (locale === "ar" ? "تاريخ الخصم (شهر واحد)" : "Expense date (one month)") : (locale === "ar" ? "يبدأ من" : "Starts")}</span><input type="date" required value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></label>
-              {resolvedSchedule === "monthly" && <label><span>{locale === "ar" ? "ينتهي في (اختياري)" : "Ends (optional)"}</span><input type="date" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} /></label>}
+              <label><span>{resolvedSchedule === "once" ? (locale === "ar" ? "تاريخ الخصم (شهر واحد)" : "Expense date (one month)") : (locale === "ar" ? "يبدأ من" : "Starts")}</span><DateField required value={startsAt} onChange={setStartsAt} /></label>
+              {resolvedSchedule === "monthly" && <label><span>{locale === "ar" ? "ينتهي في (اختياري)" : "Ends (optional)"}</span><DateField value={endsAt} onChange={setEndsAt} /></label>}
             </div>
           )}
           <label><span>{locale === "ar" ? "الحساب" : "Account"}</span>

@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { CreditCard, Search, ShieldCheck, Users, WalletCards } from "lucide-react";
 import { AdminShell, ErrorCard, money, PageLoader, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
+import { DateField } from "../../components/ui/date-field";
 
 type Row = Record<string, unknown>;
 
@@ -344,7 +345,7 @@ export function AdminUserDetail() {
           </label>
           <label>
             <span>{l("نهاية الفترة", "Period end")}</span>
-            <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+            <DateField value={periodEnd} onChange={setPeriodEnd} />
           </label>
           <label>
             <span>{l("خصم %", "Discount %")}</span>

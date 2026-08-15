@@ -5,6 +5,7 @@ import { AlertTriangle, CalendarDays, Landmark, Plus, X } from "lucide-react";
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
 import OmrSymbol from "../brand/OmrSymbol";
+import { DateField } from "../ui/date-field";
 
 type Locale = "ar" | "en";
 type Member = { id: string; display_name: string; role: string };
@@ -175,7 +176,7 @@ function EventModal({ locale, spaceId, onClose, onChanged }: { locale: Locale; s
             </select>
           </label>
           <div className="form-row">
-            <label><span>{locale === "ar" ? "التاريخ" : "Date"}</span><input required type="date" value={targetAt} onChange={(event) => setTargetAt(event.target.value)} /></label>
+            <label><span>{locale === "ar" ? "التاريخ" : "Date"}</span><DateField required value={targetAt} onChange={setTargetAt} /></label>
             <label><span>{locale === "ar" ? "المبلغ المتوقع" : "Expected amount"}</span><div className="money-input"><input required type="number" min="0.01" step="0.001" value={expected} onChange={(event) => setExpected(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>
           </div>
           <label><span>{locale === "ar" ? "ملاحظة" : "Notes"}</span><input value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
