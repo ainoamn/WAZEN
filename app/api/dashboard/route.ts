@@ -9,7 +9,7 @@ import { multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "
 import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, type InstallmentLike } from "../../../lib/installments";
 import { coveringPeriod } from "../../../lib/accounting-periods";
 import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
-import { accountLiveBalance, dueAtForPeriod, monthKeysThroughNow } from "../../../lib/personal-finance";
+import { accountLiveBalance, dueAtForPeriod, monthKeysForRule } from "../../../lib/personal-finance";
 import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-forecast";
 
 type SpaceRow = {
@@ -503,6 +503,7 @@ type PersonalRuleRow = {
   kind: string;
   name: string;
   amount_mode: string;
+  schedule?: string;
   amount_minor: number;
   due_day: number;
   starts_at: string;
@@ -520,7 +521,8 @@ async function generatePersonalOccurrences(db: D1Database, spaceIds: string[]) {
   const createdAt = now();
   const statements: ReturnType<D1Database["prepare"]>[] = [];
   for (const rule of rules.results) {
-    for (const periodKey of monthKeysThroughNow(rule.starts_at, rule.ends_at)) {
+    if ((rule.schedule || "monthly") === "unscheduled") continue;
+    for (const periodKey of monthKeysForRule({ startsAt: rule.starts_at, endsAt: rule.ends_at, schedule: rule.schedule })) {
       statements.push(
         db.prepare("INSERT OR IGNORE INTO personal_occurrences (id,rule_id,space_id,account_id,period_key,due_at,expected_minor,actual_minor,status,transaction_id,created_at) VALUES (?,?,?,?,?,?,?,NULL,'pending',NULL,?)")
           .bind(crypto.randomUUID(), rule.id, rule.space_id, rule.account_id, periodKey, dueAtForPeriod(periodKey, Number(rule.due_day)), Number(rule.amount_minor), createdAt),
@@ -978,6 +980,7 @@ export async function POST(request: Request) {
         kind: z.enum(["income", "expense"]),
         name: z.string().trim().min(2).max(80),
         amountMode: z.enum(["fixed", "variable"]).default("fixed"),
+        schedule: z.enum(["monthly", "once", "unscheduled"]).default("monthly"),
         amount: z.union([z.string(), z.number()]).optional(),
         dueDay: z.coerce.number().int().min(1).max(28).default(1),
         startsAt: z.string().min(8).max(40),
@@ -995,14 +998,15 @@ export async function POST(request: Request) {
       } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
       const duration = parsed.data.durationMonths ?? 0;
       if (totalMinor > 0 && duration > 0 && amountMinor <= 0) amountMinor = Math.round(totalMinor / duration);
-      if (parsed.data.amountMode === "fixed" && amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
+      if (parsed.data.schedule !== "unscheduled" && parsed.data.amountMode === "fixed" && amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
+      if (parsed.data.schedule === "unscheduled" && amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
       const startsAt = parseStartDate(parsed.data.startsAt);
-      const endsAt = parsed.data.endsAt ? parseStartDate(parsed.data.endsAt) : null;
+      const endsAt = parsed.data.schedule === "once" ? startsAt : (parsed.data.endsAt ? parseStartDate(parsed.data.endsAt) : null);
       const createdAt = now();
       const ruleId = crypto.randomUUID();
       await db.batch([
-        db.prepare("INSERT INTO personal_rules (id,space_id,account_id,kind,name,amount_mode,amount_minor,due_day,starts_at,ends_at,total_minor,duration_months,paid_minor,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,'active',?)")
-          .bind(ruleId, parsed.data.spaceId, parsed.data.accountId ?? null, parsed.data.kind, parsed.data.name, parsed.data.amountMode, amountMinor, parsed.data.dueDay, startsAt, endsAt, totalMinor, duration, createdAt),
+        db.prepare("INSERT INTO personal_rules (id,space_id,account_id,kind,name,amount_mode,schedule,amount_minor,due_day,starts_at,ends_at,total_minor,duration_months,paid_minor,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0,'active',?)")
+          .bind(ruleId, parsed.data.spaceId, parsed.data.accountId ?? null, parsed.data.kind, parsed.data.name, parsed.data.amountMode, parsed.data.schedule, amountMinor, parsed.data.dueDay, startsAt, endsAt, totalMinor, duration, createdAt),
         prepareAudit(db, { userId: user.id, action: "personal.rule_added", entityType: "personal_rule", entityId: ruleId, metadata: { name: parsed.data.name, kind: parsed.data.kind }, createdAt }),
       ]);
       await generatePersonalOccurrences(db, [parsed.data.spaceId]);
@@ -1049,6 +1053,24 @@ export async function POST(request: Request) {
       if (occurrence.status !== "pending") throw new ApiError(409, "OCCURRENCE_NOT_PENDING");
       await authorizeSpace(db, user, occurrence.space_id, "transact", ["personal"]);
       await db.prepare("UPDATE personal_occurrences SET status='skipped' WHERE id=? AND status='pending'").bind(occurrence.id).run();
+    } else if (action === "queuePersonalOccurrence") {
+      const parsed = z.object({
+        ruleId: z.string().min(1).max(120),
+        periodKey: z.string().regex(/^\d{4}-\d{2}$/),
+        amount: z.union([z.string(), z.number()]).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_OCCURRENCE");
+      const rule = await db.prepare("SELECT * FROM personal_rules WHERE id=?").bind(parsed.data.ruleId).first<PersonalRuleRow>();
+      if (!rule) throw new ApiError(404, "RULE_NOT_FOUND");
+      const space = await authorizeSpace(db, user, rule.space_id, "transact", ["personal"]);
+      let amountMinor = Number(rule.amount_minor);
+      try {
+        if (parsed.data.amount !== undefined && parsed.data.amount !== "") amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency);
+      } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      if (amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
+      const createdAt = now();
+      await db.prepare("INSERT OR IGNORE INTO personal_occurrences (id,rule_id,space_id,account_id,period_key,due_at,expected_minor,actual_minor,status,transaction_id,created_at) VALUES (?,?,?,?,?,?,?,NULL,'pending',NULL,?)")
+        .bind(crypto.randomUUID(), rule.id, rule.space_id, rule.account_id, parsed.data.periodKey, dueAtForPeriod(parsed.data.periodKey, Number(rule.due_day) || 1), amountMinor, createdAt).run();
     } else if (action === "saveSpacePayoutAccount") {
       const parsed = z.object({
         spaceId: z.string().min(1).max(120),

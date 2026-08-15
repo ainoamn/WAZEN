@@ -17,6 +17,13 @@ export function monthKeysThroughNow(startAt: string, endsAt: string | null | und
   return keys;
 }
 
+export function monthKeysForRule(input: { startsAt: string; endsAt?: string | null; schedule?: string | null }) {
+  const schedule = input.schedule || "monthly";
+  if (schedule === "unscheduled") return [];
+  if (schedule === "once") return [periodKeyFromDate(new Date(input.startsAt).toISOString())];
+  return monthKeysThroughNow(input.startsAt, input.endsAt);
+}
+
 export function dueAtForPeriod(periodKey: string, dueDay: number) {
   const [year, month] = periodKey.split("-").map(Number);
   const day = Math.min(Math.max(1, dueDay || 1), 28);

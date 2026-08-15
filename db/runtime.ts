@@ -526,6 +526,7 @@ async function initializeSchema(db: D1Database) {
       kind TEXT NOT NULL,
       name TEXT NOT NULL,
       amount_mode TEXT NOT NULL DEFAULT 'fixed',
+      schedule TEXT NOT NULL DEFAULT 'monthly',
       amount_minor INTEGER NOT NULL DEFAULT 0,
       due_day INTEGER NOT NULL DEFAULT 1,
       starts_at TEXT NOT NULL,
@@ -639,6 +640,10 @@ async function initializeSchema(db: D1Database) {
   const txnColumns = await db.prepare("PRAGMA table_info(transactions)").all<{ name: string }>();
   if (!txnColumns.results.some((column) => column.name === "account_id")) {
     try { await db.prepare("ALTER TABLE transactions ADD COLUMN account_id TEXT").run(); } catch { /* exists */ }
+  }
+  const personalRuleCols = await db.prepare("PRAGMA table_info(personal_rules)").all<{ name: string }>();
+  if (!personalRuleCols.results.some((column) => column.name === "schedule")) {
+    try { await db.prepare("ALTER TABLE personal_rules ADD COLUMN schedule TEXT NOT NULL DEFAULT 'monthly'").run(); } catch { /* exists */ }
   }
   const { ensureSubscriptionAdminColumns, ensurePaymentGateways } = await import("../services/admin/billing-service");
   await ensureSubscriptionAdminColumns(db);

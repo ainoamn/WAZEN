@@ -330,7 +330,7 @@ function spaceGoalMinor(space: Space, data: DashboardData) {
 
 function spaceMonthlyFlow(space: Space, data: DashboardData) {
   if (space.type === "personal") {
-    const rules = (data.personalRules ?? []).filter((rule) => rule.space_id === space.id && rule.status === "active");
+    const rules = (data.personalRules ?? []).filter((rule) => rule.space_id === space.id && rule.status === "active" && (rule.schedule ?? "monthly") === "monthly");
     return {
       inflow: rules.filter((rule) => rule.kind === "income").reduce((sum, rule) => sum + Number(rule.amount_minor), 0),
       outflow: rules.filter((rule) => rule.kind === "expense").reduce((sum, rule) => sum + Number(rule.amount_minor), 0),
