@@ -14,6 +14,7 @@ import { isPeriodLocked } from "../lib/accounting-periods";
 import { buildReportHtml, openReportPreview } from "../lib/reports";
 import { allocateOldestFirst, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor } from "../lib/money";
+import { occurrenceVarianceCopy } from "../lib/personal-finance";
 import {
   Archive,
   ArrowDownLeft,
@@ -130,7 +131,7 @@ type CircleTurn = { id: string; space_id: string; member_id: string; display_nam
 type TripExpense = { id: string; space_id: string; paid_by_member_id: string; paid_by_name: string; amount_minor: number; description: string; occurred_at: string; paid_from?: string };
 type ExpenseSplit = { id: string; expense_id: string; member_id: string; display_name: string; share_minor: number };
 type Settlement = { id: string; space_id: string; from_member_id: string; to_member_id: string; from_member_name: string | null; to_member_name: string | null; amount_minor: number; status: string };
-type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }> };
+type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }> };
 
 const copy = {
   ar: {
@@ -461,7 +462,17 @@ function dashboardError(code: string, locale: Locale) {
 function openTransactionReceipt(transaction: Transaction, data: DashboardData, locale: Locale) {
   const space = data.spaces.find((item) => item.id === transaction.space_id);
   const member = data.members.find((item) => item.id === transaction.member_id);
+  const occurrence = (data.personalOccurrences ?? []).find((item) => item.transaction_id === transaction.id);
+  const expected = Number(occurrence?.expected_minor ?? 0);
+  const actual = Number(occurrence?.actual_minor ?? transaction.amount_minor);
+  const delta = actual - expected;
   const title = locale === "ar" ? "إيصال وازن" : "WAZEN receipt";
+  const extra = occurrence && expected > 0
+    ? `<tr><td>${locale === "ar" ? "الالتزام" : "Commitment"}</td><td>${formatMoney(expected, space?.currency ?? "OMR", locale)}</td></tr>
+    <tr><td>${locale === "ar" ? "المدفوع" : "Paid"}</td><td>${formatMoney(actual, space?.currency ?? "OMR", locale)}</td></tr>
+    <tr><td>${locale === "ar" ? "الفرق" : "Variance"}</td><td>${delta === 0 ? (locale === "ar" ? "مطابق" : "Match") : `${delta > 0 ? (locale === "ar" ? "زيادة" : "Over") : (locale === "ar" ? "نقص" : "Short")} ${formatMoney(Math.abs(delta), space?.currency ?? "OMR", locale)}`}</td></tr>
+    <tr><td>${locale === "ar" ? "الملخص" : "Summary"}</td><td>${occurrenceVarianceCopy(expected, actual, locale)}</td></tr>`
+    : `<tr><td>${locale === "ar" ? "المبلغ" : "Amount"}</td><td>${formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale)}</td></tr>`;
   const html = `<!doctype html><html lang="${locale}" dir="${locale === "ar" ? "rtl" : "ltr"}"><head><meta charset="utf-8"/><title>${title}</title>
   <style>body{font-family:Tahoma,Arial,sans-serif;padding:32px;color:#12231f}h1{margin:0 0 8px;font-size:22px}.meta{color:#66766f;font-size:13px;margin-bottom:24px}table{width:100%;border-collapse:collapse}td{padding:10px 0;border-bottom:1px solid #e5ebe7;font-size:14px}td:last-child{text-align:end;font-weight:700}.brand{color:#0d7a65;font-weight:800;letter-spacing:.08em}</style></head><body>
   <div class="brand">WAZEN · وازن</div><h1>${title}</h1>
@@ -471,7 +482,7 @@ function openTransactionReceipt(transaction: Transaction, data: DashboardData, l
     <tr><td>${locale === "ar" ? "المحفظة" : "Wallet"}</td><td>${space ? nameOf(space, locale) : "—"}</td></tr>
     <tr><td>${locale === "ar" ? "المساهم" : "Member"}</td><td>${member?.display_name ?? "—"}</td></tr>
     <tr><td>${locale === "ar" ? "النوع" : "Type"}</td><td>${transaction.kind}</td></tr>
-    <tr><td>${locale === "ar" ? "المبلغ" : "Amount"}</td><td>${formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale)}</td></tr>
+    ${extra}
     <tr><td>${locale === "ar" ? "المرجع" : "Reference"}</td><td>${transaction.id.slice(0, 8).toUpperCase()}</td></tr>
   </table>
   <script>window.print()</script></body></html>`;

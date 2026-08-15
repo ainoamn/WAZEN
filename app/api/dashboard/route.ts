@@ -1161,11 +1161,16 @@ export async function POST(request: Request) {
       const accountId = parsed.data.accountId || occurrence.account_id;
       const createdAt = now();
       const transactionId = crypto.randomUUID();
-      const description = `${occurrence.rule_name} · ${occurrence.period_key}`;
+      const expectedMinor = Number(occurrence.expected_minor);
+      const delta = amountMinor - expectedMinor;
+      const deltaLabelAr = delta === 0 ? "مطابق" : delta > 0 ? `زيادة ${(delta / 1000).toFixed(3)}` : `نقص ${((-delta) / 1000).toFixed(3)}`;
+      const deltaLabelEn = delta === 0 ? "matches" : delta > 0 ? `over ${(delta / 1000).toFixed(3)}` : `short ${((-delta) / 1000).toFixed(3)}`;
+      const descriptionAr = `${occurrence.rule_name} · ${occurrence.period_key} · التزام ${(expectedMinor / 1000).toFixed(3)} · مدفوع ${(amountMinor / 1000).toFixed(3)} · ${deltaLabelAr}`;
+      const descriptionEn = `${occurrence.rule_name} · ${occurrence.period_key} · due ${(expectedMinor / 1000).toFixed(3)} · paid ${(amountMinor / 1000).toFixed(3)} · ${deltaLabelEn}`;
       const kind = occurrence.rule_kind === "income" ? "income" : "expense";
       await db.batch([
         db.prepare("INSERT INTO transactions VALUES (?, ?, ?, NULL, ?, 'general', ?, ?, ?, 'approved', ?, ?)")
-          .bind(transactionId, occurrence.space_id, user.id, kind, amountMinor, description, description, createdAt, createdAt),
+          .bind(transactionId, occurrence.space_id, user.id, kind, amountMinor, descriptionAr, descriptionEn, createdAt, createdAt),
         db.prepare("UPDATE transactions SET account_id=? WHERE id=?").bind(accountId, transactionId),
         db.prepare("UPDATE personal_occurrences SET status='posted', actual_minor=?, account_id=?, transaction_id=? WHERE id=? AND status='pending'")
           .bind(amountMinor, accountId, transactionId, occurrence.id),

@@ -36,6 +36,24 @@ export function dueAtForPeriod(periodKey: string, dueDay: number) {
   return new Date(Date.UTC(year, (month || 1) - 1, day, 12, 0, 0)).toISOString();
 }
 
+export function omrMajor(minor: number) {
+  return (Number(minor || 0) / 1000).toFixed(3);
+}
+
+export function occurrenceVarianceCopy(expectedMinor: number, actualMinor: number, locale: "ar" | "en") {
+  const expected = Number(expectedMinor || 0);
+  const actual = Number(actualMinor || 0);
+  const delta = actual - expected;
+  if (locale === "ar") {
+    if (delta === 0) return `دفعت ${omrMajor(actual)} من ${omrMajor(expected)} · مطابق للالتزام`;
+    if (delta > 0) return `دفعت ${omrMajor(actual)} من ${omrMajor(expected)} · زيادة ${omrMajor(delta)}`;
+    return `دفعت ${omrMajor(actual)} من ${omrMajor(expected)} · نقص ${omrMajor(Math.abs(delta))}`;
+  }
+  if (delta === 0) return `Paid ${omrMajor(actual)} of ${omrMajor(expected)} · matches commitment`;
+  if (delta > 0) return `Paid ${omrMajor(actual)} of ${omrMajor(expected)} · over ${omrMajor(delta)}`;
+  return `Paid ${omrMajor(actual)} of ${omrMajor(expected)} · short ${omrMajor(Math.abs(delta))}`;
+}
+
 export function accountLiveBalance(
   openingMinor: number,
   transactions: Array<{ account_id?: string | null; kind: string; amount_minor: number; status?: string }>,

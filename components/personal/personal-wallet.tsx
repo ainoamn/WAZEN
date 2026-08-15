@@ -1,9 +1,10 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { Archive, Banknote, CalendarClock, Check, ChevronDown, Lock, Pause, Pencil, Play, Plus, Trash2, Unlock, WalletCards, X } from "lucide-react";
+import { Archive, Banknote, CalendarClock, Check, ChevronDown, Lock, Pause, Pencil, Play, Plus, Printer, Trash2, Unlock, WalletCards, X } from "lucide-react";
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
+import { occurrenceVarianceCopy } from "../../lib/personal-finance";
 import OmrSymbol from "../brand/OmrSymbol";
 import { DateField } from "../ui/date-field";
 
@@ -47,6 +48,7 @@ export type PersonalOccurrence = {
   expected_minor: number;
   actual_minor?: number | null;
   status: string;
+  transaction_id?: string | null;
   rule_name?: string;
   rule_kind?: string;
   amount_mode?: string;
@@ -56,6 +58,39 @@ export type PersonalOccurrence = {
 
 function money(minor: number, locale: Locale) {
   return formatMoneyMinor(minor, "OMR", locale);
+}
+
+function printOccurrenceStatement(item: PersonalOccurrence, locale: Locale) {
+  const expected = Number(item.expected_minor);
+  const actual = Number(item.actual_minor ?? item.expected_minor);
+  const delta = actual - expected;
+  const title = locale === "ar" ? "كشف بند وازن" : "WAZEN item statement";
+  const rows = locale === "ar"
+    ? [
+        ["البند", item.rule_name ?? ""],
+        ["الشهر", item.period_key],
+        ["النوع", item.rule_kind === "income" ? "دخل" : "خصم"],
+        ["الالتزام", money(expected, locale)],
+        ["المدفوع", money(actual, locale)],
+        ["الفرق", delta === 0 ? "لا يوجد" : `${delta > 0 ? "زيادة" : "نقص"} ${money(Math.abs(delta), locale)}`],
+      ]
+    : [
+        ["Item", item.rule_name ?? ""],
+        ["Month", item.period_key],
+        ["Type", item.rule_kind === "income" ? "Income" : "Expense"],
+        ["Commitment", money(expected, locale)],
+        ["Paid", money(actual, locale)],
+        ["Variance", delta === 0 ? "None" : `${delta > 0 ? "Over" : "Short"} ${money(Math.abs(delta), locale)}`],
+      ];
+  const html = `<!doctype html><html lang="${locale}" dir="${locale === "ar" ? "rtl" : "ltr"}"><head><meta charset="utf-8"/><title>${title}</title>
+  <style>body{font-family:Tahoma,Arial,sans-serif;padding:32px;color:#12231f}h1{margin:0 0 8px;font-size:22px}table{width:100%;border-collapse:collapse}td{padding:10px 0;border-bottom:1px solid #e5ebe7;font-size:14px}td:last-child{text-align:end;font-weight:700}.brand{color:#0d7a65;font-weight:800}</style></head><body>
+  <div class="brand">WAZEN · وازن</div><h1>${title}</h1>
+  <table>${rows.map((row) => `<tr><td>${row[0]}</td><td>${row[1]}</td></tr>`).join("")}</table>
+  <script>window.print()</script></body></html>`;
+  const popup = window.open("", "_blank", "noopener,noreferrer,width=720,height=900");
+  if (!popup) return;
+  popup.document.write(html);
+  popup.document.close();
 }
 
 export function PersonalWalletPanel({
@@ -166,13 +201,28 @@ export function PersonalWalletPanel({
                   {rows.filter((row) => row.status === "pending").map((item) => (
                     <OccurrenceRow key={item.id} item={item} locale={locale} accounts={activeAccounts} onChanged={onChanged} />
                   ))}
-                  {rows.filter((row) => row.status !== "pending").map((item) => (
+                  {rows.filter((row) => row.status !== "pending").map((item) => {
+                    const expected = Number(item.expected_minor);
+                    const actual = Number(item.actual_minor ?? item.expected_minor);
+                    const showVariance = item.status === "posted" && item.amount_mode !== "variable" && expected > 0;
+                    return (
                     <div className="personal-rule-row" key={item.id}>
-                      <strong>{item.rule_name}</strong>
-                      <span>{item.status === "posted" ? (locale === "ar" ? "معتمد" : "Posted") : item.status === "deferred" ? (locale === "ar" ? "مؤجّل" : "Deferred") : (locale === "ar" ? "متجاهل" : "Skipped")}</span>
-                      <b>{money(Number(item.actual_minor ?? item.expected_minor), locale)}</b>
+                      <div>
+                        <strong>{item.rule_name}</strong>
+                        <span>
+                          {item.status === "posted" ? (locale === "ar" ? "معتمد" : "Posted") : item.status === "deferred" ? (locale === "ar" ? "مؤجّل" : "Deferred") : (locale === "ar" ? "متجاهل" : "Skipped")}
+                          {showVariance ? ` · ${occurrenceVarianceCopy(expected, actual, locale)}` : ""}
+                        </span>
+                      </div>
+                      <b>{money(actual, locale)}</b>
+                      {item.status === "posted" && (
+                        <button type="button" className="secondary-button compact" onClick={() => printOccurrenceStatement(item, locale)}>
+                          <Printer size={14} />{locale === "ar" ? "كشف البند" : "Item statement"}
+                        </button>
+                      )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -352,11 +402,11 @@ function OccurrenceRow({ item, locale, accounts, onChanged }: { item: PersonalOc
     <div className="personal-occ-row">
       <div>
         <strong>{item.rule_name}</strong>
-        <span>{item.period_key} · {income ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "خصم" : "Bill")}{variable ? (locale === "ar" ? " · متغيرة — أدخل المبلغ" : " · variable — enter amount") : ""}</span>
+        <span>{item.period_key} · {income ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "خصم" : "Bill")}{!variable && Number(item.expected_minor) > 0 ? (locale === "ar" ? ` · الالتزام ${money(Number(item.expected_minor), locale)}` : ` · due ${money(Number(item.expected_minor), locale)}`) : ""}{variable ? (locale === "ar" ? " · متغيرة — أدخل المبلغ" : " · variable — enter amount") : ""}</span>
       </div>
       <div className="personal-occ-fields">
         <label className="personal-occ-account">
-          <span>{locale === "ar" ? "المبلغ" : "Amount"}</span>
+          <span>{variable ? (locale === "ar" ? "المبلغ" : "Amount") : (locale === "ar" ? "المدفوع" : "Paid")}</span>
           <div className="money-input"><input type="number" min="0.001" step="0.001" required={variable} value={amount} onChange={(event) => setAmount(event.target.value)} /><b className="money-currency"><OmrSymbol size={12} /></b></div>
         </label>
         <label className="personal-occ-account">
