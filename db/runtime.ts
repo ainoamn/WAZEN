@@ -33,9 +33,14 @@ export function getRawDb(): D1Database {
   );
 }
 
+const SCHEMA_VERSION = 1;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
+type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
+
 export function ensureSchema(db: D1Database) {
+  const global = globalThis as SchemaGlobal;
+  if (global.__wazen_schema_version__ === SCHEMA_VERSION) return Promise.resolve();
   const key = db as unknown as object;
   const existing = schemaCache.get(key);
   if (existing) return existing;
@@ -44,8 +49,36 @@ export function ensureSchema(db: D1Database) {
   return pending;
 }
 
+async function markSchemaReady() {
+  (globalThis as SchemaGlobal).__wazen_schema_version__ = SCHEMA_VERSION;
+}
+
 async function initializeSchema(db: D1Database) {
+  try {
+    const row = await db.prepare("SELECT version FROM schema_meta WHERE id=1").first<{ version: number }>();
+    if (row && Number(row.version) >= SCHEMA_VERSION) {
+      await markSchemaReady();
+      return;
+    }
+  } catch {
+    /* schema_meta missing */
+  }
+
+  try {
+    await db.prepare("SELECT id FROM users LIMIT 1").first();
+    await db.prepare(`CREATE TABLE IF NOT EXISTS schema_meta (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)`).run();
+    await db.prepare("INSERT INTO schema_meta (id, version) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET version=excluded.version").bind(SCHEMA_VERSION).run();
+    await markSchemaReady();
+    return;
+  } catch {
+    /* empty database — create tables */
+  }
+
   await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS schema_meta (
+      id INTEGER PRIMARY KEY,
+      version INTEGER NOT NULL
+    )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL,
@@ -667,6 +700,8 @@ async function initializeSchema(db: D1Database) {
     db.prepare(`INSERT OR IGNORE INTO tenant_resources (tenant_id,resource_type,resource_id,created_at)
       SELECT 'tenant:'||user_id,'payment',id,created_at FROM payments`),
   ]);
+  await db.prepare("INSERT INTO schema_meta (id, version) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET version=excluded.version").bind(SCHEMA_VERSION).run();
+  await markSchemaReady();
 }
 
 export type RequestUser = {

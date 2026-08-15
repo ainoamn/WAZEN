@@ -517,12 +517,17 @@ type PersonalRuleRow = {
 async function generatePersonalOccurrences(db: D1Database, spaceIds: string[]) {
   if (!spaceIds.length) return;
   const placeholders = spaceIds.map(() => "?").join(",");
-  const rules = await db.prepare(`SELECT * FROM personal_rules WHERE space_id IN (${placeholders}) AND status='active'`).bind(...spaceIds).all<PersonalRuleRow>();
+  const [rules, existing] = await Promise.all([
+    db.prepare(`SELECT * FROM personal_rules WHERE space_id IN (${placeholders}) AND status='active'`).bind(...spaceIds).all<PersonalRuleRow>(),
+    db.prepare(`SELECT rule_id, period_key FROM personal_occurrences WHERE space_id IN (${placeholders})`).bind(...spaceIds).all<{ rule_id: string; period_key: string }>(),
+  ]);
+  const seen = new Set(existing.results.map((row) => `${row.rule_id}:${row.period_key}`));
   const createdAt = now();
   const statements: ReturnType<D1Database["prepare"]>[] = [];
   for (const rule of rules.results) {
     if ((rule.schedule || "monthly") === "unscheduled") continue;
     for (const periodKey of monthKeysForRule({ startsAt: rule.starts_at, endsAt: rule.ends_at, schedule: rule.schedule })) {
+      if (seen.has(`${rule.id}:${periodKey}`)) continue;
       statements.push(
         db.prepare("INSERT OR IGNORE INTO personal_occurrences (id,rule_id,space_id,account_id,period_key,due_at,expected_minor,actual_minor,status,transaction_id,created_at) VALUES (?,?,?,?,?,?,?,NULL,'pending',NULL,?)")
           .bind(crypto.randomUUID(), rule.id, rule.space_id, rule.account_id, periodKey, dueAtForPeriod(periodKey, Number(rule.due_day)), Number(rule.amount_minor), createdAt),
@@ -667,74 +672,87 @@ async function deleteSpaceCascade(db: D1Database, spaceId: string, userId: strin
   ]);
 }
 
-async function loadDashboard(db: D1Database, userId: string) {
-  const spaces = await db
-    .prepare(`SELECT s.* FROM spaces s
-      WHERE s.owner_user_id=? OR EXISTS (
-        SELECT 1 FROM members m WHERE m.space_id=s.id AND m.status='active' AND m.user_id=?
-      )
-      ORDER BY s.created_at ASC`)
-    .bind(userId, userId)
-    .all<SpaceRow>();
+async function loadDashboard(db: D1Database, userId: string, options?: { refreshDerived?: boolean }) {
+  const [spaces, contacts] = await Promise.all([
+    db
+      .prepare(`SELECT s.* FROM spaces s
+        WHERE s.owner_user_id=? OR EXISTS (
+          SELECT 1 FROM members m WHERE m.space_id=s.id AND m.status='active' AND m.user_id=?
+        )
+        ORDER BY s.created_at ASC`)
+      .bind(userId, userId)
+      .all<SpaceRow>(),
+    db.prepare("SELECT * FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name").bind(userId).all(),
+  ]);
   const ids = spaces.results.map((space) => space.id);
-  const contacts = await db.prepare("SELECT * FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name").bind(userId).all();
   if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results, periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [] };
 
-  await rebuildSpaceBalance(db, ids);
-  await generatePersonalOccurrences(db, ids);
+  if (options?.refreshDerived !== false) {
+    await generatePersonalOccurrences(db, ids);
+  }
   const placeholders = ids.map(() => "?").join(",");
-  const refreshedSpaces = await db.prepare(`SELECT * FROM spaces WHERE id IN (${placeholders}) ORDER BY created_at ASC`).bind(...ids).all<SpaceRow>();
-  const members = await db
-    .prepare(`SELECT * FROM members WHERE space_id IN (${placeholders}) ORDER BY joined_at ASC`)
-    .bind(...ids)
-    .all<MemberRow>();
-  const transactions = await db
-    .prepare(`SELECT * FROM transactions WHERE space_id IN (${placeholders}) AND status <> 'voided' ORDER BY occurred_at DESC LIMIT 250`)
-    .bind(...ids)
-    .all<TransactionRow>();
-  const plans = await db
-    .prepare(`SELECT * FROM contribution_plans WHERE space_id IN (${placeholders})`)
-    .bind(...ids)
-    .all();
-  const circleTurns = await db.prepare(`SELECT ct.*,m.display_name FROM circle_turns ct JOIN members m ON m.id=ct.member_id
-    WHERE ct.space_id IN (${placeholders}) ORDER BY ct.space_id,ct.turn_number`).bind(...ids).all();
-  const tripExpenses = await db.prepare(`SELECT te.id, te.space_id, te.paid_by_member_id, te.amount_minor, te.description, te.occurred_at, te.transaction_id, te.status,
-      CASE WHEN COALESCE(te.paid_from, CASE WHEN t.kind='expense' THEN 'common_fund' ELSE 'member' END)='common_fund'
-        THEN 'صندوق الجمعية' ELSE m.display_name END AS paid_by_name,
-      COALESCE(te.paid_from, CASE WHEN t.kind='expense' THEN 'common_fund' ELSE 'member' END) AS paid_from
-    FROM trip_expenses te
-    LEFT JOIN members m ON m.id=te.paid_by_member_id
-    LEFT JOIN transactions t ON t.id=te.transaction_id
-    WHERE te.space_id IN (${placeholders}) AND COALESCE(te.status,'posted')<>'voided' ORDER BY te.occurred_at DESC LIMIT 50`).bind(...ids).all();
-  const expenseSplits = await db.prepare(`SELECT es.*,m.display_name FROM expense_splits es JOIN trip_expenses te ON te.id=es.expense_id
-    JOIN members m ON m.id=es.member_id WHERE te.space_id IN (${placeholders}) AND COALESCE(te.status,'posted')<>'voided' ORDER BY es.expense_id,m.joined_at`).bind(...ids).all();
-  const settlements = await db.prepare(`SELECT s.*,
-      tm.display_name AS to_member_name,
-      fm.display_name AS from_member_name
-    FROM settlements s
-    LEFT JOIN members tm ON tm.id=s.to_member_id
-    LEFT JOIN members fm ON fm.id=s.from_member_id
-    WHERE s.space_id IN (${placeholders}) AND s.status='pending' ORDER BY s.created_at DESC LIMIT 50`).bind(...ids).all();
-  const installments = await db.prepare(`SELECT * FROM member_installments WHERE space_id IN (${placeholders}) ORDER BY member_id, period_index`).bind(...ids).all();
-  const periods = await db.prepare(`SELECT p.*, cu.display_name AS closed_by_name, ru.display_name AS reopened_by_name
-    FROM accounting_periods p
-    LEFT JOIN users cu ON cu.id = p.closed_by
-    LEFT JOIN users ru ON ru.id = p.reopened_by
-    WHERE p.space_id IN (${placeholders}) ORDER BY p.starts_at DESC`).bind(...ids).all();
-  const periodEvents = await db.prepare(`SELECT * FROM period_ledger_events WHERE space_id IN (${placeholders}) ORDER BY created_at DESC LIMIT 200`).bind(...ids).all();
-  const personalAccountsRaw = await db.prepare(`SELECT * FROM personal_accounts WHERE space_id IN (${placeholders}) AND status='active' ORDER BY created_at`).bind(...ids).all<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; status: string; created_at: string }>();
-  const personalRules = await db.prepare(`SELECT * FROM personal_rules WHERE space_id IN (${placeholders}) ORDER BY created_at`).bind(...ids).all();
-  const personalOccurrences = await db.prepare(`SELECT o.*, r.name AS rule_name, r.kind AS rule_kind, r.amount_mode, r.total_minor, r.paid_minor AS rule_paid_minor
-    FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
-    WHERE o.space_id IN (${placeholders}) ORDER BY o.due_at DESC, o.created_at DESC`).bind(...ids).all();
+  const [
+    refreshedSpaces,
+    members,
+    transactions,
+    plans,
+    circleTurns,
+    tripExpenses,
+    expenseSplits,
+    settlements,
+    installments,
+    periods,
+    periodEvents,
+    personalAccountsRaw,
+    personalRules,
+    personalOccurrences,
+    payoutAccounts,
+    familyEventsRaw,
+  ] = await Promise.all([
+    db.prepare(`SELECT * FROM spaces WHERE id IN (${placeholders}) ORDER BY created_at ASC`).bind(...ids).all<SpaceRow>(),
+    db.prepare(`SELECT * FROM members WHERE space_id IN (${placeholders}) ORDER BY joined_at ASC`).bind(...ids).all<MemberRow>(),
+    db.prepare(`SELECT * FROM transactions WHERE space_id IN (${placeholders}) AND status <> 'voided' ORDER BY occurred_at DESC LIMIT 250`).bind(...ids).all<TransactionRow>(),
+    db.prepare(`SELECT * FROM contribution_plans WHERE space_id IN (${placeholders})`).bind(...ids).all(),
+    db.prepare(`SELECT ct.*,m.display_name FROM circle_turns ct JOIN members m ON m.id=ct.member_id
+      WHERE ct.space_id IN (${placeholders}) ORDER BY ct.space_id,ct.turn_number`).bind(...ids).all(),
+    db.prepare(`SELECT te.id, te.space_id, te.paid_by_member_id, te.amount_minor, te.description, te.occurred_at, te.transaction_id, te.status,
+        CASE WHEN COALESCE(te.paid_from, CASE WHEN t.kind='expense' THEN 'common_fund' ELSE 'member' END)='common_fund'
+          THEN 'صندوق الجمعية' ELSE m.display_name END AS paid_by_name,
+        COALESCE(te.paid_from, CASE WHEN t.kind='expense' THEN 'common_fund' ELSE 'member' END) AS paid_from
+      FROM trip_expenses te
+      LEFT JOIN members m ON m.id=te.paid_by_member_id
+      LEFT JOIN transactions t ON t.id=te.transaction_id
+      WHERE te.space_id IN (${placeholders}) AND COALESCE(te.status,'posted')<>'voided' ORDER BY te.occurred_at DESC LIMIT 50`).bind(...ids).all(),
+    db.prepare(`SELECT es.*,m.display_name FROM expense_splits es JOIN trip_expenses te ON te.id=es.expense_id
+      JOIN members m ON m.id=es.member_id WHERE te.space_id IN (${placeholders}) AND COALESCE(te.status,'posted')<>'voided' ORDER BY es.expense_id,m.joined_at`).bind(...ids).all(),
+    db.prepare(`SELECT s.*,
+        tm.display_name AS to_member_name,
+        fm.display_name AS from_member_name
+      FROM settlements s
+      LEFT JOIN members tm ON tm.id=s.to_member_id
+      LEFT JOIN members fm ON fm.id=s.from_member_id
+      WHERE s.space_id IN (${placeholders}) AND s.status='pending' ORDER BY s.created_at DESC LIMIT 50`).bind(...ids).all(),
+    db.prepare(`SELECT * FROM member_installments WHERE space_id IN (${placeholders}) ORDER BY member_id, period_index`).bind(...ids).all(),
+    db.prepare(`SELECT p.*, cu.display_name AS closed_by_name, ru.display_name AS reopened_by_name
+      FROM accounting_periods p
+      LEFT JOIN users cu ON cu.id = p.closed_by
+      LEFT JOIN users ru ON ru.id = p.reopened_by
+      WHERE p.space_id IN (${placeholders}) ORDER BY p.starts_at DESC`).bind(...ids).all(),
+    db.prepare(`SELECT * FROM period_ledger_events WHERE space_id IN (${placeholders}) ORDER BY created_at DESC LIMIT 200`).bind(...ids).all(),
+    db.prepare(`SELECT * FROM personal_accounts WHERE space_id IN (${placeholders}) AND status='active' ORDER BY created_at`).bind(...ids).all<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; status: string; created_at: string }>(),
+    db.prepare(`SELECT * FROM personal_rules WHERE space_id IN (${placeholders}) ORDER BY created_at`).bind(...ids).all(),
+    db.prepare(`SELECT o.*, r.name AS rule_name, r.kind AS rule_kind, r.amount_mode, r.total_minor, r.paid_minor AS rule_paid_minor
+      FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
+      WHERE o.space_id IN (${placeholders}) ORDER BY o.due_at DESC, o.created_at DESC`).bind(...ids).all(),
+    db.prepare(`SELECT * FROM space_payout_accounts WHERE space_id IN (${placeholders})`).bind(...ids).all(),
+    db.prepare(`SELECT * FROM family_events WHERE space_id IN (${placeholders}) ORDER BY target_at ASC`).bind(...ids).all<{
+      id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; notes: string | null; status: string;
+    }>(),
+  ]);
   const personalAccounts = personalAccountsRaw.results.map((account) => ({
     ...account,
     balance_minor: accountLiveBalance(Number(account.opening_minor), transactions.results, account.id),
   }));
-  const payoutAccounts = await db.prepare(`SELECT * FROM space_payout_accounts WHERE space_id IN (${placeholders})`).bind(...ids).all();
-  const familyEventsRaw = await db.prepare(`SELECT * FROM family_events WHERE space_id IN (${placeholders}) ORDER BY target_at ASC`).bind(...ids).all<{
-    id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; notes: string | null; status: string;
-  }>();
 
   const memberDueBySpace = new Map<string, number>();
   for (const member of members.results) {
@@ -804,7 +822,7 @@ export async function GET(request: Request) {
     if (!user) return Response.json({ error: "AUTHENTICATION_REQUIRED" }, { status: 401 });
     assertApiScope(user, "wallets:read");
     await ensureUser(db, user);
-    const dashboard = await loadDashboard(db, user.id);
+    const dashboard = await loadDashboard(db, user.id, { refreshDerived: false });
     const issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
     const headers = new Headers({ "Cache-Control": "no-store" }); if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
     return Response.json({ user, ...dashboard }, { headers });
