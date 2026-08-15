@@ -506,6 +506,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .personal-account-card small { display: block; color: #809089; font-size: 11px; }
 .personal-occ-list, .personal-rule-list, .personal-loan-list { display: grid; gap: 8px; margin-top: 10px; }
 .personal-occ-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.personal-defer-box { grid-column: 1 / -1; display: grid; gap: 10px; padding: 10px; border: 1px dashed var(--line); border-radius: 12px; background: color-mix(in srgb, var(--panel) 88%, #eef3f0); }
+.personal-defer-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.personal-defer-presets .chip { min-height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink); font-size: 12px; font-weight: 700; }
+.personal-defer-presets .chip.active { border-color: #1f6f54; background: #e8f4ee; }
 .personal-occ-actions .primary-button, .personal-occ-actions .secondary-button { min-height: 36px; padding: 0 10px; font-size: 12px; }
 .personal-occ-row > div:first-child { display: flex; flex-direction: column; gap: 3px; }
 .personal-occ-row span, .personal-rule-row span, .personal-loan-row span { color: #809089; font-size: 12px; }
@@ -563,6 +567,8 @@ html[data-theme="dark"] .personal-account-card,
 html[data-theme="dark"] .personal-occ-row,
 html[data-theme="dark"] .personal-rule-row,
 html[data-theme="dark"] .personal-loan-row,
+html[data-theme="dark"] .personal-defer-box,
+html[data-theme="dark"] .personal-defer-presets .chip,
 html[data-theme="dark"] .month-chip,
 html[data-theme="dark"] .obligation-row { background: var(--surface); border-color: var(--line); color: var(--ink); }
 html[data-theme="dark"] .notification-item { background: #1a2622; }

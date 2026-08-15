@@ -69,6 +69,7 @@ function printOccurrenceStatement(item: PersonalOccurrence, locale: Locale) {
     ? [
         ["البند", item.rule_name ?? ""],
         ["الشهر", item.period_key],
+        ["الاستحقاق", formatDue(item.due_at) || item.due_at.slice(0, 10)],
         ["النوع", item.rule_kind === "income" ? "دخل" : "خصم"],
         ["الالتزام", money(expected, locale)],
         ["المدفوع", money(actual, locale)],
@@ -77,6 +78,7 @@ function printOccurrenceStatement(item: PersonalOccurrence, locale: Locale) {
     : [
         ["Item", item.rule_name ?? ""],
         ["Month", item.period_key],
+        ["Due", formatDue(item.due_at) || item.due_at.slice(0, 10)],
         ["Type", item.rule_kind === "income" ? "Income" : "Expense"],
         ["Commitment", money(expected, locale)],
         ["Paid", money(actual, locale)],
@@ -119,10 +121,11 @@ export function PersonalWalletPanel({
   const pending = spaceOcc.filter((item) => item.status === "pending");
   const loans = spaceRules.filter((item) => Number(item.total_minor) > 0);
   const unscheduled = spaceRules.filter((item) => (item.schedule ?? "monthly") === "unscheduled" && item.status === "active");
-  const byMonth = [...spaceOcc].sort((a, b) => a.period_key.localeCompare(b.period_key)).reduce((map, item) => {
-    const list = map.get(item.period_key) ?? [];
+  const byMonth = [...spaceOcc].sort((a, b) => (a.due_at || a.period_key).localeCompare(b.due_at || b.period_key)).reduce((map, item) => {
+    const key = (item.due_at || item.period_key).slice(0, 7);
+    const list = map.get(key) ?? [];
     list.push(item);
-    map.set(item.period_key, list);
+    map.set(key, list);
     return map;
   }, new Map<string, PersonalOccurrence[]>());
 
@@ -376,10 +379,35 @@ function UnscheduledRow({ rule, locale, onChanged }: { rule: PersonalRule; local
   );
 }
 
+function localIsoDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function addDaysIso(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return localIsoDate(date);
+}
+
+function addMonthsIso(months: number) {
+  const date = new Date();
+  date.setMonth(date.getMonth() + months);
+  return localIsoDate(date);
+}
+
+function formatDue(value: string | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(date);
+}
+
 function OccurrenceRow({ item, locale, accounts, onChanged }: { item: PersonalOccurrence; locale: Locale; accounts: PersonalAccount[]; onChanged: (next: Record<string, unknown>) => void }) {
   const [amount, setAmount] = useState(item.expected_minor ? String(item.expected_minor / 1000) : "");
   const [accountId, setAccountId] = useState(item.account_id ?? accounts[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
+  const [deferOpen, setDeferOpen] = useState(false);
+  const [deferUntil, setDeferUntil] = useState((item.due_at || item.period_key).slice(0, 10) || addDaysIso(7));
   const variable = item.amount_mode === "variable";
   const income = item.rule_kind === "income";
   const act = async (mode: "confirm" | "skip" | "defer") => {
@@ -388,21 +416,29 @@ function OccurrenceRow({ item, locale, accounts, onChanged }: { item: PersonalOc
       const payload = mode === "skip"
         ? { action: "skipPersonalOccurrence", idempotencyKey: crypto.randomUUID(), occurrenceId: item.id }
         : mode === "defer"
-          ? { action: "deferPersonalOccurrence", idempotencyKey: crypto.randomUUID(), occurrenceId: item.id }
+          ? { action: "deferPersonalOccurrence", idempotencyKey: crypto.randomUUID(), occurrenceId: item.id, deferUntil }
           : { action: "confirmPersonalOccurrence", idempotencyKey: crypto.randomUUID(), occurrenceId: item.id, amount, accountId };
       const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       const result = await response.json() as Record<string, unknown> & { error?: string };
       if (!response.ok) throw new Error(result.error ?? "FAILED");
       onChanged(result);
+      if (mode === "defer") setDeferOpen(false);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "FAILED");
     } finally { setBusy(false); }
   };
+  const presets = [
+    { label: locale === "ar" ? "أسبوع" : "1 week", value: addDaysIso(7) },
+    { label: locale === "ar" ? "أسبوعان" : "2 weeks", value: addDaysIso(14) },
+    { label: locale === "ar" ? "3 أسابيع" : "3 weeks", value: addDaysIso(21) },
+    { label: locale === "ar" ? "شهر" : "1 month", value: addMonthsIso(1) },
+    { label: locale === "ar" ? "شهران" : "2 months", value: addMonthsIso(2) },
+  ];
   return (
     <div className="personal-occ-row">
       <div>
         <strong>{item.rule_name}</strong>
-        <span>{item.period_key} · {income ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "خصم" : "Bill")}{!variable && Number(item.expected_minor) > 0 ? (locale === "ar" ? ` · الالتزام ${money(Number(item.expected_minor), locale)}` : ` · due ${money(Number(item.expected_minor), locale)}`) : ""}{variable ? (locale === "ar" ? " · متغيرة — أدخل المبلغ" : " · variable — enter amount") : ""}</span>
+        <span>{formatDue(item.due_at) || item.period_key} · {income ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "خصم" : "Bill")}{!variable && Number(item.expected_minor) > 0 ? (locale === "ar" ? ` · الالتزام ${money(Number(item.expected_minor), locale)}` : ` · due ${money(Number(item.expected_minor), locale)}`) : ""}{variable ? (locale === "ar" ? " · متغيرة — أدخل المبلغ" : " · variable — enter amount") : ""}</span>
       </div>
       <div className="personal-occ-fields">
         <label className="personal-occ-account">
@@ -426,9 +462,26 @@ function OccurrenceRow({ item, locale, accounts, onChanged }: { item: PersonalOc
       </div>
       <div className="personal-occ-actions">
         <button type="button" className="primary-button" disabled={busy} onClick={() => void act("confirm")}><Check size={14} />{income ? (locale === "ar" ? "اعتماد الدخل" : "Approve income") : (locale === "ar" ? "اعتماد الخصم" : "Approve debit")}</button>
-        <button type="button" className="secondary-button" disabled={busy} onClick={() => void act("defer")}><CalendarClock size={14} />{locale === "ar" ? "تأجيل" : "Defer"}</button>
+        <button type="button" className="secondary-button" disabled={busy} onClick={() => setDeferOpen((open) => !open)}><CalendarClock size={14} />{locale === "ar" ? "تأجيل" : "Defer"}</button>
         <button type="button" className="secondary-button" disabled={busy} onClick={() => void act("skip")}><X size={14} />{locale === "ar" ? "تجاهل" : "Skip"}</button>
       </div>
+      {deferOpen && (
+        <div className="personal-defer-box">
+          <div className="personal-defer-presets">
+            {presets.map((preset) => (
+              <button key={preset.label} type="button" className={deferUntil === preset.value ? "chip active" : "chip"} onClick={() => setDeferUntil(preset.value)}>{preset.label}</button>
+            ))}
+          </div>
+          <label className="personal-occ-account">
+            <span>{locale === "ar" ? "أو اختر التاريخ من التقويم" : "Or pick a date"}</span>
+            <DateField value={deferUntil} onChange={setDeferUntil} />
+          </label>
+          <div className="personal-occ-actions">
+            <button type="button" className="secondary-button" onClick={() => setDeferOpen(false)}>{locale === "ar" ? "إلغاء" : "Cancel"}</button>
+            <button type="button" className="primary-button" disabled={busy || !/^\d{4}-\d{2}-\d{2}$/.test(deferUntil)} onClick={() => void act("defer")}>{locale === "ar" ? "تأكيد التأجيل" : "Confirm defer"}</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
