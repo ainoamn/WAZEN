@@ -63,6 +63,25 @@ type TransactionRow = {
   account_id?: string | null;
 };
 
+type PersonalOccurrenceRow = {
+  id: string;
+  rule_id: string;
+  space_id: string;
+  account_id?: string | null;
+  period_key: string;
+  due_at: string;
+  expected_minor: number;
+  actual_minor?: number | null;
+  status: string;
+  transaction_id?: string | null;
+  created_at: string;
+  rule_name?: string;
+  rule_kind?: string;
+  amount_mode?: string;
+  total_minor?: number;
+  rule_paid_minor?: number;
+};
+
 const now = () => new Date().toISOString();
 
 function cleanId(value: string) {
@@ -499,7 +518,7 @@ async function voidApprovedTransaction(
     await writeApprovedCashBalance(db, txn.space_id);
   }
   try {
-    await reconcileMemberLedgers(db, [txn.space_id]);
+  await reconcileMemberLedgers(db, [txn.space_id]);
   } catch { /* member ledgers are not used by personal cash */ }
 }
 
@@ -742,7 +761,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
           SELECT 1 FROM members m WHERE m.space_id=s.id AND m.status='active' AND m.user_id=?
         )
         ORDER BY s.created_at ASC`)
-      .bind(userId, userId)
+    .bind(userId, userId)
       .all<SpaceRow>(),
     db.prepare("SELECT * FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name").bind(userId).all(),
   ]);
@@ -788,11 +807,11 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     db.prepare(`SELECT es.*,m.display_name FROM expense_splits es JOIN trip_expenses te ON te.id=es.expense_id
       JOIN members m ON m.id=es.member_id WHERE te.space_id IN (${placeholders}) AND COALESCE(te.status,'posted')<>'voided' ORDER BY es.expense_id,m.joined_at`).bind(...ids).all(),
     db.prepare(`SELECT s.*,
-        tm.display_name AS to_member_name,
-        fm.display_name AS from_member_name
-      FROM settlements s
-      LEFT JOIN members tm ON tm.id=s.to_member_id
-      LEFT JOIN members fm ON fm.id=s.from_member_id
+      tm.display_name AS to_member_name,
+      fm.display_name AS from_member_name
+    FROM settlements s
+    LEFT JOIN members tm ON tm.id=s.to_member_id
+    LEFT JOIN members fm ON fm.id=s.from_member_id
       WHERE s.space_id IN (${placeholders}) AND s.status='pending' ORDER BY s.created_at DESC LIMIT 50`).bind(...ids).all(),
     db.prepare(`SELECT * FROM member_installments WHERE space_id IN (${placeholders}) ORDER BY member_id, period_index`).bind(...ids).all(),
     db.prepare(`SELECT p.*, cu.display_name AS closed_by_name, ru.display_name AS reopened_by_name
@@ -805,7 +824,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     db.prepare(`SELECT * FROM personal_rules WHERE space_id IN (${placeholders}) ORDER BY created_at`).bind(...ids).all(),
     db.prepare(`SELECT o.*, r.name AS rule_name, r.kind AS rule_kind, r.amount_mode, r.total_minor, r.paid_minor AS rule_paid_minor
       FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
-      WHERE o.space_id IN (${placeholders}) ORDER BY o.due_at DESC, o.created_at DESC`).bind(...ids).all(),
+      WHERE o.space_id IN (${placeholders}) ORDER BY o.due_at DESC, o.created_at DESC`).bind(...ids).all<PersonalOccurrenceRow>(),
     db.prepare(`SELECT * FROM space_payout_accounts WHERE space_id IN (${placeholders})`).bind(...ids).all(),
     db.prepare(`SELECT * FROM family_events WHERE space_id IN (${placeholders}) ORDER BY target_at ASC`).bind(...ids).all<{
       id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; notes: string | null; status: string;
@@ -866,9 +885,18 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     return { ...event, ...forecast };
   });
 
-  const syncedOccurrences = personalOccurrences.results.map((row) => ({
+  const syncedOccurrences = (personalOccurrences.results as PersonalOccurrenceRow[]).map((row) => ({
     ...row,
-    status: occurrenceLedgerStatus(row, transactions.results),
+    status: occurrenceLedgerStatus({
+      status: String(row.status ?? "pending"),
+      transaction_id: row.transaction_id ?? null,
+      rule_name: row.rule_name,
+      space_id: String(row.space_id),
+      period_key: String(row.period_key),
+      expected_minor: Number(row.expected_minor ?? 0),
+      actual_minor: row.actual_minor == null ? null : Number(row.actual_minor),
+      rule_kind: row.rule_kind,
+    }, transactions.results as TransactionRow[]),
   }));
 
   return {
