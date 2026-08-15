@@ -183,18 +183,24 @@ export function PersonalWalletPanel({
           <div className="panel-heading">
             <div>
               <span className="section-kicker">{locale === "ar" ? "حساب الأشهر" : "Month ledgers"}</span>
-              <h2>{locale === "ar" ? "كل شهر يظهر دخله ومصروفه المجدول قبل الترحيل" : "Each month shows scheduled income and spend before posting"}</h2>
+              <h2>{locale === "ar" ? "كل شهر يظهر الدخل والصرف المعتمد، والمعلّق ينتظر الاعتماد" : "Each month shows posted income and spend; pending items wait for approval"}</h2>
             </div>
           </div>
           {[...byMonth.entries()].map(([period, rows]) => {
-            const counted = (status: string) => !["skipped", "deferred", "voided", "superseded"].includes(status);
-            const plannedIn = rows.filter((row) => row.rule_kind === "income" && counted(row.status)).reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
-            const plannedOut = rows.filter((row) => row.rule_kind !== "income" && counted(row.status)).reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
+            const postedIn = rows.filter((row) => row.rule_kind === "income" && row.status === "posted").reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
+            const postedOut = rows.filter((row) => row.rule_kind !== "income" && row.status === "posted").reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
+            const pendingIn = rows.filter((row) => row.rule_kind === "income" && row.status === "pending").reduce((sum, row) => sum + Number(row.expected_minor), 0);
+            const pendingOut = rows.filter((row) => row.rule_kind !== "income" && row.status === "pending").reduce((sum, row) => sum + Number(row.expected_minor), 0);
+            const pendingNote = pendingIn || pendingOut
+              ? (locale === "ar"
+                ? ` · معلّق دخل ${money(pendingIn, locale)} · خصم ${money(pendingOut, locale)}`
+                : ` · pending in ${money(pendingIn, locale)} · out ${money(pendingOut, locale)}`)
+              : "";
             return (
               <div className="personal-month-block" key={period}>
                 <div className="personal-month-head">
                   <strong>{period}</strong>
-                  <span>{locale === "ar" ? `دخل ${money(plannedIn, locale)} · صرف ${money(plannedOut, locale)} · متبقي ${money(plannedIn - plannedOut, locale)}` : `In ${money(plannedIn, locale)} · out ${money(plannedOut, locale)} · left ${money(plannedIn - plannedOut, locale)}`}</span>
+                  <span>{locale === "ar" ? `دخل ${money(postedIn, locale)} · صرف ${money(postedOut, locale)} · متبقي ${money(postedIn - postedOut, locale)}${pendingNote}` : `In ${money(postedIn, locale)} · out ${money(postedOut, locale)} · left ${money(postedIn - postedOut, locale)}${pendingNote}`}</span>
                 </div>
                 <div className="personal-occ-list">
                   {rows.filter((row) => row.status === "pending").map((item) => (
