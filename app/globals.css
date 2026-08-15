@@ -528,11 +528,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .account-lock { min-height: 32px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--icon); display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .account-lock.open { border-color: var(--green); color: var(--green); background: var(--green-soft); }
 .personal-account-card.is-paused { opacity: .7; }
-.personal-occ-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(220px, 1.2fr) auto; gap: 12px; align-items: start; padding: 12px; border: 1px solid var(--line); border-radius: 12px; min-width: 0; overflow: hidden; }
-.personal-occ-fields { display: grid; grid-template-columns: minmax(0, 140px) minmax(0, 1fr); gap: 12px; min-width: 0; }
+.personal-occ-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(280px, 1.4fr) auto; gap: 12px; align-items: start; padding: 12px; border: 1px solid var(--line); border-radius: 12px; min-width: 0; overflow: visible; }
+.personal-occ-fields { display: grid; grid-template-columns: minmax(160px, 0.9fr) minmax(160px, 1.1fr); gap: 12px; min-width: 0; }
 .personal-occ-account { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .personal-occ-account span { color: #809089; font-size: 11px; font-weight: 700; }
-.personal-occ-account .money-input { width: 100%; min-width: 0; overflow: hidden; }
+.personal-occ-account .money-input { width: 100%; min-width: 148px; overflow: visible; }
+.personal-occ-account .money-input input { width: 100%; height: 40px; border: 1px solid #dfe5e1; border-radius: 10px; padding: 0 48px 0 12px; background: #fff; color: var(--ink); font-size: 15px; font-weight: 700; }
+.personal-occ-account .money-input input:focus { border-color: var(--green); outline: 0; background: #fff; }
 .personal-occ-account select, .personal-occ-row select { width: 100%; min-width: 0; height: 40px; border: 1px solid #dfe5e1; border-radius: 10px; padding: 0 8px; background: #fff; color: var(--ink); font-size: 13px; }
 .personal-account-card i { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--green-soft); color: var(--green); }
 .personal-account-card small { display: block; color: #809089; font-size: 11px; }
@@ -605,7 +607,9 @@ html[data-theme="dark"] .month-chip,
 html[data-theme="dark"] .obligation-row { background: var(--surface); border-color: var(--line); color: var(--ink); }
 html[data-theme="dark"] .notification-item { background: #1a2622; }
 html[data-theme="dark"] .modal-form input,
-html[data-theme="dark"] .modal-form select { background: #121c19; border-color: var(--line); color: var(--ink); }
+html[data-theme="dark"] .modal-form select,
+html[data-theme="dark"] .personal-occ-account .money-input input,
+html[data-theme="dark"] .personal-occ-account select { background: #121c19; border-color: var(--line); color: var(--ink); }
 html[data-theme="dark"] .space-hero { background: linear-gradient(180deg, #182420 0%, #15201d 42%); border-color: var(--line); }
 html[data-theme="dark"] .space-hero h2 { color: #e7eeea; }
 html[data-theme="dark"] .space-hero p,

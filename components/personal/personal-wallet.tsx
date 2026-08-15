@@ -515,7 +515,7 @@ function OccurrenceRow({ item, locale, accounts, onChanged }: { item: PersonalOc
       <div className="personal-occ-fields">
         <label className="personal-occ-account">
           <span>{variable ? (locale === "ar" ? "المبلغ" : "Amount") : (locale === "ar" ? "المدفوع" : "Paid")}</span>
-          <div className="money-input"><input type="number" min="0.001" step="0.001" required={variable} value={amount} onChange={(event) => setAmount(event.target.value)} /><b className="money-currency"><OmrSymbol size={12} /></b></div>
+          <div className="money-input"><input type="text" inputMode="decimal" autoComplete="off" required={variable} value={amount} onChange={(event) => setAmount(event.target.value.replace(/[^\d.]/g, ""))} aria-label={locale === "ar" ? "المدفوع" : "Paid"} /><b className="money-currency"><OmrSymbol size={12} /></b></div>
         </label>
         <label className="personal-occ-account">
           <span>{income ? (locale === "ar" ? "إلى حساب" : "Into account") : (locale === "ar" ? "من حساب" : "From account")}</span>
