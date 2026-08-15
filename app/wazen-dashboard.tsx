@@ -1139,12 +1139,19 @@ function WalletCard({ space, data, locale, onOpen }: { space: Space; data: Dashb
 function RecentTransactions({ data, locale, onView, onChanged }: { data: DashboardData; locale: Locale; onView: () => void; onChanged: (next: Partial<DashboardData>) => void }) {
   const t = copy[locale];
   const [editing, setEditing] = useState<Transaction | null>(null);
+  const [working, setWorking] = useState(false);
   const voidTxn = async (transaction: Transaction) => {
+    if (working) return;
     if (!window.confirm(locale === "ar" ? "حذف هذه العملية وإلغاء أثرها على الرصيد؟" : "Void this transaction and reverse its balance?")) return;
-    const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "voidTransaction", idempotencyKey: crypto.randomUUID(), transactionId: transaction.id }) });
-    const result = await response.json() as Partial<DashboardData> & { error?: string };
-    if (!response.ok) { window.alert(result.error ?? "VOID_FAILED"); return; }
-    onChanged(result);
+    setWorking(true);
+    try {
+      const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "voidTransaction", idempotencyKey: crypto.randomUUID(), transactionId: transaction.id }) });
+      const result = await response.json() as Partial<DashboardData> & { error?: string };
+      if (!response.ok) { window.alert(dashboardError(result.error ?? "VOID_FAILED", locale)); return; }
+      onChanged(result.spaces ? result : { transactions: data.transactions.filter((row) => row.id !== transaction.id) });
+    } finally {
+      setWorking(false);
+    }
   };
   return <article className="panel list-panel"><div className="panel-heading"><h2>{t.recent}</h2><button className="text-button" onClick={onView}>{t.viewAll}<ArrowUpRight size={15} /></button></div>
     <div className="transaction-list">{data.transactions.length ? data.transactions.slice(0, 5).map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} data={data} locale={locale} onEdit={setEditing} onVoid={(txn) => void voidTxn(txn)} />) : <Empty locale={locale} />}</div>
@@ -1387,8 +1394,8 @@ function TransactionsView({ data, locale, onChanged }: { data: DashboardData; lo
         body: JSON.stringify({ action: "voidTransaction", idempotencyKey: crypto.randomUUID(), transactionId: transaction.id }),
       });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "VOID_FAILED");
-      onChanged(result);
+      if (!response.ok) throw new Error(dashboardError(result.error ?? "VOID_FAILED", locale));
+      onChanged(result.spaces ? result : { transactions: data.transactions.filter((row) => row.id !== transaction.id) });
     } catch (caught) {
       window.alert(caught instanceof Error ? caught.message : "VOID_FAILED");
     } finally {
@@ -1541,8 +1548,8 @@ function SpaceTransactionsPanel({ space, data, locale, onAdd, onTxnChanged }: { 
         body: JSON.stringify({ action: "voidTransaction", idempotencyKey: crypto.randomUUID(), transactionId: transaction.id }),
       });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "VOID_FAILED");
-      onTxnChanged(result);
+      if (!response.ok) throw new Error(dashboardError(result.error ?? "VOID_FAILED", locale));
+      onTxnChanged(result.spaces ? result : { transactions: data.transactions.filter((row) => row.id !== transaction.id) });
     } catch (caught) {
       window.alert(caught instanceof Error ? caught.message : "VOID_FAILED");
     } finally {

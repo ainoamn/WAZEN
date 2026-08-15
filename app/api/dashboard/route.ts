@@ -866,7 +866,13 @@ export async function POST(request: Request) {
     const action = String(payload.action ?? "");
     const idempotencyKey = String(payload.idempotencyKey ?? request.headers.get("idempotency-key") ?? "");
     const replay = await claimIdempotency(db, user.id, action, idempotencyKey);
-    if (replay) return Response.json(replay, { headers: { "Cache-Control": "no-store" } });
+    if (replay) {
+      if (replay && typeof replay === "object" && !("spaces" in replay)) {
+        const dashboard = await loadDashboard(db, user.id, { refreshDerived: false });
+        return Response.json({ ok: true, user, ...dashboard }, { headers: { "Cache-Control": "no-store" } });
+      }
+      return Response.json(replay, { headers: { "Cache-Control": "no-store" } });
+    }
     claimed = { db, userId: user.id, key: idempotencyKey };
 
     if (action === "addWallet") {
@@ -1477,17 +1483,18 @@ export async function POST(request: Request) {
       const txn = await db.prepare("SELECT * FROM transactions WHERE id=?").bind(parsed.data.transactionId).first<TransactionRow>();
       if (!txn) throw new ApiError(404, "TRANSACTION_NOT_FOUND");
       await authorizeSpace(db, user, txn.space_id, "transact");
-      const voidEvent = await periodWriteEvent(db, user, txn.space_id, txn.occurred_at, {
-        action: "transaction.voided",
-        entityType: "transaction",
-        entityId: txn.id,
-        summaryAr: `${user.displayName} ألغى حركة ${txn.description_ar} (${txn.amount_minor})`,
-        summaryEn: `${user.displayName} voided ${txn.description_en} (${txn.amount_minor})`,
-        metadata: { amountMinor: txn.amount_minor, kind: txn.kind },
-      });
-      await voidApprovedTransaction(db, txn, user.id);
-      await voidEvent.run();
-    } else if (action === "updateTransaction") {
+      if (txn.status !== "voided") {
+        const voidEvent = await periodWriteEvent(db, user, txn.space_id, txn.occurred_at, {
+          action: "transaction.voided",
+          entityType: "transaction",
+          entityId: txn.id,
+          summaryAr: `${user.displayName} ألغى حركة ${txn.description_ar} (${txn.amount_minor})`,
+          summaryEn: `${user.displayName} voided ${txn.description_en} (${txn.amount_minor})`,
+          metadata: { amountMinor: txn.amount_minor, kind: txn.kind },
+        });
+        await voidApprovedTransaction(db, txn, user.id);
+        await voidEvent.run();
+      } else if (action === "updateTransaction") {
       const parsed = z.object({
         transactionId: z.string().min(1).max(120),
         description: z.string().trim().min(2).max(300),
