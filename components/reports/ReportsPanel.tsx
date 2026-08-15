@@ -78,7 +78,7 @@ export function ReportsPanel({
 }: {
   data: DashboardData;
   locale: Locale;
-  totals: { net: number; groups: number; personal?: number; reserves: number; spend: number };
+  totals: { net: number; groups: number; personal?: number; reserves?: number; spend: number };
 }) {
   const groupSpaces = data.spaces.filter((space) => space.type !== "personal");
   const [reportType, setReportType] = useState<ReportTypeId>("general");
@@ -177,7 +177,7 @@ export function ReportsPanel({
         <article className="stat-card"><div className="stat-icon green"><TrendingUp size={18} /></div><div className="stat-copy"><span>{locale === "ar" ? "الدخل" : "Income"}</span><strong>{money(income, "OMR", locale)}</strong><small>{locale === "ar" ? "إجمالي مسجل" : "recorded total"}</small></div></article>
         <article className="stat-card"><div className="stat-icon rose"><TrendingDown size={18} /></div><div className="stat-copy"><span>{locale === "ar" ? "المصروف" : "Expense"}</span><strong>{money(totals.spend, "OMR", locale)}</strong><small>{locale === "ar" ? "إجمالي مسجل" : "recorded total"}</small></div></article>
         <article className="stat-card"><div className="stat-icon navy"><WalletCards size={18} /></div><div className="stat-copy"><span>{locale === "ar" ? "صافي الرصيد" : "Net balance"}</span><strong>{money(totals.net, "OMR", locale)}</strong><small>{locale === "ar" ? "عبر كل المحافظ" : "across wallets"}</small></div></article>
-        <article className="stat-card"><div className="stat-icon amber"><ShieldCheck size={18} /></div><div className="stat-copy"><span>{locale === "ar" ? "فوائض شخصية" : "Reserves"}</span><strong>{money(totals.reserves, "OMR", locale)}</strong><small>{locale === "ar" ? "محمي" : "protected"}</small></div></article>
+        <article className="stat-card"><div className="stat-icon amber"><ShieldCheck size={18} /></div><div className="stat-copy"><span>{locale === "ar" ? "فوائض شخصية" : "Reserves"}</span><strong>{money(totals.reserves ?? 0, "OMR", locale)}</strong><small>{locale === "ar" ? "محمي" : "protected"}</small></div></article>
       </section>
 
       <article className="panel report-builder">
