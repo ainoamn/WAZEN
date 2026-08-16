@@ -718,6 +718,10 @@ export function WazenDashboard() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
+    document.documentElement.classList.toggle("nav-open", sidebarOpen);
+    return () => document.documentElement.classList.remove("nav-open");
+  }, [sidebarOpen]);
+  useEffect(() => {
     document.documentElement.lang = locale;
     document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
   }, [locale]);
@@ -854,14 +858,14 @@ export function WazenDashboard() {
       <main className="main-shell">
         <header className="topbar">
           <div className="topbar-title">
-            <button className="mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Open menu"><Menu size={22} /></button>
+            <button type="button" className="mobile-menu" onClick={() => setSidebarOpen(true)} aria-label={locale === "ar" ? "فتح القائمة" : "Open menu"} aria-expanded={sidebarOpen}><Menu size={22} /></button>
             <div>
               <p className="eyebrow">{t.greeting}، {data.user.displayName.split(" ")[0]} 👋</p>
               <h1>{t[activeView]}</h1>
             </div>
           </div>
           <div className="topbar-actions">
-            <a className="secondary-button" href="/home">{locale === "ar" ? "الرئيسية" : "Home"}</a>
+            <a className="secondary-button topbar-home" href="/home">{locale === "ar" ? "الرئيسية" : "Home"}</a>
             <button className="language-button" onClick={() => { const next = locale === "ar" ? "en" : "ar"; setLocale(next); try { window.localStorage.setItem("wazen-locale", next); } catch { /* ignore */ } }} aria-label="Change language">
               <Globe2 size={17} /><span>{locale === "ar" ? "EN" : "عربي"}</span>
             </button>
@@ -1091,7 +1095,7 @@ function Sidebar({ locale, active, open, onNavigate, onClose, onLogout }: { loca
   const t = copy[locale];
   return (
     <>
-      {open && <button className="sidebar-backdrop" onClick={onClose} aria-label="Close menu" />}
+      {open && <button type="button" className="sidebar-backdrop" onClick={onClose} aria-label={locale === "ar" ? "إغلاق القائمة" : "Close menu"} />}
       <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
         <div className="brand-row">
           <div className="brand-mark"><WazenIcon className="h-10 w-12" /></div>
