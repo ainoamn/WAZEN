@@ -31,7 +31,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         return;
       }
       const requested = new URLSearchParams(window.location.search).get("next");
-      router.push(requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/dashboard");
+      router.push(requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/home");
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : "AUTH_FAILED"; if (code === "TOTP_REQUIRED") setTotpRequired(true);
       setError(

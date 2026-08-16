@@ -85,7 +85,7 @@ export function AdminShell({ active, locale, setLocale, children }: { active: st
       <Brand compact />
       <div className="admin-workspace"><WazenIcon className="h-7 w-[2.1rem]" /><div><small>{l("مساحة العمل", "Workspace")}</small><b>{l("إدارة وازن", "Wazen admin")}</b></div></div>
       <nav>{adminLinks.map(([href, id, Icon, ar, en]) => <Link key={id} href={href} prefetch className={active === id ? "active" : ""}><Icon size={18} strokeWidth={2} /><span>{l(ar, en)}</span></Link>)}</nav>
-      <div className="admin-side-foot"><Link href="/dashboard"><FileText size={17} />{l("العودة للوحة المستخدم", "User dashboard")}</Link><small>{l("نسخة الإدارة التجارية", "Commercial admin")}</small></div>
+      <div className="admin-side-foot"><Link href="/home"><FileText size={17} />{l("العودة للرئيسية", "Back to home")}</Link><small>{l("نسخة الإدارة التجارية", "Commercial admin")}</small></div>
     </aside>
     <section className="admin-main">
       <header><button className="admin-mobile-menu" onClick={() => setOpen(true)}><Menu size={20} /></button><div><small>{l("مركز إدارة المنصة", "Platform administration")}</small><b>{l("مرحباً بك في وازن", "Welcome to Wazen")}</b></div><div className="admin-head-actions"><button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}><Globe2 size={16} />{locale === "ar" ? "EN" : "عربي"}</button><Link href="/documents"><FileText size={17} /></Link><span>أ</span></div></header>

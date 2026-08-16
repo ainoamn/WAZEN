@@ -706,7 +706,7 @@ export function WazenDashboard() {
     try {
       setError(false);
       const response = await fetch("/api/dashboard", { cache: "no-store" });
-      if (response.status === 401) { router.push("/login?next=/dashboard"); return; }
+      if (response.status === 401) { router.push("/login?next=/home"); return; }
       if (!response.ok) throw new Error("load failed");
       setData(await response.json());
     } catch {
@@ -861,6 +861,7 @@ export function WazenDashboard() {
             </div>
           </div>
           <div className="topbar-actions">
+            <a className="secondary-button" href="/home">{locale === "ar" ? "الرئيسية" : "Home"}</a>
             <button className="language-button" onClick={() => { const next = locale === "ar" ? "en" : "ar"; setLocale(next); try { window.localStorage.setItem("wazen-locale", next); } catch { /* ignore */ } }} aria-label="Change language">
               <Globe2 size={17} /><span>{locale === "ar" ? "EN" : "عربي"}</span>
             </button>
@@ -1107,6 +1108,7 @@ function Sidebar({ locale, active, open, onNavigate, onClose, onLogout }: { loca
         </nav>
         <div className="sidebar-external">
           <small>{locale === "ar" ? "إدارة الحساب" : "Account management"}</small>
+          <a href="/home"><House size={18} /><span>{locale === "ar" ? "الرئيسية" : "Home"}</span></a>
           <a href="/documents"><ReceiptText size={18} /><span>{locale === "ar" ? "الإيصالات والكشوفات" : "Documents & statements"}</span></a>
           <a href="/billing"><CircleDollarSign size={18} /><span>{locale === "ar" ? "الباقة والفوترة" : "Plan & billing"}</span></a>
           <a href="/admin"><ShieldCheck size={18} /><span>{locale === "ar" ? "إدارة المنصة" : "Platform admin"}</span></a>

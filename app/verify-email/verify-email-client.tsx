@@ -58,7 +58,7 @@ export function VerifyEmailClient({
           </p>
         </div>
         {status === "done" ? (
-          <Link className="auth-submit" href="/dashboard">{l("فتح لوحة التحكم", "Open dashboard")}</Link>
+          <Link className="auth-submit" href="/home">{l("فتح الرئيسية", "Open home")}</Link>
         ) : status === "error" ? (
           <Link className="auth-submit" href="/register">{l("إنشاء حساب جديد", "Create a new account")}</Link>
         ) : delivery === "deferred" && !token ? (

@@ -20,7 +20,7 @@ export function PasswordRecovery({ mode, token = "" }: { mode: "forgot" | "reset
       body: JSON.stringify(mode === "forgot" ? { action: "forgotPassword", email } : { action: "resetPassword", token, password }),
     });
     setStatus(response.ok ? "done" : "error");
-    if (response.ok && mode === "reset") window.setTimeout(() => router.push("/dashboard"), 700);
+    if (response.ok && mode === "reset") window.setTimeout(() => router.push("/home"), 700);
   };
   return (
     <main className="auth-page">
