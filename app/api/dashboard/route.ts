@@ -790,8 +790,6 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     personalOccurrences,
     payoutAccounts,
     familyEventsRaw,
-    spaceLinks,
-    spaceBankLinks,
   ] = await Promise.all([
     db.prepare(`SELECT * FROM spaces WHERE id IN (${placeholders}) ORDER BY created_at ASC`).bind(...ids).all<SpaceRow>(),
     db.prepare(`SELECT * FROM members WHERE space_id IN (${placeholders}) ORDER BY joined_at ASC`).bind(...ids).all<MemberRow>(),
@@ -832,9 +830,17 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     db.prepare(`SELECT * FROM family_events WHERE space_id IN (${placeholders}) ORDER BY target_at ASC`).bind(...ids).all<{
       id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; notes: string | null; status: string;
     }>(),
-    db.prepare(`SELECT * FROM space_links WHERE hub_space_id IN (${placeholders}) OR linked_space_id IN (${placeholders})`).bind(...ids, ...ids).all<{ id: string; hub_space_id: string; linked_space_id: string; status: string; created_at: string }>(),
-    db.prepare(`SELECT * FROM space_bank_links WHERE hub_space_id IN (${placeholders}) OR linked_space_id IN (${placeholders})`).bind(...ids, ...ids).all<{ id: string; hub_space_id: string; linked_space_id: string; account_id: string; created_at: string }>(),
   ]);
+  let spaceLinks = { results: [] as Array<{ id: string; hub_space_id: string; linked_space_id: string; status: string; created_at: string }> };
+  let spaceBankLinks = { results: [] as Array<{ id: string; hub_space_id: string; linked_space_id: string; account_id: string; created_at: string }> };
+  try {
+    [spaceLinks, spaceBankLinks] = await Promise.all([
+      db.prepare(`SELECT * FROM space_links WHERE hub_space_id IN (${placeholders}) OR linked_space_id IN (${placeholders})`).bind(...ids, ...ids).all<{ id: string; hub_space_id: string; linked_space_id: string; status: string; created_at: string }>(),
+      db.prepare(`SELECT * FROM space_bank_links WHERE hub_space_id IN (${placeholders}) OR linked_space_id IN (${placeholders})`).bind(...ids, ...ids).all<{ id: string; hub_space_id: string; linked_space_id: string; account_id: string; created_at: string }>(),
+    ]);
+  } catch {
+    /* tables created on next ensureSchema pass */
+  }
   const personalAccounts = personalAccountsRaw.results.map((account) => ({
     ...account,
     balance_minor: accountLiveBalance(Number(account.opening_minor), transactions.results, account.id),

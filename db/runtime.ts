@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -53,7 +53,34 @@ async function markSchemaReady() {
   (globalThis as SchemaGlobal).__wazen_schema_version__ = SCHEMA_VERSION;
 }
 
+async function ensureWalletLinkTables(db: D1Database) {
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS space_links (
+      id TEXT PRIMARY KEY,
+      hub_space_id TEXT NOT NULL,
+      linked_space_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      UNIQUE(hub_space_id, linked_space_id)
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_space_links_hub ON space_links(hub_space_id, status)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS space_bank_links (
+      id TEXT PRIMARY KEY,
+      hub_space_id TEXT NOT NULL,
+      linked_space_id TEXT NOT NULL UNIQUE,
+      account_id TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_space_bank_hub ON space_bank_links(hub_space_id, account_id)"),
+  ]);
+}
+
 async function initializeSchema(db: D1Database) {
+  try {
+    await ensureWalletLinkTables(db);
+  } catch {
+    /* empty database — tables come from the full create batch */
+  }
   try {
     const row = await db.prepare("SELECT version FROM schema_meta WHERE id=1").first<{ version: number }>();
     if (row && Number(row.version) >= SCHEMA_VERSION) {
@@ -608,24 +635,8 @@ async function initializeSchema(db: D1Database) {
       created_at TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_family_events_space ON family_events(space_id, target_at)"),
-    db.prepare(`CREATE TABLE IF NOT EXISTS space_links (
-      id TEXT PRIMARY KEY,
-      hub_space_id TEXT NOT NULL,
-      linked_space_id TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'active',
-      created_at TEXT NOT NULL,
-      UNIQUE(hub_space_id, linked_space_id)
-    )`),
-    db.prepare("CREATE INDEX IF NOT EXISTS idx_space_links_hub ON space_links(hub_space_id, status)"),
-    db.prepare(`CREATE TABLE IF NOT EXISTS space_bank_links (
-      id TEXT PRIMARY KEY,
-      hub_space_id TEXT NOT NULL,
-      linked_space_id TEXT NOT NULL UNIQUE,
-      account_id TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    )`),
-    db.prepare("CREATE INDEX IF NOT EXISTS idx_space_bank_hub ON space_bank_links(hub_space_id, account_id)"),
   ]);
+  try { await ensureWalletLinkTables(db); } catch { /* created in batch on empty DBs that failed early */ }
   const memberColumns = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
   if (!memberColumns.results.some((column) => column.name === "phone")) {
     try { await db.prepare("ALTER TABLE members ADD COLUMN phone TEXT").run(); }
