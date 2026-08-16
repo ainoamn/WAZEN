@@ -891,23 +891,44 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
   padding: 12px 14px;
+  border: 0;
   border-radius: 14px;
   background: var(--amber-soft);
   color: #805b1e;
   text-decoration: none;
+  font: inherit;
   font-weight: 700;
   font-size: 14px;
+  text-align: start;
+  cursor: pointer;
 }
-.home-actions { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px; margin-top: 8px; }
+.home-pending-list { display: flex; flex-direction: column; gap: 10px; }
+.home-pending-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.home-pending-row > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.home-pending-row strong { font-size: 14px; }
+.home-pending-row span { color: var(--muted); font-size: 12px; font-weight: 700; }
+.home-pending-row .home-pending-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.home-pending-foot { margin: 4px 0 0; }
+.home-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
 .home-action {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  min-height: 132px;
-  padding: 22px 20px;
-  border-radius: 20px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--surface);
   text-decoration: none;
@@ -917,13 +938,13 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
   text-align: start;
 }
 .home-action.primary {
-  background: linear-gradient(140deg, #143a36, #0b7562);
+  background: #0b7562;
   color: white;
   border: 0;
 }
 .home-action.primary small { color: rgba(255,255,255,.82); }
-.home-action b { font-size: 20px; }
-.home-action small { color: var(--muted); font-size: 13px; }
+.home-action b { font-size: 14px; font-weight: 800; }
+.home-action small { display: none; }
 .home-error { text-align: center; margin: 80px 0 16px; }
 @media (max-width: 820px) {
   .home-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -936,15 +957,16 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
   .home-logo-img { height: 40px; max-width: min(180px, 52vw); }
   .home-title { font-size: 22px; }
   .home-actions {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
     position: sticky;
     bottom: 0;
     margin: 12px -14px 0;
-    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(180deg, transparent, var(--canvas) 18%);
+    padding: 8px 14px calc(8px + env(safe-area-inset-bottom, 0px));
+    background: var(--canvas);
     z-index: 6;
   }
-  .home-action { min-height: 72px; padding: 14px 16px; border-radius: 16px; }
-  .home-action b { font-size: 17px; }
+  .home-action { min-height: 42px; padding: 8px 10px; border-radius: 12px; }
+  .home-action b { font-size: 13px; }
+  .home-pending-row { grid-template-columns: 1fr; }
   .home-stats { gap: 8px; }
 }

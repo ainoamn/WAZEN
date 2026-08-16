@@ -34,8 +34,29 @@ type Space = {
 
 type Member = { id: string; space_id: string; display_name: string };
 type Transaction = { kind: string; amount_minor: number; occurred_at: string; status?: string };
-type Settlement = { status: string };
-type Occurrence = { status: string };
+type Settlement = {
+  id: string;
+  space_id: string;
+  from_member_id: string;
+  to_member_id: string;
+  from_member_name: string | null;
+  to_member_name: string | null;
+  amount_minor: number;
+  status: string;
+};
+type Occurrence = {
+  id: string;
+  space_id: string;
+  account_id?: string | null;
+  period_key: string;
+  due_at?: string;
+  expected_minor: number;
+  status: string;
+  rule_name?: string;
+  rule_kind?: string;
+  amount_mode?: string;
+};
+type PersonalAccount = { id: string; space_id: string; name: string };
 
 type HomeData = {
   user: { displayName: string; email: string };
@@ -44,6 +65,7 @@ type HomeData = {
   transactions: Transaction[];
   settlements?: Settlement[];
   personalOccurrences?: Occurrence[];
+  personalAccounts?: PersonalAccount[];
 };
 
 function money(minor: number, currency: string, locale: Locale) {
@@ -61,6 +83,7 @@ export function HomeClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [pendingOpen, setPendingOpen] = useState(false);
   const [toast, setToast] = useState("");
 
   const load = useCallback(async () => {
@@ -197,29 +220,36 @@ export function HomeClient() {
         </section>
 
         {stats.pending > 0 && (
-          <Link className="home-pending" href="/dashboard">
+          <button type="button" className="home-pending" onClick={() => setPendingOpen(true)}>
             <Bell size={18} />
             <span>
               {locale === "ar"
-                ? `${stats.pending} بند بانتظار الاعتماد أو التسوية — افتح التحكم`
-                : `${stats.pending} items waiting for approval or settlement — open Control`}
+                ? `${stats.pending} بند بانتظار الاعتماد أو التسوية — اعرض البنود`
+                : `${stats.pending} items waiting for approval or settlement — view items`}
             </span>
-          </Link>
+          </button>
         )}
 
         <div className="home-actions">
           <button type="button" className="home-action primary" onClick={() => setAddOpen(true)}>
-            <Plus size={22} />
+            <Plus size={18} />
             <b>{locale === "ar" ? "إضافة عملية" : "Add transaction"}</b>
-            <small>{locale === "ar" ? "دخل أو مصروف في ثوانٍ" : "Income or expense in seconds"}</small>
           </button>
           <Link className="home-action" href="/dashboard">
-            <Settings2 size={22} />
+            <Settings2 size={18} />
             <b>{locale === "ar" ? "التحكم" : "Control"}</b>
-            <small>{locale === "ar" ? "ضبط المحافظ والاعتمادات" : "Wallets, setup, and approvals"}</small>
           </Link>
         </div>
       </main>
+
+      {pendingOpen && (
+        <PendingInbox
+          data={data}
+          locale={locale}
+          onClose={() => setPendingOpen(false)}
+          onChanged={() => { void load(); flash(locale === "ar" ? "تم اعتماد البند" : "Item approved"); }}
+        />
+      )}
 
       {addOpen && (
         <QuickAddModal
@@ -235,6 +265,131 @@ export function HomeClient() {
       )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
+    </div>
+  );
+}
+
+function PendingInbox({
+  data,
+  locale,
+  onClose,
+  onChanged,
+}: {
+  data: HomeData;
+  locale: Locale;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [busyId, setBusyId] = useState("");
+  const [error, setError] = useState("");
+  const settlements = (data.settlements ?? []).filter((item) => item.status === "pending");
+  const occurrences = (data.personalOccurrences ?? []).filter((item) => item.status === "pending");
+
+  const settle = async (settlementId: string) => {
+    setBusyId(`settle:${settlementId}`);
+    setError("");
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "settleReimbursement", idempotencyKey: crypto.randomUUID(), settlementId }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "SETTLE_FAILED");
+      onChanged();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "SETTLE_FAILED");
+    } finally {
+      setBusyId("");
+    }
+  };
+
+  const confirmOccurrence = async (item: Occurrence) => {
+    setBusyId(`occ:${item.id}`);
+    setError("");
+    try {
+      const accountId = item.account_id || data.personalAccounts?.find((account) => account.space_id === item.space_id)?.id;
+      const amount = item.expected_minor ? String(item.expected_minor / 1000) : undefined;
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "confirmPersonalOccurrence",
+          idempotencyKey: crypto.randomUUID(),
+          occurrenceId: item.id,
+          amount,
+          accountId: accountId || undefined,
+        }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "CONFIRM_FAILED");
+      onChanged();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "CONFIRM_FAILED");
+    } finally {
+      setBusyId("");
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="modal-card add-txn-modal" role="dialog" aria-modal="true" aria-label={locale === "ar" ? "بنود بانتظار الاعتماد" : "Pending approvals"}>
+        <div className="modal-header">
+          <h2>{locale === "ar" ? "بنود بانتظار الاعتماد" : "Pending approvals"}</h2>
+          <button type="button" onClick={onClose} aria-label="Close">×</button>
+        </div>
+        <div className="modal-form">
+          {settlements.length === 0 && occurrences.length === 0 ? (
+            <p className="modal-note">{locale === "ar" ? "لا توجد بنود معلّقة." : "No pending items."}</p>
+          ) : (
+            <div className="home-pending-list">
+              {settlements.map((item) => {
+                const space = data.spaces.find((row) => row.id === item.space_id);
+                const toFund = String(item.to_member_id).startsWith("space:");
+                const fromFund = String(item.from_member_id).startsWith("space:");
+                const title = toFund
+                  ? (locale === "ar" ? `${item.from_member_name ?? "عضو"} عليه للصندوق` : `${item.from_member_name ?? "Member"} owes the fund`)
+                  : fromFund
+                    ? (locale === "ar" ? `الصندوق مدين لـ ${item.to_member_name ?? "عضو"}` : `Fund owes ${item.to_member_name ?? "a member"}`)
+                    : (locale === "ar" ? `${item.from_member_name ?? "عضو"} → ${item.to_member_name ?? "عضو"}` : `${item.from_member_name ?? "Member"} → ${item.to_member_name ?? "member"}`);
+                return (
+                  <article className="home-pending-row" key={item.id}>
+                    <div>
+                      <strong>{title}</strong>
+                      <span>{space ? spaceName(space, locale) : ""} · {money(item.amount_minor, space?.currency ?? "OMR", locale)}</span>
+                    </div>
+                    <div className="home-pending-actions">
+                      <button type="button" className="primary-button" disabled={busyId === `settle:${item.id}`} onClick={() => void settle(item.id)}>
+                        {busyId === `settle:${item.id}` ? (locale === "ar" ? "جارٍ…" : "…") : (locale === "ar" ? "اعتماد التسوية" : "Settle")}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+              {occurrences.map((item) => {
+                const space = data.spaces.find((row) => row.id === item.space_id);
+                return (
+                  <article className="home-pending-row" key={item.id}>
+                    <div>
+                      <strong>{locale === "ar" ? `تأكيد: ${item.rule_name ?? "بند"}` : `Confirm: ${item.rule_name ?? "item"}`}</strong>
+                      <span>{space ? spaceName(space, locale) : ""} · {item.period_key} · {money(item.expected_minor, space?.currency ?? "OMR", locale)}</span>
+                    </div>
+                    <div className="home-pending-actions">
+                      <button type="button" className="primary-button" disabled={busyId === `occ:${item.id}`} onClick={() => void confirmOccurrence(item)}>
+                        {busyId === `occ:${item.id}` ? (locale === "ar" ? "جارٍ…" : "…") : (locale === "ar" ? "اعتماد" : "Approve")}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+          {error && <p className="modal-error">{error}</p>}
+          <Link className="secondary-button home-pending-foot" href="/dashboard">
+            {locale === "ar" ? "فتح لوحة التحكم" : "Open Control"}
+          </Link>
+        </div>
+      </section>
     </div>
   );
 }
