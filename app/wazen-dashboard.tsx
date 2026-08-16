@@ -12,7 +12,9 @@ import { HouseholdFamilyPanel } from "../components/household/household-family";
 import { WalletForecastPanel } from "../components/forecast/wallet-forecast";
 import { projectCashflow } from "../lib/wallet-forecast";
 import { isPeriodLocked } from "../lib/accounting-periods";
-import { buildReportHtml, openReportPreview } from "../lib/reports";
+import { buildReportHtml, printWazenHtml } from "../lib/reports";
+import { wrapPrintDocument } from "../lib/print-document";
+import { buildAccountStatementHtml } from "../lib/account-statement";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor, currencyScale } from "../lib/money";
 import { escapeHtml } from "../lib/html";
@@ -131,6 +133,8 @@ type Transaction = {
   description_en: string;
   status: string;
   occurred_at: string;
+  account_id?: string | null;
+  user_id?: string | null;
 };
 type CircleTurn = { id: string; space_id: string; member_id: string; display_name: string; turn_number: number; status: string; amount_minor: number };
 type TripExpense = { id: string; space_id: string; paid_by_member_id: string; paid_by_name: string; amount_minor: number; description: string; occurred_at: string; paid_from?: string };
@@ -437,14 +441,31 @@ function memberPosition(member: Member, data?: DashboardData, spaceId?: string) 
   return { remainingDue, advance, cashCredit, ...net, debit: net.debitMinor, credit: net.creditMinor };
 }
 
+function printSpaceStatement(space: Space | null, data: DashboardData, locale: Locale, accountId?: string | null) {
+  void printWazenHtml((logoUrl) => buildAccountStatementHtml({
+    locale,
+    logoUrl,
+    issuerName: data.user.displayName,
+    spaces: data.spaces,
+    members: data.members,
+    accounts: data.personalAccounts ?? [],
+    transactions: data.transactions,
+    occurrences: data.personalOccurrences ?? [],
+    spaceId: space?.id ?? null,
+    accountId: accountId ?? null,
+  }), true).then((opened) => {
+    if (!opened) window.alert(locale === "ar" ? "اسمح بالنوافذ المنبثقة أو استخدم زر الطباعة داخل المعاينة." : "Allow pop-ups or use Print inside the preview.");
+  });
+}
+
 function printAccountingPeriod(space: Space, period: NonNullable<DashboardData["periods"]>[number], data: DashboardData, locale: Locale) {
   const start = new Date(period.starts_at).getTime();
   const end = new Date(period.ends_at || period.closed_at || new Date().toISOString()).getTime();
   const reportSpace = { id: space.id, name_ar: space.name_ar, name_en: space.name_en, type: space.type, currency: space.currency, balance_minor: space.balance_minor, goal_minor: space.goal_minor };
-  const html = buildReportHtml({
+  void printWazenHtml((logoUrl) => buildReportHtml({
     locale,
     reportType: "period",
-    logoUrl: `${window.location.origin}/brand/wazen-lockup.svg`,
+    logoUrl,
     issuerName: period.label,
     titleOverride: locale === "ar" ? `كشف الفترة المحاسبية — ${period.label}` : `Accounting period — ${period.label}`,
     space: reportSpace,
@@ -464,8 +485,9 @@ function printAccountingPeriod(space: Space, period: NonNullable<DashboardData["
       const at = new Date(txn.occurred_at).getTime();
       return at >= start && at <= end;
     }),
+  }), true).then((opened) => {
+    if (!opened) window.alert(locale === "ar" ? "اسمح بالنوافذ المنبثقة لطباعة الكشف." : "Allow pop-ups to print the statement.");
   });
-  if (!openReportPreview(html, true)) window.alert(locale === "ar" ? "اسمح بالنوافذ المنبثقة لطباعة الكشف." : "Allow pop-ups to print the statement.");
 }
 
 function memberExpenseNet(memberId: string, data: DashboardData, spaceId: string) {
@@ -529,20 +551,22 @@ function openTransactionReceipt(transaction: Transaction, data: DashboardData, l
     <tr><td>${locale === "ar" ? "الفرق" : "Variance"}</td><td>${delta === 0 ? (locale === "ar" ? "مطابق" : "Match") : `${delta > 0 ? (locale === "ar" ? "زيادة" : "Over") : (locale === "ar" ? "نقص" : "Short")} ${formatMoney(Math.abs(delta), space?.currency ?? "OMR", locale)}`}</td></tr>
     <tr><td>${locale === "ar" ? "الملخص" : "Summary"}</td><td>${escapeHtml(occurrenceVarianceCopy(expected, actual, locale))}</td></tr>`
     : `<tr><td>${locale === "ar" ? "المبلغ" : "Amount"}</td><td>${formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale)}</td></tr>`;
-  const html = `<!doctype html><html lang="${locale}" dir="${locale === "ar" ? "rtl" : "ltr"}"><head><meta charset="utf-8"/><title>${title}</title>
-  <style>body{font-family:Tahoma,Arial,sans-serif;padding:32px;color:#12231f}h1{margin:0 0 8px;font-size:22px}.meta{color:#66766f;font-size:13px;margin-bottom:24px}table{width:100%;border-collapse:collapse}td{padding:10px 0;border-bottom:1px solid #e5ebe7;font-size:14px}td:last-child{text-align:end;font-weight:700}.brand{color:#0d7a65;font-weight:800;letter-spacing:.08em}</style></head><body>
-  <div class="brand">WAZEN · وازن</div><h1>${title}</h1>
-  <p class="meta">${new Date(transaction.occurred_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</p>
-  <table>
+  const table = `<section><h2>${escapeHtml(title)}</h2><table>
     <tr><td>${locale === "ar" ? "الوصف" : "Description"}</td><td>${escapeHtml(transactionName(transaction, locale))}</td></tr>
     <tr><td>${locale === "ar" ? "المحفظة" : "Wallet"}</td><td>${escapeHtml(space ? nameOf(space, locale) : "—")}</td></tr>
     <tr><td>${locale === "ar" ? "المساهم" : "Member"}</td><td>${escapeHtml(member?.display_name ?? "—")}</td></tr>
     <tr><td>${locale === "ar" ? "النوع" : "Type"}</td><td>${escapeHtml(transaction.kind)}</td></tr>
     ${extra}
     <tr><td>${locale === "ar" ? "المرجع" : "Reference"}</td><td>${transaction.id.slice(0, 8).toUpperCase()}</td></tr>
-  </table>
-  <script>window.print()</script></body></html>`;
-  openReportPreview(html, true);
+  </table></section>`;
+  void printWazenHtml((logoUrl) => wrapPrintDocument({
+    locale,
+    title,
+    entityName: space ? nameOf(space, locale) : "WAZEN",
+    logoUrl,
+    subtitle: new Date(transaction.occurred_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB"),
+    bodyHtml: table,
+  }), true);
 }
 
 function shareTransactionWhatsApp(transaction: Transaction, data: DashboardData, locale: Locale) {
@@ -1319,6 +1343,7 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
         : (locale === "ar" ? "مفتوحة" : "Open");
   return <div className="dashboard-stack">
     <div className="space-toolbar">
+      <button type="button" onClick={() => printSpaceStatement(space, data, locale)}><Printer size={16} />{locale === "ar" ? "كشف حساب" : "Statement"}</button>
       <button type="button" onClick={onAdd}><Plus size={16} />{t.add}</button>
       {["trip", "society", "group"].includes(space.type) && <button type="button" onClick={onInvite}><UserPlus size={16} />{t.invite}</button>}
       <button type="button" onClick={onEditWallet}><Pencil size={16} />{space.type === "personal" ? (locale === "ar" ? "ضبط المحفظة" : "Wallet setup") : (locale === "ar" ? "تعديل" : "Edit")}</button>
@@ -1375,6 +1400,8 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
         spaces={data.spaces}
         spaceLinks={data.spaceLinks ?? []}
         spaceBankLinks={data.spaceBankLinks ?? []}
+        members={data.members}
+        issuerName={data.user.displayName}
         onChanged={(next) => onTxnChanged(next as Partial<DashboardData>)}
       />
     )}
@@ -1648,7 +1675,7 @@ function SpaceTransactionsPanel({ space, data, locale, onAdd, onTxnChanged }: { 
   return <>
     <FoldWrap id={`${space.id}:transactions`} label={locale === "ar" ? "طي العمليات" : "Fold transactions"}>
     <article className="panel list-panel">
-      <div className="panel-heading"><h2>{t.recent}</h2><button className="secondary-button" onClick={onAdd}><Plus size={15} />{t.add}</button></div>
+      <div className="panel-heading"><h2>{t.recent}</h2><div className="section-title-actions"><button type="button" className="secondary-button" onClick={() => printSpaceStatement(space, data, locale)}><Printer size={15} />{locale === "ar" ? "كشف الحركات" : "Statement"}</button><button className="secondary-button" onClick={onAdd}><Plus size={15} />{t.add}</button></div></div>
       <div className="transaction-list">
         {transactions.length ? transactions.map((transaction) => (
           <TransactionRow key={transaction.id} transaction={transaction} data={data} locale={locale} onEdit={setEditing} onVoid={(txn) => { if (!working) void voidTxn(txn); }} />

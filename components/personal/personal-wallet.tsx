@@ -6,14 +6,15 @@ import { CollapsiblePanel, FoldWrap } from "../ui/collapsible-panel";
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
 import { escapeHtml } from "../../lib/html";
-import { openReportPreview } from "../../lib/reports";
+import { printWazenHtml, wrapPrintDocument } from "../../lib/print-document";
+import { buildAccountStatementHtml } from "../../lib/account-statement";
 import { occurrenceVarianceCopy, occurrenceLedgerStatus } from "../../lib/personal-finance";
 import { bankCustodySplit, holdingsForAccount } from "../../lib/wallet-links";
 import OmrSymbol from "../brand/OmrSymbol";
 import { DateField } from "../ui/date-field";
 
 type Locale = "ar" | "en";
-type LinkedSpace = { id: string; name_ar: string; name_en: string; type: string; balance_minor: number; status?: string };
+type LinkedSpace = { id: string; name_ar: string; name_en: string; type: string; balance_minor: number; status?: string; currency?: string };
 type SpaceLink = { hub_space_id: string; linked_space_id: string; status: string };
 type SpaceBankLink = { hub_space_id: string; linked_space_id: string; account_id: string };
 
@@ -71,7 +72,7 @@ function money(minor: number, locale: Locale) {
   return formatMoneyMinor(minor, "OMR", locale);
 }
 
-function printOccurrenceStatement(item: PersonalOccurrence, locale: Locale) {
+function printOccurrenceStatement(item: PersonalOccurrence, locale: Locale, entityName: string) {
   const expected = Number(item.expected_minor);
   const actual = Number(item.actual_minor ?? item.expected_minor);
   const delta = actual - expected;
@@ -95,12 +96,14 @@ function printOccurrenceStatement(item: PersonalOccurrence, locale: Locale) {
         ["Paid", money(actual, locale)],
         ["Variance", delta === 0 ? "None" : `${delta > 0 ? "Over" : "Short"} ${money(Math.abs(delta), locale)}`],
       ];
-  const html = `<!doctype html><html lang="${locale}" dir="${locale === "ar" ? "rtl" : "ltr"}"><head><meta charset="utf-8"/><title>${title}</title>
-  <style>body{font-family:Tahoma,Arial,sans-serif;padding:32px;color:#12231f}h1{margin:0 0 8px;font-size:22px}table{width:100%;border-collapse:collapse}td{padding:10px 0;border-bottom:1px solid #e5ebe7;font-size:14px}td:last-child{text-align:end;font-weight:700}.brand{color:#0d7a65;font-weight:800}</style></head><body>
-  <div class="brand">WAZEN · وازن</div><h1>${title}</h1>
-  <table>${rows.map((row) => `<tr><td>${escapeHtml(row[0])}</td><td>${escapeHtml(row[1])}</td></tr>`).join("")}</table>
-  <script>window.print()</script></body></html>`;
-  openReportPreview(html, true);
+  const table = `<section><table>${rows.map((row) => `<tr><td>${escapeHtml(row[0])}</td><td>${escapeHtml(row[1])}</td></tr>`).join("")}</table></section>`;
+  void printWazenHtml((logoUrl) => wrapPrintDocument({
+    locale,
+    title,
+    entityName,
+    logoUrl,
+    bodyHtml: table,
+  }), true);
 }
 
 export function PersonalWalletPanel({
@@ -113,6 +116,8 @@ export function PersonalWalletPanel({
   spaces = [],
   spaceLinks = [],
   spaceBankLinks = [],
+  members = [],
+  issuerName = "WAZEN",
   onChanged,
 }: {
   spaceId: string;
@@ -129,7 +134,12 @@ export function PersonalWalletPanel({
     occurred_at: string;
     description_ar?: string;
     description_en?: string;
+    member_id?: string | null;
+    account_id?: string | null;
+    allocation?: string;
   }>;
+  members?: Array<{ id: string; space_id: string; display_name: string }>;
+  issuerName?: string;
   spaces?: LinkedSpace[];
   spaceLinks?: SpaceLink[];
   spaceBankLinks?: SpaceBankLink[];
@@ -145,6 +155,32 @@ export function PersonalWalletPanel({
 
   const spaceAccounts = accounts.filter((item) => item.space_id === spaceId);
   const activeAccounts = spaceAccounts.filter((item) => (item.status ?? "active") === "active");
+  const statementSpaces = spaces.map((item) => ({
+    id: item.id,
+    name_ar: item.name_ar,
+    name_en: item.name_en,
+    type: item.type,
+    currency: item.currency ?? "OMR",
+    balance_minor: item.balance_minor,
+  }));
+  const printWallet = (accountId?: string) => {
+    void printWazenHtml((logoUrl) => buildAccountStatementHtml({
+      locale,
+      logoUrl,
+      issuerName,
+      spaces: statementSpaces,
+      members,
+      accounts: spaceAccounts,
+      transactions: transactions.map((txn) => ({
+        ...txn,
+        description_ar: txn.description_ar ?? "",
+        description_en: txn.description_en ?? "",
+      })),
+      occurrences,
+      spaceId,
+      accountId: accountId ?? null,
+    }), true);
+  };
   const spaceRules = rules.filter((item) => item.space_id === spaceId);
   const spaceOcc = occurrences
     .filter((item) => item.space_id === spaceId)
@@ -177,7 +213,7 @@ export function PersonalWalletPanel({
       <CollapsiblePanel
         id={`${spaceId}:accounts`}
         heading={<><span className="section-kicker"><WalletCards size={15} />{locale === "ar" ? "حساباتك" : "Your accounts"}</span><h2>{locale === "ar" ? "البنوك والنقد" : "Banks and cash"}</h2></>}
-        actions={<button type="button" className="primary-button" onClick={() => setAccountOpen(true)}><Plus size={15} />{locale === "ar" ? "إضافة حساب" : "Add account"}</button>}
+        actions={<><button type="button" className="secondary-button" onClick={() => printWallet()}><Printer size={15} />{locale === "ar" ? "كشف المحفظة" : "Wallet statement"}</button><button type="button" className="primary-button" onClick={() => setAccountOpen(true)}><Plus size={15} />{locale === "ar" ? "إضافة حساب" : "Add account"}</button></>}
         foldLabel={locale === "ar" ? "طي الحسابات" : "Fold accounts"}
       >
         <p className="modal-note">{locale === "ar" ? "كل حساب منفصل. الرصيد الافتتاحي هو ما لديك الآن، والدخل والخصم لا يُعتمدان إلا بعد «اعتماد الدخل» أو «اعتماد الخصم»، أو تجاهل، أو تأجيل للشهر التالي." : "Each account is separate. Opening is what you hold now. Income and bills post only after you approve, skip, or defer them."}</p>
@@ -192,6 +228,7 @@ export function PersonalWalletPanel({
               onPause={() => void mutateAccount(account.id, (account.status ?? "active") === "paused" ? "active" : "paused")}
               onArchive={() => void mutateAccount(account.id, (account.status ?? "active") === "archived" ? "active" : "archived")}
               onDelete={() => void removeAccount(account.id)}
+              onPrint={() => printWallet(account.id)}
             />
           ))}
           {!spaceAccounts.length && <p className="empty-state">{locale === "ar" ? "أضف حساب بنك نزوى أو مسقط أو النقد أولاً." : "Add Bank Nizwa, Muscat, or cash first."}</p>}
@@ -254,7 +291,7 @@ export function PersonalWalletPanel({
                       </div>
                       <b>{money(actual, locale)}</b>
                       {item.status === "posted" && (
-                        <button type="button" className="secondary-button compact" onClick={() => printOccurrenceStatement(item, locale)}>
+                        <button type="button" className="secondary-button compact" onClick={() => printOccurrenceStatement(item, locale, spaceTitle(spaces.find((row) => row.id === spaceId) ?? { id: spaceId, name_ar: "وازن", name_en: "WAZEN", type: "personal", balance_minor: 0 }, locale))}>
                           <Printer size={14} />{locale === "ar" ? "كشف البند" : "Item statement"}
                         </button>
                       )}
@@ -543,7 +580,7 @@ function WalletLinksPanel({
   );
 }
 
-function AccountCard({ account, locale, holdings = [], onEdit, onPause, onArchive, onDelete }: { account: PersonalAccount; locale: Locale; holdings?: Array<{ name: string; balanceMinor: number }>; onEdit: () => void; onPause: () => void; onArchive: () => void; onDelete: () => void }) {
+function AccountCard({ account, locale, holdings = [], onEdit, onPause, onArchive, onDelete, onPrint }: { account: PersonalAccount; locale: Locale; holdings?: Array<{ name: string; balanceMinor: number }>; onEdit: () => void; onPause: () => void; onArchive: () => void; onDelete: () => void; onPrint?: () => void }) {
   const [unlocked, setUnlocked] = useState(false);
   const status = account.status ?? "active";
   const own = Number(account.balance_minor ?? account.opening_minor);
@@ -569,6 +606,7 @@ function AccountCard({ account, locale, holdings = [], onEdit, onPause, onArchiv
         </button>
         {unlocked && (
           <div className="personal-rule-actions">
+            <button type="button" title={locale === "ar" ? "كشف الحساب" : "Statement"} onClick={onPrint}><Printer size={14} /></button>
             <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={onEdit}><Pencil size={14} /></button>
             <button type="button" title={status === "paused" ? (locale === "ar" ? "تشغيل" : "Resume") : (locale === "ar" ? "إيقاف" : "Pause")} onClick={onPause}>{status === "paused" ? <Play size={14} /> : <Pause size={14} />}</button>
             <button type="button" title={status === "archived" ? (locale === "ar" ? "استعادة" : "Restore") : (locale === "ar" ? "أرشفة" : "Archive")} onClick={onArchive}><Archive size={14} /></button>

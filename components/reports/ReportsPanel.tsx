@@ -15,10 +15,12 @@ import {
   REPORT_CATALOG,
   buildReportHtml,
   downloadReportHtml,
-  openReportPreview,
+  printWazenHtml,
   type ReportTypeId,
 } from "../../lib/reports";
+import { buildAccountStatementHtml } from "../../lib/account-statement";
 import { formatMoneyMinor } from "../../lib/money";
+import { resolvePrintLogoUrl } from "../../lib/print-document";
 
 type Locale = "ar" | "en";
 
@@ -53,6 +55,8 @@ type Transaction = {
   description_ar: string;
   description_en: string;
   occurred_at: string;
+  account_id?: string | null;
+  status?: string;
 };
 
 type DashboardData = {
@@ -61,6 +65,8 @@ type DashboardData = {
   members: Member[];
   transactions: Transaction[];
   plans: Record<string, unknown>[];
+  personalAccounts?: Array<{ id: string; space_id: string; name: string; opening_minor: number; balance_minor?: number }>;
+  personalOccurrences?: Array<{ transaction_id?: string | null; rule_name?: string; account_id?: string | null }>;
 };
 
 function money(minor: number, currency: string, locale: Locale) {
@@ -84,6 +90,8 @@ export function ReportsPanel({
   const [reportType, setReportType] = useState<ReportTypeId>("general");
   const [spaceId, setSpaceId] = useState(groupSpaces[0]?.id ?? data.spaces[0]?.id ?? "");
   const [memberId, setMemberId] = useState("");
+  const [accountId, setAccountId] = useState("");
+  const personalAccounts = data.personalAccounts ?? [];
   const catalog = REPORT_CATALOG;
   const selectedMeta = catalog.find((item) => item.id === reportType) ?? catalog[0];
   const space = data.spaces.find((item) => item.id === spaceId) ?? null;
@@ -113,8 +121,7 @@ export function ReportsPanel({
     .reduce((sum, row) => sum + row.amount_minor, 0);
   const maximum = Math.max(0, ...flow.flatMap((row) => [row.income, row.expense]));
 
-  const buildHtml = () => {
-    const logoUrl = `${window.location.origin}/brand/wazen-lockup.svg`;
+  const buildHtml = (logoUrl: string) => {
     return buildReportHtml({
       locale,
       reportType,
@@ -129,25 +136,46 @@ export function ReportsPanel({
     });
   };
 
+  const statementHtml = (logoUrl: string) => buildAccountStatementHtml({
+    locale,
+    logoUrl,
+    issuerName: data.user.displayName,
+    spaces: data.spaces,
+    members: data.members,
+    accounts: personalAccounts,
+    transactions: data.transactions,
+    occurrences: data.personalOccurrences,
+    spaceId: spaceId || null,
+    accountId: accountId || null,
+  });
+
   const canGenerate = !selectedMeta.needsMember || Boolean(member);
   const entityLabel = space ? nameOf(space, locale) : locale === "ar" ? "كل المحافظ" : "All wallets";
+  const scopedAccounts = personalAccounts.filter((account) => !spaceId || account.space_id === spaceId);
 
   const download = () => {
     if (!canGenerate) return;
-    const html = buildHtml();
-    const slug = `${reportType}-${space?.id ?? "all"}-${member?.id ?? "entity"}`.slice(0, 80);
-    downloadReportHtml(html, `wazen-report-${slug}.html`);
+    void resolvePrintLogoUrl().then((logoUrl) => {
+      downloadReportHtml(buildHtml(logoUrl), `wazen-report-${reportType}-${space?.id ?? "all"}.html`);
+    });
   };
 
   const printReport = () => {
     if (!canGenerate) return;
-    const html = buildHtml();
-    const opened = openReportPreview(html, true);
-    if (!opened) {
-      const slug = `${reportType}-${space?.id ?? "all"}`.slice(0, 80);
-      downloadReportHtml(html, `wazen-report-${slug}.html`);
-      window.alert(locale === "ar" ? "تم تنزيل التقرير لأن النافذة المنبثقة محظورة. افتح الملف ثم اطبعه." : "Report downloaded because pop-ups are blocked. Open the file and print it.");
-    }
+    void printWazenHtml((logoUrl) => buildHtml(logoUrl), true).then((opened) => {
+      if (!opened) {
+        void printWazenHtml((logoUrl) => {
+          const html = buildHtml(logoUrl);
+          downloadReportHtml(html, `wazen-report-${space?.id ?? "all"}.html`);
+          return html;
+        }, false);
+        window.alert(locale === "ar" ? "تم تنزيل التقرير لأن النافذة المنبثقة محظورة. افتح الملف ثم اضغط طباعة." : "Report downloaded because pop-ups are blocked. Open the file and print.");
+      }
+    });
+  };
+
+  const printStatement = () => {
+    void printWazenHtml((logoUrl) => statementHtml(logoUrl), true);
   };
 
   return (
@@ -162,6 +190,10 @@ export function ReportsPanel({
           </p>
         </div>
         <div className="report-actions">
+          <button type="button" className="secondary-button" onClick={printStatement}>
+            <Printer size={16} />
+            {locale === "ar" ? "كشف حساب بنكي" : "Bank statement"}
+          </button>
           <button type="button" className="secondary-button" disabled={!canGenerate} onClick={printReport}>
             <Printer size={16} />
             {locale === "ar" ? "معاينة / طباعة PDF" : "Preview / Print PDF"}
@@ -200,7 +232,7 @@ export function ReportsPanel({
           </label>
           <label>
             <span>{locale === "ar" ? "الجمعية / المحفظة" : "Association / wallet"}</span>
-            <select value={spaceId} onChange={(event) => { setSpaceId(event.target.value); setMemberId(""); }}>
+            <select value={spaceId} onChange={(event) => { setSpaceId(event.target.value); setMemberId(""); setAccountId(""); }}>
               <option value="">{locale === "ar" ? "كل المحافظ" : "All wallets"}</option>
               {data.spaces.map((item) => (
                 <option key={item.id} value={item.id}>{nameOf(item, locale)}</option>
@@ -213,6 +245,15 @@ export function ReportsPanel({
               <option value="">—</option>
               {members.map((item) => (
                 <option key={item.id} value={item.id}>{item.display_name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{locale === "ar" ? "حساب فرعي (للكشف)" : "Sub-account (statement)"}</span>
+            <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
+              <option value="">{locale === "ar" ? "كل الحسابات في النطاق" : "All accounts in scope"}</option>
+              {scopedAccounts.map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
               ))}
             </select>
           </label>

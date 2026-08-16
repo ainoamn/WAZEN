@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Brand, ErrorCard, money, PageLoader, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
+import { wrapPrintDocument, printWazenHtml, downloadReportHtml, resolvePrintLogoUrl } from "../../lib/print-document";
 import { downloadedHtmlCsp, escapeHtml, safeDownloadFilename } from "../../lib/html";
 
 type DocumentRow = { id: string; owner_user_id: string; space_id: string | null; type: string; reference: string; person_name: string; description: string; amount_minor: number; currency: string; status: string; payment_method: string; approved_by: string | null; issued_at: string };
@@ -25,10 +26,11 @@ export function DocumentsClient() {
   const rows = useMemo(() => data?.documents.filter(doc => (filter === "all" || doc.type === filter) && `${doc.reference} ${doc.person_name} ${doc.description}`.toLowerCase().includes(query.toLowerCase())) ?? [], [data,filter,query]);
   if (error) return <ErrorCard message={error} retry={load}/>; if (!data) return <PageLoader/>;
   const counts = Object.fromEntries(Object.keys(types).map(type => [type, data.documents.filter(doc => doc.type === type).length]));
-  const download = () => selected && downloadDocument(selected, locale);
+  const download = () => selected && void resolveAndDownload(selected, locale, data.user.displayName);
+  const printSelected = () => selected && void printWazenHtml((logoUrl) => documentHtml(selected, locale, data.user.displayName, logoUrl), true);
   return <main className="documents-page"><header className="documents-header"><Brand/><nav><a href="/dashboard">{l("لوحة المستخدم","Dashboard")}</a><a href="/billing">{l("الفوترة","Billing")}</a>{["super_admin","admin","finance","support"].includes(data.role)&&<a href="/admin">{l("الإدارة","Admin")}</a>}</nav><button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button></header>
     <div className="documents-layout"><aside><h2>{l("المستندات المالية","Financial documents")}</h2><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}><FileText/> {l("جميع المستندات","All documents")}<b>{data.documents.length}</b></button>{Object.entries(types).map(([key,value]) => <button className={filter === key ? "active" : ""} onClick={() => setFilter(key)} key={key}><ReceiptText/> {locale === "ar" ? value[0] : value[1]}<b>{counts[key]}</b></button>)}</aside>
-    <section className="documents-main"><div className="documents-title"><div><small>{l("وازن / مركز المستندات","Wazen / Document center")}</small><h1>{l("الإيصالات والكشوفات","Receipts & statements")}</h1><p>{l("إنشاء ومعاينة وطباعة وتنزيل المستندات المالية المرقمة.","Create, preview, print and download numbered financial documents.")}</p></div><div><button onClick={() => window.print()}><Printer/>{l("طباعة / PDF","Print / PDF")}</button><button onClick={download}><Download/>{l("تنزيل نسخة","Download")}</button><button className="primary" onClick={() => setModal(true)}><Plus/>{l("مستند جديد","New document")}</button></div></div>
+    <section className="documents-main"><div className="documents-title"><div><small>{l("وازن / مركز المستندات","Wazen / Document center")}</small><h1>{l("الإيصالات والكشوفات","Receipts & statements")}</h1><p>{l("إنشاء ومعاينة وطباعة وتنزيل المستندات المالية المرقمة.","Create, preview, print and download numbered financial documents.")}</p></div><div><button onClick={printSelected}><Printer/>{l("طباعة / PDF","Print / PDF")}</button><button onClick={download}><Download/>{l("تنزيل نسخة","Download")}</button><button className="primary" onClick={() => setModal(true)}><Plus/>{l("مستند جديد","New document")}</button></div></div>
     <div className="document-kpis"><article><ReceiptText/><span>{l("إيصالات قبض","Receipts")}</span><b>{counts.receipt}</b></article><article><FileDown/><span>{l("سندات صرف","Disbursements")}</span><b>{counts.disbursement}</b></article><article><FileCheck2/><span>{l("تسليم واستلام","Handovers")}</span><b>{counts.handover}</b></article><article><FileBarChart/><span>{l("كشوف وتقارير","Statements")}</span><b>{data.documents.length-counts.receipt-counts.disbursement-counts.handover}</b></article></div>
     <div className="document-workspace"><div className="document-list"><label><Search/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={l("بحث بالرقم أو الاسم...","Search by reference or name...")}/><Filter/></label>{rows.map(doc => <button className={selected?.id === doc.id ? "active" : ""} onClick={() => setSelected(doc)} key={doc.id}><i><ReceiptText/></i><span><b>{locale === "ar" ? types[doc.type]?.[0] : types[doc.type]?.[1]}</b><small>{doc.reference} · {doc.person_name}</small></span><strong>{doc.amount_minor ? money(doc.amount_minor,locale,doc.currency) : "—"}</strong><em>{new Intl.DateTimeFormat(locale === "ar" ? "ar-SA" : "en-GB",{dateStyle:"medium"}).format(new Date(doc.issued_at))}</em></button>)}{!rows.length&&<div className="document-empty"><FileText/><span>{l("لا توجد مستندات مطابقة","No matching documents")}</span></div>}</div>{selected ? <ReceiptPreview doc={selected} locale={locale} issuer={data.user.displayName}/> : <div className="receipt-preview empty"><FileText/><p>{l("اختر مستنداً للمعاينة","Select a document to preview")}</p></div>}</div>
     <section className="statement-launcher"><div><h2>{l("إنشاء كشف جديد","Create a statement")}</h2><p>{l("قوالب جاهزة لكل نوع من الحسابات.","Ready templates for every account type.")}</p></div><div>{["member_statement","society_statement","trip_statement","household_statement","personal_report"].map(type=><button key={type} onClick={()=>setModal(true)}><FileBarChart/><span><b>{locale === "ar" ? types[type][0] : types[type][1]}</b><small>{l("من البيانات المسجلة مباشرة","Generated from live records")}</small></span><em>←</em></button>)}</div></section>
@@ -46,6 +48,31 @@ function CreateDocument({data,locale,onClose,onCreated}:{data:Data;locale:"ar"|"
   return <div className="commerce-modal-bg"><form className="document-modal" onSubmit={submit}><button type="button" onClick={onClose}><X/></button><small>{l("مستند مالي جديد","New financial document")}</small><h2>{l("إنشاء وترقيم المستند","Create and number document")}</h2><label><span>{l("نوع المستند","Document type")}</span><select value={type} onChange={e=>setType(e.target.value)}>{Object.entries(types).map(([key,value])=><option value={key} key={key}>{locale==="ar"?value[0]:value[1]}</option>)}</select></label><label><span>{l("الاسم","Name")}</span><input required value={personName} onChange={e=>setPerson(e.target.value)}/></label><label><span>{l("البيان","Description")}</span><textarea required value={description} onChange={e=>setDescription(e.target.value)}/></label><div className="document-form-row"><label><span>{l("المبلغ","Amount")}</span><input type="number" min="0" step="0.01" value={amount} onChange={e=>setAmount(e.target.value)}/></label><label><span>{l("المحفظة","Wallet")}</span><select value={spaceId} onChange={e=>setSpaceId(e.target.value)}><option value="">—</option>{data.spaces.map(space=><option value={space.id} key={space.id}>{locale==="ar"?space.name_ar:space.name_en}</option>)}</select></label></div><button className="submit" disabled={saving}>{saving?l("جارٍ الإنشاء...","Creating..."):l("إنشاء المستند","Create document")}</button></form></div>;
 }
 
-function downloadDocument(doc:DocumentRow,locale:"ar"|"en"){
-  const title=locale==="ar"?types[doc.type]?.[0]:types[doc.type]?.[1];const direction=locale==="ar"?"rtl":"ltr";const html=`<!doctype html><html lang="${locale}" dir="${direction}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${escapeHtml(downloadedHtmlCsp)}"><title>${escapeHtml(doc.reference)}</title><style>body{font-family:Arial,sans-serif;margin:60px;color:#14221f}.brand{color:#0d7a65;font-size:28px;font-weight:800}.card{border:1px solid #dfe5e1;border-radius:18px;padding:32px;margin-top:24px}.row{display:flex;justify-content:space-between;padding:14px 0;border-bottom:1px solid #edf0ed}.sign{display:grid;grid-template-columns:repeat(3,1fr);gap:25px;margin-top:60px;text-align:center}.sign i{display:block;height:50px;border-bottom:1px solid #777}footer{margin-top:45px;font-size:12px;color:#677}</style></head><body><div class="brand">وازن · WAZEN</div><div class="card"><h1>${escapeHtml(title??doc.type)}</h1><code>${escapeHtml(doc.reference)}</code><div class="row"><b>${locale==="ar"?"الاسم":"Name"}</b><span>${escapeHtml(doc.person_name)}</span></div><div class="row"><b>${locale==="ar"?"البيان":"Description"}</b><span>${escapeHtml(doc.description)}</span></div><div class="row"><b>${locale==="ar"?"المبلغ":"Amount"}</b><span>${escapeHtml(doc.amount_minor)} ${escapeHtml(doc.currency)}</span></div><div class="row"><b>${locale==="ar"?"التاريخ":"Date"}</b><span>${escapeHtml(new Date(doc.issued_at).toLocaleDateString())}</span></div><div class="sign"><div>Recipient<i></i></div><div>Treasurer<i></i></div><div>Approval<i></i></div></div></div><footer>VERIFY · ${escapeHtml(doc.reference)} · Generated by Wazen</footer></body></html>`;const blob=new Blob([html],{type:"text/html;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`${safeDownloadFilename(doc.reference)}.html`;a.click();URL.revokeObjectURL(url);
+function documentHtml(doc: DocumentRow, locale: "ar" | "en", issuer: string, logoUrl: string) {
+  const title = locale === "ar" ? types[doc.type]?.[0] : types[doc.type]?.[1];
+  const body = `<section>
+    <p class="empty">VERIFY · ${escapeHtml(doc.reference)}</p>
+    <table>
+      <tr><td>${locale === "ar" ? "الاسم" : "Name"}</td><td>${escapeHtml(doc.person_name)}</td></tr>
+      <tr><td>${locale === "ar" ? "البيان" : "Description"}</td><td>${escapeHtml(doc.description)}</td></tr>
+      <tr><td>${locale === "ar" ? "المبلغ" : "Amount"}</td><td>${escapeHtml(String(doc.amount_minor))} ${escapeHtml(doc.currency)}</td></tr>
+      <tr><td>${locale === "ar" ? "التاريخ" : "Date"}</td><td>${escapeHtml(new Date(doc.issued_at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB"))}</td></tr>
+      <tr><td>${locale === "ar" ? "أُصدر بواسطة" : "Issued by"}</td><td>${escapeHtml(issuer)}</td></tr>
+    </table>
+  </section>`;
+  return wrapPrintDocument({
+    locale,
+    title: title ?? doc.type,
+    entityName: doc.reference,
+    logoUrl,
+    subtitle: locale === "ar" ? "مستند إلكتروني معتمد" : "Verified electronic document",
+    bodyHtml: body,
+    footer: `VERIFY · ${doc.reference} · Generated by Wazen`,
+  });
+}
+
+function resolveAndDownload(doc: DocumentRow, locale: "ar" | "en", issuer: string) {
+  void resolvePrintLogoUrl().then((logoUrl) => {
+    downloadReportHtml(documentHtml(doc, locale, issuer, logoUrl), `${safeDownloadFilename(doc.reference)}.html`);
+  });
 }

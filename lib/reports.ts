@@ -1,5 +1,9 @@
 /** Branded printable financial reports for Wazen wallets / associations. */
 
+import { wrapPrintDocument } from "./print-document.ts";
+
+export { downloadReportHtml, openReportPreview, resolvePrintLogoUrl, printWazenHtml } from "./print-document.ts";
+
 export type ReportLocale = "ar" | "en";
 
 export type ReportTypeId =
@@ -496,7 +500,6 @@ function buildSections(input: ReportInput): { subtitle: string; kpis: { label: s
 /** Build a printable HTML report with Wazen logo + wallet/association header. */
 export function buildReportHtml(input: ReportInput) {
   const locale = input.locale;
-  const dir = locale === "ar" ? "rtl" : "ltr";
   const meta = catalogItem(input.reportType);
   const title = input.titleOverride || (locale === "ar" ? meta.titleAr : meta.titleEn);
   const issuedAt = input.issuedAt ?? new Date().toISOString();
@@ -507,11 +510,7 @@ export function buildReportHtml(input: ReportInput) {
     ? t(locale, `مرتبط بالعضو: ${input.member.display_name}`, `Linked member: ${input.member.display_name}`)
     : "";
   const built = buildSections(input);
-
-  const kpiHtml = built.kpis
-    .map((kpi) => `<div class="kpi"><span>${escapeHtml(kpi.label)}</span><strong>${escapeHtml(kpi.value)}</strong></div>`)
-    .join("");
-
+  const kpiHtmlItems = built.kpis;
   const sectionsHtml = built.sections
     .map((section) => {
       if (!section.rows.length) {
@@ -524,104 +523,19 @@ export function buildReportHtml(input: ReportInput) {
     })
     .join("");
 
-  return `<!doctype html>
-<html lang="${locale}" dir="${dir}">
-<head>
-  <meta charset="utf-8" />
-  <title>${escapeHtml(title)} · ${escapeHtml(entityName)}</title>
-  <style>
-    :root { color-scheme: light; }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: "Segoe UI", Tahoma, Arial, sans-serif; color: #14221f; background: #f4f7f5; }
-    .sheet { max-width: 920px; margin: 24px auto; background: white; border: 1px solid #d7e0db; border-radius: 18px; overflow: hidden; box-shadow: 0 12px 30px rgba(20,40,34,.08); }
-    .brand-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 28px; background: linear-gradient(120deg,#143a36,#0b7562); color: white; }
-    .brand-bar img { height: 42px; width: auto; background: rgba(255,255,255,.92); border-radius: 8px; padding: 4px 8px; }
-    .brand-bar small { display: block; opacity: .8; font-size: 11px; letter-spacing: .04em; }
-    .brand-bar strong { font-size: 15px; }
-    .head { padding: 28px 28px 8px; }
-    .head h1 { margin: 0 0 6px; font-size: 26px; color: #0d7a65; }
-    .head p { margin: 0; color: #66766f; font-size: 14px; }
-    .meta { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px 18px; margin: 18px 28px; padding: 14px 16px; border: 1px solid #e5ebe7; border-radius: 14px; background: #fbfcfb; }
-    .meta div { display: flex; flex-direction: column; gap: 4px; }
-    .meta span { color: #809089; font-size: 12px; }
-    .meta b { font-size: 14px; }
-    .kpis { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; padding: 0 28px 18px; }
-    .kpi { border: 1px solid #e5ebe7; border-radius: 14px; padding: 12px 14px; background: #f8faf9; }
-    .kpi span { display: block; color: #809089; font-size: 12px; margin-bottom: 6px; }
-    .kpi strong { font-size: 16px; }
-    section { padding: 8px 28px 22px; }
-    section h2 { margin: 0 0 10px; font-size: 16px; color: #244c56; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { padding: 10px 8px; border-bottom: 1px solid #e8eeea; text-align: start; vertical-align: top; }
-    th { color: #66766f; font-size: 12px; font-weight: 700; background: #f3f7f5; }
-    .footer-note { margin: 10px 0 0; font-weight: 700; color: #0d7a65; }
-    .empty { color: #809089; }
-    footer { padding: 18px 28px 28px; color: #809089; font-size: 12px; border-top: 1px solid #eef2f0; }
-    @media print {
-      body { background: white; }
-      .sheet { margin: 0; border: 0; border-radius: 0; box-shadow: none; max-width: none; }
-      .brand-bar { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-    }
-    @media (max-width: 760px) {
-      .kpis, .meta { grid-template-columns: 1fr 1fr; }
-    }
-  </style>
-</head>
-<body>
-  <article class="sheet">
-    <div class="brand-bar">
-      <img src="${escapeHtml(input.logoUrl)}" alt="WAZEN" />
-      <div>
-        <small>WAZEN · وازن</small>
-        <strong>${escapeHtml(entityName)}</strong>
-      </div>
-    </div>
-    <div class="head">
-      <h1>${escapeHtml(title)}</h1>
-      <p>${escapeHtml(built.subtitle)}</p>
-    </div>
-    <div class="meta">
-      <div><span>${escapeHtml(t(locale, "الجهة / المحفظة", "Entity / wallet"))}</span><b>${escapeHtml(entityName)}</b></div>
-      <div><span>${escapeHtml(t(locale, "تاريخ الإصدار", "Issued at"))}</span><b>${escapeHtml(new Date(issuedAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB"))}</b></div>
-      <div><span>${escapeHtml(t(locale, "أُصدر بواسطة", "Issued by"))}</span><b>${escapeHtml(input.issuerName ?? "WAZEN")}</b></div>
-      <div><span>${escapeHtml(t(locale, "الارتباط", "Scope"))}</span><b>${escapeHtml(memberLine || t(locale, "مستوى الجمعية / المحفظة", "Association / wallet level"))}</b></div>
-    </div>
-    <div class="kpis">${kpiHtml}</div>
-    ${sectionsHtml}
-    <footer>${escapeHtml(t(locale, "مستند مُولَّد من منصة وازن — للاستخدام الإداري داخل الجمعية أو المحفظة.", "Generated by Wazen — for internal association/wallet administration."))}</footer>
-  </article>
-  <script>window.addEventListener("load",()=>{ try { window.focus(); } catch (_) {} });</script>
-</body>
-</html>`;
-}
-
-export function openReportPreview(html: string, autoPrint = false) {
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const popup = window.open(url, "_blank", "width=960,height=900");
-  if (!popup) {
-    URL.revokeObjectURL(url);
-    return false;
-  }
-  if (autoPrint) {
-    const triggerPrint = () => {
-      try { popup.focus(); popup.print(); } catch { /* ignore */ }
-    };
-    popup.addEventListener("load", triggerPrint);
-    window.setTimeout(triggerPrint, 600);
-  }
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  return true;
-}
-
-export function downloadReportHtml(html: string, filename: string) {
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename.endsWith(".html") ? filename : `${filename}.html`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  return wrapPrintDocument({
+    locale,
+    title,
+    entityName,
+    logoUrl: input.logoUrl || "/brand/wazen-lockup.png",
+    subtitle: built.subtitle,
+    meta: [
+      { label: t(locale, "الجهة / المحفظة", "Entity / wallet"), value: entityName },
+      { label: t(locale, "تاريخ الإصدار", "Issued at"), value: new Date(issuedAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB") },
+      { label: t(locale, "أُصدر بواسطة", "Issued by"), value: input.issuerName ?? "WAZEN" },
+      { label: t(locale, "الارتباط", "Scope"), value: memberLine || t(locale, "مستوى الجمعية / المحفظة", "Association / wallet level") },
+    ],
+    kpis: kpiHtmlItems,
+    bodyHtml: sectionsHtml,
+  });
 }
