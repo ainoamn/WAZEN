@@ -201,15 +201,8 @@ async function ensureSchemaPatches(db: D1Database) {
 
 async function initializeSchema(db: D1Database) {
   try {
-    await ensureWalletLinkTables(db);
-  } catch {
-    /* empty database — tables come from the full create batch */
-  }
-  try {
     const row = await db.prepare("SELECT version FROM schema_meta WHERE id=1").first<{ version: number }>();
     if (row && Number(row.version) >= SCHEMA_VERSION) {
-      await ensureSchemaPatches(db);
-      await applyPostgresPaymentGuard(db);
       await markSchemaReady();
       return;
     }
