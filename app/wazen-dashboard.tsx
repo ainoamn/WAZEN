@@ -15,6 +15,7 @@ import { isPeriodLocked } from "../lib/accounting-periods";
 import { buildReportHtml, openReportPreview } from "../lib/reports";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor } from "../lib/money";
+import { netMemberClaim } from "../lib/finance";
 import { occurrenceVarianceCopy } from "../lib/personal-finance";
 import {
   Archive,
@@ -415,14 +416,21 @@ function spaceMonthlyFlow(space: Space, data: DashboardData) {
   return { remainingIn: inflow, remainingOut: outflow, inflow, outflow };
 }
 
-function memberPosition(member: Member, data?: DashboardData) {
+function memberPosition(member: Member, data?: DashboardData, spaceId?: string) {
   const plan = data?.plans.find((item) => String(item.space_id) === member.space_id);
   const accruedDue = data ? memberAccruedDueMinor(member, data.installments ?? [], plan) : member.due_minor;
   const remainingDue = Math.max(0, accruedDue - member.paid_minor);
   const advance = Math.max(0, member.paid_minor - accruedDue);
-  const credit = advance + Math.max(0, member.extra_minor); // له
-  const debit = remainingDue; // عليه حتى الشهر الحالي
-  return { remainingDue, advance, credit, debit };
+  let debit = remainingDue;
+  let credit = advance + Math.max(0, member.extra_minor);
+  const expenseSpaceId = spaceId ?? member.space_id;
+  if (data && expenseSpaceId) {
+    const expenseNet = memberExpenseNet(member.id, data, expenseSpaceId);
+    debit += Math.max(0, -expenseNet);
+    credit += Math.max(0, expenseNet);
+  }
+  const net = netMemberClaim(debit, credit);
+  return { remainingDue, advance, ...net, debit: net.debitMinor, credit: net.creditMinor };
 }
 
 function printAccountingPeriod(space: Space, period: NonNullable<DashboardData["periods"]>[number], data: DashboardData, locale: Locale) {
@@ -1441,11 +1449,10 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
   const t = copy[locale];
   const [query, setQuery] = useState(""); const visible = members.filter((member) => `${member.display_name} ${member.email ?? ""} ${member.phone ?? ""}`.toLowerCase().includes(query.toLowerCase()));
   return <article className="panel members-panel"><div className="panel-heading"><h2>{t.members} <span className="count-badge">{members.length}</span></h2><label className="search-field member-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={locale === "ar" ? "ابحث باسم المساهم" : "Search member name"} /></label></div><div className="members-table"><div className="table-head"><span>{locale === "ar" ? "العضو" : "Member"}</span><span>{t.goal}</span><span>{t.paid}</span><span>{locale === "ar" ? "إضافي" : "Extra"}</span><span>{locale === "ar" ? "عليه" : "Owes"}</span><span>{locale === "ar" ? "له" : "Owed"}</span><span>{t.status}</span><span>{locale === "ar" ? "إجراء" : "Action"}</span></div>{visible.map((member) => {
-    const pos = memberPosition(member, data);
-    const expenseNet = data && spaceId ? memberExpenseNet(member.id, data, spaceId) : 0;
-    const debit = pos.debit + Math.max(0, -expenseNet);
-    const credit = pos.credit + Math.max(0, expenseNet);
-    return <button type="button" className="member-row member-row-button" key={member.id} onClick={() => onOpenMember?.(member.id)}><div className="member-name"><i style={{ background: member.avatar }}>{member.display_name.slice(0, 1)}</i><div><strong>{member.display_name}</strong><span>{member.phone || member.email || (member.role === "owner" ? t.roleOwner : member.role === "treasurer" ? t.roleTreasurer : t.roleMember)}</span></div></div><strong>{formatMoney(personGoalMinor(member), currency, locale)}</strong><strong>{formatMoney(member.paid_minor, currency, locale)}</strong><strong>{formatMoney(Number(member.addon_minor ?? 0), currency, locale)}</strong><strong className={debit ? "amount-negative" : "muted-amount"}>{formatMoney(debit, currency, locale)}</strong><strong className={credit ? "reserve-amount" : "muted-amount"}>{formatMoney(credit, currency, locale)}</strong><span className={`status-pill ${debit ? "pending" : "complete"}`}>{debit ? <Clock3 size={13} /> : <CheckCircle2 size={13} />}{debit ? (locale === "ar" ? "عليه مطالبات" : "Owes") : (credit ? (locale === "ar" ? "له رصيد" : "Credit") : t.paid)}</span><span onClick={(event) => event.stopPropagation()}>{member.extra_minor > 0 && onWithdraw ? <button type="button" className="secondary-button compact" onClick={() => onWithdraw(member.id)}>{locale === "ar" ? "صرف فائض" : "Withdraw"}</button> : "—"}</span></button>;
+    const pos = memberPosition(member, data, spaceId);
+    const debit = pos.debit;
+    const credit = pos.credit;
+    return <button type="button" className="member-row member-row-button" key={member.id} onClick={() => onOpenMember?.(member.id)}><div className="member-name"><i style={{ background: member.avatar }}>{member.display_name.slice(0, 1)}</i><div><strong>{member.display_name}</strong><span>{member.phone || member.email || (member.role === "owner" ? t.roleOwner : member.role === "treasurer" ? t.roleTreasurer : t.roleMember)}</span></div></div><strong>{formatMoney(personGoalMinor(member), currency, locale)}</strong><strong>{formatMoney(member.paid_minor, currency, locale)}</strong><strong>{formatMoney(Number(member.addon_minor ?? 0), currency, locale)}</strong><strong className={debit ? "amount-negative claim-stack" : "muted-amount claim-stack"}>{formatMoney(debit, currency, locale)}{pos.reservedMinor > 0 && <small>{locale === "ar" ? `بعد حجز ${formatMoney(pos.reservedMinor, currency, locale)}` : `after reserving ${formatMoney(pos.reservedMinor, currency, locale)}`}</small>}</strong><strong className={credit ? "reserve-amount claim-stack" : "muted-amount claim-stack"}>{pos.reservedMinor > 0 && <s className="claim-struck">{formatMoney(pos.grossCreditMinor, currency, locale)}</s>}{formatMoney(credit, currency, locale)}</strong><span className={`status-pill ${debit ? "pending" : "complete"}`}>{debit ? <Clock3 size={13} /> : <CheckCircle2 size={13} />}{debit ? (locale === "ar" ? "عليه مطالبات" : "Owes") : (credit ? (locale === "ar" ? "له رصيد" : "Credit") : t.paid)}</span><span onClick={(event) => event.stopPropagation()}>{member.extra_minor > 0 && onWithdraw ? <button type="button" className="secondary-button compact" onClick={() => onWithdraw(member.id)}>{locale === "ar" ? "صرف فائض" : "Withdraw"}</button> : "—"}</span></button>;
   })}</div></article>;
 }
 
@@ -1720,7 +1727,7 @@ function TransactionModal({ data, locale, preferredSpaceId, onClose, onSaved }: 
     ? memberInstallments(selectedMember, data.installments ?? [], plan as { space_id?: string; amount_minor?: number; duration_months?: number; starts_at?: string } | undefined)
     : [];
   const amountNumber = Number(amount || 0);
-  const remainingDue = selectedMember ? Math.max(0, selectedMember.due_minor - selectedMember.paid_minor) : 0;
+  const remainingDue = selectedMember ? memberPosition(selectedMember, data, spaceId).remainingDue : 0;
   const remainingMajor = currencyMajor(remainingDue, space?.currency ?? "OMR");
   const isGroupMemberPayment = Boolean(memberId) && space && space.type !== "personal" && (kind === "contribution" || kind === "income");
   const allocationPreview = useMemo(() => {

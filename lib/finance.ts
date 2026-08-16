@@ -104,3 +104,17 @@ export function splitContributionPayment(
     advanceCreditMinor: extraPolicy === "advance_credit" ? surplusMinor : 0,
   };
 }
+
+/** Offset credit (له) against debit (عليه) so the member is not asked to pay cash already held for them. */
+export function netMemberClaim(debitMinor: number, creditMinor: number) {
+  const debit = Math.max(0, Math.trunc(debitMinor) || 0);
+  const credit = Math.max(0, Math.trunc(creditMinor) || 0);
+  const reservedMinor = Math.min(debit, credit);
+  return {
+    grossDebitMinor: debit,
+    grossCreditMinor: credit,
+    reservedMinor,
+    debitMinor: debit - reservedMinor,
+    creditMinor: credit - reservedMinor,
+  };
+}

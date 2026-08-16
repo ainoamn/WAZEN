@@ -275,6 +275,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .transaction-row > strong { font-size: 14px; white-space: nowrap; direction: ltr; }
 .amount-positive { color: var(--green) !important; }
 .amount-negative { color: #dc2626 !important; }
+.claim-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.claim-stack small { color: var(--muted); font-size: 11px; font-weight: 700; }
+.claim-struck { text-decoration: line-through; opacity: .55; font-weight: 700; margin-inline-end: 6px; }
 .muted-amount { color: #89938f; }
 .reserve-amount { color: #b97824; }
 .space-hero-balance strong.amount-negative,

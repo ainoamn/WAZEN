@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, validateJournal } from "../lib/finance.ts";
+import { buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, validateJournal, netMemberClaim } from "../lib/finance.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 import { bankCustodySplit } from "../lib/wallet-links.ts";
 
@@ -92,4 +92,14 @@ test("bank custody split keeps own money apart from linked wallets", () => {
   assert.equal(split.heldMinor, 200_000);
   assert.equal(split.totalMinor, 1_000_000);
   assert.equal(split.mixed, true);
+});
+
+test("member credit is reserved against what they owe", () => {
+  const claim = netMemberClaim(23_334_000, 10_000_000);
+  assert.equal(claim.reservedMinor, 10_000_000);
+  assert.equal(claim.debitMinor, 13_334_000);
+  assert.equal(claim.creditMinor, 0);
+  assert.equal(netMemberClaim(10_000, 40_000).creditMinor, 30_000);
+  assert.equal(netMemberClaim(10_000, 40_000).debitMinor, 0);
+  assert.equal(netMemberClaim(0, 0).reservedMinor, 0);
 });
