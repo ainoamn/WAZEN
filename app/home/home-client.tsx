@@ -169,28 +169,28 @@ export function HomeClient() {
         </p>
 
         <section className="home-stats" aria-label={locale === "ar" ? "الإحصائيات" : "Statistics"}>
-          <article>
-            <WalletCards size={20} />
+          <article className="tone-teal">
+            <WalletCards size={18} />
             <span>{locale === "ar" ? "المتوفر" : "Available"}</span>
             <strong>{money(stats.available, stats.currency, locale)}</strong>
           </article>
-          <article>
-            <TrendingDown size={20} />
+          <article className="tone-rose">
+            <TrendingDown size={18} />
             <span>{locale === "ar" ? "مصروف هذا الشهر" : "Spend this month"}</span>
             <strong>{money(stats.spend, stats.currency, locale)}</strong>
           </article>
-          <article>
-            <TrendingUp size={20} />
+          <article className="tone-green">
+            <TrendingUp size={18} />
             <span>{locale === "ar" ? "دخل هذا الشهر" : "Income this month"}</span>
             <strong>{money(stats.income, stats.currency, locale)}</strong>
           </article>
-          <article>
-            <Landmark size={20} />
+          <article className="tone-navy">
+            <Landmark size={18} />
             <span>{locale === "ar" ? "المحافظ" : "Wallets"}</span>
             <strong>{stats.wallets}</strong>
           </article>
-          <article>
-            <Landmark size={20} />
+          <article className="tone-amber">
+            <Landmark size={18} />
             <span>{locale === "ar" ? "الجمعيات" : "Associations"}</span>
             <strong>{stats.associations}</strong>
           </article>
@@ -308,7 +308,7 @@ function QuickAddModal({
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="modal-card" role="dialog" aria-modal="true" aria-label={locale === "ar" ? "إضافة عملية" : "Add transaction"}>
+      <section className="modal-card add-txn-modal" role="dialog" aria-modal="true" aria-label={locale === "ar" ? "إضافة عملية" : "Add transaction"}>
         <div className="modal-header">
           <h2>{locale === "ar" ? "إضافة عملية" : "Add transaction"}</h2>
           <button type="button" onClick={onClose} aria-label="Close">×</button>
