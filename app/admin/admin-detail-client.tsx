@@ -8,6 +8,7 @@ import { ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../com
 import { apiFetch } from "../../lib/client-api";
 import { DateField } from "../../components/ui/date-field";
 import { PLAN_FEATURE_CATALOG } from "../../lib/plan-features";
+import { fetchAdminConsole, readAdminConsole } from "../../lib/admin-session";
 
 type Row = Record<string, unknown>;
 
@@ -529,10 +530,32 @@ export function AdminTenants() {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [data, setData] = useState<{ items: Row[]; total: number; page: number; pageSize: number } | null>(null);
+  const cachedTenants = readAdminConsole()?.tenantsPage ?? null;
+  const [data, setData] = useState<{ items: Row[]; total: number; page: number; pageSize: number } | null>(() =>
+    query || page !== 1 ? null : cachedTenants,
+  );
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
+    if (!query.trim() && page === 1) {
+      const cached = readAdminConsole()?.tenantsPage;
+      if (cached) {
+        setData(cached);
+        void fetchAdminConsole();
+        return;
+      }
+      return fetchAdminConsole()
+        .then((result) => {
+          if (result.tenantsPage) setData(result.tenantsPage);
+        })
+        .catch((caught: Error) => {
+          if (caught.message === "AUTH") {
+            router.push("/login?next=/admin/tenants");
+            return;
+          }
+          if (!readAdminConsole()) setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD");
+        });
+    }
     const params = new URLSearchParams({ scope: "tenants", view: "admin", page: String(page), pageSize: "25" });
     if (query.trim()) params.set("q", query.trim());
     fetch(`/api/platform?${params}`, { cache: "no-store" })
@@ -685,22 +708,23 @@ export function AdminTenantDetail() {
 export function AdminStaff() {
   const { locale, l } = useCommerceLocale();
   const router = useRouter();
-  const [roles, setRoles] = useState<Row[] | null>(null);
+  const staffFrom = (rows: Row[]) => rows.filter((row) => String(row.role) !== "customer");
+  const [roles, setRoles] = useState<Row[] | null>(() => {
+    const cached = readAdminConsole();
+    return cached ? staffFrom(cached.roles) : null;
+  });
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
-    fetch("/api/platform?view=admin&scope=overview", { cache: "no-store" })
-      .then(async (response) => {
-        if (response.status === 401) {
+    return fetchAdminConsole()
+      .then((result) => setRoles(staffFrom(result.roles)))
+      .catch((caught: Error) => {
+        if (caught.message === "AUTH") {
           router.push("/login?next=/admin/staff");
-          throw new Error("AUTH");
+          return;
         }
-        const result = await response.json() as { error?: string; roles?: Row[] };
-        if (!response.ok) throw new Error(result.error ?? "LOAD");
-        return (result.roles ?? []).filter((row) => String(row.role) !== "customer");
-      })
-      .then(setRoles)
-      .catch((caught: Error) => setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD"));
+        if (!readAdminConsole()) setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD");
+      });
   }, [router]);
 
   useEffect(() => { void load(); }, [load]);

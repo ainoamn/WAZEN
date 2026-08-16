@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
+import { fetchAdminConsole, patchAdminConsole, readAdminConsole } from "../../lib/admin-session";
 
 type Row = Record<string, unknown>;
 type CustomerRow = Row & { id:string; email:string; display_name:string; created_at:string; status:string|null; country:string|null; last_seen_at:string|null; subscription_status:string|null; plan_name:string|null };
@@ -17,35 +18,25 @@ type PlanRow = Row & { id:string; name_ar:string; name_en:string; monthly_minor:
 type RoleRow = Row & { user_id:string; role:string; display_name:string|null; email:string|null };
 type LogRow = Row & { id:string; action:string; display_name:string|null; user_id:string; entity_type:string; created_at:string };
 type AdminData = { user:Row; role:string; users:CustomerRow[]; subscriptions:SubscriptionRow[]; invoices:InvoiceRow[]; payments:PaymentRow[]; coupons:CouponRow[]; plans:PlanRow[]; roles:RoleRow[]; logs:LogRow[]; platform?: { spaces:number; members:number; transactions:number; countries:number; monthlyRevenue?: Array<{ month:string; total:number }> } };
-type AdminResponse = AdminData & { error?: string };
-
-const adminCache = new Map<string, AdminData>();
 
 function useAdminData(){
   const pathname=usePathname();
   const router=useRouter();
-  const scope=pathname.includes("/payments")?"payments":pathname.includes("/reports")?"reports":pathname.includes("/users")?"users":"overview";
-  const [data,setData]=useState<AdminData|null>(() => adminCache.get(scope) ?? null);
+  const [data,setData]=useState<AdminData|null>(() => readAdminConsole<AdminData>());
   const [error,setError]=useState("");
   const load=useCallback(()=>{
-    const cached = adminCache.get(scope);
-    if (cached) setData(cached);
-    return fetch(`/api/platform?view=admin&scope=${scope}`,{cache:"no-store"})
-      .then(async r=>{
-        if(r.status===401){router.push(`/login?next=${encodeURIComponent(pathname)}`);throw new Error("AUTH");}
-        const result=await r.json() as AdminResponse;
-        if(!r.ok)throw new Error(result.error);
-        return result;
-      })
+    return fetchAdminConsole()
       .then((result)=>{
-        adminCache.set(scope, result);
-        setData(result);
+        setData(result as unknown as AdminData);
         setError("");
       })
-      .catch((e:Error)=>{ if(!adminCache.get(scope)) setError(e.message==="FORBIDDEN"?"FORBIDDEN":"LOAD"); });
-  },[pathname,router,scope]);
+      .catch((e:Error)=>{
+        if(e.message==="AUTH"){router.push(`/login?next=${encodeURIComponent(pathname)}`);return;}
+        if(!readAdminConsole()) setError(e.message==="FORBIDDEN"?"FORBIDDEN":"LOAD");
+      });
+  },[pathname,router]);
   useEffect(()=>{void load();},[load]);
-  return{data,setData:(next: AdminData | null)=>{ if(next) adminCache.set(scope, next); setData(next); },error,load};
+  return{data,setData:(next: AdminData | null)=>{ if(next) patchAdminConsole(next as unknown as Parameters<typeof patchAdminConsole>[0]); setData(next); },error,load};
 }
 async function adminAction(action:string,payload:Record<string,unknown>={}):Promise<Partial<AdminData>>{const r=await apiFetch("/api/platform",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action,idempotencyKey:crypto.randomUUID(),...payload})});const result=await r.json() as Partial<AdminData> & {error?:string};if(!r.ok)throw new Error(result.error);return result;}
 

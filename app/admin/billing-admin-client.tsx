@@ -6,6 +6,7 @@ import { CreditCard, Plus, WalletCards } from "lucide-react";
 import { ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import { PLAN_FEATURE_CATALOG } from "../../lib/plan-features";
+import { fetchAdminConsole, patchAdminConsole, readAdminConsole } from "../../lib/admin-session";
 
 type Row = Record<string, unknown>;
 
@@ -23,26 +24,27 @@ async function postAction(action: string, payload: Record<string, unknown>) {
 export function AdminGateways() {
   const { locale, l } = useCommerceLocale();
   const router = useRouter();
-  const [gateways, setGateways] = useState<Row[]>([]);
-  const [plans, setPlans] = useState<Row[]>([]);
+  const cached = readAdminConsole();
+  const [gateways, setGateways] = useState<Row[]>(() => cached?.gateways ?? []);
+  const [plans, setPlans] = useState<Row[]>(() => cached?.plans ?? []);
   const [error, setError] = useState("");
   const [working, setWorking] = useState("");
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(() => Boolean(cached));
 
   const load = useCallback(() => {
-    fetch("/api/platform?view=admin&scope=gateways", { cache: "no-store" })
-      .then(async (response) => {
-        if (response.status === 401) {
-          router.push("/login?next=/admin/gateways");
-          throw new Error("AUTH");
-        }
-        const result = await response.json() as { error?: string; gateways?: Row[]; plans?: Row[] };
-        if (!response.ok) throw new Error(result.error ?? "LOAD");
+    return fetchAdminConsole()
+      .then((result) => {
         setGateways(result.gateways ?? []);
         setPlans(result.plans ?? []);
         setLoaded(true);
       })
-      .catch((caught: Error) => setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD"));
+      .catch((caught: Error) => {
+        if (caught.message === "AUTH") {
+          router.push("/login?next=/admin/gateways");
+          return;
+        }
+        if (!readAdminConsole()) setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD");
+      });
   }, [router]);
 
   useEffect(() => { void load(); }, [load]);
@@ -56,6 +58,10 @@ export function AdminGateways() {
       });
       setGateways((result.gateways as Row[]) ?? []);
       if (result.plans) setPlans(result.plans as Row[]);
+      patchAdminConsole({
+        gateways: (result.gateways as Row[]) ?? [],
+        ...(result.plans ? { plans: result.plans as Row[] } : {}),
+      });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "SAVE");
     } finally {
@@ -68,6 +74,7 @@ export function AdminGateways() {
     try {
       const result = await postAction("updateGateway", { gatewayId, planIds });
       setGateways((result.gateways as Row[]) ?? []);
+      patchAdminConsole({ gateways: (result.gateways as Row[]) ?? [] });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "SAVE");
     } finally {
@@ -178,27 +185,28 @@ const emptyPlan = {
 export function AdminPlans() {
   const { locale, l } = useCommerceLocale();
   const router = useRouter();
-  const [plans, setPlans] = useState<Row[]>([]);
-  const [gateways, setGateways] = useState<Row[]>([]);
+  const cached = readAdminConsole();
+  const [plans, setPlans] = useState<Row[]>(() => cached?.plans ?? []);
+  const [gateways, setGateways] = useState<Row[]>(() => cached?.gateways ?? []);
   const [form, setForm] = useState(emptyPlan);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(() => Boolean(cached));
 
   const load = useCallback(() => {
-    fetch("/api/platform?view=admin&scope=plans", { cache: "no-store" })
-      .then(async (response) => {
-        if (response.status === 401) {
-          router.push("/login?next=/admin/plans");
-          throw new Error("AUTH");
-        }
-        const result = await response.json() as { error?: string; plans?: Row[]; gateways?: Row[] };
-        if (!response.ok) throw new Error(result.error ?? "LOAD");
+    return fetchAdminConsole()
+      .then((result) => {
         setPlans(result.plans ?? []);
         setGateways(result.gateways ?? []);
         setLoaded(true);
       })
-      .catch((caught: Error) => setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD"));
+      .catch((caught: Error) => {
+        if (caught.message === "AUTH") {
+          router.push("/login?next=/admin/plans");
+          return;
+        }
+        if (!readAdminConsole()) setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD");
+      });
   }, [router]);
 
   useEffect(() => { void load(); }, [load]);
@@ -228,6 +236,10 @@ export function AdminPlans() {
       const result = await postAction("upsertPlan", form);
       setPlans((result.plans as Row[]) ?? []);
       if (result.gateways) setGateways(result.gateways as Row[]);
+      patchAdminConsole({
+        plans: (result.plans as Row[]) ?? [],
+        ...(result.gateways ? { gateways: result.gateways as Row[] } : {}),
+      });
       setForm(emptyPlan);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "SAVE");

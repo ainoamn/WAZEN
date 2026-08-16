@@ -338,6 +338,15 @@ export async function GET(request: Request) {
     if (view === "admin") {
       if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
       const scope = url.searchParams.get("scope") ?? "overview";
+      if (scope === "console") {
+        if (!["super_admin", "admin"].includes(role)) throw new ApiError(403, "FORBIDDEN");
+        const [core, gateways, tenantsPage] = await Promise.all([
+          scopedAdminData(db, role, "overview"),
+          listGatewaysWithPlans(db),
+          listAdminTenants(db, { page: 1, pageSize: 25 }),
+        ]);
+        return Response.json({ user, role, ...core, gateways, tenantsPage }, { headers: responseHeaders });
+      }
       if (scope === "overview" && !["super_admin", "admin"].includes(role)) throw new ApiError(403, "FORBIDDEN");
       if (scope === "users") {
         assertPlatformPermission(role, "users:read");
