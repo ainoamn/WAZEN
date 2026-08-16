@@ -728,3 +728,25 @@
     animation: none !important;
   }
 }
+
+@media (max-width: 900px) {
+  .auth-page { grid-template-columns: 1fr; min-height: 100dvh; }
+  .documents-layout { grid-template-columns: 1fr; min-height: auto; }
+  .documents-layout > aside { border-inline-end: 0; border-bottom: 1px solid var(--c-line); }
+  .documents-header { height: auto; min-height: 64px; flex-wrap: wrap; gap: 12px; padding: 10px 14px; }
+  .documents-header nav { width: 100%; margin-inline-start: 0; flex-wrap: wrap; gap: 10px; }
+  .commerce-header nav {
+    max-height: min(70dvh, calc(100dvh - 80px));
+    overflow: auto;
+    overscroll-behavior: contain;
+    inset-inline: 12px;
+    z-index: 50;
+  }
+  .admin-main { width: 100%; margin: 0; }
+  .admin-app > aside { width: min(280px, 86vw); }
+}
+
+@media (max-width: 760px) {
+  .pricing-grid { grid-template-columns: 1fr; padding: 0 16px 40px; }
+  .pricing-grid article { min-height: 0; }
+}
