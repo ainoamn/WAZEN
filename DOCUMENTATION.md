@@ -2,7 +2,7 @@
 
 **الإصدار:** 0.2.0 (`wazen-finance`)
 **تاريخ التوثيق الأصلي:** 11 أغسطس 2026  
-**آخر تسليم تشغيلي:** 16 أغسطس 2026 — **[docs/HANDOFF-2026-08-15.md](./docs/HANDOFF-2026-08-15.md)** (السابق: [14 أغسطس](./docs/HANDOFF-2026-08-14.md))  
+**آخر تسليم تشغيلي:** 16 أغسطس 2026 — **[docs/HANDOFF-2026-08-15.md](./docs/HANDOFF-2026-08-15.md)** (واجهة الجوال `fc9ef50`؛ السابق: [14 أغسطس](./docs/HANDOFF-2026-08-14.md))  
 **المستودع:** https://github.com/ainoamn/WAZEN  
 **الفرع الرئيسي:** `main`  
 **الإنتاج:** https://wazen-roan.vercel.app  
@@ -137,6 +137,15 @@ fe6db47  fix: support Vercel Next.js build path   ← آخر نقطة في أر�
 - ربط محفظة شخصية بمحافظ/جمعيات أخرى وحساب بنكي، مع فصل «أموالك» عن أموال كل محفظة، وتحويل بينهما (`0ef488c`).
 - إصلاح بناء Vercel: استيراد `DateField` (`c7472f5`) ثم مفاتيح `dashboardError` المكررة ونوع `Locale` (`b68c689`). `tsc --noEmit` يمر.
 - التسليم: [docs/HANDOFF-2026-08-15.md](./docs/HANDOFF-2026-08-15.md)
+- إنتاج: جداول الربط على قواعد قديمة (`f1a7031`, `SCHEMA_VERSION = 3`) حتى لا تفشل `/api/dashboard`.
+
+### 2.8 16 أغسطس 2026 — تناسق الواجهة على الهاتف
+
+التفاصيل: **[docs/HANDOFF-2026-08-15.md](./docs/HANDOFF-2026-08-15.md)** §2.3
+
+- الإشعارات وقوائم الحساب والإجراءات وتقويم التاريخ والتنبيهات تبقى داخل الشاشة (`fc9ef50`).
+- النوافذ تستخدم ارتفاع `dvh` ومنطقة آمنة؛ صفحات الدخول والمستندات والإدارة عمود واحد على العرض الضيق.
+- الملفات: `app/globals.css`, `app/commercial.css`. `viewportFit: "cover"` موجود في `app/layout.tsx`.
 
 ---
 
@@ -253,6 +262,8 @@ Next.js App Router  ── app/* pages
 
 مكوّنات مشتركة: `app/commercial-kit.tsx` (Brand, Header, AdminShell, locale).  
 تنسيق: `globals.css` + `commercial.css` + Tailwind 4 + أيقونات `lucide-react`.
+
+على الهاتف (عرض ≤ 900px): اللوحات المنبثقة `position: fixed` داخل الإطار مع تمرير داخلي؛ لا تعتمد على `overflow-x: clip` على `html` و`body` معاً. التفاصيل في التسليم §2.3.
 
 ### اتجاه الواجهة
 
