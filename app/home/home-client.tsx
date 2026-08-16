@@ -18,6 +18,7 @@ import OmrSymbol from "../../components/brand/OmrSymbol";
 import WazenLogo from "../../components/brand/WazenLogo";
 import WazenPageLoader from "../../components/brand/WazenPageLoader";
 import { apiFetch } from "../../lib/client-api";
+import { clearDashboardCache, fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../../lib/dashboard-session";
 import { formatMoneyMinor, currencyScale } from "../../lib/money";
 import { memberDisplayCreditMinor, pendingSettlementsWithCredit } from "../../lib/finance";
 import { memberAccruedDueMinor } from "../../components/members/association-members";
@@ -95,8 +96,8 @@ function spaceName(space: Space, locale: Locale) {
 export function HomeClient() {
   const router = useRouter();
   const [locale, setLocale] = useState<Locale>("ar");
-  const [data, setData] = useState<HomeData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<HomeData | null>(() => readDashboardCache<HomeData>());
+  const [loading, setLoading] = useState(() => !readDashboardCache());
   const [error, setError] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
@@ -105,21 +106,24 @@ export function HomeClient() {
   const load = useCallback(async () => {
     try {
       setError(false);
-      const response = await fetch("/api/dashboard", { cache: "no-store" });
-      if (response.status === 401) {
+      const result = await fetchDashboardSession<HomeData>();
+      if (result.data) {
+        writeDashboardCache(result.data);
+        setData(result.data);
+      }
+    } catch (caught) {
+      if ((caught as { status?: number }).status === 401) {
         router.push("/login?next=/home");
         return;
       }
-      if (!response.ok) throw new Error("load failed");
-      setData(await response.json() as HomeData);
-    } catch {
-      setError(true);
+      if (!readDashboardCache()) setError(true);
     } finally {
       setLoading(false);
     }
   }, [router]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { router.prefetch("/dashboard"); }, [router]);
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("wazen-locale");
@@ -152,6 +156,7 @@ export function HomeClient() {
 
   const logout = async () => {
     await apiFetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
+    clearDashboardCache();
     router.push("/login");
     router.refresh();
   };

@@ -64,8 +64,10 @@ import {
   X,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { apiFetch } from "../lib/client-api";
+import { clearDashboardCache, fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../lib/dashboard-session";
 
 type Locale = "ar" | "en";
 type ThemeMode = "light" | "dark";
@@ -696,8 +698,8 @@ export function WazenDashboard() {
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [accent, setAccent] = useState<AccentId>("emerald");
   const [activeView, setActiveView] = useState<ViewId>(() => (isViewId(searchParams.get("view")) ? searchParams.get("view") as ViewId : "overview"));
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setDataState] = useState<DashboardData | null>(() => readDashboardCache<DashboardData>());
+  const [loading, setLoading] = useState(() => !readDashboardCache());
   const [error, setError] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [modal, setModal] = useState<"transaction" | "wallet" | "editWallet" | "invite" | "tripExpense" | "circleOrder" | "withdrawSurplus" | "smartPay" | "memberDetail" | "memberProfile" | "sendReceipt" | "clonePeriod" | null>(null);
@@ -710,21 +712,26 @@ export function WazenDashboard() {
   const [toast, setToast] = useState("");
   const t = copy[locale];
 
+  const setData = (next: DashboardData) => {
+    writeDashboardCache(next);
+    setDataState(next);
+  };
+
   const load = useCallback(async () => {
     try {
       setError(false);
-      const response = await fetch("/api/dashboard", { cache: "no-store" });
-      if (response.status === 401) { router.push("/login?next=/home"); return; }
-      if (!response.ok) throw new Error("load failed");
-      setData(await response.json());
-    } catch {
-      setError(true);
+      const result = await fetchDashboardSession<DashboardData>();
+      if (result.data) setData(result.data);
+    } catch (caught) {
+      if ((caught as { status?: number }).status === 401) { router.push("/login?next=/home"); return; }
+      if (!readDashboardCache()) setError(true);
     } finally {
       setLoading(false);
     }
   }, [router]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { router.prefetch("/home"); }, [router]);
   useEffect(() => {
     document.documentElement.classList.toggle("nav-open", sidebarOpen);
     return () => document.documentElement.classList.remove("nav-open");
@@ -823,6 +830,7 @@ export function WazenDashboard() {
   };
   const logout = async () => {
     await apiFetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
+    clearDashboardCache();
     router.push("/login");
     router.refresh();
   };
@@ -873,7 +881,7 @@ export function WazenDashboard() {
             </div>
           </div>
           <div className="topbar-actions">
-            <a className="secondary-button topbar-home" href="/home">{locale === "ar" ? "الرئيسية" : "Home"}</a>
+            <Link className="secondary-button topbar-home" href="/home">{locale === "ar" ? "الرئيسية" : "Home"}</Link>
             <button className="language-button" onClick={() => { const next = locale === "ar" ? "en" : "ar"; setLocale(next); try { window.localStorage.setItem("wazen-locale", next); } catch { /* ignore */ } }} aria-label="Change language">
               <Globe2 size={17} /><span>{locale === "ar" ? "EN" : "عربي"}</span>
             </button>
@@ -1027,10 +1035,10 @@ export function WazenDashboard() {
       })()}
       {toast && <div className="toast"><Check size={17} />{toast}</div>}
       <nav className="mobile-home-dock" aria-label={locale === "ar" ? "التنقل" : "Navigation"}>
-        <a href="/home">
+        <Link href="/home">
           <House size={20} />
           <span>{locale === "ar" ? "الرئيسية" : "Home"}</span>
-        </a>
+        </Link>
         <button type="button" onClick={() => setSidebarOpen(true)}>
           <Menu size={20} />
           <span>{locale === "ar" ? "القائمة" : "Menu"}</span>
@@ -1130,7 +1138,7 @@ function Sidebar({ locale, active, open, onNavigate, onClose, onLogout }: { loca
         </nav>
         <div className="sidebar-external">
           <small>{locale === "ar" ? "إدارة الحساب" : "Account management"}</small>
-          <a href="/home"><House size={18} /><span>{locale === "ar" ? "الرئيسية" : "Home"}</span></a>
+          <Link href="/home"><House size={18} /><span>{locale === "ar" ? "الرئيسية" : "Home"}</span></Link>
           <a href="/documents"><ReceiptText size={18} /><span>{locale === "ar" ? "الإيصالات والكشوفات" : "Documents & statements"}</span></a>
           <a href="/billing"><CircleDollarSign size={18} /><span>{locale === "ar" ? "الباقة والفوترة" : "Plan & billing"}</span></a>
           <a href="/admin"><ShieldCheck size={18} /><span>{locale === "ar" ? "إدارة المنصة" : "Platform admin"}</span></a>
