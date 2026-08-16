@@ -125,7 +125,39 @@ export function netMemberClaim(debitMinor: number, creditMinor: number) {
   };
 }
 
-/** Apply a member's available credit to their debts, oldest first. */
+/** Cash the group already holds for the member (reserve + advance), before expense shares. */
+export function memberCashCreditMinor(member: { paid_minor?: unknown; extra_minor?: unknown; due_minor?: unknown }, accruedDueMinor?: unknown) {
+  const paid = asMinor(member.paid_minor);
+  const extra = asMinor(member.extra_minor);
+  const accrued = asMinor(accruedDueMinor ?? member.due_minor);
+  return extra + Math.max(0, paid - accrued);
+}
+
+/** Pending settlements with each payer's credit reserved oldest-first. */
+export function pendingSettlementsWithCredit<T extends { from_member_id: string; amount_minor: unknown }>(
+  settlements: T[],
+  creditByMemberId: Map<string, number> | Record<string, number>,
+) {
+  const creditOf = (memberId: string) => {
+    const value = creditByMemberId instanceof Map ? creditByMemberId.get(memberId) : creditByMemberId[memberId];
+    return asMinor(value);
+  };
+  const used = new Map<string, number>();
+  return settlements.map((item) => {
+    const amountMinor = asMinor(item.amount_minor);
+    const fromFund = String(item.from_member_id).startsWith("space:");
+    let reservedMinor = 0;
+    let payableMinor = amountMinor;
+    if (!fromFund) {
+      const already = used.get(item.from_member_id) ?? 0;
+      const available = Math.max(0, creditOf(item.from_member_id) - already);
+      reservedMinor = Math.min(payableMinor, available);
+      payableMinor -= reservedMinor;
+      used.set(item.from_member_id, already + reservedMinor);
+    }
+    return { ...item, amountMinor, reservedMinor, payableMinor };
+  });
+}
 export function applyCreditToDebits<T extends { amountMinor: number }>(items: T[], creditMinor: number) {
   let left = asMinor(creditMinor);
   return items.map((item) => {

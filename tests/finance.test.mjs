@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCreditToDebits, buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, validateJournal, netMemberClaim } from "../lib/finance.ts";
+import { applyCreditToDebits, buildCircleOrder, memberCashCreditMinor, minimizeSettlements, pendingSettlementsWithCredit, netMemberClaim, splitContributionPayment, splitEvenly, validateJournal } from "../lib/finance.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 import { bankCustodySplit } from "../lib/wallet-links.ts";
 
@@ -114,4 +114,18 @@ test("credit covers member debts oldest first", () => {
   assert.equal(rows[0].reservedMinor, 10_000_000);
   assert.equal(rows[1].payableMinor, 22_334_000);
   assert.equal(rows[1].reservedMinor, 0);
+});
+
+test("home and control settle the same payable after reserving credit", () => {
+  const rows = pendingSettlementsWithCredit(
+    [
+      { id: "s1", from_member_id: "abdul", amount_minor: 23_334_000 },
+      { id: "s2", from_member_id: "abdul", amount_minor: 4_000_000 },
+    ],
+    { abdul: 1_000_000 },
+  );
+  assert.equal(rows[0].payableMinor, 22_334_000);
+  assert.equal(rows[0].reservedMinor, 1_000_000);
+  assert.equal(rows[1].payableMinor, 4_000_000);
+  assert.equal(memberCashCreditMinor({ paid_minor: 51_000_000, extra_minor: 1_000_000, due_minor: 51_000_000 }), 1_000_000);
 });
