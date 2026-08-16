@@ -7,6 +7,7 @@ import { CreditCard, Search, ShieldCheck, Users, WalletCards } from "lucide-reac
 import { AdminShell, ErrorCard, money, PageLoader, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import { DateField } from "../../components/ui/date-field";
+import { PLAN_FEATURE_CATALOG } from "../../lib/plan-features";
 
 type Row = Record<string, unknown>;
 
@@ -38,6 +39,10 @@ function applyProfileToForm(
     setDiscountFixed: (v: string) => void;
     setDiscountLabel: (v: string) => void;
     setAdminNote: (v: string) => void;
+    setFeaturesGrant: (v: string[]) => void;
+    setFeaturesDeny: (v: string[]) => void;
+    setWalletLimitOverride: (v: string) => void;
+    setMemberLimitOverride: (v: string) => void;
   },
 ) {
   setters.setPlanId(String(profile.plan_id ?? "starter"));
@@ -50,6 +55,10 @@ function applyProfileToForm(
   setters.setDiscountFixed(String(profile.discount_fixed_minor ?? 0));
   setters.setDiscountLabel(String(profile.discount_label ?? ""));
   setters.setAdminNote(String(profile.admin_note ?? ""));
+  setters.setFeaturesGrant(Array.isArray(profile.features_grant) ? profile.features_grant.map(String) : []);
+  setters.setFeaturesDeny(Array.isArray(profile.features_deny) ? profile.features_deny.map(String) : []);
+  setters.setWalletLimitOverride(String(profile.wallet_limit_override ?? 0));
+  setters.setMemberLimitOverride(String(profile.member_limit_override ?? 0));
 }
 
 export function AdminUserDetail() {
@@ -73,11 +82,16 @@ export function AdminUserDetail() {
   const [discountFixed, setDiscountFixed] = useState("0");
   const [discountLabel, setDiscountLabel] = useState("");
   const [adminNote, setAdminNote] = useState("");
+  const [featuresGrant, setFeaturesGrant] = useState<string[]>([]);
+  const [featuresDeny, setFeaturesDeny] = useState<string[]>([]);
+  const [walletLimitOverride, setWalletLimitOverride] = useState("0");
+  const [memberLimitOverride, setMemberLimitOverride] = useState("0");
 
   const syncForm = useCallback((profile: Row) => {
     applyProfileToForm(profile, {
       setPlanId, setStatus, setAccountStatus, setDisplayName, setBillingCycle,
       setPeriodEnd, setDiscountPercent, setDiscountFixed, setDiscountLabel, setAdminNote,
+      setFeaturesGrant, setFeaturesDeny, setWalletLimitOverride, setMemberLimitOverride,
     });
   }, []);
 
@@ -206,6 +220,10 @@ export function AdminUserDetail() {
           discountLabel: discountLabel || null,
           adminNote: adminNote || null,
           pause,
+          featuresGrant,
+          featuresDeny,
+          walletLimitOverride: Number(walletLimitOverride || 0) || null,
+          memberLimitOverride: Number(memberLimitOverride || 0) || null,
         }),
       });
       const result = await response.json() as { error?: string; detail?: UserDetail };
@@ -363,15 +381,37 @@ export function AdminUserDetail() {
             <span>{l("ملاحظة إدارية", "Admin note")}</span>
             <input value={adminNote} onChange={(e) => setAdminNote(e.target.value)} />
           </label>
+          <label>
+            <span>{l("حد المحافظ (0 = الباقة)", "Wallet cap (0 = plan)")}</span>
+            <input type="number" min={0} value={walletLimitOverride} onChange={(e) => setWalletLimitOverride(e.target.value)} />
+          </label>
+          <label>
+            <span>{l("حد الأعضاء (0 = الباقة)", "Member cap (0 = plan)")}</span>
+            <input type="number" min={0} value={memberLimitOverride} onChange={(e) => setMemberLimitOverride(e.target.value)} />
+          </label>
           <div className="admin-account-actions">
             <button disabled={working || !planId} type="submit">{l("حفظ الاشتراك", "Save subscription")}</button>
             <button disabled={working || !planId} type="button" onClick={(event) => void saveSubscription(event as unknown as FormEvent, true)}>{l("إيقاف الاشتراك", "Pause subscription")}</button>
             <button disabled={working || !planId} type="button" onClick={(event) => void saveSubscription(event as unknown as FormEvent, false)}>{l("استئناف الاشتراك", "Resume subscription")}</button>
           </div>
         </form>
-        {Array.isArray(profile.features) && profile.features.length > 0 && (
-          <p style={{ marginTop: 12 }}><small>{l("صلاحيات الباقة", "Plan features")}: {profile.features.map(String).join(", ")}</small></p>
+        {Array.isArray(profile.effective_features) && (
+          <p style={{ marginTop: 12 }}><small>{l("الصلاحيات الفعلية", "Effective entitlements")}: {profile.effective_features.map(String).join(", ") || "—"} · {l("محافظ", "wallets")} {String(profile.effective_wallet_limit ?? "—")} · {l("أعضاء", "members")} {String(profile.effective_member_limit ?? "—")}</small></p>
         )}
+        <div className="admin-feature-grid">
+          {PLAN_FEATURE_CATALOG.map((feature) => {
+            const granted = featuresGrant.includes(feature.id);
+            const denied = featuresDeny.includes(feature.id);
+            const onPlan = Array.isArray(profile.features) && profile.features.includes(feature.id);
+            return (
+              <label key={feature.id} className="admin-feature-row">
+                <span><b>{locale === "ar" ? feature.ar : feature.en}</b><small>{onPlan ? l("في الباقة", "on plan") : l("ليست في الباقة", "not on plan")}</small></span>
+                <button type="button" className={granted ? "active" : ""} onClick={() => { setFeaturesGrant((current) => current.includes(feature.id) ? current.filter((id) => id !== feature.id) : [...current, feature.id]); setFeaturesDeny((current) => current.filter((id) => id !== feature.id)); }}>{l("منح", "Grant")}</button>
+                <button type="button" className={denied ? "danger" : ""} onClick={() => { setFeaturesDeny((current) => current.includes(feature.id) ? current.filter((id) => id !== feature.id) : [...current, feature.id]); setFeaturesGrant((current) => current.filter((id) => id !== feature.id)); }}>{l("قيّد", "Deny")}</button>
+              </label>
+            );
+          })}
+        </div>
         {!profile.subscription_id && (
           <p className="admin-help-text">{l("لا يوجد اشتراك بعد — اختر باقة ثم احفظ لمنح اشتراك جديد.", "No subscription yet — choose a plan and save to grant one.")}</p>
         )}

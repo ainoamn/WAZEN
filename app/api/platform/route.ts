@@ -36,13 +36,13 @@ const planSeeds = [
     id: "family", nameAr: "العائلة", nameEn: "Family",
     descriptionAr: "للأفراد والعائلات الصغيرة", descriptionEn: "For individuals and families",
     monthly: 2900, annual: 27840, wallets: 5, members: 15,
-    features: ["personal", "household", "trips", "travel", "circles", "circle", "exports"], order: 2,
+    features: ["personal", "household", "trips", "travel", "circles", "circle", "exports", "statements", "advanced_reports"], order: 2,
   },
   {
     id: "pro", nameAr: "الاحتراف", nameEn: "Professional",
     descriptionAr: "لمديري المجموعات والجمعيات", descriptionEn: "For group and circle managers",
     monthly: 7900, annual: 75840, wallets: 20, members: 75,
-    features: ["personal", "household", "trips", "circles", "all_wallets", "documents", "exports", "draws", "voting", "advanced_reports", "custom_roles"], order: 3,
+    features: ["personal", "household", "trips", "circles", "all_wallets", "documents", "exports", "statements", "advanced_reports", "draws", "voting", "custom_roles"], order: 3,
   },
   {
     id: "business", nameAr: "الأعمال", nameEn: "Business",
@@ -172,7 +172,7 @@ async function publicPlans(db: D1Database) {
 }
 
 async function adminData(db: D1Database) {
-  const [users, subscriptions, invoices, payments, coupons, plans, roles, logs] = await Promise.all([
+  const [users, subscriptions, invoices, payments, coupons, plans, roles, logs, spaceCount, memberCount, txnCount, countryCount, monthly] = await Promise.all([
     db.prepare(`SELECT u.id,u.email,u.display_name,u.created_at,p.status,p.country,p.last_seen_at,
       s.id AS subscription_id,s.status AS subscription_status,s.billing_cycle,s.current_period_end,pl.name_ar AS plan_name,pl.id AS plan_id
       FROM users u LEFT JOIN customer_profiles p ON p.user_id=u.id
@@ -184,11 +184,24 @@ async function adminData(db: D1Database) {
     db.prepare("SELECT * FROM plans ORDER BY sort_order").all<Record<string, unknown>>(),
     db.prepare("SELECT r.*,u.display_name,u.email FROM platform_roles r LEFT JOIN users u ON u.id=r.user_id ORDER BY r.created_at").all(),
     db.prepare("SELECT a.id,a.user_id,a.action,a.entity_type,a.entity_id,a.created_at,u.display_name FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.created_at DESC LIMIT 30").all(),
+    db.prepare("SELECT COUNT(*) AS count FROM spaces").first<{ count: number }>(),
+    db.prepare("SELECT COUNT(*) AS count FROM members WHERE COALESCE(status,'active')='active'").first<{ count: number }>(),
+    db.prepare("SELECT COUNT(*) AS count FROM transactions WHERE COALESCE(status,'approved')='approved'").first<{ count: number }>(),
+    db.prepare("SELECT COUNT(DISTINCT COALESCE(country,'UN')) AS count FROM customer_profiles").first<{ count: number }>(),
+    db.prepare(`SELECT substr(occurred_at,1,7) AS month, SUM(amount_minor) AS total
+      FROM payments WHERE status='succeeded' GROUP BY substr(occurred_at,1,7) ORDER BY month DESC LIMIT 12`).all<{ month: string; total: number }>(),
   ]);
   return {
     users: users.results, subscriptions: subscriptions.results, invoices: invoices.results,
     payments: payments.results, coupons: coupons.results,
     plans: plans.results.map(parseFeatures), roles: roles.results, logs: logs.results,
+    platform: {
+      spaces: Number(spaceCount?.count ?? 0),
+      members: Number(memberCount?.count ?? 0),
+      transactions: Number(txnCount?.count ?? 0),
+      countries: Number(countryCount?.count ?? 0),
+      monthlyRevenue: [...monthly.results].reverse(),
+    },
   };
 }
 
@@ -700,6 +713,10 @@ export async function POST(request: Request) {
         adminNote: z.string().max(500).nullable().optional(),
         gatewayId: z.string().max(80).nullable().optional(),
         pause: z.boolean().optional(),
+        featuresGrant: z.array(z.string().min(1).max(40)).max(40).optional(),
+        featuresDeny: z.array(z.string().min(1).max(40)).max(40).optional(),
+        walletLimitOverride: z.coerce.number().int().min(0).max(9999).nullable().optional(),
+        memberLimitOverride: z.coerce.number().int().min(0).max(9999).nullable().optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_SUBSCRIPTION_UPDATE");
       if (!parsed.data.planId) {

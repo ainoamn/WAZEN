@@ -1016,9 +1016,11 @@ export async function GET(request: Request) {
     assertApiScope(user, "wallets:read");
     await ensureUser(db, user);
     const dashboard = await loadDashboard(db, user.id, { refreshDerived: false });
+    const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
+    const entitlements = await getActivePlanEntitlements(db, user.id);
     const issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
     const headers = new Headers({ "Cache-Control": "no-store" }); if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
-    return Response.json({ user, ...dashboard }, { headers });
+    return Response.json({ user, entitlements, ...dashboard }, { headers });
   } catch (error) {
     return errorResponse(error);
   }
@@ -2509,9 +2511,12 @@ export async function POST(request: Request) {
 
     const freshUser = await db.prepare("SELECT display_name, avatar_url FROM users WHERE id=?").bind(user.id).first<{ display_name: string; avatar_url: string | null }>();
     const dashboard = await loadDashboard(db, user.id, { refreshDerived: false });
+    const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
+    const entitlements = await getActivePlanEntitlements(db, user.id);
     const response = {
       ok: true,
       user: { ...user, displayName: freshUser?.display_name ?? user.displayName, avatarUrl: freshUser?.avatar_url ?? user.avatarUrl ?? null },
+      entitlements,
       ...dashboard,
       ...(notification ? { notification } : {}),
     };

@@ -143,6 +143,7 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
       s.id AS subscription_id, s.status AS subscription_status, s.billing_cycle,
       s.current_period_start, s.current_period_end, s.paused_at, s.admin_note,
       s.discount_percent, s.discount_fixed_minor, s.discount_label, s.gateway_id,
+      s.features_grant_json, s.features_deny_json, s.wallet_limit_override, s.member_limit_override,
       pl.id AS plan_id, pl.name_ar AS plan_name_ar, pl.name_en AS plan_name_en,
       pl.wallet_limit, pl.member_limit, pl.features_json, pl.monthly_minor, pl.annual_minor,
       CASE WHEN t.enabled_at IS NOT NULL THEN 1 ELSE 0 END AS totp_enabled
@@ -176,9 +177,28 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
 
   let features: string[] = [];
   try { features = JSON.parse(String(profile.features_json ?? "[]")); } catch { features = []; }
+  const { resolveEntitlements, parsePlanFeatures } = await import("../../lib/plan-features");
+  const effective = resolveEntitlements({
+    planFeatures: features,
+    grant: parsePlanFeatures(profile.features_grant_json),
+    deny: parsePlanFeatures(profile.features_deny_json),
+    walletLimit: Number(profile.wallet_limit ?? 1),
+    memberLimit: Number(profile.member_limit ?? 2),
+    walletLimitOverride: profile.wallet_limit_override as number | null,
+    memberLimitOverride: profile.member_limit_override as number | null,
+    status: String(profile.subscription_status ?? "none"),
+  });
 
   return {
-    profile: { ...profile, features },
+    profile: {
+      ...profile,
+      features,
+      features_grant: parsePlanFeatures(profile.features_grant_json),
+      features_deny: parsePlanFeatures(profile.features_deny_json),
+      effective_features: effective.features,
+      effective_wallet_limit: effective.walletLimit,
+      effective_member_limit: effective.memberLimit,
+    },
     sessions: sessions.results,
     apiKeys: apiKeys.results.map((row) => {
       try { return { ...row, scopes: JSON.parse(String(row.scopes_json ?? "[]")), scopes_json: undefined }; }

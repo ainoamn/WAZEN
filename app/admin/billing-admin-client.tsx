@@ -5,19 +5,9 @@ import { useRouter } from "next/navigation";
 import { CreditCard, Plus, WalletCards } from "lucide-react";
 import { AdminShell, ErrorCard, money, PageLoader, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
+import { PLAN_FEATURE_CATALOG } from "../../lib/plan-features";
 
 type Row = Record<string, unknown>;
-
-const PLAN_FEATURE_KEYS = [
-  "personal",
-  "household",
-  "trips",
-  "circles",
-  "exports",
-  "api",
-  "documents",
-  "priority_support",
-] as const;
 
 async function postAction(action: string, payload: Record<string, unknown>) {
   const response = await apiFetch("/api/platform", {
@@ -282,17 +272,17 @@ export function AdminPlans() {
           <div style={{ gridColumn: "1 / -1" }}>
             <small>{l("الصلاحيات", "Features")}</small>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
-              {PLAN_FEATURE_KEYS.map((feature) => (
-                <label key={feature} style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              {PLAN_FEATURE_CATALOG.map((feature) => (
+                <label key={feature.id} style={{ display: "flex", gap: 4, alignItems: "center" }}>
                   <input
                     type="checkbox"
-                    checked={form.features.includes(feature)}
+                    checked={form.features.includes(feature.id)}
                     onChange={(e) => setForm({
                       ...form,
-                      features: e.target.checked ? [...form.features, feature] : form.features.filter((item) => item !== feature),
+                      features: e.target.checked ? [...form.features, feature.id] : form.features.filter((item) => item !== feature.id),
                     })}
                   />
-                  {feature}
+                  {locale === "ar" ? feature.ar : feature.en}
                 </label>
               ))}
             </div>

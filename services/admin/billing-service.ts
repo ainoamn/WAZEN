@@ -1,5 +1,13 @@
 /** Platform payment gateways + plan admin helpers. */
 
+import {
+  parsePlanFeatures,
+  resolveEntitlements,
+} from "../../lib/plan-features";
+
+export { parsePlanFeatures, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_KEYS, PLAN_FEATURE_CATALOG } from "../../lib/plan-features";
+export { resolveEntitlements };
+
 export type GatewayScope = "local" | "regional" | "global";
 
 export type GatewaySeed = {
@@ -27,55 +35,6 @@ export const GATEWAY_CATALOG: GatewaySeed[] = [
   { id: "gw_manual", provider_key: "manual_transfer", name_ar: "تحويل بنكي يدوي", name_en: "Manual bank transfer", scope: "local", countries_json: '["OM","SA","AE"]', methods_json: '["bank_transfer"]', sort_order: 5 },
 ];
 
-export const PLAN_FEATURE_KEYS = [
-  "personal",
-  "household",
-  "trips",
-  "circles",
-  "exports",
-  "api",
-  "documents",
-  "priority_support",
-] as const;
-
-export type PlanFeature = (typeof PLAN_FEATURE_KEYS)[number];
-
-/** Map wallet space types → entitlement feature (with legacy aliases). */
-const SPACE_TYPE_ALIASES: Record<string, string[]> = {
-  personal: ["personal", "basic_reports"],
-  household: ["household", "all_wallets", "unlimited"],
-  trip: ["trips", "travel", "all_wallets", "unlimited"],
-  society: ["circles", "circle", "all_wallets", "unlimited"],
-  group: ["circles", "circle", "all_wallets", "unlimited"],
-};
-
-export function parsePlanFeatures(raw: unknown): string[] {
-  if (Array.isArray(raw)) return raw.map(String);
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.map(String) : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
-export function planHasFeature(features: string[], feature: string) {
-  if (!features.length) return false;
-  if (features.includes("*") || features.includes("unlimited") || features.includes("all_wallets")) return true;
-  return features.includes(feature);
-}
-
-export function planAllowsSpaceType(features: string[], spaceType: string) {
-  const aliases = SPACE_TYPE_ALIASES[spaceType];
-  if (!aliases) return true;
-  if (!features.length) return spaceType === "personal";
-  if (features.includes("*") || features.includes("unlimited") || features.includes("all_wallets")) return true;
-  return aliases.some((key) => features.includes(key));
-}
-
 export async function ensureSubscriptionAdminColumns(db: D1Database) {
   const columns = await db.prepare("PRAGMA table_info(subscriptions)").all<{ name: string }>();
   const names = new Set(columns.results.map((column) => column.name));
@@ -86,6 +45,10 @@ export async function ensureSubscriptionAdminColumns(db: D1Database) {
     ["discount_fixed_minor", "INTEGER NOT NULL DEFAULT 0"],
     ["discount_label", "TEXT"],
     ["gateway_id", "TEXT"],
+    ["features_grant_json", "TEXT NOT NULL DEFAULT '[]'"],
+    ["features_deny_json", "TEXT NOT NULL DEFAULT '[]'"],
+    ["wallet_limit_override", "INTEGER"],
+    ["member_limit_override", "INTEGER"],
   ];
   for (const [name, ddl] of additions) {
     if (names.has(name)) continue;
@@ -349,6 +312,10 @@ export async function adminUpdateSubscription(
     adminNote?: string | null;
     gatewayId?: string | null;
     pause?: boolean;
+    featuresGrant?: string[];
+    featuresDeny?: string[];
+    walletLimitOverride?: number | null;
+    memberLimitOverride?: number | null;
   },
 ) {
   await ensureSubscriptionAdminColumns(db);
@@ -390,14 +357,23 @@ export async function adminUpdateSubscription(
       : Math.max(0, input.discountFixedMinor);
   const discountLabel = input.discountLabel === undefined ? (current?.discount_label ?? null) : input.discountLabel;
   const gatewayId = input.gatewayId === undefined ? (current?.gateway_id ?? null) : input.gatewayId;
+  const featuresGrant = JSON.stringify(input.featuresGrant ?? parsePlanFeatures(current?.features_grant_json));
+  const featuresDeny = JSON.stringify(input.featuresDeny ?? parsePlanFeatures(current?.features_deny_json));
+  const walletLimitOverride = input.walletLimitOverride === undefined
+    ? (current?.wallet_limit_override ?? null)
+    : input.walletLimitOverride;
+  const memberLimitOverride = input.memberLimitOverride === undefined
+    ? (current?.member_limit_override ?? null)
+    : input.memberLimitOverride;
 
   if (!current) {
     await db
       .prepare(
         `INSERT INTO subscriptions (
           id,user_id,plan_id,status,billing_cycle,current_period_start,current_period_end,cancel_at_period_end,
-          paused_at,admin_note,discount_percent,discount_fixed_minor,discount_label,gateway_id,created_at,updated_at
-        ) VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?)`,
+          paused_at,admin_note,discount_percent,discount_fixed_minor,discount_label,gateway_id,
+          features_grant_json,features_deny_json,wallet_limit_override,member_limit_override,created_at,updated_at
+        ) VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .bind(
         crypto.randomUUID(),
@@ -413,6 +389,10 @@ export async function adminUpdateSubscription(
         discountFixedMinor,
         discountLabel,
         gatewayId,
+        featuresGrant,
+        featuresDeny,
+        walletLimitOverride,
+        memberLimitOverride,
         now,
         now,
       )
@@ -422,7 +402,8 @@ export async function adminUpdateSubscription(
       .prepare(
         `UPDATE subscriptions SET
           plan_id=?, status=?, billing_cycle=?, current_period_end=?,
-          paused_at=?, admin_note=?, discount_percent=?, discount_fixed_minor=?, discount_label=?, gateway_id=?, updated_at=?
+          paused_at=?, admin_note=?, discount_percent=?, discount_fixed_minor=?, discount_label=?, gateway_id=?,
+          features_grant_json=?, features_deny_json=?, wallet_limit_override=?, member_limit_override=?, updated_at=?
          WHERE id=?`,
       )
       .bind(
@@ -436,6 +417,10 @@ export async function adminUpdateSubscription(
         discountFixedMinor,
         discountLabel,
         gatewayId,
+        featuresGrant,
+        featuresDeny,
+        walletLimitOverride,
+        memberLimitOverride,
         now,
         current.id,
       )
@@ -477,21 +462,40 @@ export async function getUserBillingHistory(db: D1Database, userId: string) {
 export async function getActivePlanEntitlements(db: D1Database, userId: string) {
   const row = await db
     .prepare(
-      `SELECT p.wallet_limit, p.member_limit, p.features_json, s.status, s.discount_percent, s.discount_fixed_minor
+      `SELECT p.wallet_limit, p.member_limit, p.features_json, s.status, s.discount_percent, s.discount_fixed_minor,
+              s.features_grant_json, s.features_deny_json, s.wallet_limit_override, s.member_limit_override
        FROM subscriptions s JOIN plans p ON p.id=s.plan_id
        WHERE s.user_id=? AND s.status IN ('active','trialing')
        ORDER BY s.created_at DESC LIMIT 1`,
     )
     .bind(userId)
-    .first<{ wallet_limit: number; member_limit: number; features_json: string; status: string; discount_percent: number; discount_fixed_minor: number }>();
+    .first<{
+      wallet_limit: number;
+      member_limit: number;
+      features_json: string;
+      status: string;
+      discount_percent: number;
+      discount_fixed_minor: number;
+      features_grant_json?: string;
+      features_deny_json?: string;
+      wallet_limit_override?: number | null;
+      member_limit_override?: number | null;
+    }>();
   if (!row) {
     return { walletLimit: 1, memberLimit: 2, features: ["personal"] as string[], status: "none", discountPercent: 0, discountFixedMinor: 0 };
   }
-  return {
+  const resolved = resolveEntitlements({
+    planFeatures: parsePlanFeatures(row.features_json),
+    grant: parsePlanFeatures(row.features_grant_json),
+    deny: parsePlanFeatures(row.features_deny_json),
     walletLimit: Number(row.wallet_limit ?? 1),
     memberLimit: Number(row.member_limit ?? 2),
-    features: parsePlanFeatures(row.features_json),
+    walletLimitOverride: row.wallet_limit_override,
+    memberLimitOverride: row.member_limit_override,
     status: row.status,
+  });
+  return {
+    ...resolved,
     discountPercent: Number(row.discount_percent ?? 0),
     discountFixedMinor: Number(row.discount_fixed_minor ?? 0),
   };
