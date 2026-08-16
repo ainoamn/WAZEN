@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -75,6 +75,130 @@ async function ensureWalletLinkTables(db: D1Database) {
   ]);
 }
 
+async function applyPostgresPaymentGuard(db: D1Database) {
+  if (!hasNeonDatabaseUrl()) return;
+  await db.prepare(`CREATE OR REPLACE FUNCTION wazen_payment_status_guard() RETURNS trigger AS $fn$
+BEGIN
+  IF NOT (
+    (OLD.status = 'pending' AND NEW.status IN ('succeeded','failed'))
+    OR (OLD.status = 'failed' AND NEW.status = 'pending')
+    OR (OLD.status = 'succeeded' AND NEW.status = 'refunded')
+  ) THEN
+    RAISE EXCEPTION 'INVALID_PAYMENT_TRANSITION';
+  END IF;
+  RETURN NEW;
+END;
+$fn$ LANGUAGE plpgsql`).run();
+  await db.prepare("DROP TRIGGER IF EXISTS trg_payment_status_transition_pg ON payments").run();
+  await db.prepare(`CREATE TRIGGER trg_payment_status_transition_pg
+    BEFORE UPDATE OF status ON payments
+    FOR EACH ROW
+    EXECUTE FUNCTION wazen_payment_status_guard()`).run();
+}
+
+async function ensureSchemaPatches(db: D1Database) {
+  try { await ensureWalletLinkTables(db); } catch { /* created in batch on empty DBs that failed early */ }
+  const memberColumns = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
+  if (!memberColumns.results.some((column) => column.name === "phone")) {
+    try { await db.prepare("ALTER TABLE members ADD COLUMN phone TEXT").run(); }
+    catch (error) {
+      const refreshed = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
+      if (!refreshed.results.some((column) => column.name === "phone")) throw error;
+    }
+  }
+  const contributionColumns = await db.prepare("PRAGMA table_info(contribution_plans)").all<{ name: string }>();
+  if (!contributionColumns.results.some((column) => column.name === "duration_months")) {
+    try {
+      await db.prepare("ALTER TABLE contribution_plans ADD COLUMN duration_months INTEGER NOT NULL DEFAULT 60").run();
+    } catch (error) {
+      const refreshed = await db.prepare("PRAGMA table_info(contribution_plans)").all<{ name: string }>();
+      if (!refreshed.results.some((column) => column.name === "duration_months")) throw error;
+    }
+  }
+  const sessionColumns = await db.prepare("PRAGMA table_info(auth_sessions)").all<{ name: string }>();
+  if (!sessionColumns.results.some((column) => column.name === "csrf_token_hash")) {
+    try { await db.prepare("ALTER TABLE auth_sessions ADD COLUMN csrf_token_hash TEXT").run(); }
+    catch (error) { const refreshed = await db.prepare("PRAGMA table_info(auth_sessions)").all<{ name: string }>(); if (!refreshed.results.some((column) => column.name === "csrf_token_hash")) throw error; }
+  }
+  const tripExpenseColumns = await db.prepare("PRAGMA table_info(trip_expenses)").all<{ name: string }>();
+  const tripExpenseNames = new Set(tripExpenseColumns.results.map((column) => column.name));
+  if (!tripExpenseNames.has("transaction_id")) {
+    try { await db.prepare("ALTER TABLE trip_expenses ADD COLUMN transaction_id TEXT").run(); } catch { /* exists */ }
+  }
+  if (!tripExpenseNames.has("status")) {
+    try { await db.prepare("ALTER TABLE trip_expenses ADD COLUMN status TEXT NOT NULL DEFAULT 'posted'").run(); } catch { /* exists */ }
+  }
+  if (!tripExpenseNames.has("paid_from")) {
+    try { await db.prepare("ALTER TABLE trip_expenses ADD COLUMN paid_from TEXT NOT NULL DEFAULT 'member'").run(); } catch { /* exists */ }
+  }
+  const settlementColumns = await db.prepare("PRAGMA table_info(settlements)").all<{ name: string }>();
+  if (!settlementColumns.results.some((column) => column.name === "expense_id")) {
+    try { await db.prepare("ALTER TABLE settlements ADD COLUMN expense_id TEXT").run(); } catch { /* exists */ }
+  }
+  const memberAddon = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
+  if (!memberAddon.results.some((column) => column.name === "addon_minor")) {
+    try { await db.prepare("ALTER TABLE members ADD COLUMN addon_minor INTEGER NOT NULL DEFAULT 0").run(); } catch { /* exists */ }
+  }
+  const spaceStart = await db.prepare("PRAGMA table_info(spaces)").all<{ name: string }>();
+  if (!spaceStart.results.some((column) => column.name === "starts_at")) {
+    try { await db.prepare("ALTER TABLE spaces ADD COLUMN starts_at TEXT").run(); } catch { /* exists */ }
+  }
+  if (!spaceStart.results.some((column) => column.name === "status")) {
+    try { await db.prepare("ALTER TABLE spaces ADD COLUMN status TEXT NOT NULL DEFAULT 'active'").run(); } catch { /* exists */ }
+  }
+  const periodColumns = await db.prepare("PRAGMA table_info(accounting_periods)").all<{ name: string }>();
+  const periodNames = new Set(periodColumns.results.map((column) => column.name));
+  if (!periodNames.has("closed_by")) {
+    try { await db.prepare("ALTER TABLE accounting_periods ADD COLUMN closed_by TEXT").run(); } catch { /* exists */ }
+  }
+  if (!periodNames.has("reopened_at")) {
+    try { await db.prepare("ALTER TABLE accounting_periods ADD COLUMN reopened_at TEXT").run(); } catch { /* exists */ }
+  }
+  if (!periodNames.has("reopened_by")) {
+    try { await db.prepare("ALTER TABLE accounting_periods ADD COLUMN reopened_by TEXT").run(); } catch { /* exists */ }
+  }
+  if (!periodNames.has("reopen_count")) {
+    try { await db.prepare("ALTER TABLE accounting_periods ADD COLUMN reopen_count INTEGER NOT NULL DEFAULT 0").run(); } catch { /* exists */ }
+  }
+  const txnColumns = await db.prepare("PRAGMA table_info(transactions)").all<{ name: string }>();
+  if (!txnColumns.results.some((column) => column.name === "account_id")) {
+    try { await db.prepare("ALTER TABLE transactions ADD COLUMN account_id TEXT").run(); } catch { /* exists */ }
+  }
+  const personalRuleCols = await db.prepare("PRAGMA table_info(personal_rules)").all<{ name: string }>();
+  if (!personalRuleCols.results.some((column) => column.name === "schedule")) {
+    try { await db.prepare("ALTER TABLE personal_rules ADD COLUMN schedule TEXT NOT NULL DEFAULT 'monthly'").run(); } catch { /* exists */ }
+  }
+  const userCols = await db.prepare("PRAGMA table_info(users)").all<{ name: string }>();
+  if (!userCols.results.some((column) => column.name === "avatar_url")) {
+    try { await db.prepare("ALTER TABLE users ADD COLUMN avatar_url TEXT").run(); } catch { /* exists */ }
+  }
+  const totpCols = await db.prepare("PRAGMA table_info(totp_credentials)").all<{ name: string }>();
+  const totpNames = new Set(totpCols.results.map((column) => column.name));
+  if (!totpNames.has("pending_encrypted_secret")) {
+    try { await db.prepare("ALTER TABLE totp_credentials ADD COLUMN pending_encrypted_secret TEXT").run(); } catch { /* exists */ }
+  }
+  if (!totpNames.has("pending_key_version")) {
+    try { await db.prepare("ALTER TABLE totp_credentials ADD COLUMN pending_key_version TEXT").run(); } catch { /* exists */ }
+  }
+  const { ensureSubscriptionAdminColumns, ensurePaymentGateways } = await import("../services/admin/billing-service");
+  await ensureSubscriptionAdminColumns(db);
+  await ensurePaymentGateways(db);
+  await db.batch([
+    db.prepare(`INSERT OR IGNORE INTO tenants (id,name,country,currency,locale,timezone,created_by,created_at)
+      SELECT 'tenant:'||id,display_name,'OM',currency,locale,'Asia/Muscat',id,created_at FROM users`),
+    db.prepare(`INSERT OR IGNORE INTO tenant_memberships (tenant_id,user_id,role,status,created_at)
+      SELECT 'tenant:'||id,id,'owner','active',created_at FROM users`),
+    db.prepare(`INSERT OR IGNORE INTO tenant_resources (tenant_id,resource_type,resource_id,created_at)
+      SELECT 'tenant:'||owner_user_id,'space',id,created_at FROM spaces`),
+    db.prepare(`INSERT OR IGNORE INTO tenant_resources (tenant_id,resource_type,resource_id,created_at)
+      SELECT 'tenant:'||owner_user_id,'document',id,created_at FROM documents`),
+    db.prepare(`INSERT OR IGNORE INTO tenant_resources (tenant_id,resource_type,resource_id,created_at)
+      SELECT 'tenant:'||user_id,'invoice',id,created_at FROM invoices`),
+    db.prepare(`INSERT OR IGNORE INTO tenant_resources (tenant_id,resource_type,resource_id,created_at)
+      SELECT 'tenant:'||user_id,'payment',id,created_at FROM payments`),
+  ]);
+}
+
 async function initializeSchema(db: D1Database) {
   try {
     await ensureWalletLinkTables(db);
@@ -84,6 +208,8 @@ async function initializeSchema(db: D1Database) {
   try {
     const row = await db.prepare("SELECT version FROM schema_meta WHERE id=1").first<{ version: number }>();
     if (row && Number(row.version) >= SCHEMA_VERSION) {
+      await ensureSchemaPatches(db);
+      await applyPostgresPaymentGuard(db);
       await markSchemaReady();
       return;
     }
@@ -94,6 +220,8 @@ async function initializeSchema(db: D1Database) {
   try {
     await db.prepare("SELECT id FROM users LIMIT 1").first();
     await db.prepare(`CREATE TABLE IF NOT EXISTS schema_meta (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)`).run();
+    await ensureSchemaPatches(db);
+    await applyPostgresPaymentGuard(db);
     await db.prepare("INSERT INTO schema_meta (id, version) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET version=excluded.version").bind(SCHEMA_VERSION).run();
     await markSchemaReady();
     return;
@@ -476,7 +604,8 @@ async function initializeSchema(db: D1Database) {
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS totp_credentials (
       user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, encrypted_secret TEXT NOT NULL, key_version TEXT NOT NULL,
-      last_used_step INTEGER, enabled_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      last_used_step INTEGER, enabled_at TEXT, pending_encrypted_secret TEXT, pending_key_version TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS api_keys (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -636,98 +765,8 @@ async function initializeSchema(db: D1Database) {
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_family_events_space ON family_events(space_id, target_at)"),
   ]);
-  try { await ensureWalletLinkTables(db); } catch { /* created in batch on empty DBs that failed early */ }
-  const memberColumns = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
-  if (!memberColumns.results.some((column) => column.name === "phone")) {
-    try { await db.prepare("ALTER TABLE members ADD COLUMN phone TEXT").run(); }
-    catch (error) {
-      const refreshed = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
-      if (!refreshed.results.some((column) => column.name === "phone")) throw error;
-    }
-  }
-  const contributionColumns = await db.prepare("PRAGMA table_info(contribution_plans)").all<{ name: string }>();
-  if (!contributionColumns.results.some((column) => column.name === "duration_months")) {
-    try {
-      await db.prepare("ALTER TABLE contribution_plans ADD COLUMN duration_months INTEGER NOT NULL DEFAULT 60").run();
-    } catch (error) {
-      const refreshed = await db.prepare("PRAGMA table_info(contribution_plans)").all<{ name: string }>();
-      if (!refreshed.results.some((column) => column.name === "duration_months")) throw error;
-    }
-  }
-  const sessionColumns = await db.prepare("PRAGMA table_info(auth_sessions)").all<{ name: string }>();
-  if (!sessionColumns.results.some((column) => column.name === "csrf_token_hash")) {
-    try { await db.prepare("ALTER TABLE auth_sessions ADD COLUMN csrf_token_hash TEXT").run(); }
-    catch (error) { const refreshed = await db.prepare("PRAGMA table_info(auth_sessions)").all<{ name: string }>(); if (!refreshed.results.some((column) => column.name === "csrf_token_hash")) throw error; }
-  }
-  const tripExpenseColumns = await db.prepare("PRAGMA table_info(trip_expenses)").all<{ name: string }>();
-  const tripExpenseNames = new Set(tripExpenseColumns.results.map((column) => column.name));
-  if (!tripExpenseNames.has("transaction_id")) {
-    try { await db.prepare("ALTER TABLE trip_expenses ADD COLUMN transaction_id TEXT").run(); } catch { /* exists */ }
-  }
-  if (!tripExpenseNames.has("status")) {
-    try { await db.prepare("ALTER TABLE trip_expenses ADD COLUMN status TEXT NOT NULL DEFAULT 'posted'").run(); } catch { /* exists */ }
-  }
-  if (!tripExpenseNames.has("paid_from")) {
-    try { await db.prepare("ALTER TABLE trip_expenses ADD COLUMN paid_from TEXT NOT NULL DEFAULT 'member'").run(); } catch { /* exists */ }
-  }
-  const settlementColumns = await db.prepare("PRAGMA table_info(settlements)").all<{ name: string }>();
-  if (!settlementColumns.results.some((column) => column.name === "expense_id")) {
-    try { await db.prepare("ALTER TABLE settlements ADD COLUMN expense_id TEXT").run(); } catch { /* exists */ }
-  }
-  const memberAddon = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
-  if (!memberAddon.results.some((column) => column.name === "addon_minor")) {
-    try { await db.prepare("ALTER TABLE members ADD COLUMN addon_minor INTEGER NOT NULL DEFAULT 0").run(); } catch { /* exists */ }
-  }
-  const spaceStart = await db.prepare("PRAGMA table_info(spaces)").all<{ name: string }>();
-  if (!spaceStart.results.some((column) => column.name === "starts_at")) {
-    try { await db.prepare("ALTER TABLE spaces ADD COLUMN starts_at TEXT").run(); } catch { /* exists */ }
-  }
-  if (!spaceStart.results.some((column) => column.name === "status")) {
-    try { await db.prepare("ALTER TABLE spaces ADD COLUMN status TEXT NOT NULL DEFAULT 'active'").run(); } catch { /* exists */ }
-  }
-  const periodColumns = await db.prepare("PRAGMA table_info(accounting_periods)").all<{ name: string }>();
-  const periodNames = new Set(periodColumns.results.map((column) => column.name));
-  if (!periodNames.has("closed_by")) {
-    try { await db.prepare("ALTER TABLE accounting_periods ADD COLUMN closed_by TEXT").run(); } catch { /* exists */ }
-  }
-  if (!periodNames.has("reopened_at")) {
-    try { await db.prepare("ALTER TABLE accounting_periods ADD COLUMN reopened_at TEXT").run(); } catch { /* exists */ }
-  }
-  if (!periodNames.has("reopened_by")) {
-    try { await db.prepare("ALTER TABLE accounting_periods ADD COLUMN reopened_by TEXT").run(); } catch { /* exists */ }
-  }
-  if (!periodNames.has("reopen_count")) {
-    try { await db.prepare("ALTER TABLE accounting_periods ADD COLUMN reopen_count INTEGER NOT NULL DEFAULT 0").run(); } catch { /* exists */ }
-  }
-  const txnColumns = await db.prepare("PRAGMA table_info(transactions)").all<{ name: string }>();
-  if (!txnColumns.results.some((column) => column.name === "account_id")) {
-    try { await db.prepare("ALTER TABLE transactions ADD COLUMN account_id TEXT").run(); } catch { /* exists */ }
-  }
-  const personalRuleCols = await db.prepare("PRAGMA table_info(personal_rules)").all<{ name: string }>();
-  if (!personalRuleCols.results.some((column) => column.name === "schedule")) {
-    try { await db.prepare("ALTER TABLE personal_rules ADD COLUMN schedule TEXT NOT NULL DEFAULT 'monthly'").run(); } catch { /* exists */ }
-  }
-  const userCols = await db.prepare("PRAGMA table_info(users)").all<{ name: string }>();
-  if (!userCols.results.some((column) => column.name === "avatar_url")) {
-    try { await db.prepare("ALTER TABLE users ADD COLUMN avatar_url TEXT").run(); } catch { /* exists */ }
-  }
-  const { ensureSubscriptionAdminColumns, ensurePaymentGateways } = await import("../services/admin/billing-service");
-  await ensureSubscriptionAdminColumns(db);
-  await ensurePaymentGateways(db);
-  await db.batch([
-    db.prepare(`INSERT OR IGNORE INTO tenants (id,name,country,currency,locale,timezone,created_by,created_at)
-      SELECT 'tenant:'||id,display_name,'OM',currency,locale,'Asia/Muscat',id,created_at FROM users`),
-    db.prepare(`INSERT OR IGNORE INTO tenant_memberships (tenant_id,user_id,role,status,created_at)
-      SELECT 'tenant:'||id,id,'owner','active',created_at FROM users`),
-    db.prepare(`INSERT OR IGNORE INTO tenant_resources (tenant_id,resource_type,resource_id,created_at)
-      SELECT 'tenant:'||owner_user_id,'space',id,created_at FROM spaces`),
-    db.prepare(`INSERT OR IGNORE INTO tenant_resources (tenant_id,resource_type,resource_id,created_at)
-      SELECT 'tenant:'||owner_user_id,'document',id,created_at FROM documents`),
-    db.prepare(`INSERT OR IGNORE INTO tenant_resources (tenant_id,resource_type,resource_id,created_at)
-      SELECT 'tenant:'||user_id,'invoice',id,created_at FROM invoices`),
-    db.prepare(`INSERT OR IGNORE INTO tenant_resources (tenant_id,resource_type,resource_id,created_at)
-      SELECT 'tenant:'||user_id,'payment',id,created_at FROM payments`),
-  ]);
+  await ensureSchemaPatches(db);
+  await applyPostgresPaymentGuard(db);
   await db.prepare("INSERT INTO schema_meta (id, version) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET version=excluded.version").bind(SCHEMA_VERSION).run();
   await markSchemaReady();
 }

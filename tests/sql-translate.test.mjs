@@ -22,3 +22,19 @@ test("translates PRAGMA table_info", () => {
   assert.match(sql, /information_schema\.columns/);
   assert.match(sql, /contribution_plans/);
 });
+
+test("keeps native Postgres payment triggers", () => {
+  const sql = translateSqliteToPostgres(`CREATE TRIGGER trg_payment_status_transition_pg
+    BEFORE UPDATE OF status ON payments
+    FOR EACH ROW
+    EXECUTE FUNCTION wazen_payment_status_guard()`);
+  assert.equal(sql.includes("SKIP_SQLITE_TRIGGER"), false);
+  assert.match(sql, /EXECUTE FUNCTION wazen_payment_status_guard/);
+});
+
+test("skips SQLite RAISE ABORT triggers", () => {
+  const sql = translateSqliteToPostgres(`CREATE TRIGGER trg_payment_status_transition BEFORE UPDATE OF status ON payments
+      WHEN NOT ((OLD.status='pending' AND NEW.status IN ('succeeded','failed')))
+      BEGIN SELECT RAISE(ABORT, 'INVALID_PAYMENT_TRANSITION'); END`);
+  assert.match(sql, /SKIP_SQLITE_TRIGGER/);
+});

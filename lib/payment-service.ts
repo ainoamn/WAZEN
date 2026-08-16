@@ -22,11 +22,21 @@ export async function applyPaymentWebhook(db: D1Database, event: PaymentEvent, p
   }
 
   const now = new Date().toISOString();
+  const moved = await db.prepare("UPDATE payments SET status=?,settlement_status=? WHERE id=? AND status=?")
+    .bind(event.status, event.status === "succeeded" ? "settled" : "unsettled", event.paymentId, payment.status)
+    .run();
+  if (!moved.meta.changes) {
+    const racedEvent = await db.prepare("SELECT payload_hash FROM webhook_events WHERE provider='payment' AND event_id=?").bind(event.id).first<{ payload_hash: string }>();
+    if (racedEvent) {
+      if (racedEvent.payload_hash !== payloadHash) throw new ApiError(409, "WEBHOOK_EVENT_CONFLICT");
+      return { received: true, replayed: true };
+    }
+    const current = await db.prepare("SELECT status FROM payments WHERE id=?").bind(event.paymentId).first<{ status: string }>();
+    if (current?.status === event.status) return { received: true, duplicate: true };
+    throw new ApiError(409, "INVALID_PAYMENT_TRANSITION");
+  }
   const statements: D1PreparedStatement[] = [
     db.prepare("INSERT INTO webhook_events (provider,event_id,payload_hash,processed_at) VALUES ('payment',?,?,?)").bind(event.id, payloadHash, now),
-    // The DB transition trigger makes this unconditional update the concurrency guard:
-    // if another event wins first, an invalid second transition aborts the whole batch.
-    db.prepare("UPDATE payments SET status=?,settlement_status=? WHERE id=?").bind(event.status, event.status === "succeeded" ? "settled" : "unsettled", event.paymentId),
     prepareAudit(db, { userId: payment.user_id, action: "payment.webhook_status_changed", entityType: "payment", entityId: event.paymentId, metadata: { eventId: event.id, status: event.status }, createdAt: now }),
   ];
   if (payment.invoice_id && event.status === "succeeded") statements.push(

@@ -18,8 +18,9 @@ import OmrSymbol from "../../components/brand/OmrSymbol";
 import WazenLogo from "../../components/brand/WazenLogo";
 import WazenPageLoader from "../../components/brand/WazenPageLoader";
 import { apiFetch } from "../../lib/client-api";
-import { formatMoneyMinor } from "../../lib/money";
-import { memberCashCreditMinor, pendingSettlementsWithCredit } from "../../lib/finance";
+import { formatMoneyMinor, currencyScale } from "../../lib/money";
+import { memberDisplayCreditMinor, pendingSettlementsWithCredit } from "../../lib/finance";
+import { memberAccruedDueMinor } from "../../components/members/association-members";
 
 type Locale = "ar" | "en";
 
@@ -34,6 +35,18 @@ type Space = {
 };
 
 type Member = { id: string; space_id: string; display_name: string; due_minor?: number; paid_minor?: number; extra_minor?: number };
+type Plan = { space_id?: string; amount_minor?: number; duration_months?: number; starts_at?: string };
+type Installment = {
+  id: string;
+  member_id: string;
+  space_id: string;
+  period_index: number;
+  period_key: string;
+  due_at: string;
+  amount_minor: number;
+  paid_minor: number;
+  status: string;
+};
 type Transaction = { kind: string; amount_minor: number; occurred_at: string; status?: string; member_id?: string | null; space_id?: string; allocation?: string };
 type Settlement = {
   id: string;
@@ -67,6 +80,8 @@ type HomeData = {
   settlements?: Settlement[];
   personalOccurrences?: Occurrence[];
   personalAccounts?: PersonalAccount[];
+  plans?: Plan[];
+  installments?: Installment[];
 };
 
 function money(minor: number, currency: string, locale: Locale) {
@@ -286,15 +301,23 @@ function PendingInbox({
   const settlements = pendingSettlementsWithCredit(
     (data.settlements ?? []).filter((item) => item.status === "pending"),
     new Map((data.members ?? []).map((member) => {
-      let extraTx = 0;
-      if (!(Number(member.extra_minor) > 0)) {
-        for (const txn of data.transactions) {
-          if (txn.member_id !== member.id || txn.space_id !== member.space_id) continue;
-          if ((txn.status ?? "approved") === "voided") continue;
-          if (txn.allocation === "personal_reserve" && ["contribution", "income"].includes(txn.kind)) extraTx += Number(txn.amount_minor) || 0;
-        }
-      }
-      return [member.id, memberCashCreditMinor(member) + extraTx] as const;
+      const plan = (data.plans ?? []).find((item) => String(item.space_id) === member.space_id);
+      const accruedDue = memberAccruedDueMinor(
+        {
+          id: member.id,
+          space_id: member.space_id,
+          display_name: member.display_name,
+          email: null,
+          role: "member",
+          due_minor: Number(member.due_minor) || 0,
+          paid_minor: Number(member.paid_minor) || 0,
+          extra_minor: Number(member.extra_minor) || 0,
+          avatar: "",
+        },
+        data.installments ?? [],
+        plan,
+      );
+      return [member.id, memberDisplayCreditMinor(member, { accruedDueMinor: accruedDue, transactions: data.transactions })] as const;
     })),
   );
   const occurrences = (data.personalOccurrences ?? []).filter((item) => item.status === "pending");
@@ -323,7 +346,9 @@ function PendingInbox({
     setError("");
     try {
       const accountId = item.account_id || data.personalAccounts?.find((account) => account.space_id === item.space_id)?.id;
-      const amount = item.expected_minor ? String(item.expected_minor / 1000) : undefined;
+      const space = data.spaces.find((row) => row.id === item.space_id);
+      const scale = currencyScale(space?.currency ?? "OMR");
+      const amount = item.expected_minor ? String(item.expected_minor / (10 ** scale)) : undefined;
       const response = await apiFetch("/api/dashboard", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -371,7 +396,7 @@ function PendingInbox({
                     <div>
                       <strong>{title}</strong>
                       <span>
-                        {space ? spaceName(space, locale) : ""} · {money(item.payableMinor, space?.currency ?? "OMR", locale)}
+                        {space ? spaceName(space, locale) : ""} · {item.reservedMinor > 0 ? <><s>{money(item.amountMinor, space?.currency ?? "OMR", locale)}</s> {money(item.payableMinor, space?.currency ?? "OMR", locale)}</> : money(item.payableMinor, space?.currency ?? "OMR", locale)}
                         {item.reservedMinor > 0 ? (locale === "ar" ? ` بعد حجز ${money(item.reservedMinor, space?.currency ?? "OMR", locale)}` : ` after reserving ${money(item.reservedMinor, space?.currency ?? "OMR", locale)}`) : ""}
                       </span>
                     </div>
@@ -402,7 +427,7 @@ function PendingInbox({
             </div>
           )}
           {error && <p className="modal-error">{error}</p>}
-          <p className="modal-note">{locale === "ar" ? "نفس قاعدة التحكم: يُحجز رصيد العضو أولاً ثم يظهر المتبقي. جدول الأعضاء قد يضيف أيضاً اشتراكاً غير مسدّد فوق حصة المصروف." : "Same rule as Control: credit is reserved first. The members table may also add unpaid subscription dues on top of the expense share."}</p>
+          <p className="modal-note">{locale === "ar" ? "نفس رقم التحكم: يُحجز رصيد العضو من الاشتراك المستحق حتى اليوم (وليس الهدف الكامل). عمود «عليه» في الجدول قد يزيد إذا بقي اشتراك غير مسدّد فوق حصة المصروف." : "Same number as Control: credit uses dues accrued to date, not the full goal. The members table Owes column can still be higher if unpaid subscription remains."}</p>
           <Link className="secondary-button home-pending-foot" href="/dashboard">
             {locale === "ar" ? "فتح لوحة التحكم" : "Open Control"}
           </Link>

@@ -5,6 +5,8 @@ import { Archive, Banknote, CalendarClock, Check, ChevronDown, Link2, Lock, Paus
 import { CollapsiblePanel, FoldWrap } from "../ui/collapsible-panel";
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
+import { escapeHtml } from "../../lib/html";
+import { openReportPreview } from "../../lib/reports";
 import { occurrenceVarianceCopy, occurrenceLedgerStatus } from "../../lib/personal-finance";
 import { bankCustodySplit, holdingsForAccount } from "../../lib/wallet-links";
 import OmrSymbol from "../brand/OmrSymbol";
@@ -96,12 +98,9 @@ function printOccurrenceStatement(item: PersonalOccurrence, locale: Locale) {
   const html = `<!doctype html><html lang="${locale}" dir="${locale === "ar" ? "rtl" : "ltr"}"><head><meta charset="utf-8"/><title>${title}</title>
   <style>body{font-family:Tahoma,Arial,sans-serif;padding:32px;color:#12231f}h1{margin:0 0 8px;font-size:22px}table{width:100%;border-collapse:collapse}td{padding:10px 0;border-bottom:1px solid #e5ebe7;font-size:14px}td:last-child{text-align:end;font-weight:700}.brand{color:#0d7a65;font-weight:800}</style></head><body>
   <div class="brand">WAZEN · وازن</div><h1>${title}</h1>
-  <table>${rows.map((row) => `<tr><td>${row[0]}</td><td>${row[1]}</td></tr>`).join("")}</table>
+  <table>${rows.map((row) => `<tr><td>${escapeHtml(row[0])}</td><td>${escapeHtml(row[1])}</td></tr>`).join("")}</table>
   <script>window.print()</script></body></html>`;
-  const popup = window.open("", "_blank", "noopener,noreferrer,width=720,height=900");
-  if (!popup) return;
-  popup.document.write(html);
-  popup.document.close();
+  openReportPreview(html, true);
 }
 
 export function PersonalWalletPanel({

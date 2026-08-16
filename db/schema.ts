@@ -222,7 +222,7 @@ export const tenantResources = sqliteTable("tenant_resources", {
 });
 
 export const totpCredentials = sqliteTable("totp_credentials", {
-  userId: text("user_id").primaryKey(), encryptedSecret: text("encrypted_secret").notNull(), keyVersion: text("key_version").notNull(), lastUsedStep: integer("last_used_step"), enabledAt: text("enabled_at"), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
+  userId: text("user_id").primaryKey(), encryptedSecret: text("encrypted_secret").notNull(), keyVersion: text("key_version").notNull(), lastUsedStep: integer("last_used_step"), enabledAt: text("enabled_at"), pendingEncryptedSecret: text("pending_encrypted_secret"), pendingKeyVersion: text("pending_key_version"), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
 });
 
 export const apiKeys = sqliteTable("api_keys", {

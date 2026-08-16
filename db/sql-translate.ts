@@ -28,8 +28,11 @@ export function translateSqliteToPostgres(sql: string): string {
   let index = 0;
   out = out.replace(/\?/g, () => `$${++index}`);
 
-  // SQLite triggers are not portable — skip at execute time
-  if (/^\s*(CREATE|DROP)\s+TRIGGER\b/i.test(out)) {
+  // SQLite RAISE(ABORT) triggers are not portable. Native Postgres triggers are kept.
+  if (/^\s*CREATE\s+TRIGGER\b/i.test(out) && /RAISE\s*\(\s*ABORT/i.test(out)) {
+    return `-- SKIP_SQLITE_TRIGGER\n${out}`;
+  }
+  if (/^\s*DROP\s+TRIGGER\b/i.test(out) && !/\bON\s+[A-Za-z_]/i.test(out)) {
     return `-- SKIP_SQLITE_TRIGGER\n${out}`;
   }
 

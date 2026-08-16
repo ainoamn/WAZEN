@@ -14,8 +14,9 @@ import { projectCashflow } from "../lib/wallet-forecast";
 import { isPeriodLocked } from "../lib/accounting-periods";
 import { buildReportHtml, openReportPreview } from "../lib/reports";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
-import { formatMoneyMinor } from "../lib/money";
-import { memberCashCreditMinor, netMemberClaim, pendingSettlementsWithCredit } from "../lib/finance";
+import { formatMoneyMinor, currencyScale } from "../lib/money";
+import { escapeHtml } from "../lib/html";
+import { memberDisplayCreditMinor, netMemberClaim, pendingSettlementsWithCredit } from "../lib/finance";
 import { occurrenceVarianceCopy } from "../lib/personal-finance";
 import {
   Archive,
@@ -336,8 +337,7 @@ function transactionName(transaction: Transaction, locale: Locale) {
 
 
 function currencyMajor(minor: number, currency: string) {
-  const scale = currency.toUpperCase() === "OMR" || ["BHD","IQD","JOD","KWD","LYD","TND"].includes(currency.toUpperCase()) ? 3 : 2;
-  return minor / (10 ** scale);
+  return minor / (10 ** currencyScale(currency));
 }
 
 function personGoalMinor(member: Member) {
@@ -420,20 +420,9 @@ function memberPosition(member: Member, data?: DashboardData, spaceId?: string) 
   const plan = data?.plans.find((item) => String(item.space_id) === member.space_id);
   const accruedDue = data ? memberAccruedDueMinor(member, data.installments ?? [], plan) : Number(member.due_minor) || 0;
   const paid = Number(member.paid_minor) || 0;
-  const extra = Number(member.extra_minor) || 0;
   const remainingDue = Math.max(0, accruedDue - paid);
   const advance = Math.max(0, paid - accruedDue);
-  let reserveFromTx = 0;
-  if (data && extra === 0) {
-    for (const txn of data.transactions) {
-      if (txn.member_id !== member.id || txn.space_id !== member.space_id) continue;
-      if ((txn.status ?? "approved") === "voided") continue;
-      if (txn.allocation === "personal_reserve" && ["contribution", "income"].includes(txn.kind)) {
-        reserveFromTx += Number(txn.amount_minor) || 0;
-      }
-    }
-  }
-  const cashCredit = memberCashCreditMinor(member, accruedDue) + reserveFromTx;
+  const cashCredit = memberDisplayCreditMinor(member, { accruedDueMinor: accruedDue, transactions: data?.transactions });
   let debit = remainingDue;
   let credit = cashCredit;
   const expenseSpaceId = spaceId ?? member.space_id;
@@ -536,25 +525,22 @@ function openTransactionReceipt(transaction: Transaction, data: DashboardData, l
     ? `<tr><td>${locale === "ar" ? "الالتزام" : "Commitment"}</td><td>${formatMoney(expected, space?.currency ?? "OMR", locale)}</td></tr>
     <tr><td>${locale === "ar" ? "المدفوع" : "Paid"}</td><td>${formatMoney(actual, space?.currency ?? "OMR", locale)}</td></tr>
     <tr><td>${locale === "ar" ? "الفرق" : "Variance"}</td><td>${delta === 0 ? (locale === "ar" ? "مطابق" : "Match") : `${delta > 0 ? (locale === "ar" ? "زيادة" : "Over") : (locale === "ar" ? "نقص" : "Short")} ${formatMoney(Math.abs(delta), space?.currency ?? "OMR", locale)}`}</td></tr>
-    <tr><td>${locale === "ar" ? "الملخص" : "Summary"}</td><td>${occurrenceVarianceCopy(expected, actual, locale)}</td></tr>`
+    <tr><td>${locale === "ar" ? "الملخص" : "Summary"}</td><td>${escapeHtml(occurrenceVarianceCopy(expected, actual, locale))}</td></tr>`
     : `<tr><td>${locale === "ar" ? "المبلغ" : "Amount"}</td><td>${formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale)}</td></tr>`;
   const html = `<!doctype html><html lang="${locale}" dir="${locale === "ar" ? "rtl" : "ltr"}"><head><meta charset="utf-8"/><title>${title}</title>
   <style>body{font-family:Tahoma,Arial,sans-serif;padding:32px;color:#12231f}h1{margin:0 0 8px;font-size:22px}.meta{color:#66766f;font-size:13px;margin-bottom:24px}table{width:100%;border-collapse:collapse}td{padding:10px 0;border-bottom:1px solid #e5ebe7;font-size:14px}td:last-child{text-align:end;font-weight:700}.brand{color:#0d7a65;font-weight:800;letter-spacing:.08em}</style></head><body>
   <div class="brand">WAZEN · وازن</div><h1>${title}</h1>
   <p class="meta">${new Date(transaction.occurred_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</p>
   <table>
-    <tr><td>${locale === "ar" ? "الوصف" : "Description"}</td><td>${transactionName(transaction, locale)}</td></tr>
-    <tr><td>${locale === "ar" ? "المحفظة" : "Wallet"}</td><td>${space ? nameOf(space, locale) : "—"}</td></tr>
-    <tr><td>${locale === "ar" ? "المساهم" : "Member"}</td><td>${member?.display_name ?? "—"}</td></tr>
-    <tr><td>${locale === "ar" ? "النوع" : "Type"}</td><td>${transaction.kind}</td></tr>
+    <tr><td>${locale === "ar" ? "الوصف" : "Description"}</td><td>${escapeHtml(transactionName(transaction, locale))}</td></tr>
+    <tr><td>${locale === "ar" ? "المحفظة" : "Wallet"}</td><td>${escapeHtml(space ? nameOf(space, locale) : "—")}</td></tr>
+    <tr><td>${locale === "ar" ? "المساهم" : "Member"}</td><td>${escapeHtml(member?.display_name ?? "—")}</td></tr>
+    <tr><td>${locale === "ar" ? "النوع" : "Type"}</td><td>${escapeHtml(transaction.kind)}</td></tr>
     ${extra}
     <tr><td>${locale === "ar" ? "المرجع" : "Reference"}</td><td>${transaction.id.slice(0, 8).toUpperCase()}</td></tr>
   </table>
   <script>window.print()</script></body></html>`;
-  const popup = window.open("", "_blank", "noopener,noreferrer,width=720,height=900");
-  if (!popup) return;
-  popup.document.write(html);
-  popup.document.close();
+  openReportPreview(html, true);
 }
 
 function shareTransactionWhatsApp(transaction: Transaction, data: DashboardData, locale: Locale) {

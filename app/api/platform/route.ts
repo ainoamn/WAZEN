@@ -120,7 +120,7 @@ async function seedCommercialData(db: D1Database, user: RequestUser) {
       const userId = demo[0];
       const subId = `demo-sub-${index + 1}`;
       statements.push(
-        db.prepare("INSERT INTO users VALUES (?, ?, ?, 'ar', 'OMR', ?)").bind(userId, demo[2], demo[1], atOffset(-120 + index * 12)),
+        db.prepare("INSERT INTO users (id, email, display_name, locale, currency, created_at) VALUES (?, ?, ?, 'ar', 'OMR', ?)").bind(userId, demo[2], demo[1], atOffset(-120 + index * 12)),
         db.prepare("INSERT INTO customer_profiles VALUES (?, ?, ?, NULL, ?, ?)").bind(userId, demo[4] === "suspended" ? "suspended" : "active", demo[5], atOffset(-index), atOffset(-120 + index * 12)),
         db.prepare("INSERT INTO platform_roles VALUES (?, 'customer', '[\"wallets:own\",\"documents:own\"]', ?, ?)").bind(userId, now, now),
         db.prepare(`INSERT INTO subscriptions (id,user_id,plan_id,status,billing_cycle,current_period_start,current_period_end,cancel_at_period_end,created_at,updated_at)

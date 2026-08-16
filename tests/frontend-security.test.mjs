@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 const root = process.cwd();
-const files = ["app/documents/documents-client.tsx", "app/wazen-dashboard.tsx", "app/admin/admin-client.tsx"];
+const files = ["app/documents/documents-client.tsx", "app/wazen-dashboard.tsx", "app/admin/admin-client.tsx", "components/personal/personal-wallet.tsx"];
 
 test("frontend regression: no raw HTML injection or document.write sinks", () => {
   for (const file of files) {

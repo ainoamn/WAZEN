@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCreditToDebits, buildCircleOrder, memberCashCreditMinor, minimizeSettlements, pendingSettlementsWithCredit, netMemberClaim, splitContributionPayment, splitEvenly, validateJournal } from "../lib/finance.ts";
+import { applyCreditToDebits, buildCircleOrder, memberCashCreditMinor, memberDisplayCreditMinor, minimizeSettlements, pendingSettlementsWithCredit, netMemberClaim, splitContributionPayment, splitEvenly, validateJournal } from "../lib/finance.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 import { bankCustodySplit } from "../lib/wallet-links.ts";
 
@@ -128,4 +128,17 @@ test("home and control settle the same payable after reserving credit", () => {
   assert.equal(rows[0].reservedMinor, 1_000_000);
   assert.equal(rows[1].payableMinor, 4_000_000);
   assert.equal(memberCashCreditMinor({ paid_minor: 51_000_000, extra_minor: 1_000_000, due_minor: 51_000_000 }), 1_000_000);
+});
+
+test("settlement credit uses accrued dues not the full goal", () => {
+  const member = { id: "m1", space_id: "s1", paid_minor: 50_000_000, extra_minor: 0, due_minor: 240_000_000 };
+  const fullGoal = memberCashCreditMinor(member);
+  const accrued = memberDisplayCreditMinor(member, { accruedDueMinor: 40_000_000 });
+  assert.equal(fullGoal, 0);
+  assert.equal(accrued, 10_000_000);
+  const homeWrong = pendingSettlementsWithCredit([{ id: "x", from_member_id: "m1", amount_minor: 83_339_000 }], { m1: fullGoal });
+  const control = pendingSettlementsWithCredit([{ id: "x", from_member_id: "m1", amount_minor: 83_339_000 }], { m1: accrued });
+  assert.equal(homeWrong[0].payableMinor, 83_339_000);
+  assert.equal(control[0].payableMinor, 73_339_000);
+  assert.equal(control[0].reservedMinor, 10_000_000);
 });

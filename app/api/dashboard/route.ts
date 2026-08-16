@@ -470,24 +470,23 @@ async function voidApprovedTransaction(
   const closeOccurrence = options?.closeOccurrence !== false;
   const amountMinor = Number(txn.amount_minor);
   const createdAt = now();
-  await db.prepare("UPDATE transactions SET status=? WHERE id=? AND status='approved'").bind(recordStatus, txn.id).run();
-  try {
-    await prepareAudit(db, {
+  const voided = await db.prepare("UPDATE transactions SET status=? WHERE id=? AND status='approved'").bind(recordStatus, txn.id).run();
+  if (!voided.meta.changes) throw new ApiError(409, "ALREADY_VOIDED");
+  const statements: ReturnType<D1Database["prepare"]>[] = [
+    prepareAudit(db, {
       userId: actorUserId,
       action: "transaction.voided",
       entityType: "transaction",
       entityId: txn.id,
       metadata: { spaceId: txn.space_id, kind: txn.kind, allocation: txn.allocation, amountMinor },
       createdAt,
-    }).run();
-  } catch { /* audit must not block void */ }
+    }),
+  ];
   try {
-    await db.prepare("UPDATE trip_expenses SET status='voided' WHERE transaction_id=?").bind(txn.id).run();
+    statements.push(db.prepare("UPDATE trip_expenses SET status='voided' WHERE transaction_id=?").bind(txn.id));
   } catch { /* personal wallets and older schemas may lack this column */ }
   try {
-    if (!closeOccurrence) {
-      /* edit path relinks the occurrence to the replacement transaction */
-    } else {
+    if (closeOccurrence) {
       const postedOccurrence = await db.prepare(`SELECT o.id, o.rule_id, o.actual_minor, r.kind
         FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
         WHERE o.transaction_id=?`)
@@ -500,17 +499,16 @@ async function voidApprovedTransaction(
         .first<{ id: string; rule_id: string; actual_minor: number | null; kind: string }>();
       if (occurrence) {
         const postedMinor = Number(occurrence.actual_minor ?? txn.amount_minor);
-        const statements = [
-          db.prepare("UPDATE personal_occurrences SET status='pending', actual_minor=NULL, transaction_id=NULL WHERE id=?")
-            .bind(occurrence.id),
-        ];
+        statements.push(db.prepare("UPDATE personal_occurrences SET status='pending', actual_minor=NULL, transaction_id=NULL WHERE id=?").bind(occurrence.id));
         if (occurrence.kind === "expense") {
           statements.push(db.prepare("UPDATE personal_rules SET paid_minor = MAX(0, paid_minor - ?) WHERE id=?").bind(postedMinor, occurrence.rule_id));
         }
-        await db.batch(statements);
       }
     }
   } catch { /* occurrence close is best-effort */ }
+  try {
+    await db.batch(statements);
+  } catch { /* audit must not block void */ }
   try {
     await rebuildSpaceBalance(db, [txn.space_id]);
   } catch {
@@ -925,7 +923,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     }, txnRows),
   }));
 
-  return {
+  return redactDashboardForViewer(userId, {
     spaces: spacesWithGoals,
     members: members.results,
     transactions: transactions.results,
@@ -945,6 +943,36 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     familyEvents,
     spaceLinks: spaceLinks.results,
     spaceBankLinks: spaceBankLinks.results,
+  });
+}
+
+function maskAccountNumber(value: string | null | undefined) {
+  const digits = String(value ?? "");
+  if (digits.length <= 4) return "••••";
+  return `••••${digits.slice(-4)}`;
+}
+
+function redactDashboardForViewer<T extends {
+  spaces: Array<{ id: string; owner_user_id: string; type: string }>;
+  members: Array<MemberRow>;
+  personalAccounts: Array<{ space_id: string }>;
+  personalRules: Array<{ space_id?: unknown }>;
+  personalOccurrences: Array<{ space_id: string }>;
+  payoutAccounts: Array<{ space_id?: unknown; account_number?: unknown }>;
+}>(userId: string, data: T): T {
+  const owned = new Set(data.spaces.filter((space) => space.owner_user_id === userId).map((space) => space.id));
+  return {
+    ...data,
+    members: data.members.map((member) => {
+      if (owned.has(member.space_id) || member.user_id === userId) return member;
+      return { ...member, email: null, phone: null };
+    }),
+    personalAccounts: data.personalAccounts.filter((account) => owned.has(account.space_id)),
+    personalRules: data.personalRules.filter((rule) => owned.has(String(rule.space_id ?? ""))),
+    personalOccurrences: data.personalOccurrences.filter((row) => owned.has(row.space_id)),
+    payoutAccounts: data.payoutAccounts.map((account) => (
+      owned.has(String(account.space_id ?? "")) ? account : { ...account, account_number: maskAccountNumber(account.account_number == null ? "" : String(account.account_number)) }
+    )),
   };
 }
 

@@ -8,6 +8,7 @@ import { decryptSecret, encryptSecret, loadKeyring } from "../../../lib/encrypti
 import { createTotpSecret, verifyTotp } from "../../../lib/totp";
 import { ensureDefaultTenant } from "../../../lib/authorization";
 import { isEmailProviderConfigured } from "../../../lib/email-provider";
+import { isProductionLikeRuntime } from "../../../lib/production-setup";
 
 const credentialsSchema = z.object({
   action: z.enum(["register", "login", "logout", "verifyEmail", "forgotPassword", "resetPassword", "changePassword", "beginTotp", "confirmTotp", "disableTotp", "completeAdminBootstrap"]),
@@ -92,18 +93,31 @@ export async function POST(request: Request) {
       }
       if (action === "beginTotp") {
         const secret = createTotpSecret(); const keyring = loadKeyring(); const encrypted = await encryptSecret(secret, `totp:${user.id}`, keyring); const createdAt = new Date().toISOString();
-        await db.prepare(`INSERT INTO totp_credentials (user_id,encrypted_secret,key_version,last_used_step,enabled_at,created_at,updated_at) VALUES (?,?,?,NULL,NULL,?,?)
-          ON CONFLICT(user_id) DO UPDATE SET encrypted_secret=excluded.encrypted_secret,key_version=excluded.key_version,last_used_step=NULL,enabled_at=NULL,updated_at=excluded.updated_at`)
-          .bind(user.id, encrypted, keyring.active, createdAt, createdAt).run();
+        const existing = await db.prepare("SELECT enabled_at FROM totp_credentials WHERE user_id=?").bind(user.id).first<{ enabled_at: string | null }>();
+        if (existing?.enabled_at) {
+          await db.prepare("UPDATE totp_credentials SET pending_encrypted_secret=?,pending_key_version=?,updated_at=? WHERE user_id=?")
+            .bind(encrypted, keyring.active, createdAt, user.id).run();
+        } else {
+          await db.prepare(`INSERT INTO totp_credentials (user_id,encrypted_secret,key_version,last_used_step,enabled_at,created_at,updated_at) VALUES (?,?,?,NULL,NULL,?,?)
+            ON CONFLICT(user_id) DO UPDATE SET encrypted_secret=excluded.encrypted_secret,key_version=excluded.key_version,last_used_step=NULL,enabled_at=NULL,updated_at=excluded.updated_at`)
+            .bind(user.id, encrypted, keyring.active, createdAt, createdAt).run();
+        }
         await writeAudit(db, { userId: user.id, action: "auth.totp_enrollment_started", entityType: "user", entityId: user.id });
         const label = encodeURIComponent(user.email); return Response.json({ ok: true, secret, otpauthUri: `otpauth://totp/WAZEN:${label}?secret=${secret}&issuer=WAZEN&algorithm=SHA1&digits=6&period=30` });
       }
       if (action === "confirmTotp") {
-        const row = await db.prepare("SELECT encrypted_secret,last_used_step,enabled_at FROM totp_credentials WHERE user_id=?").bind(user.id).first<{ encrypted_secret: string; last_used_step: number | null; enabled_at: string | null }>();
-        if (!row || row.enabled_at) throw new ApiError(409, "TOTP_ENROLLMENT_UNAVAILABLE");
-        const secret = await decryptSecret(row.encrypted_secret, `totp:${user.id}`); const result = await verifyTotp(secret.value, parsed.data.totpCode ?? "", { window: 1, lastUsedStep: row.last_used_step });
+        const row = await db.prepare("SELECT encrypted_secret,pending_encrypted_secret,last_used_step,enabled_at FROM totp_credentials WHERE user_id=?").bind(user.id).first<{ encrypted_secret: string; pending_encrypted_secret?: string | null; last_used_step: number | null; enabled_at: string | null }>();
+        const pending = row?.pending_encrypted_secret;
+        if (!row || (row.enabled_at && !pending)) throw new ApiError(409, "TOTP_ENROLLMENT_UNAVAILABLE");
+        const ciphertext = pending || row.encrypted_secret;
+        const secret = await decryptSecret(ciphertext, `totp:${user.id}`); const result = await verifyTotp(secret.value, parsed.data.totpCode ?? "", { window: 1, lastUsedStep: row.last_used_step });
         if (!result.valid) throw new ApiError(401, "INVALID_TOTP"); const enabledAt = new Date().toISOString();
-        await db.prepare("UPDATE totp_credentials SET enabled_at=?,last_used_step=?,updated_at=? WHERE user_id=? AND enabled_at IS NULL").bind(enabledAt, result.step, enabledAt, user.id).run();
+        if (pending) {
+          await db.prepare("UPDATE totp_credentials SET encrypted_secret=pending_encrypted_secret,key_version=COALESCE(pending_key_version,key_version),pending_encrypted_secret=NULL,pending_key_version=NULL,enabled_at=?,last_used_step=?,updated_at=? WHERE user_id=?")
+            .bind(enabledAt, result.step, enabledAt, user.id).run();
+        } else {
+          await db.prepare("UPDATE totp_credentials SET enabled_at=?,last_used_step=?,updated_at=? WHERE user_id=? AND enabled_at IS NULL").bind(enabledAt, result.step, enabledAt, user.id).run();
+        }
         await writeAudit(db, { userId: user.id, action: "auth.totp_enabled", entityType: "user", entityId: user.id }); return Response.json({ ok: true });
       }
       await db.prepare("DELETE FROM totp_credentials WHERE user_id=?").bind(user.id).run(); await db.prepare("DELETE FROM auth_sessions WHERE user_id=?").bind(user.id).run();
@@ -181,8 +195,7 @@ export async function POST(request: Request) {
         ok: true,
         verificationRequired: true,
         emailDelivery: emailReady ? "queued" : "not_configured",
-        // Until an email provider is wired, return the one-time link so registration can complete.
-        ...(emailReady ? {} : { verifyUrl: `/verify-email?token=${encodeURIComponent(verificationToken)}` }),
+        ...(!emailReady && !isProductionLikeRuntime() ? { verifyUrl: `/verify-email?token=${encodeURIComponent(verificationToken)}` } : {}),
       }, { status: 201, headers: { "Cache-Control": "no-store" } });
     }
     const row = await db.prepare(`SELECT u.id,u.email,u.display_name,c.password_hash,c.password_salt,c.password_iterations,c.email_verified_at,p.status,t.encrypted_secret,t.last_used_step,t.enabled_at

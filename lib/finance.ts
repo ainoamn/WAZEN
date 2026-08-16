@@ -133,6 +133,54 @@ export function memberCashCreditMinor(member: { paid_minor?: unknown; extra_mino
   return extra + Math.max(0, paid - accrued);
 }
 
+/** Personal-reserve cash inferred from ledger when extra_minor was never stored. */
+export function personalReserveFromTransactions(
+  memberId: string,
+  spaceId: string,
+  extraMinor: unknown,
+  transactions: Array<{
+    member_id?: string | null;
+    space_id?: string;
+    status?: string;
+    allocation?: string;
+    kind: string;
+    amount_minor: number;
+  }>,
+) {
+  if (asMinor(extraMinor) > 0) return 0;
+  let total = 0;
+  for (const txn of transactions) {
+    if (txn.member_id !== memberId || txn.space_id !== spaceId) continue;
+    if ((txn.status ?? "approved") === "voided") continue;
+    if (txn.allocation === "personal_reserve" && ["contribution", "income"].includes(txn.kind)) {
+      total += asMinor(txn.amount_minor);
+    }
+  }
+  return total;
+}
+
+/** Credit used to reduce pending settlements and the Owes column. Always pass accrued (elapsed) dues, not the full goal. */
+export function memberDisplayCreditMinor(
+  member: { id: string; space_id: string; paid_minor?: unknown; extra_minor?: unknown; due_minor?: unknown },
+  options: {
+    accruedDueMinor?: unknown;
+    transactions?: Array<{
+      member_id?: string | null;
+      space_id?: string;
+      status?: string;
+      allocation?: string;
+      kind: string;
+      amount_minor: number;
+    }>;
+  } = {},
+) {
+  const accrued = options.accruedDueMinor ?? member.due_minor;
+  const fromTx = options.transactions
+    ? personalReserveFromTransactions(member.id, member.space_id, member.extra_minor, options.transactions)
+    : 0;
+  return memberCashCreditMinor(member, accrued) + fromTx;
+}
+
 /** Pending settlements with each payer's credit reserved oldest-first. */
 export function pendingSettlementsWithCredit<T extends { from_member_id: string; amount_minor: unknown }>(
   settlements: T[],
