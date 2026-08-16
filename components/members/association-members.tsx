@@ -4,6 +4,8 @@ import { CheckCircle2, Clock3, Mail, MessageCircle, Printer, Sparkles, X } from 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import OmrSymbol from "../brand/OmrSymbol";
 import { apiFetch } from "../../lib/client-api";
+import { buildMemberLedger, buildMemberLedgerHtml, filterMemberLedgerLines, type MemberLedgerFocus } from "../../lib/member-ledger";
+import { printWazenHtml } from "../../lib/print-document";
 import {
   allocateOldestFirst,
   accruedDueMinor,
@@ -140,6 +142,12 @@ export function MemberDetailModal({
   plan,
   installments,
   locale,
+  issuerName,
+  focus = "all",
+  transactions = [],
+  settlements = [],
+  tripExpenses = [],
+  expenseSplits = [],
   onClose,
   onSmartPay,
   onSendReceipt,
@@ -149,22 +157,102 @@ export function MemberDetailModal({
   plan?: AssociationPlan | null;
   installments: AssociationInstallment[];
   locale: Locale;
+  issuerName: string;
+  focus?: MemberLedgerFocus;
+  transactions?: Array<{
+    id: string;
+    space_id: string;
+    member_id?: string | null;
+    kind: string;
+    allocation?: string;
+    amount_minor: number;
+    description_ar: string;
+    description_en: string;
+    status?: string;
+    occurred_at: string;
+  }>;
+  settlements?: Array<{
+    id: string;
+    space_id: string;
+    from_member_id: string;
+    to_member_id: string;
+    from_member_name?: string | null;
+    to_member_name?: string | null;
+    amount_minor: number;
+    status: string;
+  }>;
+  tripExpenses?: Array<{
+    id: string;
+    space_id: string;
+    paid_by_member_id: string;
+    paid_by_name: string;
+    amount_minor: number;
+    description: string;
+    occurred_at: string;
+  }>;
+  expenseSplits?: Array<{ expense_id: string; member_id: string; share_minor: number }>;
   onClose: () => void;
   onSmartPay: () => void;
   onSendReceipt: () => void;
 }) {
-  const months = memberInstallments(member, installments, plan);
-  const remaining = memberAccruedOwedMinor(member, installments, plan);
+  const [tab, setTab] = useState<MemberLedgerFocus>(focus);
+  useEffect(() => { setTab(focus); }, [focus, member.id]);
+  const ledger = useMemo(() => buildMemberLedger({
+    member,
+    spaceNameAr: space.name_ar,
+    spaceNameEn: space.name_en,
+    currency: space.currency,
+    plan,
+    installments,
+    transactions,
+    settlements,
+    tripExpenses,
+    expenseSplits,
+  }), [member, space, plan, installments, transactions, settlements, tripExpenses, expenseSplits]);
+  const months = ledger.months;
+  const rows = filterMemberLedgerLines(ledger.lines, tab);
+  const tabs: Array<{ id: MemberLedgerFocus; ar: string; en: string; amount: number }> = [
+    { id: "all", ar: "الكل", en: "All", amount: 0 },
+    { id: "paid", ar: "المدفوع", en: "Paid", amount: ledger.paidMinor },
+    { id: "spent", ar: "الصرف", en: "Spent", amount: ledger.addonMinor },
+    { id: "owes", ar: "عليه", en: "Owes", amount: ledger.owesMinor },
+    { id: "credit", ar: "له", en: "Credit", amount: ledger.creditMinor },
+  ];
+  const printLedger = () => {
+    void printWazenHtml((logoUrl) => buildMemberLedgerHtml({
+      locale,
+      logoUrl,
+      issuerName,
+      memberName: member.display_name,
+      spaceName: locale === "ar" ? space.name_ar : space.name_en,
+      currency: space.currency,
+      joinedAt: member.joined_at,
+      phone: member.phone,
+      email: member.email,
+      focus: tab,
+      ledger,
+    }), true);
+  };
   return (
     <Modal title={member.display_name} onClose={onClose}>
       <div className="modal-form">
         <div className="member-detail-meta">
-          <div><span>{locale === "ar" ? "البريد" : "Email"}</span><b>{member.email || "—"}</b></div>
+          <div><span>{locale === "ar" ? "تاريخ الانضمام" : "Joined"}</span><b>{member.joined_at ? new Date(member.joined_at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB") : "—"}</b></div>
           <div><span>{locale === "ar" ? "الهاتف" : "Phone"}</span><b>{member.phone || "—"}</b></div>
-          <div><span>{locale === "ar" ? "المدة" : "Duration"}</span><b>{months.length} {locale === "ar" ? "شهر" : "months"}</b></div>
+          <div><span>{locale === "ar" ? "البريد" : "Email"}</span><b>{member.email || "—"}</b></div>
           <div><span>{locale === "ar" ? "الهدف المالي" : "Financial goal"}</span><b>{money(member.due_minor, space.currency, locale)}</b></div>
-          <div><span>{locale === "ar" ? "المدفوع" : "Paid"}</span><b>{money(member.paid_minor, space.currency, locale)}</b></div>
-          <div><span>{locale === "ar" ? "المتبقي" : "Remaining"}</span><b>{money(remaining, space.currency, locale)}</b></div>
+          <div><span>{locale === "ar" ? "كم دفع" : "Paid"}</span><b>{money(ledger.paidMinor, space.currency, locale)}</b></div>
+          <div><span>{locale === "ar" ? "كم صرف" : "Spent"}</span><b>{money(ledger.addonMinor, space.currency, locale)}</b></div>
+          <div><span>{locale === "ar" ? "كم عليه" : "Owes"}</span><b>{money(ledger.owesMinor, space.currency, locale)}</b></div>
+          <div><span>{locale === "ar" ? "كم له" : "Credit"}</span><b>{money(ledger.creditMinor, space.currency, locale)}</b></div>
+        </div>
+        <div className="member-ledger-tabs">
+          {tabs.map((item) => (
+            <button type="button" key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>
+              {locale === "ar" ? item.ar : item.en}
+              {item.id !== "all" ? <small>{money(item.amount, space.currency, locale)}</small> : null}
+            </button>
+          ))}
         </div>
         <div className="month-grid">
           {months.map((row: AssociationInstallment) => (
@@ -176,7 +264,25 @@ export function MemberDetailModal({
             </article>
           ))}
         </div>
+        <div className="members-table member-ledger-table">
+          <div className="table-head person-head">
+            <span>{locale === "ar" ? "التاريخ" : "Date"}</span>
+            <span>{locale === "ar" ? "البيان" : "Description"}</span>
+            <span>{locale === "ar" ? "التفصيل" : "Detail"}</span>
+            <span>{locale === "ar" ? "المبلغ" : "Amount"}</span>
+          </div>
+          {rows.map((line, index) => (
+            <div className="member-row member-ledger-row" key={`${line.at}:${line.titleAr}:${index}`}>
+              <span>{new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</span>
+              <strong>{locale === "ar" ? line.titleAr : line.titleEn}</strong>
+              <span className="muted-amount">{locale === "ar" ? line.detailAr : line.detailEn}</span>
+              <strong className={line.direction === "out" ? "amount-negative" : line.direction === "in" ? "reserve-amount" : ""}>{money(line.amountMinor, space.currency, locale)}</strong>
+            </div>
+          ))}
+          {!rows.length && <p className="modal-note">{locale === "ar" ? "لا توجد تفاصيل في هذا القسم." : "No detail in this section."}</p>}
+        </div>
         <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={printLedger}><Printer size={16} />{locale === "ar" ? "طباعة الكشف" : "Print statement"}</button>
           <button type="button" className="secondary-button" onClick={onSendReceipt}><Printer size={16} />{locale === "ar" ? "إرسال إيصال" : "Send receipt"}</button>
           <button type="button" className="primary-button" onClick={onSmartPay}><Sparkles size={16} />{locale === "ar" ? "المحاسب الذكي" : "Smart accountant"}</button>
         </div>

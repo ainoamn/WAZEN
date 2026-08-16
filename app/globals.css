@@ -347,12 +347,19 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .member-row { min-height: 66px; padding: 0 10px; border-bottom: 1px solid #eef1ee; }
 .member-row-button { width: 100%; border: 0; background: transparent; text-align: inherit; cursor: pointer; color: inherit; font: inherit; }
 .member-row-button:hover { background: #f6faf8; }
+.member-name-hit, .amount-hit { border: 0; background: transparent; padding: 0; color: inherit; font: inherit; cursor: pointer; text-align: inherit; }
+.member-name-hit:hover, .amount-hit:hover { text-decoration: underline; text-underline-offset: 3px; }
+.member-ledger-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.member-ledger-tabs button { min-height: 38px; border: 1px solid #dce6e1; border-radius: 10px; background: #fff; padding: 6px 12px; font: inherit; font-weight: 700; cursor: pointer; display: inline-flex; flex-direction: column; align-items: flex-start; }
+.member-ledger-tabs button small { color: #66766f; font-weight: 600; }
+.member-ledger-tabs button.active { border-color: #0d7a65; background: #eef7f4; color: #0d7a65; }
+.member-ledger-table .person-head, .member-ledger-table .member-ledger-row { min-width: 720px; grid-template-columns: .9fr 1fr 1.6fr .7fr; }
 .section-title-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .action-menu { position: relative; }
 .action-menu-panel { position: absolute; top: calc(100% + 6px); inset-inline-start: 0; z-index: 20; min-width: 180px; max-width: min(240px, calc(100vw - 24px)); padding: 6px; border-radius: 14px; background: white; border: 1px solid #e7eee9; box-shadow: 0 14px 32px rgba(17,31,27,.16); }
 .action-menu-panel button { width: 100%; border: 0; background: transparent; padding: 10px 12px; border-radius: 10px; color: #17332d; font: inherit; font-weight: 700; cursor: pointer; text-align: start; }
 .action-menu-panel button:hover { background: #f3f8f5; }
-.wide-modal { width: min(860px, 100%); }
+.wide-modal { width: min(960px, 100%); }
 .personal-setup-rules { padding: 8px 22px 22px; border-top: 1px solid var(--line); }
 .personal-setup-rules .panel-heading { padding: 12px 0; }
 .personal-setup-rules .modal-backdrop { z-index: 80; }
