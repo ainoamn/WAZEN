@@ -156,7 +156,7 @@ export function ReportsPanel({
   const download = () => {
     if (!canGenerate) return;
     void resolvePrintLogoUrl().then((logoUrl) => {
-      downloadReportHtml(buildHtml(logoUrl), `wazen-report-${reportType}-${space?.id ?? "all"}.html`);
+      downloadReportHtml(buildHtml(logoUrl), `wazen-report-${reportType}-${space?.id ?? "all"}.pdf`);
     });
   };
 
@@ -166,7 +166,7 @@ export function ReportsPanel({
       if (!opened) {
         void printWazenHtml((logoUrl) => {
           const html = buildHtml(logoUrl);
-          downloadReportHtml(html, `wazen-report-${space?.id ?? "all"}.html`);
+          downloadReportHtml(html, `wazen-report-${space?.id ?? "all"}.pdf`);
           return html;
         }, false);
         window.alert(locale === "ar" ? "تم تنزيل التقرير لأن النافذة المنبثقة محظورة. افتح الملف ثم اضغط طباعة." : "Report downloaded because pop-ups are blocked. Open the file and print.");

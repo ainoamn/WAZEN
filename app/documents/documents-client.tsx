@@ -73,6 +73,6 @@ function documentHtml(doc: DocumentRow, locale: "ar" | "en", issuer: string, log
 
 function resolveAndDownload(doc: DocumentRow, locale: "ar" | "en", issuer: string) {
   void resolvePrintLogoUrl().then((logoUrl) => {
-    downloadReportHtml(documentHtml(doc, locale, issuer, logoUrl), `${safeDownloadFilename(doc.reference)}.html`);
+    downloadReportHtml(documentHtml(doc, locale, issuer, logoUrl), `${safeDownloadFilename(doc.reference)}.pdf`);
   });
 }

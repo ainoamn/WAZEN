@@ -78,6 +78,7 @@ test("branded report html includes logo, wallet name and member scope", () => {
 
   assert.match(html, /wazen-lockup\.png|data:image\//);
   assert.match(html, /onclick="window.print\(\)"/);
+  assert.match(html, /@page \{ size: A4;/);
   assert.match(html, /جمعية الإخوة/);
   assert.match(html, /عبد الحميد/);
   assert.match(html, /تقرير العميل/);
@@ -103,4 +104,5 @@ test("account statement looks like a bank ledger with running balance", () => {
   assert.match(html, /ماجد/);
   assert.match(html, /wazen-lockup\.png/);
   assert.match(html, /onclick="window.print\(\)"/);
+  assert.match(html, /@page \{ size: A4;/);
 });

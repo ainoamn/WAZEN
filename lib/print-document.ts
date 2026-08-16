@@ -1,6 +1,8 @@
 import { escapeHtml } from "./html.ts";
 
 const OFFICIAL_LOCKUP = "/brand/wazen-lockup.png";
+/** A4 width at 96dpi — html2canvas capture width so tables scale to a real page, not a cropped browser tab. */
+const A4_CSS_PX = 794;
 
 let logoDataUrl: string | null = null;
 let logoPromise: Promise<string> | null = null;
@@ -40,10 +42,11 @@ export async function resolvePrintLogoUrl() {
 export const PRINT_DOCUMENT_CSS = `
 :root { color-scheme: light; }
 * { box-sizing: border-box; }
+@page { size: A4; margin: 12mm; }
 body { margin: 0; font-family: "Segoe UI", Tahoma, Arial, sans-serif; color: #14221f; background: #f4f7f5; }
 .print-actions { position: sticky; top: 0; z-index: 5; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px; background: #fff; border-bottom: 1px solid #e5ebe7; }
 .print-actions button { border: 0; border-radius: 10px; padding: 10px 16px; background: #0d7a65; color: #fff; font-weight: 700; cursor: pointer; }
-.sheet { max-width: 960px; margin: 20px auto 40px; background: white; border: 1px solid #d7e0db; border-radius: 18px; overflow: hidden; }
+.sheet { max-width: 960px; margin: 20px auto 40px; background: white; border: 1px solid #d7e0db; border-radius: 18px; overflow: visible; }
 .brand-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; background: #fff; border-bottom: 3px solid #0d7a65; }
 .brand-bar img { height: 48px; width: auto; }
 .brand-bar small { display: block; color: #66766f; font-size: 11px; }
@@ -69,10 +72,12 @@ th { color: #66766f; font-size: 11px; background: #f3f7f5; }
 .footer-note { margin: 10px 0 0; font-weight: 700; color: #0d7a65; }
 .empty { color: #809089; }
 footer.sheet-foot { padding: 16px 24px 24px; color: #809089; font-size: 12px; border-top: 1px solid #eef2f0; }
+thead { display: table-header-group; }
+tr { break-inside: avoid; page-break-inside: avoid; }
 @media print {
   body { background: white; }
   .print-actions { display: none !important; }
-  .sheet { margin: 0; border: 0; border-radius: 0; max-width: none; }
+  .sheet { margin: 0; border: 0; border-radius: 0; max-width: none; overflow: visible; }
   .brand-bar, th { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
 @media (max-width: 760px) { .kpis, .meta { grid-template-columns: 1fr 1fr; } }
@@ -90,7 +95,7 @@ export function wrapPrintDocument(options: {
   footer?: string;
 }) {
   const dir = options.locale === "ar" ? "rtl" : "ltr";
-  const printLabel = options.locale === "ar" ? "طباعة" : "Print";
+  const printLabel = options.locale === "ar" ? "طباعة المستند" : "Print document";
   const metaHtml = (options.meta ?? [])
     .map((item) => `<div><span>${escapeHtml(item.label)}</span><b>${escapeHtml(item.value)}</b></div>`)
     .join("");
@@ -140,6 +145,109 @@ function waitForPrintReady(win: Window) {
   })).then(() => new Promise<void>((resolve) => window.setTimeout(resolve, 80)));
 }
 
+function pdfFilename(filename: string) {
+  const base = filename.replace(/\.(html|pdf)$/i, "");
+  return `${base || "wazen-document"}.pdf`;
+}
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function printPdfUrl(url: string) {
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+  iframe.src = url;
+  document.body.appendChild(iframe);
+  iframe.addEventListener("load", () => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } catch {
+      window.open(url, "_blank");
+    }
+    window.setTimeout(() => {
+      iframe.remove();
+      URL.revokeObjectURL(url);
+    }, 120_000);
+  });
+  return true;
+}
+
+async function htmlDocumentToPdfBlob(html: string): Promise<Blob> {
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import("html2canvas"),
+    import("jspdf"),
+  ]);
+  const host = document.createElement("iframe");
+  host.setAttribute("aria-hidden", "true");
+  host.style.cssText = `position:fixed;left:-12000px;top:0;width:${A4_CSS_PX}px;height:0;border:0;opacity:0;pointer-events:none;`;
+  const captureCss = `<style>
+    html, body { width: ${A4_CSS_PX}px !important; min-width: ${A4_CSS_PX}px !important; background: #fff !important; }
+    .print-actions { display: none !important; }
+    .sheet { margin: 0 !important; max-width: none !important; border-radius: 0 !important; overflow: visible !important; }
+  </style>`;
+  const injected = html.includes("</head>") ? html.replace("</head>", `${captureCss}</head>`) : `${captureCss}${html}`;
+  document.body.appendChild(host);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => resolve(), 2500);
+      host.addEventListener("load", () => {
+        window.clearTimeout(timer);
+        resolve();
+      }, { once: true });
+      host.addEventListener("error", () => {
+        window.clearTimeout(timer);
+        reject(new Error("PDF_IFRAME_FAILED"));
+      }, { once: true });
+      host.srcdoc = injected;
+    });
+    const doc = host.contentDocument;
+    const win = host.contentWindow;
+    if (!doc || !win) throw new Error("PDF_IFRAME_EMPTY");
+    await waitForPrintReady(win);
+    const height = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight, 400);
+    host.style.height = `${height}px`;
+    const canvas = await html2canvas(doc.body, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      width: A4_CSS_PX,
+      windowWidth: A4_CSS_PX,
+      windowHeight: height,
+      scrollX: 0,
+      scrollY: 0,
+    });
+    const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "p", compress: true });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const imgW = pageW;
+    const imgH = (canvas.height * imgW) / canvas.width;
+    const imgData = canvas.toDataURL("image/jpeg", 0.92);
+    let heightLeft = imgH;
+    let position = 0;
+    pdf.addImage(imgData, "JPEG", 0, position, imgW, imgH, undefined, "FAST");
+    heightLeft -= pageH;
+    while (heightLeft > 0.4) {
+      position = heightLeft - imgH;
+      pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, position, imgW, imgH, undefined, "FAST");
+      heightLeft -= pageH;
+    }
+    return pdf.output("blob");
+  } finally {
+    host.remove();
+  }
+}
+
 function printViaIframe(html: string) {
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
@@ -167,7 +275,7 @@ function printViaIframe(html: string) {
   return true;
 }
 
-/** Open a branded preview. Always includes an on-page Print button; autoPrint uses an iframe so pop-up blockers cannot kill printing. */
+/** HTML fallback if canvas PDF generation fails. */
 export function openReportPreview(html: string, autoPrint = false) {
   if (typeof window === "undefined") return false;
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
@@ -191,19 +299,35 @@ export function openReportPreview(html: string, autoPrint = false) {
   return false;
 }
 
-export function downloadReportHtml(html: string, filename: string) {
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename.endsWith(".html") ? filename : `${filename}.html`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+export async function downloadReportHtml(html: string, filename: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const blob = await htmlDocumentToPdfBlob(html);
+    triggerBlobDownload(blob, pdfFilename(filename));
+  } catch {
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    triggerBlobDownload(blob, filename.endsWith(".html") ? filename : `${filename}.html`);
+  }
 }
 
+/** Build a multi-page A4 PDF, then open the browser print dialog on the PDF (not the live webpage). */
 export async function printWazenHtml(build: (logoUrl: string) => string, autoPrint = true) {
   const logoUrl = await resolvePrintLogoUrl();
-  return openReportPreview(build(logoUrl), autoPrint);
+  const html = build(logoUrl);
+  if (typeof window === "undefined") return false;
+  try {
+    const blob = await htmlDocumentToPdfBlob(html);
+    const url = URL.createObjectURL(blob);
+    if (autoPrint) return printPdfUrl(url);
+    const opened = window.open(url, "_blank");
+    if (!opened) {
+      triggerBlobDownload(blob, "wazen-document.pdf");
+      URL.revokeObjectURL(url);
+      return false;
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+    return true;
+  } catch {
+    return openReportPreview(html, autoPrint);
+  }
 }
