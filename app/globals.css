@@ -375,7 +375,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .month-chip small, .month-chip em { color: #809089; font-size: 11px; font-style: normal; }
 .month-grid.selectable .month-chip { cursor: pointer; }
 .receipt-channel-grid { display: grid; gap: 8px; }
-.member-row > strong { font-size: 14px; direction: ltr; justify-self: start; }
+.member-row > strong { font-size: 14px; direction: ltr; justify-self: start; white-space: normal; }
 .member-name { display: flex; align-items: center; gap: 10px; }.member-name i { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: white; font-style: normal; font-size: 13px; font-weight: 700; }.member-name div { display: flex; flex-direction: column; gap: 4px; }.member-name strong { font-size: 14px; }.member-name span { color: #8a9590; font-size: 12px; }
 .status-pill { width: max-content; min-height: 28px; display: inline-flex; align-items: center; gap: 5px; padding: 0 10px; border-radius: 8px; font-size: 12px; font-weight: 700; }.status-pill.complete { color: var(--green); background: var(--green-soft); }.status-pill.pending { color: #b27120; background: var(--amber-soft); }
 .settings-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, validateJournal, netMemberClaim } from "../lib/finance.ts";
+import { applyCreditToDebits, buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, validateJournal, netMemberClaim } from "../lib/finance.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 import { bankCustodySplit } from "../lib/wallet-links.ts";
 
@@ -102,4 +102,16 @@ test("member credit is reserved against what they owe", () => {
   assert.equal(netMemberClaim(10_000, 40_000).creditMinor, 30_000);
   assert.equal(netMemberClaim(10_000, 40_000).debitMinor, 0);
   assert.equal(netMemberClaim(0, 0).reservedMinor, 0);
+  assert.equal(netMemberClaim("23334000", "10000000").debitMinor, 13_334_000);
+});
+
+test("credit covers member debts oldest first", () => {
+  const rows = applyCreditToDebits(
+    [{ id: "a", amountMinor: 22_334_000 }, { id: "b", amountMinor: 22_334_000 }],
+    10_000_000,
+  );
+  assert.equal(rows[0].payableMinor, 12_334_000);
+  assert.equal(rows[0].reservedMinor, 10_000_000);
+  assert.equal(rows[1].payableMinor, 22_334_000);
+  assert.equal(rows[1].reservedMinor, 0);
 });

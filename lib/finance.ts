@@ -105,10 +105,16 @@ export function splitContributionPayment(
   };
 }
 
+function asMinor(value: unknown) {
+  const n = typeof value === "bigint" ? Number(value) : Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.round(n));
+}
+
 /** Offset credit (له) against debit (عليه) so the member is not asked to pay cash already held for them. */
 export function netMemberClaim(debitMinor: number, creditMinor: number) {
-  const debit = Math.max(0, Math.trunc(debitMinor) || 0);
-  const credit = Math.max(0, Math.trunc(creditMinor) || 0);
+  const debit = asMinor(debitMinor);
+  const credit = asMinor(creditMinor);
   const reservedMinor = Math.min(debit, credit);
   return {
     grossDebitMinor: debit,
@@ -117,4 +123,15 @@ export function netMemberClaim(debitMinor: number, creditMinor: number) {
     debitMinor: debit - reservedMinor,
     creditMinor: credit - reservedMinor,
   };
+}
+
+/** Apply a member's available credit to their debts, oldest first. */
+export function applyCreditToDebits<T extends { amountMinor: number }>(items: T[], creditMinor: number) {
+  let left = asMinor(creditMinor);
+  return items.map((item) => {
+    const amount = asMinor(item.amountMinor);
+    const reservedMinor = Math.min(amount, left);
+    left -= reservedMinor;
+    return { ...item, reservedMinor, payableMinor: amount - reservedMinor };
+  });
 }
