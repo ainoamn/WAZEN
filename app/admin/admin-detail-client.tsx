@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { CreditCard, Search, ShieldCheck, Users, WalletCards } from "lucide-react";
-import { AdminShell, ErrorCard, money, PageLoader, Status, useCommerceLocale } from "../commercial-kit";
+import { ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import { DateField } from "../../components/ui/date-field";
 import { PLAN_FEATURE_CATALOG } from "../../lib/plan-features";
@@ -62,7 +62,7 @@ function applyProfileToForm(
 }
 
 export function AdminUserDetail() {
-  const { locale, setLocale, l } = useCommerceLocale();
+  const { locale, l } = useCommerceLocale();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const userId = params.id;
@@ -247,9 +247,9 @@ export function AdminUserDetail() {
   };
 
   if (error && !detail) {
-    return <AdminShell active="users" locale={locale} setLocale={setLocale}><ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} /></AdminShell>;
+    return <ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} />;
   }
-  if (!detail) return <PageLoader />;
+  if (!detail) return <ContentBusy />;
   const profile = detail.profile;
   const billing = detail.billing;
   const emailVerified = Boolean(profile.email_verified_at);
@@ -268,7 +268,7 @@ export function AdminUserDetail() {
   };
 
   return (
-    <AdminShell active="users" locale={locale} setLocale={setLocale}>
+    <>
       <div className="admin-page-head">
         <div>
           <small><Link href="/admin/users">{l("المستخدمون", "Users")}</Link> / {String(profile.email)}</small>
@@ -520,12 +520,12 @@ export function AdminUserDetail() {
           {!detail.audit.length && <p>{l("لا أحداث.", "No events.")}</p>}
         </div>
       </section>
-    </AdminShell>
+    </>
   );
 }
 
 export function AdminTenants() {
-  const { locale, setLocale, l } = useCommerceLocale();
+  const { locale, l } = useCommerceLocale();
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -552,12 +552,12 @@ export function AdminTenants() {
   useEffect(() => { void load(); }, [load]);
 
   if (error && !data) {
-    return <AdminShell active="tenants" locale={locale} setLocale={setLocale}><ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} /></AdminShell>;
+    return <ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} />;
   }
-  if (!data) return <PageLoader />;
+  if (!data) return <ContentBusy />;
 
   return (
-    <AdminShell active="tenants" locale={locale} setLocale={setLocale}>
+    <>
       <div className="admin-page-head">
         <div>
           <small>{l("الإدارة / المستأجرون", "Admin / Tenants")}</small>
@@ -601,12 +601,12 @@ export function AdminTenants() {
           <button type="button" disabled={page * data.pageSize >= data.total} onClick={() => setPage((value) => value + 1)}>{l("التالي", "Next")}</button>
         </div>
       </section>
-    </AdminShell>
+    </>
   );
 }
 
 export function AdminTenantDetail() {
-  const { locale, setLocale, l } = useCommerceLocale();
+  const { locale, l } = useCommerceLocale();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const tenantId = decodeURIComponent(params.id);
@@ -631,12 +631,12 @@ export function AdminTenantDetail() {
   useEffect(() => { void load(); }, [load]);
 
   if (error && !detail) {
-    return <AdminShell active="tenants" locale={locale} setLocale={setLocale}><ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} /></AdminShell>;
+    return <ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} />;
   }
-  if (!detail) return <PageLoader />;
+  if (!detail) return <ContentBusy />;
 
   return (
-    <AdminShell active="tenants" locale={locale} setLocale={setLocale}>
+    <>
       <div className="admin-page-head">
         <div>
           <small><Link href="/admin/tenants">{l("المستأجرون", "Tenants")}</Link> / {String(detail.tenant.id)}</small>
@@ -678,18 +678,17 @@ export function AdminTenantDetail() {
           </div>
         </section>
       </div>
-    </AdminShell>
+    </>
   );
 }
 
 export function AdminStaff() {
-  const { locale, setLocale, l } = useCommerceLocale();
+  const { locale, l } = useCommerceLocale();
   const router = useRouter();
   const [roles, setRoles] = useState<Row[] | null>(null);
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
-    setRoles(null);
     fetch("/api/platform?view=admin&scope=overview", { cache: "no-store" })
       .then(async (response) => {
         if (response.status === 401) {
@@ -707,12 +706,12 @@ export function AdminStaff() {
   useEffect(() => { void load(); }, [load]);
 
   if (error && !roles) {
-    return <AdminShell active="staff" locale={locale} setLocale={setLocale}><ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} /></AdminShell>;
+    return <ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} />;
   }
-  if (!roles) return <PageLoader />;
+  if (!roles) return <ContentBusy />;
 
   return (
-    <AdminShell active="staff" locale={locale} setLocale={setLocale}>
+    <>
       <div className="admin-page-head">
         <div>
           <small>{l("الإدارة / الفريق", "Admin / Staff")}</small>
@@ -742,6 +741,6 @@ export function AdminStaff() {
           )}
         </p>
       </section>
-    </AdminShell>
+    </>
   );
 }

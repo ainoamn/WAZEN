@@ -2,14 +2,23 @@
 
 import { BarChart3, Building2, CreditCard, FileText, Globe2, LayoutDashboard, Menu, ReceiptText, UserCog, Users, WalletCards, X } from "lucide-react";
 import Link from "next/link";
-import { ReactNode, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import WazenLogo, { WazenIcon } from "../components/brand/WazenLogo";
 import WazenPageLoader from "../components/brand/WazenPageLoader";
 import { formatMoneyMinor } from "../lib/money";
 
 export type CommerceLocale = "ar" | "en";
 
-export function useCommerceLocale() {
+type CommerceLocaleApi = {
+  locale: CommerceLocale;
+  setLocale: (locale: CommerceLocale) => void;
+  l: (ar: string, en: string) => string;
+};
+
+const CommerceLocaleContext = createContext<CommerceLocaleApi | null>(null);
+
+function useCommerceLocaleState(): CommerceLocaleApi {
   const [locale, setLocale] = useState<CommerceLocale>("ar");
   useEffect(() => {
     const saved = window.localStorage.getItem("wazen-locale");
@@ -23,7 +32,23 @@ export function useCommerceLocale() {
     document.documentElement.lang = locale;
     document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
   }, [locale]);
-  return { locale, setLocale, l: (ar: string, en: string) => locale === "ar" ? ar : en };
+  return useMemo(
+    () => ({ locale, setLocale, l: (ar: string, en: string) => locale === "ar" ? ar : en }),
+    [locale],
+  );
+}
+
+export function CommerceLocaleProvider({ children }: { children: ReactNode }) {
+  const value = useCommerceLocaleState();
+  return <CommerceLocaleContext.Provider value={value}>{children}</CommerceLocaleContext.Provider>;
+}
+
+export function useCommerceLocale() {
+  const fromContext = useContext(CommerceLocaleContext);
+  if (!fromContext) {
+    throw new Error("CommerceLocaleProvider is required");
+  }
+  return fromContext;
 }
 
 export function Brand({
@@ -76,7 +101,21 @@ const adminLinks = [
   ["/documents", "documents", FileText, "الإيصالات والكشوفات", "Documents"],
 ] as const;
 
-export function AdminShell({ active, locale, setLocale, children }: { active: string; locale: CommerceLocale; setLocale: (locale: CommerceLocale) => void; children: ReactNode }) {
+export function adminNavId(pathname: string) {
+  if (pathname.startsWith("/documents")) return "documents";
+  if (pathname.startsWith("/admin/users")) return "users";
+  if (pathname.startsWith("/admin/tenants")) return "tenants";
+  if (pathname.startsWith("/admin/staff")) return "staff";
+  if (pathname.startsWith("/admin/plans")) return "plans";
+  if (pathname.startsWith("/admin/gateways")) return "gateways";
+  if (pathname.startsWith("/admin/payments")) return "payments";
+  if (pathname.startsWith("/admin/reports")) return "reports";
+  return "overview";
+}
+
+export function AdminShell({ active, locale, setLocale, children }: { active?: string; locale: CommerceLocale; setLocale: (locale: CommerceLocale) => void; children: ReactNode }) {
+  const pathname = usePathname();
+  const current = active ?? adminNavId(pathname);
   const [open, setOpen] = useState(false);
   const l = (ar: string, en: string) => locale === "ar" ? ar : en;
   return <main className="admin-app">
@@ -84,7 +123,7 @@ export function AdminShell({ active, locale, setLocale, children }: { active: st
     <aside className={open ? "open" : ""}>
       <Brand compact />
       <div className="admin-workspace"><WazenIcon className="h-7 w-[2.1rem]" /><div><small>{l("مساحة العمل", "Workspace")}</small><b>{l("إدارة وازن", "Wazen admin")}</b></div></div>
-      <nav>{adminLinks.map(([href, id, Icon, ar, en]) => <Link key={id} href={href} prefetch className={active === id ? "active" : ""}><Icon size={18} strokeWidth={2} /><span>{l(ar, en)}</span></Link>)}</nav>
+      <nav>{adminLinks.map(([href, id, Icon, ar, en]) => <Link key={id} href={href} prefetch className={current === id ? "active" : ""}><Icon size={18} strokeWidth={2} /><span>{l(ar, en)}</span></Link>)}</nav>
       <div className="admin-side-foot"><Link href="/home"><FileText size={17} />{l("العودة للرئيسية", "Back to home")}</Link><small>{l("لوحة عالمية", "Global console")}</small></div>
     </aside>
     <section className="admin-main">
@@ -96,6 +135,16 @@ export function AdminShell({ active, locale, setLocale, children }: { active: st
 
 export function PageLoader({ label = "جاري التحميل…" }: { label?: string }) {
   return <WazenPageLoader label={label} />;
+}
+
+/** In-page wait state — no full-screen logo (that looked like a site reload). */
+export function ContentBusy({ label = "جاري التحميل…" }: { label?: string }) {
+  return (
+    <div className="admin-content-busy" role="status" aria-live="polite">
+      <i />
+      <span>{label}</span>
+    </div>
+  );
 }
 
 export function ErrorCard({ message, retry }: { message: string; retry?: () => void }) {

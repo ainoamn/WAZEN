@@ -3,7 +3,7 @@
 import { CheckCircle2, Download, FileBarChart, FileCheck2, FileDown, FileText, Filter, Plus, Printer, ReceiptText, Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Brand, ErrorCard, money, PageLoader, Status, useCommerceLocale } from "../commercial-kit";
+import { Brand, ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import { wrapPrintDocument, printWazenHtml, downloadReportHtml, resolvePrintLogoUrl } from "../../lib/print-document";
 import { downloadedHtmlCsp, escapeHtml, safeDownloadFilename } from "../../lib/html";
@@ -24,7 +24,7 @@ export function DocumentsClient() {
   const load = useCallback(() => fetch("/api/platform?view=documents", { cache: "no-store", credentials: "include" }).then(async r => { if(r.status===401){router.push("/login?next=/documents");throw new Error();}if (!r.ok) throw new Error(); return await r.json() as Data; }).then((result) => { const documents = result.documents ?? []; const next = { ...result, documents, spaces: result.spaces ?? [] }; setData(next); setError(""); setSelected(current => current ? documents.find(doc => doc.id === current.id) ?? documents[0] : documents[0]); }).catch(() => setError(locale === "ar" ? "تعذر تحميل المستندات" : "Could not load documents")), [locale, router]);
   useEffect(() => { void load(); }, [load]);
   const rows = useMemo(() => data?.documents.filter(doc => (filter === "all" || doc.type === filter) && `${doc.reference} ${doc.person_name} ${doc.description}`.toLowerCase().includes(query.toLowerCase())) ?? [], [data,filter,query]);
-  if (error) return <ErrorCard message={error} retry={load}/>; if (!data) return <PageLoader/>;
+  if (error) return <ErrorCard message={error} retry={load}/>; if (!data) return <ContentBusy/>;
   const counts = Object.fromEntries(Object.keys(types).map(type => [type, data.documents.filter(doc => doc.type === type).length]));
   const download = () => selected && void resolveAndDownload(selected, locale, data.user.displayName);
   const printSelected = () => selected && void printWazenHtml((logoUrl) => documentHtml(selected, locale, data.user.displayName, logoUrl), true);

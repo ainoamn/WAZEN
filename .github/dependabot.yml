@@ -3,6 +3,12 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly }
+    ignore:
+      # eslint-plugin-jsx-a11y@6.10.2 peers eslint ^3–^9 only; ESLint 10 breaks npm install on Vercel.
+      - dependency-name: eslint
+        versions: [">=10"]
+      - dependency-name: "@eslint/js"
+        versions: [">=10"]
     groups:
       next-react:
         patterns: ["next", "react", "react-dom", "react-server-dom-webpack", "@next/*"]

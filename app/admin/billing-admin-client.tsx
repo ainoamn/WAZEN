@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreditCard, Plus, WalletCards } from "lucide-react";
-import { AdminShell, ErrorCard, money, PageLoader, Status, useCommerceLocale } from "../commercial-kit";
+import { ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import { PLAN_FEATURE_CATALOG } from "../../lib/plan-features";
 
@@ -21,12 +21,13 @@ async function postAction(action: string, payload: Record<string, unknown>) {
 }
 
 export function AdminGateways() {
-  const { locale, setLocale, l } = useCommerceLocale();
+  const { locale, l } = useCommerceLocale();
   const router = useRouter();
   const [gateways, setGateways] = useState<Row[]>([]);
   const [plans, setPlans] = useState<Row[]>([]);
   const [error, setError] = useState("");
   const [working, setWorking] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(() => {
     fetch("/api/platform?view=admin&scope=gateways", { cache: "no-store" })
@@ -39,6 +40,7 @@ export function AdminGateways() {
         if (!response.ok) throw new Error(result.error ?? "LOAD");
         setGateways(result.gateways ?? []);
         setPlans(result.plans ?? []);
+        setLoaded(true);
       })
       .catch((caught: Error) => setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD"));
   }, [router]);
@@ -74,14 +76,14 @@ export function AdminGateways() {
   };
 
   if (error && !gateways.length) {
-    return <AdminShell active="gateways" locale={locale} setLocale={setLocale}><ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} /></AdminShell>;
+    return <ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} />;
   }
-  if (!gateways.length && !error) return <PageLoader />;
+  if (!loaded) return <ContentBusy />;
 
   const scopeLabel = (scope: string) => scope === "local" ? l("محلية", "Local") : scope === "regional" ? l("إقليمية", "Regional") : l("عالمية", "Global");
 
   return (
-    <AdminShell active="gateways" locale={locale} setLocale={setLocale}>
+    <>
       <div className="admin-page-head">
         <div>
           <small>{l("الإدارة / بوابات الدفع", "Admin / Payment gateways")}</small>
@@ -153,7 +155,7 @@ export function AdminGateways() {
           </table>
         </div>
       </section>
-    </AdminShell>
+    </>
   );
 }
 
@@ -174,13 +176,14 @@ const emptyPlan = {
 };
 
 export function AdminPlans() {
-  const { locale, setLocale, l } = useCommerceLocale();
+  const { locale, l } = useCommerceLocale();
   const router = useRouter();
   const [plans, setPlans] = useState<Row[]>([]);
   const [gateways, setGateways] = useState<Row[]>([]);
   const [form, setForm] = useState(emptyPlan);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(() => {
     fetch("/api/platform?view=admin&scope=plans", { cache: "no-store" })
@@ -193,6 +196,7 @@ export function AdminPlans() {
         if (!response.ok) throw new Error(result.error ?? "LOAD");
         setPlans(result.plans ?? []);
         setGateways(result.gateways ?? []);
+        setLoaded(true);
       })
       .catch((caught: Error) => setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD"));
   }, [router]);
@@ -233,12 +237,12 @@ export function AdminPlans() {
   };
 
   if (error && !plans.length) {
-    return <AdminShell active="plans" locale={locale} setLocale={setLocale}><ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} /></AdminShell>;
+    return <ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} />;
   }
-  if (!plans.length && !error) return <PageLoader />;
+  if (!loaded) return <ContentBusy />;
 
   return (
-    <AdminShell active="plans" locale={locale} setLocale={setLocale}>
+    <>
       <div className="admin-page-head">
         <div>
           <small>{l("الإدارة / الباقات", "Admin / Plans")}</small>
@@ -337,6 +341,6 @@ export function AdminPlans() {
           </table>
         </div>
       </section>
-    </AdminShell>
+    </>
   );
 }
