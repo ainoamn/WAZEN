@@ -335,6 +335,15 @@ async function reconcileMemberLedgers(db: D1Database, spaceIds: string[]) {
             END
           ) FROM transactions t
           WHERE t.member_id = members.id AND t.space_id = members.space_id AND t.status = 'approved'
+        ), 0),
+        addon_minor = COALESCE((
+          SELECT SUM(t.amount_minor) FROM transactions t
+          WHERE t.member_id = members.id AND t.space_id = members.space_id AND t.status = 'approved'
+            AND t.allocation = 'extra'
+            AND (
+              t.kind = 'expense'
+              OR (t.kind = 'income' AND t.description_ar = 'تسوية حصة مصروف للصندوق')
+            )
         ), 0)
        WHERE space_id IN (${placeholders})`,
     )
@@ -460,6 +469,8 @@ async function voidApprovedTransaction(
     allocation: string;
     amount_minor: number;
     status: string;
+    occurred_at?: string;
+    description_ar?: string;
   },
   actorUserId: string,
   options?: { recordStatus?: "voided" | "superseded"; closeOccurrence?: boolean },
@@ -472,6 +483,22 @@ async function voidApprovedTransaction(
   const createdAt = now();
   const voided = await db.prepare("UPDATE transactions SET status=? WHERE id=? AND status='approved'").bind(recordStatus, txn.id).run();
   if (!voided.meta.changes) throw new ApiError(409, "ALREADY_VOIDED");
+  if (txn.allocation === "extra" && txn.occurred_at) {
+    try {
+      await db.prepare(`UPDATE transactions SET status=?
+        WHERE space_id=? AND allocation='extra' AND amount_minor=? AND occurred_at=? AND status='approved' AND id<>?`)
+        .bind(recordStatus, txn.space_id, amountMinor, txn.occurred_at, txn.id)
+        .run();
+      if (txn.member_id) {
+        await db.prepare(`UPDATE settlements SET status='pending', settled_at=NULL
+          WHERE space_id=? AND status='settled' AND amount_minor=?
+            AND (from_member_id=? OR to_member_id=?)
+            AND settled_at=?`)
+          .bind(txn.space_id, amountMinor, txn.member_id, txn.member_id, txn.occurred_at)
+          .run();
+      }
+    } catch { /* extra share reversal is best-effort; ledger rebuild still drops addon */ }
+  }
   const statements: ReturnType<D1Database["prepare"]>[] = [
     prepareAudit(db, {
       userId: actorUserId,
@@ -766,6 +793,10 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
   ]);
   const ids = spaces.results.map((space) => space.id);
   if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results, periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [] };
+
+  try {
+    await reconcileMemberLedgers(db, ids);
+  } catch { /* keep serving dashboard if ledger rebuild fails */ }
 
   if (options?.refreshDerived !== false) {
     await generatePersonalOccurrences(db, ids);

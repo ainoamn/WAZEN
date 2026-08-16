@@ -111,6 +111,30 @@ function asMinor(value: unknown) {
   return Math.max(0, Math.round(n));
 }
 
+export function extraAddonMinorFromTransactions(
+  memberId: string,
+  spaceId: string,
+  transactions: Array<{
+    member_id?: string | null;
+    space_id?: string;
+    status?: string;
+    allocation?: string;
+    kind: string;
+    amount_minor: number;
+    description_ar?: string;
+  }>,
+) {
+  let total = 0;
+  for (const txn of transactions) {
+    if (txn.member_id !== memberId || txn.space_id !== spaceId) continue;
+    if ((txn.status ?? "approved") !== "approved") continue;
+    if (txn.allocation !== "extra") continue;
+    if (txn.kind === "expense") total += asMinor(txn.amount_minor);
+    else if (txn.kind === "income" && txn.description_ar === "تسوية حصة مصروف للصندوق") total += asMinor(txn.amount_minor);
+  }
+  return total;
+}
+
 /** Offset credit (له) against debit (عليه) so the member is not asked to pay cash already held for them. */
 export function netMemberClaim(debitMinor: number, creditMinor: number) {
   const debit = asMinor(debitMinor);

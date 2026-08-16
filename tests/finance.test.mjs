@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCreditToDebits, buildCircleOrder, memberCashCreditMinor, memberDisplayCreditMinor, minimizeSettlements, pendingSettlementsWithCredit, netMemberClaim, splitContributionPayment, splitEvenly, validateJournal } from "../lib/finance.ts";
+import { applyCreditToDebits, buildCircleOrder, extraAddonMinorFromTransactions, memberCashCreditMinor, memberDisplayCreditMinor, minimizeSettlements, pendingSettlementsWithCredit, netMemberClaim, splitContributionPayment, splitEvenly, validateJournal } from "../lib/finance.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 import { bankCustodySplit } from "../lib/wallet-links.ts";
 
@@ -141,4 +141,15 @@ test("settlement credit uses accrued dues not the full goal", () => {
   assert.equal(homeWrong[0].payableMinor, 83_339_000);
   assert.equal(control[0].payableMinor, 73_339_000);
   assert.equal(control[0].reservedMinor, 10_000_000);
+});
+
+test("voided extra share transactions drop out of the extra column", () => {
+  const live = extraAddonMinorFromTransactions("m1", "s1", [
+    { member_id: "m1", space_id: "s1", status: "approved", allocation: "extra", kind: "income", amount_minor: 23_333, description_ar: "تسوية حصة مصروف للصندوق" },
+    { member_id: "m1", space_id: "s1", status: "voided", allocation: "extra", kind: "income", amount_minor: 23_333, description_ar: "تسوية حصة مصروف للصندوق" },
+  ]);
+  assert.equal(live, 23_333);
+  assert.equal(extraAddonMinorFromTransactions("m1", "s1", [
+    { member_id: "m1", space_id: "s1", status: "voided", allocation: "extra", kind: "income", amount_minor: 23_333, description_ar: "تسوية حصة مصروف للصندوق" },
+  ]), 0);
 });
