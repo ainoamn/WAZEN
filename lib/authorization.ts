@@ -1,5 +1,6 @@
 import type { RequestUser } from "../db/runtime";
 import { ApiError } from "./security";
+import { PLATFORM_CONSOLE_ROLES, canOpenPlatformConsole } from "./platform-console";
 
 export type PlatformRole = "super_admin" | "admin" | "finance" | "support" | "customer";
 export type SpaceCapability = "read" | "transact" | "members:write" | "circle:write" | "settlements:write";
@@ -23,6 +24,13 @@ const spaceRoles: Record<SpaceCapability, ReadonlySet<string>> = {
 const apiScopes: Record<SpaceCapability, string> = {
   read: "wallets:read", transact: "wallets:write", "members:write": "members:write", "circle:write": "circles:write", "settlements:write": "settlements:write",
 };
+
+export { PLATFORM_CONSOLE_ROLES, canOpenPlatformConsole };
+
+export async function platformRoleOf(db: D1Database, userId: string) {
+  const row = await db.prepare("SELECT role FROM platform_roles WHERE user_id=?").bind(userId).first<{ role: string }>();
+  return row?.role ?? "customer";
+}
 
 export function assertPlatformPermission(role: string, permission: string) {
   const granted = platformPermissions[role as PlatformRole] ?? platformPermissions.customer;

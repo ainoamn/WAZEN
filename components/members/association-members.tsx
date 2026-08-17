@@ -6,6 +6,7 @@ import OmrSymbol from "../brand/OmrSymbol";
 import { apiFetch } from "../../lib/client-api";
 import { buildMemberLedger, buildMemberLedgerHtml, filterMemberLedgerLines, type MemberLedgerFocus } from "../../lib/member-ledger";
 import { printWazenHtml } from "../../lib/print-document";
+import { consumePlanQuota } from "../../lib/plan-quota-client";
 import {
   allocateOldestFirst,
   accruedDueMinor,
@@ -178,6 +179,8 @@ type LedgerInputs = {
   expenseSplits?: Array<{ expense_id: string; member_id: string; share_minor: number }>;
   onSmartPay: () => void;
   onSendReceipt: () => void;
+  canEmail?: boolean;
+  canWhatsapp?: boolean;
 };
 
 function MemberLedgerBody({
@@ -219,7 +222,9 @@ function MemberLedgerBody({
     { id: "credit", ar: "له", en: "Credit", amount: ledger.creditMinor },
   ];
   const printLedger = () => {
-    void printWazenHtml((logoUrl) => buildMemberLedgerHtml({
+    void consumePlanQuota("print", locale, space.id).then((quota) => {
+      if (!quota.ok) return;
+      void printWazenHtml((logoUrl) => buildMemberLedgerHtml({
       locale,
       logoUrl,
       issuerName,
@@ -232,6 +237,7 @@ function MemberLedgerBody({
       focus: tab,
       ledger,
     }), true);
+    });
   };
   return (
     <>
@@ -588,12 +594,16 @@ export function ReceiptChannelModal({
   transactionId,
   onClose,
   onDone,
+  canEmail = true,
+  canWhatsapp = true,
 }: {
   member: AssociationMember;
   locale: Locale;
   transactionId?: string;
   onClose: () => void;
   onDone: (message: string) => void;
+  canEmail?: boolean;
+  canWhatsapp?: boolean;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -623,9 +633,9 @@ export function ReceiptChannelModal({
         <p className="modal-note">{locale === "ar" ? `إلى ${member.display_name} — البريد: ${member.email || "غير مسجّل"} — الهاتف: ${member.phone || "غير مسجّل"}` : `To ${member.display_name} — email: ${member.email || "missing"} — phone: ${member.phone || "missing"}`}</p>
         {error && <p className="modal-error">{error}</p>}
         <div className="receipt-channel-grid">
-          <button type="button" className="primary-button" disabled={saving || !member.email} onClick={() => void send("email")}><Mail size={16} />{locale === "ar" ? "بريد فقط" : "Email only"}</button>
-          <button type="button" className="primary-button" disabled={saving || !member.phone} onClick={() => void send("whatsapp")}><MessageCircle size={16} />{locale === "ar" ? "واتساب فقط" : "WhatsApp only"}</button>
-          <button type="button" className="primary-button" disabled={saving || !member.email || !member.phone} onClick={() => void send("both")}><CheckCircle2 size={16} />{locale === "ar" ? "كليهما" : "Both"}</button>
+          <button type="button" className={`primary-button${canEmail ? "" : " is-plan-locked"}`} disabled={saving || !member.email || !canEmail} onClick={() => { if (!canEmail) { window.location.assign("/pricing"); return; } void send("email"); }}><Mail size={16} />{locale === "ar" ? "بريد فقط" : "Email only"}{canEmail ? null : <em className="plan-lock-badge">{locale === "ar" ? "ترقية" : "Upgrade"}</em>}</button>
+          <button type="button" className={`primary-button${canWhatsapp ? "" : " is-plan-locked"}`} disabled={saving || !member.phone || !canWhatsapp} onClick={() => { if (!canWhatsapp) { window.location.assign("/pricing"); return; } void send("whatsapp"); }}><MessageCircle size={16} />{locale === "ar" ? "واتساب فقط" : "WhatsApp only"}{canWhatsapp ? null : <em className="plan-lock-badge">{locale === "ar" ? "ترقية" : "Upgrade"}</em>}</button>
+          <button type="button" className={`primary-button${canEmail && canWhatsapp ? "" : " is-plan-locked"}`} disabled={saving || !member.email || !member.phone || !canEmail || !canWhatsapp} onClick={() => { if (!canEmail || !canWhatsapp) { window.location.assign("/pricing"); return; } void send("both"); }}><CheckCircle2 size={16} />{locale === "ar" ? "كليهما" : "Both"}</button>
         </div>
         <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{locale === "ar" ? "إغلاق" : "Close"}</button></div>
       </div>

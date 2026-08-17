@@ -248,6 +248,9 @@ const ERRORS: Record<string, Pair> = {
   FAILED: ["فشل الإجراء", "Action failed"],
   PLAN_RECORD_LIMIT: ["وصلت إلى حد السجلات في باقتك", "You reached the record limit on your plan"],
   PLAN_FEATURE_REQUIRED: ["هذه الميزة تحتاج ترقية الباقة", "This feature needs a plan upgrade"],
+  PLAN_DAILY_TRANSACTION_LIMIT: ["وصلت إلى حد المعاملات اليومية في باقتك", "You reached the daily transaction limit on your plan"],
+  PLAN_MONTHLY_TRANSACTION_LIMIT: ["وصلت إلى حد المعاملات الشهرية في باقتك", "You reached the monthly transaction limit on your plan"],
+  PLAN_PRINT_LIMIT: ["وصلت إلى حد المطبوعات في باقتك هذا الشهر", "You reached this month’s print limit on your plan"],
 };
 
 export function errorLabel(value: string, locale: UiLocale) {

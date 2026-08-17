@@ -7,6 +7,9 @@ export const PLAN_FEATURE_CATALOG = [
   { id: "advanced_reports", ar: "التقارير التفصيلية", en: "Advanced reports", group: "records" },
   { id: "documents", ar: "المستندات والإيصالات", en: "Documents & receipts", group: "records" },
   { id: "exports", ar: "تصدير البيانات", en: "Data export", group: "records" },
+  { id: "email", ar: "إرسال بالبريد", en: "Send by email", group: "share" },
+  { id: "whatsapp", ar: "إرسال واتساب", en: "Send on WhatsApp", group: "share" },
+  { id: "downloads", ar: "تنزيل الإيصالات", en: "Download receipts", group: "share" },
   { id: "smart_accountant", ar: "المحاسب الذكي", en: "Smart accountant", group: "tools" },
   { id: "draws", ar: "القرعة وترتيب الأدوار", en: "Draws & turn order", group: "tools" },
   { id: "voting", ar: "التصويت", en: "Voting", group: "tools" },
@@ -17,6 +20,7 @@ export const PLAN_FEATURE_CATALOG = [
 export const PLAN_FEATURE_GROUPS = [
   { id: "wallets", ar: "المحافظ", en: "Wallets" },
   { id: "records", ar: "التقارير والمستندات", en: "Reports & documents" },
+  { id: "share", ar: "المشاركة والطباعة", en: "Share & print" },
   { id: "tools", ar: "الأدوات والدعم", en: "Tools & support" },
 ] as const;
 
@@ -77,6 +81,9 @@ export const NAV_UPGRADE_TARGETS: Record<string, { planAr: string; planEn: strin
   groups: { planAr: "العائلة", planEn: "Family" },
   reports: { planAr: "العائلة", planEn: "Family" },
   documents: { planAr: "الاحتراف", planEn: "Professional" },
+  email: { planAr: "الاحتراف", planEn: "Professional" },
+  whatsapp: { planAr: "العائلة", planEn: "Family" },
+  downloads: { planAr: "الاحتراف", planEn: "Professional" },
   draws: { planAr: "الاحتراف", planEn: "Professional" },
   smart_accountant: { planAr: "الاحتراف", planEn: "Professional" },
   exports: { planAr: "العائلة", planEn: "Family" },
@@ -118,6 +125,41 @@ export function quotaWouldExceed(used: number, extra: number, limit: number) {
   return Number(used) + Number(extra) > Number(limit);
 }
 
+/** Warn when at least 80% of a finite quota is used. */
+export const QUOTA_WARN_RATIO = 0.8;
+
+export function quotaNearLimit(used: number, limit: number) {
+  if (quotaIsUnlimited(limit)) return false;
+  const cap = Number(limit);
+  if (cap <= 0) return false;
+  return Number(used) / cap >= QUOTA_WARN_RATIO;
+}
+
+export function quotaRemaining(used: number, limit: number) {
+  if (quotaIsUnlimited(limit)) return Number.POSITIVE_INFINITY;
+  return Math.max(0, Number(limit) - Number(used));
+}
+
+export function quotaWarningCopy(kind: string, used: number, limit: number, locale: "ar" | "en") {
+  const remaining = Math.max(0, Number(limit) - Number(used));
+  if (locale === "ar") {
+    const labels: Record<string, string> = {
+      transaction: "المعاملات الإجمالية",
+      daily_transaction: "المعاملات اليومية",
+      monthly_transaction: "المعاملات الشهرية",
+      print: "المطبوعات هذا الشهر",
+    };
+    return `اقتربت من حد ${labels[kind] ?? kind}: استخدمت ${used} من ${limit} (يتبقى ${remaining}).`;
+  }
+  const labels: Record<string, string> = {
+    transaction: "lifetime transactions",
+    daily_transaction: "daily transactions",
+    monthly_transaction: "monthly transactions",
+    print: "prints this month",
+  };
+  return `You are close to your ${labels[kind] ?? kind} limit: ${used} of ${limit} used (${remaining} left).`;
+}
+
 export function formatQuota(limit: number, locale: "ar" | "en") {
   if (quotaIsUnlimited(limit)) return locale === "ar" ? "غير محدود" : "Unlimited";
   return String(Number(limit) || 0);
@@ -144,6 +186,9 @@ export function resolveEntitlements(input: {
   transactionLimit?: number;
   recordLimit?: number;
   userLimit?: number;
+  dailyTransactionLimit?: number;
+  monthlyTransactionLimit?: number;
+  printLimit?: number;
   walletLimitOverride?: number | null;
   memberLimitOverride?: number | null;
   transactionLimitOverride?: number | null;
@@ -161,6 +206,9 @@ export function resolveEntitlements(input: {
     transactionLimit: resolveOpenLimit(input.transactionLimit ?? 0, input.transactionLimitOverride, 0),
     recordLimit: resolveOpenLimit(input.recordLimit ?? 0, input.recordLimitOverride, 0),
     userLimit: resolveOpenLimit(input.userLimit ?? 1, input.userLimitOverride, 1),
+    dailyTransactionLimit: resolveOpenLimit(input.dailyTransactionLimit ?? 0, null, 0),
+    monthlyTransactionLimit: resolveOpenLimit(input.monthlyTransactionLimit ?? 0, null, 0),
+    printLimit: resolveOpenLimit(input.printLimit ?? 0, null, 0),
     status: input.status ?? "none",
   };
 }

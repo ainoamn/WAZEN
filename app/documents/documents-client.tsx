@@ -8,10 +8,12 @@ import { apiFetch } from "../../lib/client-api";
 import { wrapPrintDocument, printWazenHtml, downloadReportHtml, resolvePrintLogoUrl } from "../../lib/print-document";
 import { escapeHtml, safeDownloadFilename } from "../../lib/html";
 import { planHasFeature } from "../../lib/plan-features";
+import { canOpenPlatformConsole } from "../../lib/platform-console";
+import { consumePlanQuota } from "../../lib/plan-quota-client";
 import { errorLabel, methodLabel } from "../../lib/admin-labels";
 
 type DocumentRow = { id: string; owner_user_id: string; space_id: string | null; type: string; reference: string; person_name: string; description: string; amount_minor: number; currency: string; status: string; payment_method: string; approved_by: string | null; issued_at: string };
-type Data = { user: { displayName: string; email: string }; role: string; documents: DocumentRow[]; spaces: { id: string; name_ar: string; name_en: string }[]; entitlements?: { features: string[] } };
+type Data = { user: { displayName: string; email: string }; role: string; documents: DocumentRow[]; spaces: { id: string; name_ar: string; name_en: string }[]; entitlements?: { features: string[]; printLimit?: number; usage?: { printsThisMonth?: number }; warnings?: Array<{ kind: string; used: number; limit: number }> } };
 const ADVANCED_DOC_TYPES = ["disbursement", "handover", "member_statement", "society_statement", "trip_statement", "household_statement", "personal_report"];
 const types: Record<string, [string,string,string]> = {
   receipt: ["إيصال قبض","Receipt","RCV"], disbursement: ["سند صرف","Disbursement voucher","PAY"], handover: ["تسليم واستلام","Handover receipt","HND"],
@@ -30,15 +32,29 @@ export function DocumentsClient() {
   if (error) return <ErrorCard message={error} retry={load}/>; if (!data) return <ContentBusy/>;
   const counts = Object.fromEntries(Object.keys(types).map(type => [type, data.documents.filter(doc => doc.type === type).length]));
   const documentsUnlocked = planHasFeature(data.entitlements?.features?.length ? data.entitlements.features : ["personal"], "documents");
+  const canDownload = planHasFeature(data.entitlements?.features?.length ? data.entitlements.features : ["personal"], "downloads");
   const openStatement = () => {
     if (!documentsUnlocked) { router.push("/pricing"); return; }
     setModal(true);
   };
-  const download = () => selected && void resolveAndDownload(selected, locale, data.user.displayName);
-  const printSelected = () => selected && void printWazenHtml((logoUrl) => documentHtml(selected, locale, data.user.displayName, logoUrl), true);
-  return <main className="documents-page admin-console"><header className="documents-header"><Brand/><nav><a href="/dashboard">{l("لوحة المستخدم","Dashboard")}</a><a href="/billing">{l("الفوترة","Billing")}</a>{["super_admin","admin","finance","support"].includes(data.role)&&<a href="/admin">{l("الإدارة","Admin")}</a>}</nav><button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button></header>
+  const download = () => {
+    if (!selected) return;
+    if (!canDownload) { router.push("/pricing"); return; }
+    void consumePlanQuota("download", locale).then((quota) => {
+      if (!quota.ok) return;
+      void resolveAndDownload(selected, locale, data.user.displayName);
+    });
+  };
+  const printSelected = () => {
+    if (!selected) return;
+    void consumePlanQuota("print", locale).then((quota) => {
+      if (!quota.ok) return;
+      void printWazenHtml((logoUrl) => documentHtml(selected, locale, data.user.displayName, logoUrl), true);
+    });
+  };
+  return <main className="documents-page admin-console"><header className="documents-header"><Brand/><nav><a href="/dashboard">{l("لوحة المستخدم","Dashboard")}</a><a href="/billing">{l("الفوترة","Billing")}</a>{canOpenPlatformConsole(data.role)&&<a href="/admin">{l("الإدارة","Admin")}</a>}</nav><button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button></header>
     <div className="documents-layout"><aside><h2>{l("المستندات المالية","Financial documents")}</h2><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}><FileText/> {l("جميع المستندات","All documents")}<b>{data.documents.length}</b></button>{Object.entries(types).map(([key,value]) => <button className={filter === key ? "active" : ""} onClick={() => setFilter(key)} key={key}><ReceiptText/> {locale === "ar" ? value[0] : value[1]}<b>{counts[key]}</b></button>)}</aside>
-    <section className="documents-main"><div className="documents-title"><div><small>{l("الإدارة / الإيصالات والكشوفات","Admin / Receipts & statements")}</small><h1>{l("الإيصالات والكشوفات","Receipts & statements")}</h1><p>{l("قائمة الأنواع في العمود، والمعاينة بجانب التحكم. أنشئ وطبع ونزّل المستندات المرقمة.", "Types in the side column, preview beside controls. Create, print and download numbered documents.")}</p></div><div><button onClick={printSelected}><Printer/>{l("طباعة / PDF","Print / PDF")}</button><button onClick={download}><Download/>{l("تنزيل نسخة","Download")}</button><button className="primary" onClick={() => setModal(true)}><Plus/>{l("مستند جديد","New document")}</button></div></div>
+    <section className="documents-main"><div className="documents-title"><div><small>{l("الإدارة / الإيصالات والكشوفات","Admin / Receipts & statements")}</small><h1>{l("الإيصالات والكشوفات","Receipts & statements")}</h1><p>{l("قائمة الأنواع في العمود، والمعاينة بجانب التحكم. أنشئ وطبع ونزّل المستندات المرقمة.", "Types in the side column, preview beside controls. Create, print and download numbered documents.")}</p></div><div><button onClick={printSelected}><Printer/>{l("طباعة / PDF","Print / PDF")}</button><button className={canDownload ? "" : "is-plan-locked"} onClick={download}><Download/>{l("تنزيل نسخة","Download")}{canDownload ? null : <em className="plan-lock-badge">{l("ترقية","Upgrade")}</em>}</button><button className="primary" onClick={() => setModal(true)}><Plus/>{l("مستند جديد","New document")}</button></div></div>
     <div className="document-kpis"><article><ReceiptText/><span>{l("إيصالات قبض","Receipts")}</span><b>{counts.receipt}</b></article><article><FileDown/><span>{l("سندات صرف","Disbursements")}</span><b>{counts.disbursement}</b></article><article><FileCheck2/><span>{l("تسليم واستلام","Handovers")}</span><b>{counts.handover}</b></article><article><FileBarChart/><span>{l("كشوف وتقارير","Statements")}</span><b>{data.documents.length-counts.receipt-counts.disbursement-counts.handover}</b></article></div>
     <div className="document-workspace"><div className="document-list"><label><Search/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={l("بحث بالرقم أو الاسم...","Search by reference or name...")}/><Filter/></label>{rows.map(doc => <button className={selected?.id === doc.id ? "active" : ""} onClick={() => setSelected(doc)} key={doc.id}><i><ReceiptText/></i><span><b>{locale === "ar" ? types[doc.type]?.[0] : types[doc.type]?.[1]}</b><small>{doc.reference} · {doc.person_name}</small></span><strong>{doc.amount_minor ? money(doc.amount_minor,locale,doc.currency) : "—"}</strong><em>{new Intl.DateTimeFormat(locale === "ar" ? "ar-SA" : "en-GB",{dateStyle:"medium"}).format(new Date(doc.issued_at))}</em></button>)}{!rows.length&&<div className="document-empty"><FileText/><span>{l("لا توجد مستندات مطابقة","No matching documents")}</span></div>}</div>{selected ? <ReceiptPreview doc={selected} locale={locale} issuer={data.user.displayName}/> : <div className="receipt-preview empty"><FileText/><p>{l("اختر مستنداً للمعاينة","Select a document to preview")}</p></div>}</div>
     <section className="statement-launcher"><div><h2>{l("إنشاء كشف جديد","Create a statement")}</h2><p>{l("قوالب جاهزة لكل نوع من الحسابات.","Ready templates for every account type.")}</p></div><div>{["member_statement","society_statement","trip_statement","household_statement","personal_report"].map(type=><button key={type} className={documentsUnlocked ? "" : "is-plan-locked"} onClick={openStatement}><FileBarChart/><span><b>{locale === "ar" ? types[type][0] : types[type][1]}</b><small>{documentsUnlocked ? l("من البيانات المسجلة مباشرة","Generated from live records") : l("يحتاج ترقية الباقة","Needs a plan upgrade")}</small></span><em>{documentsUnlocked ? "←" : (locale === "ar" ? "ترقية" : "Upgrade")}</em></button>)}</div></section>

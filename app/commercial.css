@@ -1027,6 +1027,9 @@
 .plan-quota-summary > div { padding: 10px 12px; border: 1px solid var(--c-line); border-radius: 12px; background: #f8faf8; }
 .plan-quota-summary dt { color: #809089; font-size: 11px; }
 .plan-quota-summary dd { margin: 4px 0 0; font-size: 16px; font-weight: 800; }
+.quota-warning { margin: 0 0 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border: 1px solid #fdba74; border-radius: 14px; background: #fff7ed; color: #9a3412; }
+.quota-warning p { margin: 0; font-size: 13px; line-height: 1.6; font-weight: 600; }
+.quota-warning a { font-size: 13px; font-weight: 800; color: #9a3412; white-space: nowrap; }
 @media (max-width: 760px) {
   .plan-matrix-toolbar { width: 100%; }
   .plan-matrix-toolbar button { flex: 1; justify-content: center; }

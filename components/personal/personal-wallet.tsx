@@ -7,6 +7,7 @@ import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
 import { escapeHtml } from "../../lib/html";
 import { printWazenHtml, wrapPrintDocument } from "../../lib/print-document";
+import { consumePlanQuota } from "../../lib/plan-quota-client";
 import { buildAccountStatementHtml } from "../../lib/account-statement";
 import { occurrenceVarianceCopy, occurrenceLedgerStatus } from "../../lib/personal-finance";
 import { bankCustodySplit, holdingsForAccount } from "../../lib/wallet-links";
@@ -128,13 +129,16 @@ function printOccurrenceStatement(item: PersonalOccurrence, locale: Locale, enti
         ["Variance", delta === 0 ? "None" : `${delta > 0 ? "Over" : "Short"} ${money(Math.abs(delta), locale)}`],
       ];
   const table = `<section><table>${rows.map((row) => `<tr><td>${escapeHtml(row[0])}</td><td>${escapeHtml(row[1])}</td></tr>`).join("")}</table></section>`;
-  void printWazenHtml((logoUrl) => wrapPrintDocument({
-    locale,
-    title,
-    entityName,
-    logoUrl,
-    bodyHtml: table,
-  }), true);
+  void consumePlanQuota("print", locale, item.space_id).then((quota) => {
+    if (!quota.ok) return;
+    void printWazenHtml((logoUrl) => wrapPrintDocument({
+      locale,
+      title,
+      entityName,
+      logoUrl,
+      bodyHtml: table,
+    }), true);
+  });
 }
 
 export function PersonalWalletPanel({
@@ -195,7 +199,9 @@ export function PersonalWalletPanel({
     balance_minor: item.balance_minor,
   }));
   const printWallet = (accountId?: string) => {
-    void printWazenHtml((logoUrl) => buildAccountStatementHtml({
+    void consumePlanQuota("print", locale, spaceId).then((quota) => {
+      if (!quota.ok) return;
+      void printWazenHtml((logoUrl) => buildAccountStatementHtml({
       locale,
       logoUrl,
       issuerName,
@@ -211,6 +217,7 @@ export function PersonalWalletPanel({
       spaceId,
       accountId: accountId ?? null,
     }), true);
+    });
   };
   const spaceRules = rules.filter((item) => item.space_id === spaceId);
   const spaceOcc = occurrences

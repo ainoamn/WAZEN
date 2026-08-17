@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -328,11 +328,21 @@ async function initializeSchema(db: D1Database) {
       transaction_limit INTEGER NOT NULL DEFAULT 0,
       record_limit INTEGER NOT NULL DEFAULT 0,
       user_limit INTEGER NOT NULL DEFAULT 1,
+      daily_transaction_limit INTEGER NOT NULL DEFAULT 0,
+      monthly_transaction_limit INTEGER NOT NULL DEFAULT 0,
+      print_limit INTEGER NOT NULL DEFAULT 0,
       features_json TEXT NOT NULL DEFAULT '[]',
       is_active INTEGER NOT NULL DEFAULT 1,
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS quota_events (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_quota_events_user_kind ON quota_events(user_id, kind, created_at)"),
     db.prepare(`CREATE TABLE IF NOT EXISTS subscriptions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
