@@ -10,7 +10,7 @@ import { DateField } from "../../components/ui/date-field";
 import { PLAN_FEATURE_CATALOG } from "../../lib/plan-features";
 import { fetchAdminConsole, readAdminConsole } from "../../lib/admin-session";
 import { AdminConsole, EmptyRow } from "./admin-ui";
-import { actionLabel, countryLabel, cycleLabel, entityLabel, methodLabel, roleLabel, spaceTypeLabel, statusLabel } from "../../lib/admin-labels";
+import { actionLabel, countryLabel, cycleLabel, entityLabel, errorLabel, formatAdminDate, methodLabel, roleLabel, spaceTypeLabel, statusLabel } from "../../lib/admin-labels";
 
 type Row = Record<string, unknown>;
 
@@ -269,19 +269,7 @@ export function AdminUserDetail() {
   const profile = detail.profile;
   const billing = detail.billing;
   const emailVerified = Boolean(profile.email_verified_at);
-  const fmt = (value: unknown) => value ? new Date(String(value)).toLocaleString(locale === "ar" ? "ar" : "en-GB") : "—";
-  const errorLabel = (code: string) => {
-    const map: Record<string, [string, string]> = {
-      INVALID_SUBSCRIPTION_UPDATE: ["بيانات الاشتراك غير صالحة", "Invalid subscription data"],
-      SUBSCRIPTION_NOT_FOUND: ["تعذر العثور على الاشتراك أو الباقة", "Subscription or plan not found"],
-      PLAN_REQUIRED: ["اختر باقة أولاً", "Choose a plan first"],
-      FORBIDDEN: ["لا تملك صلاحية", "Forbidden"],
-      NO_CREDENTIALS: ["لا توجد بيانات دخول لهذا المستخدم", "User has no login credentials"],
-      CANNOT_SUSPEND_SELF: ["لا يمكن إيقاف حسابك أنت", "You cannot suspend your own account"],
-      INVALID_USER_UPDATE: ["بيانات الحساب غير صالحة", "Invalid account data"],
-    };
-    return map[code] ? (locale === "ar" ? map[code][0] : map[code][1]) : code;
-  };
+  const fmt = (value: unknown) => formatAdminDate(value, locale, true);
 
   return (
     <AdminConsole>
@@ -296,13 +284,13 @@ export function AdminUserDetail() {
 
       {(error || notice) && (
         <div className={`admin-inline-alert ${error ? "is-error" : "is-ok"}`} role="status">
-          {error ? errorLabel(error) : notice}
+          {error ? errorLabel(error, locale) : notice}
         </div>
       )}
 
       <div className="admin-kpis">
         <article><i><WalletCards /></i><span>{l("الباقة", "Plan")}</span><b>{String((locale === "ar" ? profile.plan_name_ar : profile.plan_name_en) ?? profile.plan_name_ar ?? profile.plan_name_en ?? "—")}</b><small><Status value={String(profile.subscription_status ?? "pending")} locale={locale} /></small></article>
-        <article><i><CreditCard /></i><span>{l("ينتهي", "Ends")}</span><b>{profile.current_period_end ? new Date(String(profile.current_period_end)).toLocaleDateString(locale === "ar" ? "ar" : "en-GB") : "—"}</b><small>{profile.billing_cycle ? cycleLabel(String(profile.billing_cycle), locale) : "—"}</small></article>
+        <article><i><CreditCard /></i><span>{l("ينتهي", "Ends")}</span><b>{formatAdminDate(profile.current_period_end, locale)}</b><small>{profile.billing_cycle ? cycleLabel(String(profile.billing_cycle), locale) : "—"}</small></article>
         <article><i><Users /></i><span>{l("خصم خاص", "Special discount")}</span><b>{Number(profile.discount_percent ?? 0)}% + {money(Number(profile.discount_fixed_minor ?? 0), locale)}</b><small>{String(profile.discount_label || "—")}</small></article>
         <article><i><ShieldCheck /></i><span>{l("البريد", "Email")}</span><b>{emailVerified ? l("مفعّل", "Verified") : l("غير مفعّل", "Unverified")}</b><small>{roleLabel(String(profile.role), locale)}</small></article>
       </div>
@@ -424,7 +412,7 @@ export function AdminUserDetail() {
           </div>
         </form>
         {Array.isArray(profile.effective_features) && (
-          <p style={{ marginTop: 12 }}><small>{l("الصلاحيات الفعلية", "Effective entitlements")}: {(Array.isArray(profile.effective_features) ? profile.effective_features.map((id) => PLAN_FEATURE_CATALOG.find((feature) => feature.id === id)?.[locale === "ar" ? "ar" : "en"] ?? String(id)).join("، ") : "—") || "—"} · {l("محافظ", "wallets")} {String(profile.effective_wallet_limit ?? "—")} · {l("أعضاء", "members")} {String(profile.effective_member_limit ?? "—")} · {l("مستخدمون", "users")} {String(profile.effective_user_limit ?? "—")} · {l("معاملات", "transactions")} {String(profile.effective_transaction_limit ?? "—")} · {l("سجلات", "records")} {String(profile.effective_record_limit ?? "—")}</small></p>
+          <p style={{ marginTop: 12 }}><small>{l("الصلاحيات الفعلية", "Effective entitlements")}: {(Array.isArray(profile.effective_features) ? profile.effective_features.map((id) => PLAN_FEATURE_CATALOG.find((feature) => feature.id === id)?.[locale === "ar" ? "ar" : "en"] ?? String(id)).join(locale === "ar" ? "، " : ", ") : "—") || "—"} · {l("محافظ", "wallets")} {String(profile.effective_wallet_limit ?? "—")} · {l("أعضاء", "members")} {String(profile.effective_member_limit ?? "—")} · {l("مستخدمون", "users")} {String(profile.effective_user_limit ?? "—")} · {l("معاملات", "transactions")} {String(profile.effective_transaction_limit ?? "—")} · {l("سجلات", "records")} {String(profile.effective_record_limit ?? "—")}</small></p>
         )}
         <div className="admin-feature-grid">
           {PLAN_FEATURE_CATALOG.map((feature) => {
@@ -495,7 +483,7 @@ export function AdminUserDetail() {
             {detail.sessions.map((session) => (
               <div key={String(session.id)}>
                 <ShieldCheck />
-                <span><b>{String(session.id).slice(0, 8)}…</b><small>{l("آخر ظهور", "Last seen")}: {session.last_seen_at ? new Date(String(session.last_seen_at)).toLocaleString() : "—"}</small></span>
+                <span><b>{String(session.id).slice(0, 8)}…</b><small>{l("آخر ظهور", "Last seen")}: {formatAdminDate(session.last_seen_at, locale, true)}</small></span>
               </div>
             ))}
             {!detail.sessions.length && <p>{l("لا جلسات.", "No sessions.")}</p>}

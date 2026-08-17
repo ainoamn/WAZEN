@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { ContentBusy, ErrorCard, money, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
-import { errorLabel } from "../../lib/admin-labels";
+import { errorLabel, scopeLabel } from "../../lib/admin-labels";
 import {
   PLAN_FEATURE_CATALOG,
   PLAN_FEATURE_GROUPS,
@@ -418,7 +418,7 @@ export function AdminPlans() {
               const id = String(gateway.id);
               const label = locale === "ar" ? String(gateway.name_ar) : String(gateway.name_en);
               return (
-                <ControlRow key={id} label={label} hint={String(gateway.scope)}>
+                <ControlRow key={id} label={label} hint={scopeLabel(String(gateway.scope), locale)}>
                   {drafts.map((draft) => {
                     const on = draft.gatewayIds.includes(id);
                     return (

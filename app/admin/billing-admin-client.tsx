@@ -7,7 +7,7 @@ import { ContentBusy, ErrorCard, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import { fetchAdminConsole, patchAdminConsole, readAdminConsole } from "../../lib/admin-session";
 import { AdminConsole, AdminSwitch } from "./admin-ui";
-import { methodListLabel, errorLabel } from "../../lib/admin-labels";
+import { methodListLabel, errorLabel, scopeLabel } from "../../lib/admin-labels";
 
 type Row = Record<string, unknown>;
 
@@ -91,7 +91,6 @@ export function AdminGateways() {
   }
   if (!loaded) return <ContentBusy />;
 
-  const scopeLabel = (scope: string) => scope === "local" ? l("محلية", "Local") : scope === "regional" ? l("إقليمية", "Regional") : l("عالمية", "Global");
   const enabledCount = gateways.filter((gateway) => Number(gateway.is_enabled) === 1).length;
   const localCount = gateways.filter((gateway) => String(gateway.scope) === "local").length;
 
@@ -120,7 +119,7 @@ export function AdminGateways() {
                 <th key={String(gateway.id)} className={`plan-matrix-head${Number(gateway.is_enabled) === 1 ? "" : " is-inactive"}`} scope="col">
                   <span>{String(gateway.provider_key)}</span>
                   <strong>{locale === "ar" ? String(gateway.name_ar) : String(gateway.name_en)}</strong>
-                  <small>{scopeLabel(String(gateway.scope))}</small>
+                  <small>{scopeLabel(String(gateway.scope), locale)}</small>
                   <span className="plan-head-chip">{methodListLabel(gateway.methods, locale)}</span>
                 </th>
               ))}
@@ -192,7 +191,7 @@ export function AdminGateways() {
             <tr>
               <th className="plan-matrix-label" scope="row"><div><i><Globe2 size={14} /></i><span><b>{l("النطاق", "Scope")}</b></span></div></th>
               {gateways.map((gateway) => (
-                <td key={String(gateway.id)}>{scopeLabel(String(gateway.scope))}</td>
+                <td key={String(gateway.id)}>{scopeLabel(String(gateway.scope), locale)}</td>
               ))}
             </tr>
           </tbody>
