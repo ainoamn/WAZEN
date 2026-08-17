@@ -1,25 +1,8 @@
-"use client";
+import type { ReactNode } from "react";
+import { AdminConsoleGate } from "./admin-gate";
 
-import { usePathname, useRouter } from "next/navigation";
-import { ReactNode, useEffect } from "react";
-import { AdminShell, useCommerceLocale } from "../commercial-kit";
-import { ADMIN_PREFETCH_PATHS, fetchAdminConsole } from "../../lib/admin-session";
+export const dynamic = "force-dynamic";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const { locale, setLocale } = useCommerceLocale();
-
-  useEffect(() => {
-    if (pathname.startsWith("/admin/setup")) return;
-    void fetchAdminConsole();
-    for (const href of ADMIN_PREFETCH_PATHS) router.prefetch(href);
-  }, [pathname, router]);
-
-  if (pathname.startsWith("/admin/setup")) return children;
-  return (
-    <AdminShell locale={locale} setLocale={setLocale}>
-      {children}
-    </AdminShell>
-  );
+  return <AdminConsoleGate>{children}</AdminConsoleGate>;
 }

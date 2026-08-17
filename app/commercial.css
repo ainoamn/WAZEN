@@ -160,6 +160,31 @@
   margin-top:8px;
 }
 .admin-logout:disabled{opacity:.65;cursor:default}
+.admin-access-denied{
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:14px;
+  padding:32px 20px;
+  text-align:center;
+  background:#f5f6f2;
+}
+.admin-access-denied b{font-size:22px}
+.admin-access-denied p{max-width:42ch;color:#66766f;line-height:1.7;margin:0}
+.admin-access-denied div{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.admin-access-denied a{
+  min-height:40px;
+  padding:0 14px;
+  border-radius:10px;
+  display:inline-flex;
+  align-items:center;
+  background:#0d7a65;
+  color:#fff;
+  text-decoration:none;
+  font-weight:700;
+}
 .admin-account-menu{position:relative;z-index:30}
 .admin-head-actions .admin-account-mark{
   width:40px;

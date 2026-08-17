@@ -125,12 +125,13 @@ test("quota warns at 80 percent and remaining counts down", () => {
   assert.equal(planHasFeature(resolved.features, "email"), false);
 });
 
-test("platform console is staff-only", () => {
+test("platform console is limited to super_admin and admin", () => {
   assert.equal(canOpenPlatformConsole("customer"), false);
   assert.equal(canOpenPlatformConsole("super_admin"), true);
   assert.equal(canOpenPlatformConsole("admin"), true);
-  assert.equal(canOpenPlatformConsole("finance"), true);
-  assert.equal(canOpenPlatformConsole("support"), true);
+  assert.equal(canOpenPlatformConsole("finance"), false);
+  assert.equal(canOpenPlatformConsole("support"), false);
+  assert.equal(canOpenPlatformConsole("owner"), false);
   assert.equal(canOpenPlatformConsole(null), false);
   assert.equal(canOpenPlatformConsole(""), false);
 });

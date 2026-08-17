@@ -147,7 +147,7 @@ function AdminAccountMenu({
       document.removeEventListener("keydown", onKey);
     };
   }, []);
-  const name = String(identity?.displayName ?? identity?.display_name ?? l("مدير المنصة", "Platform admin"));
+  const name = String(identity?.displayName ?? identity?.display_name ?? "").trim() || l("حسابك", "Your account");
   const email = String(identity?.email ?? "");
   return (
     <div className="admin-account-menu user-menu" ref={root}>

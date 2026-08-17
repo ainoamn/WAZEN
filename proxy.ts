@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
+import { browserSessionCookie, sessionCookieName } from "./lib/session-policy";
+
+function sessionToken(request: NextRequest) {
+  return request.cookies.get(sessionCookieName())?.value
+    || request.cookies.get("wazen_session")?.value
+    || request.cookies.get("__Host-wazen_session")?.value
+    || "";
+}
 
 export function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  const token = sessionToken(request);
+  if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/setup") && !token) {
+    const login = request.nextUrl.clone();
+    login.pathname = "/login";
+    login.search = "";
+    login.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+    return NextResponse.redirect(login);
+  }
+
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const development = process.env.NODE_ENV !== "production";
   const policy = [
@@ -21,6 +39,7 @@ export function proxy(request: NextRequest) {
   requestHeaders.set("Content-Security-Policy", policy);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", policy);
+  if (token) response.headers.append("Set-Cookie", browserSessionCookie(token));
   return response;
 }
 

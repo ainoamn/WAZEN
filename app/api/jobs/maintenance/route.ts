@@ -2,6 +2,7 @@ import { ensureSchema, getRawDb } from "../../../../db/runtime";
 import { ApiError, errorResponse } from "../../../../lib/security";
 import { loadKeyring, rotateSecret } from "../../../../lib/encryption";
 import { sanitizeAuditMetadata } from "../../../../lib/audit";
+import { idleCutoffIso } from "../../../../lib/session-policy";
 
 export async function POST(request: Request) {
   try {
@@ -9,7 +10,7 @@ export async function POST(request: Request) {
     if (secret.length < 32 || request.headers.get("authorization") !== `Bearer ${secret}`) throw new ApiError(401, "UNAUTHORIZED");
     const db = getRawDb(); await ensureSchema(db); const now = new Date().toISOString();
     await db.batch([
-      db.prepare("DELETE FROM auth_sessions WHERE expires_at<=?").bind(now),
+      db.prepare("DELETE FROM auth_sessions WHERE expires_at<=? OR last_seen_at<=?").bind(now, idleCutoffIso()),
       db.prepare("DELETE FROM rate_limits WHERE expires_at<=?").bind(now),
       db.prepare("DELETE FROM idempotency_keys WHERE expires_at<=?").bind(now),
       db.prepare("DELETE FROM email_verification_tokens WHERE expires_at<=?").bind(now),

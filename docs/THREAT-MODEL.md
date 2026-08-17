@@ -16,7 +16,7 @@ The protected assets are credentials, sessions, TOTP seeds, API keys, provider c
 
 | Threat | Control | Verification |
 |---|---|---|
-| Credential/session theft | PBKDF2, HttpOnly/SameSite cookies, password reset/change revokes sessions, TOTP replay protection | backend + E2E |
+| Credential/session theft | PBKDF2, HttpOnly/SameSite **session** cookies (cleared when the browser closes), 3-minute idle expiry on `last_seen_at`, password reset/change revokes sessions, TOTP replay protection | backend + E2E |
 | CSRF | session-bound double-submit token verified against a server hash | frontend regression + E2E mutations |
 | Tenant IDOR | central `authorizeSpace`, tenant mappings, non-disclosing 404 | cross-tenant E2E |
 | Audit secret leakage | recursive allow-bounded redaction and admin projection excluding metadata | regression test |

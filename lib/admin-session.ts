@@ -78,7 +78,10 @@ export async function fetchAdminConsole(force = false): Promise<AdminConsolePayl
       throw error;
     }
     const result = await response.json() as AdminConsolePayload & { error?: string };
-    if (!response.ok) throw new Error(result.error === "FORBIDDEN" ? "FORBIDDEN" : "LOAD");
+    if (!response.ok) {
+      clearAdminConsole();
+      throw new Error(result.error === "FORBIDDEN" ? "FORBIDDEN" : "LOAD");
+    }
     writeAdminConsole(result);
     return result;
   })();
