@@ -1,9 +1,18 @@
 "use client";
 
-import { FormEvent, Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Infinity as InfinityIcon, Plus, Users, WalletCards, X } from "lucide-react";
-import { ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
+import {
+  ArrowLeftRight,
+  Check,
+  FileStack,
+  Pencil,
+  Plus,
+  UserRound,
+  Users,
+  WalletCards,
+} from "lucide-react";
+import { ContentBusy, ErrorCard, money, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import {
   formatQuota,
@@ -15,6 +24,7 @@ import {
 import { fetchAdminConsole, patchAdminConsole, readAdminConsole } from "../../lib/admin-session";
 
 type Row = Record<string, unknown>;
+type Locale = "ar" | "en";
 
 type PlanForm = {
   id: string;
@@ -96,58 +106,81 @@ function planToForm(plan: Row): PlanForm {
   };
 }
 
-function QuotaField({
+function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
+  return (
+    <button type="button" className={`plan-switch${on ? " is-on" : ""}`} role="switch" aria-checked={on} aria-label={label} onClick={onToggle}>
+      <i />
+    </button>
+  );
+}
+
+function QuotaTile({
+  icon,
   label,
   hint,
   value,
   min,
   unlimitedValue,
-  onChange,
   unlimitedLabel,
+  onChange,
 }: {
+  icon: ReactNode;
   label: string;
   hint: string;
   value: number;
   min: number;
   unlimitedValue: number;
-  onChange: (next: number) => void;
   unlimitedLabel: string;
+  onChange: (next: number) => void;
 }) {
   const unlimited = quotaIsUnlimited(value);
   return (
-    <label className="plan-quota-field">
-      <span>{label}</span>
-      <small>{hint}</small>
-      <div>
+    <article className={`plan-quota-tile${unlimited ? " is-unlimited" : ""}`}>
+      <header>
+        <span>{icon}</span>
+        <div>
+          <b>{label}</b>
+          <small>{hint}</small>
+        </div>
+      </header>
+      <div className="plan-quota-tile-controls">
         <input
           type="number"
           min={min}
           disabled={unlimited}
           value={unlimited ? "" : value}
-          placeholder={unlimited ? "∞" : String(min)}
+          placeholder="∞"
           onChange={(event) => onChange(Math.max(min, Number(event.target.value) || min))}
         />
-        <label className="plan-unlimited">
-          <input
-            type="checkbox"
-            checked={unlimited}
-            onChange={(event) => onChange(event.target.checked ? unlimitedValue : Math.max(min, 1))}
-          />
+        <label>
+          <Switch on={unlimited} label={unlimitedLabel} onToggle={() => onChange(unlimited ? Math.max(min, 1) : unlimitedValue)} />
           {unlimitedLabel}
         </label>
       </div>
-    </label>
+    </article>
   );
+}
+
+function quotaMetrics(plan: Row, locale: Locale) {
+  return [
+    { key: "wallets", ar: "محافظ", en: "Wallets", value: Number(plan.wallet_limit ?? 1) },
+    { key: "members", ar: "أعضاء", en: "Members", value: Number(plan.member_limit ?? 2) },
+    { key: "users", ar: "مستخدمون", en: "Users", value: Number(plan.user_limit ?? 1) },
+    { key: "transactions", ar: "معاملات", en: "Transactions", value: Number(plan.transaction_limit ?? 0) },
+    { key: "records", ar: "سجلات", en: "Records", value: Number(plan.record_limit ?? 0) },
+  ].map((item) => ({ ...item, label: locale === "ar" ? item.ar : item.en, display: formatQuota(item.value, locale) }));
 }
 
 export function AdminPlans() {
   const { locale, l } = useCommerceLocale();
   const router = useRouter();
+  const editorRef = useRef<HTMLElement>(null);
   const cached = readAdminConsole();
   const [plans, setPlans] = useState<Row[]>(() => cached?.plans ?? []);
   const [gateways, setGateways] = useState<Row[]>(() => cached?.gateways ?? []);
   const [form, setForm] = useState<PlanForm>(emptyPlan);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [working, setWorking] = useState(false);
   const [loaded, setLoaded] = useState(() => Boolean(cached));
   const editing = Boolean(form.id && plans.some((plan) => String(plan.id) === form.id));
@@ -170,12 +203,19 @@ export function AdminPlans() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const edit = (plan: Row) => setForm(planToForm(plan));
+  const openEditor = (next: PlanForm) => {
+    setForm(next);
+    setNotice("");
+    requestAnimationFrame(() => editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
+  const edit = (plan: Row) => openEditor(planToForm(plan));
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setWorking(true);
     setError("");
+    setNotice("");
     try {
       const result = await postAction("upsertPlan", {
         id: form.id,
@@ -195,12 +235,16 @@ export function AdminPlans() {
         sortOrder: form.sortOrder,
         gatewayIds: form.gatewayIds,
       });
-      setPlans((result.plans as Row[]) ?? []);
+      const nextPlans = (result.plans as Row[]) ?? [];
+      setPlans(nextPlans);
       if (result.gateways) setGateways(result.gateways as Row[]);
       patchAdminConsole({
-        plans: (result.plans as Row[]) ?? [],
+        plans: nextPlans,
         ...(result.gateways ? { gateways: result.gateways as Row[] } : {}),
       });
+      const saved = nextPlans.find((plan) => String(plan.id) === form.id.trim().toLowerCase());
+      if (saved) setForm(planToForm(saved));
+      setNotice(l("تم حفظ الباقة.", "Plan saved."));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "SAVE");
     } finally {
@@ -218,23 +262,33 @@ export function AdminPlans() {
   }
   if (!loaded) return <ContentBusy />;
 
-  const quotaRows = [
-    { key: "wallets", ar: "المحافظ", en: "Wallets", read: (plan: Row) => Number(plan.wallet_limit ?? 1) },
-    { key: "members", ar: "الأعضاء لكل محفظة", en: "Members per wallet", read: (plan: Row) => Number(plan.member_limit ?? 2) },
-    { key: "users", ar: "المستخدمون", en: "Users", read: (plan: Row) => Number(plan.user_limit ?? 1) },
-    { key: "transactions", ar: "المعاملات", en: "Transactions", read: (plan: Row) => Number(plan.transaction_limit ?? 0) },
-    { key: "records", ar: "السجلات", en: "Records", read: (plan: Row) => Number(plan.record_limit ?? 0) },
-  ];
+  const toggleFeature = (featureId: string) => {
+    setForm((current) => ({
+      ...current,
+      features: current.features.includes(featureId)
+        ? current.features.filter((item) => item !== featureId)
+        : [...current.features, featureId],
+    }));
+  };
+
+  const toggleGateway = (gatewayId: string) => {
+    setForm((current) => ({
+      ...current,
+      gatewayIds: current.gatewayIds.includes(gatewayId)
+        ? current.gatewayIds.filter((item) => item !== gatewayId)
+        : [...current.gatewayIds, gatewayId],
+    }));
+  };
 
   return (
-    <>
+    <div className="plan-studio">
       <div className="admin-page-head">
         <div>
           <small>{l("الإدارة / الباقات", "Admin / Plans")}</small>
-          <h1>{l("مصفوفة الباقات والصلاحيات", "Plan comparison & entitlements")}</h1>
-          <p>{l("قارن الحدود والميزات جنباً إلى جنب، ثم حدّد ما يُمنح للمشترك: معاملات، سجلات، مستخدمون، وصلاحيات.", "Compare limits and features side by side, then grant transactions, records, users, and permissions per subscription.")}</p>
+          <h1>{l("استوديو الباقات", "Plan studio")}</h1>
+          <p>{l("قارن الحدود والميزات في بطاقات واضحة، ثم عدّل ما يُمنح عند الاشتراك: مستخدمون، معاملات، سجلات، وصلاحيات.", "Compare quotas and features on clear cards, then grant users, transactions, records, and permissions on subscribe.")}</p>
         </div>
-        <button type="button" onClick={() => setForm(emptyPlan)}><Plus />{l("باقة جديدة", "New plan")}</button>
+        <button type="button" onClick={() => openEditor(emptyPlan)}><Plus />{l("باقة جديدة", "New plan")}</button>
       </div>
 
       <div className="admin-kpis">
@@ -244,159 +298,126 @@ export function AdminPlans() {
       </div>
 
       {error ? <p className="admin-inline-alert is-error">{error}</p> : null}
+      {notice ? <p className="admin-inline-alert is-ok">{notice}</p> : null}
 
-      <section className="admin-panel plan-matrix-panel">
-        <div className="admin-panel-head">
-          <div>
-            <h2>{l("مقارنة الباقات", "Plan comparison")}</h2>
-            <p>{l("اضغط عمود الباقة لتعديل حدودها وخصائصها.", "Select a plan column to edit its quotas and features.")}</p>
-          </div>
-        </div>
-        <div className="plan-matrix-scroll">
-          <table className="plan-matrix">
-            <thead>
-              <tr>
-                <th>{l("البند", "Item")}</th>
-                {plans.map((plan) => {
-                  const selected = form.id === String(plan.id);
-                  return (
-                    <th key={String(plan.id)} className={selected ? "is-selected" : undefined}>
-                      <button type="button" onClick={() => edit(plan)}>
-                        <b>{locale === "ar" ? String(plan.name_ar) : String(plan.name_en)}</b>
-                        <small>{String(plan.id)}</small>
-                      </button>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th>{l("السعر الشهري", "Monthly price")}</th>
-                {plans.map((plan) => (
-                  <td key={`${plan.id}-price`} className={form.id === String(plan.id) ? "is-selected" : undefined}>
-                    {Number(plan.monthly_minor ?? 0) === 0 ? l("مجاناً", "Free") : money(Number(plan.monthly_minor ?? 0), locale)}
-                  </td>
+      <section className="plan-studio-board" aria-label={l("مقارنة الباقات", "Plan comparison")}>
+        {plans.map((plan, index) => {
+          const selected = form.id === String(plan.id);
+          const features = Array.isArray(plan.features) ? plan.features.map(String) : [];
+          const metrics = quotaMetrics(plan, locale);
+          const monthly = Number(plan.monthly_minor ?? 0);
+          const active = Number(plan.is_active) === 1;
+          return (
+            <article key={String(plan.id)} className={`plan-tier-card${selected ? " is-selected" : ""}${index === 2 ? " is-featured" : ""}${active ? "" : " is-inactive"}`}>
+              {index === 2 ? <em className="plan-tier-ribbon">{l("الأوسع استخداماً", "Most used")}</em> : null}
+              <header>
+                <span className="plan-tier-slug">{String(plan.id)}</span>
+                <h2>{locale === "ar" ? String(plan.name_ar) : String(plan.name_en)}</h2>
+                <p>{locale === "ar" ? String(plan.description_ar) : String(plan.description_en)}</p>
+              </header>
+              <div className="plan-tier-price">
+                <b>{monthly === 0 ? l("مجاناً", "Free") : money(monthly, locale)}</b>
+                {monthly > 0 ? <small>{l("شهرياً", "per month")}</small> : null}
+                {Number(plan.annual_minor ?? 0) > 0 ? <span>{l("سنوياً", "Yearly")} {money(Number(plan.annual_minor), locale)}</span> : null}
+              </div>
+              <dl className="plan-tier-quotas">
+                {metrics.map((metric) => (
+                  <div key={metric.key}>
+                    <dt>{metric.label}</dt>
+                    <dd>{metric.display}</dd>
+                  </div>
                 ))}
-              </tr>
-              <tr>
-                <th>{l("السعر السنوي", "Annual price")}</th>
-                {plans.map((plan) => (
-                  <td key={`${plan.id}-annual`} className={form.id === String(plan.id) ? "is-selected" : undefined}>
-                    {Number(plan.annual_minor ?? 0) === 0 ? "—" : money(Number(plan.annual_minor ?? 0), locale)}
-                  </td>
-                ))}
-              </tr>
-              {quotaRows.map((row) => (
-                <tr key={row.key}>
-                  <th>{locale === "ar" ? row.ar : row.en}</th>
-                  {plans.map((plan) => {
-                    const value = row.read(plan);
-                    return (
-                      <td key={`${plan.id}-${row.key}`} className={form.id === String(plan.id) ? "is-selected" : undefined}>
-                        {quotaIsUnlimited(value) ? <span className="plan-unlimited-chip"><InfinityIcon size={14} />{formatQuota(value, locale)}</span> : value}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              </dl>
               {PLAN_FEATURE_GROUPS.map((group) => (
-                <Fragment key={group.id}>
-                  <tr className="plan-matrix-group">
-                    <th colSpan={plans.length + 1}>{locale === "ar" ? group.ar : group.en}</th>
-                  </tr>
-                  {PLAN_FEATURE_CATALOG.filter((feature) => feature.group === group.id).map((feature) => (
-                    <tr key={feature.id}>
-                      <th>{locale === "ar" ? feature.ar : feature.en}</th>
-                      {plans.map((plan) => {
-                        const features = Array.isArray(plan.features) ? plan.features.map(String) : [];
-                        const included = planHasFeature(features, feature.id);
-                        return (
-                          <td key={`${plan.id}-${feature.id}`} className={`${form.id === String(plan.id) ? "is-selected " : ""}${included ? "is-on" : "is-off"}`}>
-                            {included ? <Check size={16} /> : <X size={16} />}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </Fragment>
+                <div key={group.id} className="plan-tier-group">
+                  <h3>{locale === "ar" ? group.ar : group.en}</h3>
+                  <ul>
+                    {PLAN_FEATURE_CATALOG.filter((feature) => feature.group === group.id).map((feature) => {
+                      const included = planHasFeature(features, feature.id);
+                      return (
+                        <li key={feature.id} className={included ? "is-on" : "is-off"}>
+                          <i>{included ? <Check size={13} /> : null}</i>
+                          {locale === "ar" ? feature.ar : feature.en}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               ))}
-              <tr>
-                <th>{l("المشتركون", "Subscribers")}</th>
-                {plans.map((plan) => (
-                  <td key={`${plan.id}-subs`} className={form.id === String(plan.id) ? "is-selected" : undefined}>
-                    {String(plan.subscriber_count ?? 0)}
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <th>{l("الحالة", "Status")}</th>
-                {plans.map((plan) => (
-                  <td key={`${plan.id}-status`} className={form.id === String(plan.id) ? "is-selected" : undefined}>
-                    <Status value={Number(plan.is_active) === 1 ? "active" : "closed"} locale={locale} />
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        </div>
+              <footer>
+                <small>{String(plan.subscriber_count ?? 0)} {l("مشترك", "subscribers")}</small>
+                <button type="button" onClick={() => edit(plan)}><Pencil size={15} />{l("تعديل", "Edit")}</button>
+              </footer>
+            </article>
+          );
+        })}
       </section>
 
-      <section className="admin-panel plan-editor">
-        <div className="admin-panel-head">
+      <section className="plan-studio-editor" ref={editorRef}>
+        <div className="plan-studio-editor-head">
           <div>
-            <h2>{editing ? l("تعديل الباقة", "Edit plan") : l("باقة جديدة", "New plan")}</h2>
-            <p>{l("هذه الحدود تُطبَّق عند الاشتراك: عدد المعاملات والسجلات والمستخدمين والخصائص الممنوحة.", "These quotas apply on subscribe: transactions, records, users, and granted features.")}</p>
+            <small>{editing ? l("تحرير الباقة", "Editing plan") : l("إنشاء باقة", "Create plan")}</small>
+            <h2>{editing ? (locale === "ar" ? form.nameAr : form.nameEn) || form.id : l("باقة جديدة", "New plan")}</h2>
+            <p>{l("الحدود والخصائص تُطبَّق فور اشتراك المستخدم في هذه الباقة.", "Quotas and features apply as soon as a user subscribes to this plan.")}</p>
           </div>
+          <label className="plan-active-toggle">
+            <Switch on={form.isActive} label={l("نشطة", "Active")} onToggle={() => setForm({ ...form, isActive: !form.isActive })} />
+            {l("ظاهرة في التسعير", "Visible on pricing")}
+          </label>
         </div>
-        <form className="plan-editor-form" onSubmit={submit}>
-          <fieldset>
-            <legend>{l("الهوية", "Identity")}</legend>
-            <label>
-              <span>{l("المعرّف", "Plan ID")}</span>
-              <input required value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })} placeholder="starter" />
-            </label>
-            <label>
-              <span>{l("الاسم عربي", "Arabic name")}</span>
-              <input required value={form.nameAr} onChange={(event) => setForm({ ...form, nameAr: event.target.value })} />
-            </label>
-            <label>
-              <span>{l("الاسم إنجليزي", "English name")}</span>
-              <input required value={form.nameEn} onChange={(event) => setForm({ ...form, nameEn: event.target.value })} />
-            </label>
-            <label>
-              <span>{l("الوصف عربي", "Arabic description")}</span>
-              <input required value={form.descriptionAr} onChange={(event) => setForm({ ...form, descriptionAr: event.target.value })} />
-            </label>
-            <label>
-              <span>{l("الوصف إنجليزي", "English description")}</span>
-              <input required value={form.descriptionEn} onChange={(event) => setForm({ ...form, descriptionEn: event.target.value })} />
-            </label>
-            <label>
-              <span>{l("الترتيب", "Sort order")}</span>
-              <input type="number" min={0} value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: Number(event.target.value) })} />
-            </label>
-            <label className="plan-active">
-              <input type="checkbox" checked={form.isActive} onChange={(event) => setForm({ ...form, isActive: event.target.checked })} />
-              {l("باقة نشطة ظاهرة في التسعير", "Active plan visible on pricing")}
-            </label>
-          </fieldset>
 
-          <fieldset>
-            <legend>{l("التسعير (ر.ع)", "Pricing (OMR)")}</legend>
-            <label>
-              <span>{l("شهري", "Monthly")}</span>
-              <input type="number" min={0} step="0.001" value={form.monthlyOmr} onChange={(event) => setForm({ ...form, monthlyOmr: event.target.value })} />
-            </label>
-            <label>
-              <span>{l("سنوي", "Annual")}</span>
-              <input type="number" min={0} step="0.001" value={form.annualOmr} onChange={(event) => setForm({ ...form, annualOmr: event.target.value })} />
-            </label>
-          </fieldset>
+        <form className="plan-studio-form" onSubmit={submit}>
+          <div className="plan-studio-grid">
+            <fieldset>
+              <legend>{l("الهوية", "Identity")}</legend>
+              <div className="plan-studio-fields">
+              <label>
+                <span>{l("المعرّف", "Plan ID")}</span>
+                <input required value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })} placeholder="starter" />
+              </label>
+              <label>
+                <span>{l("الاسم عربي", "Arabic name")}</span>
+                <input required value={form.nameAr} onChange={(event) => setForm({ ...form, nameAr: event.target.value })} />
+              </label>
+              <label>
+                <span>{l("الاسم إنجليزي", "English name")}</span>
+                <input required value={form.nameEn} onChange={(event) => setForm({ ...form, nameEn: event.target.value })} />
+              </label>
+              <label className="is-wide">
+                <span>{l("الوصف عربي", "Arabic description")}</span>
+                <input required value={form.descriptionAr} onChange={(event) => setForm({ ...form, descriptionAr: event.target.value })} />
+              </label>
+              <label className="is-wide">
+                <span>{l("الوصف إنجليزي", "English description")}</span>
+                <input required value={form.descriptionEn} onChange={(event) => setForm({ ...form, descriptionEn: event.target.value })} />
+              </label>
+              <label>
+                <span>{l("ترتيب العرض", "Display order")}</span>
+                <input type="number" min={0} value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: Number(event.target.value) })} />
+              </label>
+              </div>
+            </fieldset>
 
-          <fieldset className="plan-quota-grid">
+            <fieldset className="plan-studio-price">
+              <legend>{l("التسعير", "Pricing")}</legend>
+              <div className="plan-studio-fields">
+              <label>
+                <span>{l("شهري (ر.ع)", "Monthly (OMR)")}</span>
+                <input type="number" min={0} step="0.001" value={form.monthlyOmr} onChange={(event) => setForm({ ...form, monthlyOmr: event.target.value })} />
+              </label>
+              <label>
+                <span>{l("سنوي (ر.ع)", "Annual (OMR)")}</span>
+                <input type="number" min={0} step="0.001" value={form.annualOmr} onChange={(event) => setForm({ ...form, annualOmr: event.target.value })} />
+              </label>
+              </div>
+            </fieldset>
+          </div>
+
+          <fieldset className="plan-studio-quotas">
             <legend>{l("حدود الاشتراك", "Subscription quotas")}</legend>
-            <QuotaField
+            <div className="plan-quota-tiles">
+            <QuotaTile
+              icon={<WalletCards size={18} />}
               label={l("المحافظ", "Wallets")}
               hint={l("عدد المحافظ التي يمكن إنشاؤها", "Wallets the subscriber can create")}
               value={form.walletLimit}
@@ -405,7 +426,8 @@ export function AdminPlans() {
               unlimitedLabel={l("غير محدود", "Unlimited")}
               onChange={(walletLimit) => setForm({ ...form, walletLimit })}
             />
-            <QuotaField
+            <QuotaTile
+              icon={<Users size={18} />}
               label={l("الأعضاء لكل محفظة", "Members per wallet")}
               hint={l("سجلات الأعضاء داخل المحفظة الواحدة", "Member records inside one wallet")}
               value={form.memberLimit}
@@ -414,7 +436,8 @@ export function AdminPlans() {
               unlimitedLabel={l("غير محدود", "Unlimited")}
               onChange={(memberLimit) => setForm({ ...form, memberLimit })}
             />
-            <QuotaField
+            <QuotaTile
+              icon={<UserRound size={18} />}
               label={l("المستخدمون", "Users")}
               hint={l("حسابات الدخول المرتبطة بالاشتراك", "Login seats on this subscription")}
               value={form.userLimit}
@@ -423,7 +446,8 @@ export function AdminPlans() {
               unlimitedLabel={l("غير محدود", "Unlimited")}
               onChange={(userLimit) => setForm({ ...form, userLimit })}
             />
-            <QuotaField
+            <QuotaTile
+              icon={<ArrowLeftRight size={18} />}
               label={l("المعاملات", "Transactions")}
               hint={l("إجمالي الحركات في محافظ المشترك", "Ledger entries across the subscriber’s wallets")}
               value={form.transactionLimit}
@@ -432,7 +456,8 @@ export function AdminPlans() {
               unlimitedLabel={l("غير محدود", "Unlimited")}
               onChange={(transactionLimit) => setForm({ ...form, transactionLimit })}
             />
-            <QuotaField
+            <QuotaTile
+              icon={<FileStack size={18} />}
               label={l("السجلات", "Records")}
               hint={l("المستندات والإيصالات والكشوف", "Documents, receipts, and statements")}
               value={form.recordLimit}
@@ -441,65 +466,58 @@ export function AdminPlans() {
               unlimitedLabel={l("غير محدود", "Unlimited")}
               onChange={(recordLimit) => setForm({ ...form, recordLimit })}
             />
+            </div>
           </fieldset>
 
-          <fieldset>
-            <legend>{l("الخصائص الممنوحة عند الاشتراك", "Features granted on subscribe")}</legend>
+          <fieldset className="plan-studio-features">
+            <legend>{l("الخصائص الممنوحة", "Granted features")}</legend>
+            <div className="plan-feature-blocks">
             {PLAN_FEATURE_GROUPS.map((group) => (
-              <div key={group.id} className="plan-feature-group">
+              <div key={group.id} className="plan-feature-block">
                 <h3>{locale === "ar" ? group.ar : group.en}</h3>
-                <div>
-                  {PLAN_FEATURE_CATALOG.filter((feature) => feature.group === group.id).map((feature) => (
-                    <label key={feature.id}>
-                      <input
-                        type="checkbox"
-                        checked={form.features.includes(feature.id)}
-                        onChange={(event) => setForm({
-                          ...form,
-                          features: event.target.checked
-                            ? [...form.features, feature.id]
-                            : form.features.filter((item) => item !== feature.id),
-                        })}
-                      />
-                      {locale === "ar" ? feature.ar : feature.en}
-                    </label>
-                  ))}
-                </div>
+                <ul>
+                  {PLAN_FEATURE_CATALOG.filter((feature) => feature.group === group.id).map((feature) => {
+                    const on = form.features.includes(feature.id);
+                    return (
+                      <li key={feature.id}>
+                        <span>{locale === "ar" ? feature.ar : feature.en}</span>
+                        <Switch on={on} label={locale === "ar" ? feature.ar : feature.en} onToggle={() => toggleFeature(feature.id)} />
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             ))}
+            </div>
           </fieldset>
 
           <fieldset>
             <legend>{l("بوابات الدفع", "Payment gateways")}</legend>
-            <div className="plan-gateway-grid">
+            <div className="plan-gateway-chips">
               {gateways.map((gateway) => {
                 const id = String(gateway.id);
+                const on = form.gatewayIds.includes(id);
                 return (
-                  <label key={id}>
-                    <input
-                      type="checkbox"
-                      checked={form.gatewayIds.includes(id)}
-                      onChange={(event) => setForm({
-                        ...form,
-                        gatewayIds: event.target.checked
-                          ? [...form.gatewayIds, id]
-                          : form.gatewayIds.filter((item) => item !== id),
-                      })}
-                    />
-                    {locale === "ar" ? String(gateway.name_ar) : String(gateway.name_en)}
+                  <button
+                    key={id}
+                    type="button"
+                    className={on ? "is-on" : ""}
+                    onClick={() => toggleGateway(id)}
+                  >
+                    <b>{locale === "ar" ? String(gateway.name_ar) : String(gateway.name_en)}</b>
                     <small>{String(gateway.scope)}</small>
-                  </label>
+                  </button>
                 );
               })}
             </div>
           </fieldset>
 
-          <div className="plan-editor-actions">
-            <button disabled={working} type="submit"><Plus />{editing ? l("حفظ التعديل", "Save changes") : l("إنشاء باقة", "Create plan")}</button>
-            {editing ? <button type="button" onClick={() => setForm(emptyPlan)}>{l("باقة جديدة", "New plan")}</button> : null}
+          <div className="plan-studio-actions">
+            <button disabled={working} type="submit">{working ? l("جارٍ الحفظ...", "Saving...") : editing ? l("حفظ الباقة", "Save plan") : l("إنشاء الباقة", "Create plan")}</button>
+            {editing ? <button type="button" onClick={() => openEditor(emptyPlan)}>{l("باقة جديدة", "New plan")}</button> : null}
           </div>
         </form>
       </section>
-    </>
+    </div>
   );
 }
