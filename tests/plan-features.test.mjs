@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { dashboardNavLocked, planAllowsSpaceType, planHasFeature, resolveEntitlements, sidebarAllowsWalletView } from "../lib/plan-features.ts";
+import { dashboardNavLocked, planAllowsSpaceType, planHasFeature, resolveEntitlements, sidebarAllowsWalletView, upgradeNoticeFor } from "../lib/plan-features.ts";
 import { pageTransactions } from "../lib/transaction-page.ts";
 
 test("admin deny removes a plan feature and grant adds one", () => {
@@ -45,6 +45,14 @@ test("dashboard nav stays listed but locked when the plan does not include the f
   );
   assert.equal(dashboardNavLocked(["personal"], ["personal", "household"], "household"), false);
   assert.equal(dashboardNavLocked(["personal", "advanced_reports"], ["personal"], "reports"), false);
+});
+
+test("locked nav copy tells the user which plan to upgrade to", () => {
+  const notice = upgradeNoticeFor("ar", "الجمعيات", "society");
+  assert.match(notice.text, /رقِّ الباقة إلى العائلة/);
+  assert.match(notice.text, /الجمعيات/);
+  const docs = upgradeNoticeFor("en", "Documents & statements", "documents");
+  assert.match(docs.text, /Professional/);
 });
 
 test("transaction pager defaults to five and never shows more than 100", () => {

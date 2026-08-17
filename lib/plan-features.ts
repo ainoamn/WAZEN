@@ -60,7 +60,33 @@ export function sidebarAllowsWalletView(features: string[], existingTypes: Itera
   return types.has(spaceType);
 }
 
-/** Nav stays visible; locked items need an upgrade badge instead of being removed. */
+/** Lowest paid plan that includes a locked nav item or feature. */
+export const NAV_UPGRADE_TARGETS: Record<string, { planAr: string; planEn: string }> = {
+  household: { planAr: "العائلة", planEn: "Family" },
+  trip: { planAr: "العائلة", planEn: "Family" },
+  society: { planAr: "العائلة", planEn: "Family" },
+  groups: { planAr: "العائلة", planEn: "Family" },
+  reports: { planAr: "العائلة", planEn: "Family" },
+  documents: { planAr: "الاحتراف", planEn: "Professional" },
+  draws: { planAr: "الاحتراف", planEn: "Professional" },
+  smart_accountant: { planAr: "الاحتراف", planEn: "Professional" },
+  exports: { planAr: "العائلة", planEn: "Family" },
+  statements: { planAr: "العائلة", planEn: "Family" },
+};
+
+export function upgradeNoticeFor(locale: "ar" | "en", featureLabel: string, targetKey: string) {
+  const target = NAV_UPGRADE_TARGETS[targetKey] ?? { planAr: "باقة أعلى", planEn: "a higher plan" };
+  if (locale === "ar") {
+    return {
+      title: "ترقية مطلوبة",
+      text: `لاستخدام «${featureLabel}» رقِّ الباقة إلى ${target.planAr} أو أعلى. باقتك الحالية لا تشمل هذا الخيار.`,
+    };
+  }
+  return {
+    title: "Upgrade required",
+    text: `To use ${featureLabel}, upgrade to the ${target.planEn} plan or higher. Your current plan does not include this option.`,
+  };
+}
 export function dashboardNavLocked(features: string[], existingTypes: Iterable<string>, viewId: string) {
   if (viewId === "reports") return !(planHasFeature(features, "advanced_reports") || planHasFeature(features, "exports"));
   if (viewId === "household") return !sidebarAllowsWalletView(features, existingTypes, "household");
