@@ -44,6 +44,24 @@ test("dashboard hides platform admin unless canOpenPlatformConsole is true", () 
   assert.match(source, /canOpenPlatformConsole\(role\) \? <a href="\/admin">/);
 });
 
+test("dashboard and home keep a live revision poll without restarting it every render", () => {
+  const live = fs.readFileSync(path.join(root, "lib/live-sync.ts"), "utf8");
+  const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
+  const home = fs.readFileSync(path.join(root, "app/home/home-client.tsx"), "utf8");
+  const route = fs.readFileSync(path.join(root, "app/api/dashboard/route.ts"), "utf8");
+  const health = fs.readFileSync(path.join(root, "app/api/health/route.ts"), "utf8");
+  assert.match(live, /view=revision/);
+  assert.match(live, /onChangeRef/);
+  assert.match(live, /LiveBuildGuard/);
+  assert.match(live, /visibilityState/);
+  assert.match(dashboard, /useLiveDashboard/);
+  assert.match(home, /useLiveDashboard/);
+  assert.match(route, /searchParams.get\("view"\) === "revision"/);
+  assert.match(route, /filterSpacesByPlan/);
+  assert.match(health, /buildId/);
+  assert.doesNotMatch(dashboard, /sidebarAllowsWalletView/);
+});
+
 test("proxy redirects anonymous /admin visitors to login", () => {
   const source = fs.readFileSync(path.join(root, "proxy.ts"), "utf8");
   assert.match(source, /sessionToken/);

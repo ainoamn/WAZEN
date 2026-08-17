@@ -147,7 +147,7 @@ function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle:
 }
 
 function toggleFeature(features: string[], featureId: string) {
-  const expanded = features.includes("*") || features.includes("unlimited") || features.includes("all_wallets")
+  const expanded = features.includes("*") || features.includes("unlimited")
     ? [...PLAN_FEATURE_KEYS]
     : features;
   return expanded.includes(featureId)

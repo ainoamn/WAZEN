@@ -11,6 +11,7 @@ import { coveringPeriod } from "../../../lib/accounting-periods";
 import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
 import { accountLiveBalance, dueAtForPeriod, monthKeysForRule, occurrenceLedgerStatus } from "../../../lib/personal-finance";
 import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-forecast";
+import { filterSpacesByPlan } from "../../../lib/plan-features";
 
 type SpaceRow = {
   id: string;
@@ -784,7 +785,7 @@ async function deleteSpaceCascade(db: D1Database, spaceId: string, userId: strin
   ]);
 }
 
-async function loadDashboard(db: D1Database, userId: string, options?: { refreshDerived?: boolean }) {
+async function loadDashboard(db: D1Database, userId: string, options?: { refreshDerived?: boolean; features?: string[] }) {
   const [spaces, contacts] = await Promise.all([
     db
       .prepare(`SELECT s.* FROM spaces s
@@ -796,7 +797,8 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
       .all<SpaceRow>(),
     db.prepare("SELECT * FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name").bind(userId).all(),
   ]);
-  const ids = spaces.results.map((space) => space.id);
+  const allowed = filterSpacesByPlan(spaces.results, options?.features ?? []);
+  const ids = allowed.map((space) => space.id);
   if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results, periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [] };
 
   try {
@@ -1012,6 +1014,32 @@ function redactDashboardForViewer<T extends {
   };
 }
 
+async function readDashboardRevision(db: D1Database, userId: string) {
+  const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
+  const entitlements = await getActivePlanEntitlements(db, userId);
+  const owned = `s.owner_user_id=? OR EXISTS (SELECT 1 FROM members m WHERE m.space_id=s.id AND m.status='active' AND m.user_id=?)`;
+  const row = await db.prepare(
+    `SELECT
+      (SELECT COUNT(*) FROM spaces s WHERE ${owned}) AS spaces,
+      (SELECT COUNT(*) FROM transactions t JOIN spaces s ON s.id=t.space_id WHERE ${owned}) AS txns,
+      (SELECT COALESCE(MAX(t.created_at),'') FROM transactions t JOIN spaces s ON s.id=t.space_id WHERE ${owned}) AS txn_at,
+      (SELECT COALESCE(MAX(s.created_at),'') FROM spaces s WHERE ${owned}) AS space_at,
+      (SELECT COALESCE(MAX(updated_at),'') FROM subscriptions WHERE user_id=?) AS sub_at`,
+  ).bind(userId, userId, userId, userId, userId, userId, userId, userId, userId).first<{
+    spaces: number; txns: number; txn_at: string; space_at: string; sub_at: string;
+  }>();
+  return [
+    Number(row?.spaces ?? 0),
+    Number(row?.txns ?? 0),
+    row?.txn_at ?? "",
+    row?.space_at ?? "",
+    row?.sub_at ?? "",
+    entitlements.features.slice().sort().join(","),
+    entitlements.walletLimit,
+    entitlements.status,
+  ].join("|");
+}
+
 export async function GET(request: Request) {
   try {
     const db = getRawDb();
@@ -1019,14 +1047,19 @@ export async function GET(request: Request) {
     const user = await authenticateRequest(db, request);
     if (!user) return Response.json({ error: "AUTHENTICATION_REQUIRED" }, { status: 401 });
     assertApiScope(user, "wallets:read");
+    const url = new URL(request.url);
+    if (url.searchParams.get("view") === "revision") {
+      const revision = await readDashboardRevision(db, user.id);
+      return Response.json({ revision }, { headers: { "Cache-Control": "no-store" } });
+    }
     await ensureUser(db, user);
-    const dashboard = await loadDashboard(db, user.id, { refreshDerived: false });
     const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
     const entitlements = await getActivePlanEntitlements(db, user.id);
+    const dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features });
     const role = await platformRoleOf(db, user.id);
     const issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
     const headers = new Headers({ "Cache-Control": "no-store" }); if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
-    return Response.json({ user: { ...user, role }, entitlements, ...dashboard }, { headers });
+    return Response.json({ user: { ...user, role }, entitlements, revision: await readDashboardRevision(db, user.id), ...dashboard }, { headers });
   } catch (error) {
     return errorResponse(error);
   }
@@ -1049,11 +1082,11 @@ export async function POST(request: Request) {
     const idempotencyKey = String(payload.idempotencyKey ?? request.headers.get("idempotency-key") ?? "");
     const replay = await claimIdempotency(db, user.id, action, idempotencyKey);
     if (replay) {
-      if (replay && typeof replay === "object" && !("spaces" in replay)) {
-        const dashboard = await loadDashboard(db, user.id, { refreshDerived: false });
-        return Response.json({ ok: true, user, ...dashboard }, { headers: { "Cache-Control": "no-store" } });
-      }
-      return Response.json(replay, { headers: { "Cache-Control": "no-store" } });
+      const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
+      const entitlements = await getActivePlanEntitlements(db, user.id);
+      const dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features });
+      const body = replay && typeof replay === "object" ? replay : { ok: true };
+      return Response.json({ ...body, user, entitlements, ...dashboard }, { headers: { "Cache-Control": "no-store" } });
     }
     claimed = { db, userId: user.id, key: idempotencyKey };
 
@@ -1181,12 +1214,10 @@ export async function POST(request: Request) {
       const { name, type } = parsed.data;
       const { getActivePlanEntitlements, planAllowsSpaceType } = await import("../../../services/admin/billing-service");
       const entitlements = await getActivePlanEntitlements(db, user.id);
-      const platformRole = await db.prepare("SELECT role FROM platform_roles WHERE user_id=?").bind(user.id).first<{ role: string }>();
-      const isPlatformAdmin = ["super_admin", "admin"].includes(platformRole?.role ?? "");
-      if (!isPlatformAdmin && !planAllowsSpaceType(entitlements.features, type)) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
-      const count = await db.prepare("SELECT COUNT(*) AS count FROM spaces WHERE owner_user_id=? AND COALESCE(status,'active') <> 'archived'").bind(user.id).first<{ count: number }>();
-      const walletLimit = isPlatformAdmin ? Math.max(entitlements.walletLimit, 100) : entitlements.walletLimit;
-      if (Number(count?.count ?? 0) >= walletLimit) throw new ApiError(403, "PLAN_WALLET_LIMIT");
+      if (!planAllowsSpaceType(entitlements.features, type)) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
+      const owned = await db.prepare("SELECT type FROM spaces WHERE owner_user_id=? AND COALESCE(status,'active') <> 'archived'").bind(user.id).all<{ type: string }>();
+      const count = filterSpacesByPlan(owned.results ?? [], entitlements.features).length;
+      if (count >= entitlements.walletLimit) throw new ApiError(403, "PLAN_WALLET_LIMIT");
       const id = `${cleanId(user.id)}-${crypto.randomUUID()}`; const createdAt = now();
       const startsAt = parseStartDate(parsed.data.startsAt);
       const profile = await db.prepare("SELECT currency FROM users WHERE id=?").bind(user.id).first<{ currency: string }>(); const currency = profile?.currency ?? "OMR";
@@ -2545,14 +2576,15 @@ export async function POST(request: Request) {
     } else throw new ApiError(400, "UNSUPPORTED_ACTION");
 
     const freshUser = await db.prepare("SELECT display_name, avatar_url FROM users WHERE id=?").bind(user.id).first<{ display_name: string; avatar_url: string | null }>();
-    const dashboard = await loadDashboard(db, user.id, { refreshDerived: false });
     const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
     const entitlements = await getActivePlanEntitlements(db, user.id);
+    const dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features });
     const role = await platformRoleOf(db, user.id);
     const response = {
       ok: true,
       user: { ...user, role, displayName: freshUser?.display_name ?? user.displayName, avatarUrl: freshUser?.avatar_url ?? user.avatarUrl ?? null },
       entitlements,
+      revision: await readDashboardRevision(db, user.id),
       ...dashboard,
       ...(notification ? { notification } : {}),
     };

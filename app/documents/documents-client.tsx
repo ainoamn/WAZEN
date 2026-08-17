@@ -32,8 +32,12 @@ export function DocumentsClient() {
   useEffect(() => { void load(); }, [load]);
   const rows = useMemo(() => data?.documents.filter(doc => (filter === "all" || doc.type === filter) && `${doc.reference} ${doc.person_name} ${doc.description}`.toLowerCase().includes(query.toLowerCase())) ?? [], [data,filter,query]);
   if (error) return <ErrorCard message={error} retry={load}/>; if (!data) return <ContentBusy/>;
-  const counts = Object.fromEntries(Object.keys(types).map(type => [type, data.documents.filter(doc => doc.type === type).length]));
   const documentsUnlocked = planHasFeature(data.entitlements?.features?.length ? data.entitlements.features : ["personal"], "documents");
+  if (!documentsUnlocked) {
+    return <main className="documents-page admin-console"><header className="documents-header"><Brand/><nav><a href="/dashboard">{l("لوحة المستخدم","Dashboard")}</a><a href="/billing">{l("الفوترة","Billing")}</a></nav><button type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button></header>
+      <div className="admin-access-denied"><b>{l("الإيصالات والكشوفات غير مشمولة في باقتك","Receipts and statements are not on your plan")}</b><p>{l("رقِّ الباقة من صفحة التسعير لفتح هذه البيانات.","Upgrade from the pricing page to open this data.")}</p><div><a href="/pricing">{l("ترقية الباقة","Upgrade plan")}</a><a href="/dashboard">{l("لوحة المستخدم","Dashboard")}</a></div></div></main>;
+  }
+  const counts = Object.fromEntries(Object.keys(types).map(type => [type, data.documents.filter(doc => doc.type === type).length]));
   const canDownload = planHasFeature(data.entitlements?.features?.length ? data.entitlements.features : ["personal"], "downloads");
   const openStatement = () => {
     if (!documentsUnlocked) { router.push("/pricing"); return; }

@@ -20,13 +20,16 @@ export function clearDashboardCache() {
   inflight = null;
 }
 
-export async function fetchDashboardSession<T>(): Promise<{ status: number; data: T | null }> {
-  if (inflight) {
+export async function fetchDashboardSession<T>(force = false): Promise<{ status: number; data: T | null }> {
+  if (!force && inflight) {
     const data = await inflight as T;
     return { status: 200, data };
   }
+  if (!force && cache && Date.now() - cache.at < FRESH_MS) {
+    return { status: 200, data: cache.data as T };
+  }
   inflight = (async () => {
-    const response = await fetch("/api/dashboard", { cache: "no-store" });
+    const response = await fetch("/api/dashboard", { cache: "no-store", credentials: "same-origin" });
     if (response.status === 401) {
       clearDashboardCache();
       const error = new Error("AUTHENTICATION_REQUIRED") as Error & { status: number };

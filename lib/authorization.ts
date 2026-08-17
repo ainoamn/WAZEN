@@ -53,6 +53,9 @@ export async function authorizeSpace(db: D1Database, user: RequestUser, spaceId:
   if (!row) throw new ApiError(404, "WALLET_NOT_FOUND");
   if (!spaceRoles[capability].has(row.effective_role)) throw new ApiError(403, "FORBIDDEN");
   if (allowedTypes && !allowedTypes.includes(row.type)) throw new ApiError(400, "INVALID_WALLET_TYPE");
+  const { getActivePlanEntitlements, planAllowsSpaceType } = await import("../services/admin/billing-service");
+  const entitlements = await getActivePlanEntitlements(db, user.id);
+  if (!planAllowsSpaceType(entitlements.features, row.type)) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
   return row;
 }
 
