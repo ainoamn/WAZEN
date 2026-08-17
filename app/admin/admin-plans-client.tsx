@@ -4,9 +4,11 @@ import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } f
 import { useRouter } from "next/navigation";
 import {
   ArrowLeftRight,
+  CalendarDays,
   Check,
   FileStack,
   Plus,
+  Printer,
   UserRound,
   Users,
   WalletCards,
@@ -40,6 +42,9 @@ type PlanForm = {
   transactionLimit: number;
   recordLimit: number;
   userLimit: number;
+  dailyTransactionLimit: number;
+  monthlyTransactionLimit: number;
+  printLimit: number;
   features: string[];
   isActive: boolean;
   sortOrder: number;
@@ -47,7 +52,7 @@ type PlanForm = {
 };
 
 type QuotaField = {
-  key: "walletLimit" | "memberLimit" | "userLimit" | "transactionLimit" | "recordLimit";
+  key: "walletLimit" | "memberLimit" | "userLimit" | "transactionLimit" | "recordLimit" | "dailyTransactionLimit" | "monthlyTransactionLimit" | "printLimit";
   ar: string;
   en: string;
   hintAr: string;
@@ -72,6 +77,9 @@ const emptyPlan = (sortOrder: number): PlanForm => ({
   transactionLimit: 50,
   recordLimit: 20,
   userLimit: 1,
+  dailyTransactionLimit: 5,
+  monthlyTransactionLimit: 50,
+  printLimit: 10,
   features: ["personal"],
   isActive: true,
   sortOrder,
@@ -115,6 +123,9 @@ function planToForm(plan: Row): PlanForm {
     transactionLimit: Number(plan.transaction_limit ?? 0),
     recordLimit: Number(plan.record_limit ?? 0),
     userLimit: Number(plan.user_limit ?? 1),
+    dailyTransactionLimit: Number(plan.daily_transaction_limit ?? 0),
+    monthlyTransactionLimit: Number(plan.monthly_transaction_limit ?? 0),
+    printLimit: Number(plan.print_limit ?? 0),
     features: Array.isArray(plan.features) ? plan.features.map(String) : ["personal"],
     isActive: Number(plan.is_active) === 1,
     sortOrder: Number(plan.sort_order ?? 0),
@@ -213,6 +224,9 @@ export function AdminPlans() {
         transactionLimit: draft.transactionLimit,
         recordLimit: draft.recordLimit,
         userLimit: draft.userLimit,
+        dailyTransactionLimit: draft.dailyTransactionLimit,
+        monthlyTransactionLimit: draft.monthlyTransactionLimit,
+        printLimit: draft.printLimit,
         features: draft.features,
         isActive: draft.isActive,
         sortOrder: draft.sortOrder,
@@ -257,8 +271,11 @@ export function AdminPlans() {
     { key: "walletLimit", ar: "المحافظ", en: "Wallets", hintAr: "عدد المحافظ التي يمكن إنشاؤها", hintEn: "Wallets the subscriber can create", min: 1, unlimitedValue: 9999, restore: 1, icon: <WalletCards size={14} /> },
     { key: "memberLimit", ar: "الأعضاء لكل محفظة", en: "Members per wallet", hintAr: "سجلات الأعضاء داخل المحفظة", hintEn: "Member records inside one wallet", min: 1, unlimitedValue: 9999, restore: 2, icon: <Users size={14} /> },
     { key: "userLimit", ar: "المستخدمون", en: "Users", hintAr: "حسابات الدخول المرتبطة بالاشتراك", hintEn: "Login seats on this subscription", min: 0, unlimitedValue: 0, restore: 1, icon: <UserRound size={14} /> },
-    { key: "transactionLimit", ar: "المعاملات", en: "Transactions", hintAr: "إجمالي الحركات في محافظ المشترك", hintEn: "Ledger entries across subscriber wallets", min: 0, unlimitedValue: 0, restore: 50, icon: <ArrowLeftRight size={14} /> },
+    { key: "transactionLimit", ar: "المعاملات الإجمالية", en: "Lifetime transactions", hintAr: "إجمالي الحركات في محافظ المشترك", hintEn: "Ledger entries across subscriber wallets", min: 0, unlimitedValue: 0, restore: 50, icon: <ArrowLeftRight size={14} /> },
+    { key: "dailyTransactionLimit", ar: "المعاملات اليومية", en: "Daily transactions", hintAr: "حد الحركات في اليوم", hintEn: "Ledger entries allowed per day", min: 0, unlimitedValue: 0, restore: 5, icon: <CalendarDays size={14} /> },
+    { key: "monthlyTransactionLimit", ar: "المعاملات الشهرية", en: "Monthly transactions", hintAr: "حد الحركات في الشهر", hintEn: "Ledger entries allowed per month", min: 0, unlimitedValue: 0, restore: 50, icon: <CalendarDays size={14} /> },
     { key: "recordLimit", ar: "السجلات", en: "Records", hintAr: "المستندات والإيصالات والكشوف", hintEn: "Documents, receipts, and statements", min: 0, unlimitedValue: 0, restore: 20, icon: <FileStack size={14} /> },
+    { key: "printLimit", ar: "المطبوعات شهرياً", en: "Prints per month", hintAr: "عدد الطباعات المسموحة كل شهر", hintEn: "Print jobs allowed each month", min: 0, unlimitedValue: 0, restore: 10, icon: <Printer size={14} /> },
   ];
 
   if (error && !plans.length && !drafts.length) {

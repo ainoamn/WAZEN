@@ -2,6 +2,8 @@
 
 import {
   parsePlanFeatures,
+  planHasFeature,
+  quotaNearLimit,
   quotaWouldExceed,
   resolveEntitlements,
 } from "../../lib/plan-features";
@@ -66,38 +68,85 @@ export async function ensureSubscriptionAdminColumns(db: D1Database) {
   }
 }
 
-const DEFAULT_PLAN_QUOTAS: Record<string, { transactions: number; records: number; users: number }> = {
-  starter: { transactions: 50, records: 20, users: 1 },
-  family: { transactions: 300, records: 100, users: 5 },
-  pro: { transactions: 2000, records: 500, users: 25 },
-  business: { transactions: 0, records: 0, users: 9999 },
+const DEFAULT_PLAN_QUOTAS: Record<string, {
+  transactions: number;
+  records: number;
+  users: number;
+  dailyTransactions: number;
+  monthlyTransactions: number;
+  prints: number;
+  extraFeatures: string[];
+}> = {
+  starter: { transactions: 50, records: 20, users: 1, dailyTransactions: 5, monthlyTransactions: 50, prints: 10, extraFeatures: [] },
+  family: { transactions: 300, records: 100, users: 5, dailyTransactions: 20, monthlyTransactions: 300, prints: 50, extraFeatures: ["whatsapp"] },
+  pro: { transactions: 2000, records: 500, users: 25, dailyTransactions: 80, monthlyTransactions: 2000, prints: 200, extraFeatures: ["email", "whatsapp", "downloads"] },
+  business: { transactions: 0, records: 0, users: 9999, dailyTransactions: 0, monthlyTransactions: 0, prints: 0, extraFeatures: ["email", "whatsapp", "downloads"] },
 };
 
+export async function ensureQuotaEventsTable(db: D1Database) {
+  await db.prepare(`CREATE TABLE IF NOT EXISTS quota_events (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`).run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS idx_quota_events_user_kind ON quota_events(user_id, kind, created_at)").run();
+}
+
 export async function ensurePlanQuotaColumns(db: D1Database) {
+  await ensureQuotaEventsTable(db);
   const columns = await db.prepare("PRAGMA table_info(plans)").all<{ name: string }>();
   const names = new Set(columns.results.map((column) => column.name));
   const additions: Array<[string, string]> = [
     ["transaction_limit", "INTEGER NOT NULL DEFAULT 0"],
     ["record_limit", "INTEGER NOT NULL DEFAULT 0"],
     ["user_limit", "INTEGER NOT NULL DEFAULT 1"],
+    ["daily_transaction_limit", "INTEGER NOT NULL DEFAULT 0"],
+    ["monthly_transaction_limit", "INTEGER NOT NULL DEFAULT 0"],
+    ["print_limit", "INTEGER NOT NULL DEFAULT 0"],
   ];
-  let added = false;
+  const addedNames: string[] = [];
   for (const [name, ddl] of additions) {
     if (names.has(name)) continue;
     try {
       await db.prepare(`ALTER TABLE plans ADD COLUMN ${name} ${ddl}`).run();
-      added = true;
+      addedNames.push(name);
     } catch (error) {
       const refreshed = await db.prepare("PRAGMA table_info(plans)").all<{ name: string }>();
       if (!refreshed.results.some((column) => column.name === name)) throw error;
     }
   }
-  if (added) {
+  if (addedNames.length) {
+    const usageAdded = addedNames.some((name) =>
+      name === "daily_transaction_limit" || name === "monthly_transaction_limit" || name === "print_limit",
+    );
+    const legacyAdded = addedNames.some((name) =>
+      name === "transaction_limit" || name === "record_limit" || name === "user_limit",
+    );
     for (const [planId, quotas] of Object.entries(DEFAULT_PLAN_QUOTAS)) {
-      await db
-        .prepare("UPDATE plans SET transaction_limit=?, record_limit=?, user_limit=? WHERE id=?")
-        .bind(quotas.transactions, quotas.records, quotas.users, planId)
-        .run();
+      if (legacyAdded && usageAdded) {
+        await db
+          .prepare("UPDATE plans SET transaction_limit=?, record_limit=?, user_limit=?, daily_transaction_limit=?, monthly_transaction_limit=?, print_limit=? WHERE id=?")
+          .bind(quotas.transactions, quotas.records, quotas.users, quotas.dailyTransactions, quotas.monthlyTransactions, quotas.prints, planId)
+          .run();
+      } else if (usageAdded) {
+        await db
+          .prepare("UPDATE plans SET daily_transaction_limit=?, monthly_transaction_limit=?, print_limit=? WHERE id=?")
+          .bind(quotas.dailyTransactions, quotas.monthlyTransactions, quotas.prints, planId)
+          .run();
+      } else if (legacyAdded) {
+        await db
+          .prepare("UPDATE plans SET transaction_limit=?, record_limit=?, user_limit=? WHERE id=?")
+          .bind(quotas.transactions, quotas.records, quotas.users, planId)
+          .run();
+      }
+      if (usageAdded && quotas.extraFeatures.length) {
+        const row = await db.prepare("SELECT features_json FROM plans WHERE id=?").bind(planId).first<{ features_json: string }>();
+        if (!row) continue;
+        const current = parsePlanFeatures(row.features_json);
+        const merged = [...new Set([...current, ...quotas.extraFeatures])];
+        await db.prepare("UPDATE plans SET features_json=? WHERE id=?").bind(JSON.stringify(merged), planId).run();
+      }
     }
   }
 }
@@ -275,6 +324,9 @@ export async function upsertAdminPlan(
     transactionLimit: number;
     recordLimit: number;
     userLimit: number;
+    dailyTransactionLimit: number;
+    monthlyTransactionLimit: number;
+    printLimit: number;
     features: string[];
     isActive: boolean;
     sortOrder: number;
@@ -288,7 +340,7 @@ export async function upsertAdminPlan(
     await db
       .prepare(
         `UPDATE plans SET name_ar=?,name_en=?,description_ar=?,description_en=?,monthly_minor=?,annual_minor=?,
-         wallet_limit=?,member_limit=?,transaction_limit=?,record_limit=?,user_limit=?,features_json=?,is_active=?,sort_order=? WHERE id=?`,
+         wallet_limit=?,member_limit=?,transaction_limit=?,record_limit=?,user_limit=?,daily_transaction_limit=?,monthly_transaction_limit=?,print_limit=?,features_json=?,is_active=?,sort_order=? WHERE id=?`,
       )
       .bind(
         input.nameAr,
@@ -302,6 +354,9 @@ export async function upsertAdminPlan(
         input.transactionLimit,
         input.recordLimit,
         input.userLimit,
+        input.dailyTransactionLimit,
+        input.monthlyTransactionLimit,
+        input.printLimit,
         JSON.stringify(input.features),
         input.isActive ? 1 : 0,
         input.sortOrder,
@@ -311,8 +366,8 @@ export async function upsertAdminPlan(
   } else {
     await db
       .prepare(
-        `INSERT INTO plans (id,name_ar,name_en,description_ar,description_en,monthly_minor,annual_minor,wallet_limit,member_limit,transaction_limit,record_limit,user_limit,features_json,is_active,sort_order,created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO plans (id,name_ar,name_en,description_ar,description_en,monthly_minor,annual_minor,wallet_limit,member_limit,transaction_limit,record_limit,user_limit,daily_transaction_limit,monthly_transaction_limit,print_limit,features_json,is_active,sort_order,created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .bind(
         planId,
@@ -327,6 +382,9 @@ export async function upsertAdminPlan(
         input.transactionLimit,
         input.recordLimit,
         input.userLimit,
+        input.dailyTransactionLimit,
+        input.monthlyTransactionLimit,
+        input.printLimit,
         JSON.stringify(input.features),
         input.isActive ? 1 : 0,
         input.sortOrder,
@@ -505,7 +563,8 @@ export async function getUserBillingHistory(db: D1Database, userId: string) {
     db
       .prepare(
         `SELECT s.*, p.name_ar AS plan_name_ar, p.name_en AS plan_name_en, p.monthly_minor, p.annual_minor, p.features_json,
-                p.wallet_limit, p.member_limit, p.transaction_limit, p.record_limit, p.user_limit
+                p.wallet_limit, p.member_limit, p.transaction_limit, p.record_limit, p.user_limit,
+                p.daily_transaction_limit, p.monthly_transaction_limit, p.print_limit
          FROM subscriptions s JOIN plans p ON p.id=s.plan_id
          WHERE s.user_id=? ORDER BY s.created_at DESC`,
       )
@@ -533,7 +592,8 @@ export async function getUserBillingHistory(db: D1Database, userId: string) {
 export async function getActivePlanEntitlements(db: D1Database, userId: string) {
   const row = await db
     .prepare(
-      `SELECT p.wallet_limit, p.member_limit, p.transaction_limit, p.record_limit, p.user_limit, p.features_json, s.status,
+      `SELECT p.wallet_limit, p.member_limit, p.transaction_limit, p.record_limit, p.user_limit,
+              p.daily_transaction_limit, p.monthly_transaction_limit, p.print_limit, p.features_json, s.status,
               s.discount_percent, s.discount_fixed_minor,
               s.features_grant_json, s.features_deny_json, s.wallet_limit_override, s.member_limit_override,
               s.transaction_limit_override, s.record_limit_override, s.user_limit_override
@@ -548,6 +608,9 @@ export async function getActivePlanEntitlements(db: D1Database, userId: string) 
       transaction_limit: number | null;
       record_limit: number | null;
       user_limit: number | null;
+      daily_transaction_limit: number | null;
+      monthly_transaction_limit: number | null;
+      print_limit: number | null;
       features_json: string;
       status: string;
       discount_percent: number;
@@ -560,55 +623,73 @@ export async function getActivePlanEntitlements(db: D1Database, userId: string) 
       record_limit_override?: number | null;
       user_limit_override?: number | null;
     }>();
-  if (!row) {
-    return {
+  const resolved = row
+    ? resolveEntitlements({
+      planFeatures: parsePlanFeatures(row.features_json),
+      grant: parsePlanFeatures(row.features_grant_json),
+      deny: parsePlanFeatures(row.features_deny_json),
+      walletLimit: Number(row.wallet_limit ?? 1),
+      memberLimit: Number(row.member_limit ?? 2),
+      transactionLimit: Number(row.transaction_limit ?? 0),
+      recordLimit: Number(row.record_limit ?? 0),
+      userLimit: Number(row.user_limit ?? 1),
+      dailyTransactionLimit: Number(row.daily_transaction_limit ?? 0),
+      monthlyTransactionLimit: Number(row.monthly_transaction_limit ?? 0),
+      printLimit: Number(row.print_limit ?? 0),
+      walletLimitOverride: row.wallet_limit_override,
+      memberLimitOverride: row.member_limit_override,
+      transactionLimitOverride: row.transaction_limit_override,
+      recordLimitOverride: row.record_limit_override,
+      userLimitOverride: row.user_limit_override,
+      status: row.status,
+    })
+    : resolveEntitlements({
+      planFeatures: ["personal"],
       walletLimit: 1,
       memberLimit: 2,
       transactionLimit: 50,
       recordLimit: 20,
       userLimit: 1,
-      features: ["personal"] as string[],
+      dailyTransactionLimit: 5,
+      monthlyTransactionLimit: 50,
+      printLimit: 10,
       status: "none",
-      discountPercent: 0,
-      discountFixedMinor: 0,
-    };
-  }
-  const resolved = resolveEntitlements({
-    planFeatures: parsePlanFeatures(row.features_json),
-    grant: parsePlanFeatures(row.features_grant_json),
-    deny: parsePlanFeatures(row.features_deny_json),
-    walletLimit: Number(row.wallet_limit ?? 1),
-    memberLimit: Number(row.member_limit ?? 2),
-    transactionLimit: Number(row.transaction_limit ?? 0),
-    recordLimit: Number(row.record_limit ?? 0),
-    userLimit: Number(row.user_limit ?? 1),
-    walletLimitOverride: row.wallet_limit_override,
-    memberLimitOverride: row.member_limit_override,
-    transactionLimitOverride: row.transaction_limit_override,
-    recordLimitOverride: row.record_limit_override,
-    userLimitOverride: row.user_limit_override,
-    status: row.status,
-  });
+    });
+  const usage = await getOwnerQuotaUsage(db, userId);
   return {
     ...resolved,
-    discountPercent: Number(row.discount_percent ?? 0),
-    discountFixedMinor: Number(row.discount_fixed_minor ?? 0),
+    discountPercent: Number(row?.discount_percent ?? 0),
+    discountFixedMinor: Number(row?.discount_fixed_minor ?? 0),
+    usage,
+    warnings: buildQuotaWarnings(resolved, usage),
   };
 }
 
 export type PlanQuotaKind = "transaction" | "record" | "user";
+
+function startOfUtcDay(now = new Date()) {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+}
+
+function startOfUtcMonth(now = new Date()) {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+}
 
 async function isPlatformAdminUser(db: D1Database, userId: string) {
   const row = await db.prepare("SELECT role FROM platform_roles WHERE user_id=?").bind(userId).first<{ role: string }>();
   return ["super_admin", "admin"].includes(row?.role ?? "");
 }
 
-export async function countOwnerTransactions(db: D1Database, userId: string) {
-  const row = await db.prepare(
-    `SELECT COUNT(*) AS count
-     FROM transactions t JOIN spaces s ON s.id=t.space_id
-     WHERE s.owner_user_id=? AND COALESCE(t.status,'approved') <> 'voided'`,
-  ).bind(userId).first<{ count: number }>();
+export async function countOwnerTransactions(db: D1Database, userId: string, since?: string) {
+  const sql = since
+    ? `SELECT COUNT(*) AS count
+       FROM transactions t JOIN spaces s ON s.id=t.space_id
+       WHERE s.owner_user_id=? AND COALESCE(t.status,'approved') <> 'voided' AND t.created_at>=?`
+    : `SELECT COUNT(*) AS count
+       FROM transactions t JOIN spaces s ON s.id=t.space_id
+       WHERE s.owner_user_id=? AND COALESCE(t.status,'approved') <> 'voided'`;
+  const query = db.prepare(sql);
+  const row = since ? await query.bind(userId, since).first<{ count: number }>() : await query.bind(userId).first<{ count: number }>();
   return Number(row?.count ?? 0);
 }
 
@@ -629,12 +710,53 @@ export async function countOwnerUsers(db: D1Database, userId: string) {
   return Math.max(1, linked || 1);
 }
 
+export async function countQuotaEvents(db: D1Database, userId: string, kind: "print" | "download", since: string) {
+  const row = await db.prepare(
+    "SELECT COUNT(*) AS count FROM quota_events WHERE user_id=? AND kind=? AND created_at>=?",
+  ).bind(userId, kind, since).first<{ count: number }>();
+  return Number(row?.count ?? 0);
+}
+
+export async function getOwnerQuotaUsage(db: D1Database, userId: string) {
+  const dayStart = startOfUtcDay();
+  const monthStart = startOfUtcMonth();
+  const [transactionsTotal, transactionsToday, transactionsThisMonth, printsThisMonth] = await Promise.all([
+    countOwnerTransactions(db, userId),
+    countOwnerTransactions(db, userId, dayStart),
+    countOwnerTransactions(db, userId, monthStart),
+    countQuotaEvents(db, userId, "print", monthStart),
+  ]);
+  return { transactionsTotal, transactionsToday, transactionsThisMonth, printsThisMonth };
+}
+
+function buildQuotaWarnings(
+  entitlements: {
+    transactionLimit: number;
+    dailyTransactionLimit: number;
+    monthlyTransactionLimit: number;
+    printLimit: number;
+  },
+  usage: Awaited<ReturnType<typeof getOwnerQuotaUsage>>,
+) {
+  const items: Array<{ kind: string; used: number; limit: number }> = [];
+  const push = (kind: string, used: number, limit: number) => {
+    if (quotaNearLimit(used, limit)) items.push({ kind, used, limit });
+  };
+  push("transaction", usage.transactionsTotal, entitlements.transactionLimit);
+  push("daily_transaction", usage.transactionsToday, entitlements.dailyTransactionLimit);
+  push("monthly_transaction", usage.transactionsThisMonth, entitlements.monthlyTransactionLimit);
+  push("print", usage.printsThisMonth, entitlements.printLimit);
+  return items;
+}
+
 export async function assertOwnerPlanQuota(db: D1Database, userId: string, kind: PlanQuotaKind, extra = 1) {
   if (await isPlatformAdminUser(db, userId)) return getActivePlanEntitlements(db, userId);
   const entitlements = await getActivePlanEntitlements(db, userId);
   if (kind === "transaction") {
-    const used = await countOwnerTransactions(db, userId);
-    if (quotaWouldExceed(used, extra, entitlements.transactionLimit)) throw new ApiError(403, "PLAN_TRANSACTION_LIMIT");
+    const usage = entitlements.usage;
+    if (quotaWouldExceed(usage.transactionsTotal, extra, entitlements.transactionLimit)) throw new ApiError(403, "PLAN_TRANSACTION_LIMIT");
+    if (quotaWouldExceed(usage.transactionsToday, extra, entitlements.dailyTransactionLimit)) throw new ApiError(403, "PLAN_DAILY_TRANSACTION_LIMIT");
+    if (quotaWouldExceed(usage.transactionsThisMonth, extra, entitlements.monthlyTransactionLimit)) throw new ApiError(403, "PLAN_MONTHLY_TRANSACTION_LIMIT");
   } else if (kind === "record") {
     const used = await countOwnerRecords(db, userId);
     if (quotaWouldExceed(used, extra, entitlements.recordLimit)) throw new ApiError(403, "PLAN_RECORD_LIMIT");
@@ -643,4 +765,38 @@ export async function assertOwnerPlanQuota(db: D1Database, userId: string, kind:
     if (quotaWouldExceed(used, extra, entitlements.userLimit)) throw new ApiError(403, "PLAN_USER_LIMIT");
   }
   return entitlements;
+}
+
+export async function assertPlanShareFeature(
+  db: D1Database,
+  ownerUserId: string,
+  feature: "email" | "whatsapp" | "downloads",
+  actorUserId = ownerUserId,
+) {
+  if (await isPlatformAdminUser(db, actorUserId)) return getActivePlanEntitlements(db, ownerUserId);
+  const entitlements = await getActivePlanEntitlements(db, ownerUserId);
+  if (!planHasFeature(entitlements.features, feature)) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
+  return entitlements;
+}
+
+export async function consumeQuotaEvent(
+  db: D1Database,
+  ownerUserId: string,
+  kind: "print" | "download",
+  actorUserId = ownerUserId,
+) {
+  if (await isPlatformAdminUser(db, actorUserId)) return getActivePlanEntitlements(db, ownerUserId);
+  const entitlements = await getActivePlanEntitlements(db, ownerUserId);
+  if (kind === "download" && !planHasFeature(entitlements.features, "downloads")) {
+    throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
+  }
+  if (kind === "print") {
+    if (quotaWouldExceed(entitlements.usage.printsThisMonth, 1, entitlements.printLimit)) {
+      throw new ApiError(403, "PLAN_PRINT_LIMIT");
+    }
+  }
+  await db.prepare("INSERT INTO quota_events (id, user_id, kind, created_at) VALUES (?,?,?,?)")
+    .bind(crypto.randomUUID(), ownerUserId, kind, new Date().toISOString())
+    .run();
+  return getActivePlanEntitlements(db, ownerUserId);
 }

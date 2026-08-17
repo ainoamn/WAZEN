@@ -33,25 +33,29 @@ const planSeeds = [
     id: "starter", nameAr: "البداية", nameEn: "Starter",
     descriptionAr: "لتبدأ تنظيم أموالك", descriptionEn: "Start organizing your money",
     monthly: 0, annual: 0, wallets: 1, members: 2, transactions: 50, records: 20, users: 1,
+    dailyTransactions: 5, monthlyTransactions: 50, prints: 10,
     features: ["personal", "basic_reports"], order: 1,
   },
   {
     id: "family", nameAr: "العائلة", nameEn: "Family",
     descriptionAr: "للأفراد والعائلات الصغيرة", descriptionEn: "For individuals and families",
     monthly: 2900, annual: 27840, wallets: 5, members: 15, transactions: 300, records: 100, users: 5,
-    features: ["personal", "household", "trips", "travel", "circles", "circle", "exports", "statements", "advanced_reports"], order: 2,
+    dailyTransactions: 20, monthlyTransactions: 300, prints: 50,
+    features: ["personal", "household", "trips", "travel", "circles", "circle", "exports", "statements", "advanced_reports", "whatsapp"], order: 2,
   },
   {
     id: "pro", nameAr: "الاحتراف", nameEn: "Professional",
     descriptionAr: "لمديري المجموعات والجمعيات", descriptionEn: "For group and circle managers",
     monthly: 7900, annual: 75840, wallets: 20, members: 75, transactions: 2000, records: 500, users: 25,
-    features: ["personal", "household", "trips", "circles", "all_wallets", "documents", "exports", "statements", "advanced_reports", "draws", "voting", "custom_roles"], order: 3,
+    dailyTransactions: 80, monthlyTransactions: 2000, prints: 200,
+    features: ["personal", "household", "trips", "circles", "all_wallets", "documents", "exports", "statements", "advanced_reports", "draws", "voting", "custom_roles", "email", "whatsapp", "downloads"], order: 3,
   },
   {
     id: "business", nameAr: "الأعمال", nameEn: "Business",
     descriptionAr: "للفرق والمؤسسات", descriptionEn: "For teams and organizations",
     monthly: 19900, annual: 191040, wallets: 9999, members: 9999, transactions: 0, records: 0, users: 9999,
-    features: ["personal", "household", "trips", "circles", "unlimited", "documents", "exports", "multi_approval", "audit", "api", "priority_support"], order: 4,
+    dailyTransactions: 0, monthlyTransactions: 0, prints: 0,
+    features: ["personal", "household", "trips", "circles", "unlimited", "documents", "exports", "multi_approval", "audit", "api", "priority_support", "email", "whatsapp", "downloads"], order: 4,
   },
 ] as const;
 
@@ -60,8 +64,8 @@ async function seedPlans(db: D1Database) {
   if ((count?.count ?? 0) > 0) return;
   const createdAt = isoNow();
   await db.batch(planSeeds.map((plan) => db.prepare(
-    "INSERT INTO plans (id,name_ar,name_en,description_ar,description_en,monthly_minor,annual_minor,wallet_limit,member_limit,transaction_limit,record_limit,user_limit,features_json,is_active,sort_order,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)",
-  ).bind(plan.id, plan.nameAr, plan.nameEn, plan.descriptionAr, plan.descriptionEn, plan.monthly, plan.annual, plan.wallets, plan.members, plan.transactions, plan.records, plan.users, JSON.stringify(plan.features), plan.order, createdAt)));
+    "INSERT INTO plans (id,name_ar,name_en,description_ar,description_en,monthly_minor,annual_minor,wallet_limit,member_limit,transaction_limit,record_limit,user_limit,daily_transaction_limit,monthly_transaction_limit,print_limit,features_json,is_active,sort_order,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)",
+  ).bind(plan.id, plan.nameAr, plan.nameEn, plan.descriptionAr, plan.descriptionEn, plan.monthly, plan.annual, plan.wallets, plan.members, plan.transactions, plan.records, plan.users, plan.dailyTransactions, plan.monthlyTransactions, plan.prints, JSON.stringify(plan.features), plan.order, createdAt)));
   const { ensurePaymentGateways } = await import("../../../services/admin/billing-service");
   await ensurePaymentGateways(db);
 }
@@ -309,7 +313,7 @@ export async function GET(request: Request) {
     if (view === "billing") {
       assertApiScope(user, "billing:read");
       const [subscription, invoices, payments, plans] = await Promise.all([
-        db.prepare("SELECT s.*,p.name_ar,p.name_en,p.wallet_limit,p.member_limit,p.transaction_limit,p.record_limit,p.user_limit FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.user_id=? ORDER BY s.created_at DESC LIMIT 1").bind(user.id).first(),
+        db.prepare("SELECT s.*,p.name_ar,p.name_en,p.wallet_limit,p.member_limit,p.transaction_limit,p.record_limit,p.user_limit,p.daily_transaction_limit,p.monthly_transaction_limit,p.print_limit FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.user_id=? ORDER BY s.created_at DESC LIMIT 1").bind(user.id).first(),
         db.prepare("SELECT id,subscription_id,reference,subtotal_minor,discount_minor,tax_minor,total_minor,currency,status,due_at,paid_at,created_at FROM invoices WHERE user_id=? ORDER BY created_at DESC").bind(user.id).all(),
         db.prepare("SELECT id,invoice_id,reference,amount_minor,currency,method,status,settlement_status,occurred_at FROM payments WHERE user_id=? ORDER BY occurred_at DESC").bind(user.id).all(),
         publicPlans(db),
@@ -708,6 +712,9 @@ export async function POST(request: Request) {
         transactionLimit: z.coerce.number().int().min(0).max(999999).default(0),
         recordLimit: z.coerce.number().int().min(0).max(999999).default(0),
         userLimit: z.coerce.number().int().min(0).max(9999).default(1),
+        dailyTransactionLimit: z.coerce.number().int().min(0).max(999999).default(0),
+        monthlyTransactionLimit: z.coerce.number().int().min(0).max(999999).default(0),
+        printLimit: z.coerce.number().int().min(0).max(999999).default(0),
         features: z.array(z.string().min(1).max(40)).max(40),
         isActive: z.boolean().default(true),
         sortOrder: z.coerce.number().int().min(0).max(9999).default(0),

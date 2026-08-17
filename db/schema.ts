@@ -95,6 +95,9 @@ export const plans = sqliteTable("plans", {
   transactionLimit: integer("transaction_limit").notNull().default(0),
   recordLimit: integer("record_limit").notNull().default(0),
   userLimit: integer("user_limit").notNull().default(1),
+  dailyTransactionLimit: integer("daily_transaction_limit").notNull().default(0),
+  monthlyTransactionLimit: integer("monthly_transaction_limit").notNull().default(0),
+  printLimit: integer("print_limit").notNull().default(0),
   featuresJson: text("features_json").notNull().default("[]"),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
@@ -265,4 +268,11 @@ export const settlements = sqliteTable("settlements", {
   id: text("id").primaryKey(), spaceId: text("space_id").notNull(), fromMemberId: text("from_member_id").notNull(),
   toMemberId: text("to_member_id").notNull(), amountMinor: integer("amount_minor").notNull(), status: text("status").notNull().default("pending"),
   settledAt: text("settled_at"), createdAt: text("created_at").notNull(),
+});
+
+export const quotaEvents = sqliteTable("quota_events", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  kind: text("kind").notNull(),
+  createdAt: text("created_at").notNull(),
 });

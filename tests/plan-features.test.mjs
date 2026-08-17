@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, quotaIsUnlimited, quotaWouldExceed, resolveEntitlements, sidebarAllowsWalletView, upgradeNoticeFor } from "../lib/plan-features.ts";
+import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, quotaIsUnlimited, quotaNearLimit, quotaRemaining, quotaWouldExceed, quotaWarningCopy, resolveEntitlements, sidebarAllowsWalletView, upgradeNoticeFor } from "../lib/plan-features.ts";
+import { canOpenPlatformConsole } from "../lib/platform-console.ts";
 import { pageTransactions } from "../lib/transaction-page.ts";
 
 test("admin deny removes a plan feature and grant adds one", () => {
@@ -96,4 +97,40 @@ test("zero or 9999 quota is unlimited and blocks only when the cap is exceeded",
   });
   assert.equal(quotaIsUnlimited(open.transactionLimit), true);
   assert.equal(open.userLimit, 1);
+  assert.equal(open.dailyTransactionLimit, 0);
+  assert.equal(open.printLimit, 0);
+});
+
+test("quota warns at 80 percent and remaining counts down", () => {
+  assert.equal(quotaNearLimit(8, 10), true);
+  assert.equal(quotaNearLimit(7, 10), false);
+  assert.equal(quotaNearLimit(80, 0), false);
+  assert.equal(quotaRemaining(8, 10), 2);
+  assert.equal(quotaRemaining(1, 0), Number.POSITIVE_INFINITY);
+  const ar = quotaWarningCopy("print", 8, 10, "ar");
+  assert.match(ar, /المطبوعات/);
+  assert.match(ar, /8/);
+  const resolved = resolveEntitlements({
+    planFeatures: ["personal", "whatsapp"],
+    walletLimit: 1,
+    memberLimit: 2,
+    dailyTransactionLimit: 5,
+    monthlyTransactionLimit: 50,
+    printLimit: 10,
+  });
+  assert.equal(resolved.dailyTransactionLimit, 5);
+  assert.equal(resolved.monthlyTransactionLimit, 50);
+  assert.equal(resolved.printLimit, 10);
+  assert.equal(planHasFeature(resolved.features, "whatsapp"), true);
+  assert.equal(planHasFeature(resolved.features, "email"), false);
+});
+
+test("platform console is staff-only", () => {
+  assert.equal(canOpenPlatformConsole("customer"), false);
+  assert.equal(canOpenPlatformConsole("super_admin"), true);
+  assert.equal(canOpenPlatformConsole("admin"), true);
+  assert.equal(canOpenPlatformConsole("finance"), true);
+  assert.equal(canOpenPlatformConsole("support"), true);
+  assert.equal(canOpenPlatformConsole(null), false);
+  assert.equal(canOpenPlatformConsole(""), false);
 });

@@ -21,6 +21,8 @@ import {
 import { buildAccountStatementHtml } from "../../lib/account-statement";
 import { formatMoneyMinor } from "../../lib/money";
 import { resolvePrintLogoUrl } from "../../lib/print-document";
+import { planHasFeature } from "../../lib/plan-features";
+import { consumePlanQuota } from "../../lib/plan-quota-client";
 
 type Locale = "ar" | "en";
 
@@ -67,6 +69,7 @@ type DashboardData = {
   plans: Record<string, unknown>[];
   personalAccounts?: Array<{ id: string; space_id: string; name: string; opening_minor: number; balance_minor?: number }>;
   personalOccurrences?: Array<{ transaction_id?: string | null; rule_name?: string; account_id?: string | null }>;
+  entitlements?: { features: string[] };
 };
 
 function money(minor: number, currency: string, locale: Locale) {
@@ -153,29 +156,41 @@ export function ReportsPanel({
   const entityLabel = space ? nameOf(space, locale) : locale === "ar" ? "كل المحافظ" : "All wallets";
   const scopedAccounts = personalAccounts.filter((account) => !spaceId || account.space_id === spaceId);
 
+  const canDownload = planHasFeature(data.entitlements?.features ?? [], "downloads");
+
   const download = () => {
     if (!canGenerate) return;
-    void resolvePrintLogoUrl().then((logoUrl) => {
-      downloadReportHtml(buildHtml(logoUrl), `wazen-report-${reportType}-${space?.id ?? "all"}.pdf`);
+    if (!canDownload) { window.location.assign("/pricing"); return; }
+    void consumePlanQuota("download", locale, spaceId || undefined).then((quota) => {
+      if (!quota.ok) return;
+      void resolvePrintLogoUrl().then((logoUrl) => {
+        downloadReportHtml(buildHtml(logoUrl), `wazen-report-${reportType}-${space?.id ?? "all"}.pdf`);
+      });
     });
   };
 
   const printReport = () => {
     if (!canGenerate) return;
-    void printWazenHtml((logoUrl) => buildHtml(logoUrl), true).then((opened) => {
-      if (!opened) {
-        void printWazenHtml((logoUrl) => {
-          const html = buildHtml(logoUrl);
-          downloadReportHtml(html, `wazen-report-${space?.id ?? "all"}.pdf`);
-          return html;
-        }, false);
-        window.alert(locale === "ar" ? "تم تنزيل التقرير لأن النافذة المنبثقة محظورة. افتح الملف ثم اضغط طباعة." : "Report downloaded because pop-ups are blocked. Open the file and print.");
-      }
+    void consumePlanQuota("print", locale, spaceId || undefined).then((quota) => {
+      if (!quota.ok) return;
+      void printWazenHtml((logoUrl) => buildHtml(logoUrl), true).then((opened) => {
+        if (!opened) {
+          void printWazenHtml((logoUrl) => {
+            const html = buildHtml(logoUrl);
+            downloadReportHtml(html, `wazen-report-${space?.id ?? "all"}.pdf`);
+            return html;
+          }, false);
+          window.alert(locale === "ar" ? "تم تنزيل التقرير لأن النافذة المنبثقة محظورة. افتح الملف ثم اضغط طباعة." : "Report downloaded because pop-ups are blocked. Open the file and print.");
+        }
+      });
     });
   };
 
   const printStatement = () => {
-    void printWazenHtml((logoUrl) => statementHtml(logoUrl), true);
+    void consumePlanQuota("print", locale, spaceId || undefined).then((quota) => {
+      if (!quota.ok) return;
+      void printWazenHtml((logoUrl) => statementHtml(logoUrl), true);
+    });
   };
 
   return (
@@ -198,7 +213,7 @@ export function ReportsPanel({
             <Printer size={16} />
             {locale === "ar" ? "معاينة / طباعة PDF" : "Preview / Print PDF"}
           </button>
-          <button type="button" className="primary-button" disabled={!canGenerate} onClick={download}>
+          <button type="button" className={`primary-button${canDownload ? "" : " is-plan-locked"}`} disabled={!canGenerate} onClick={download}>
             <Download size={16} />
             {locale === "ar" ? "تنزيل التقرير" : "Download report"}
           </button>

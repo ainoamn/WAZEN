@@ -147,6 +147,7 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
       s.transaction_limit_override, s.record_limit_override, s.user_limit_override,
       pl.id AS plan_id, pl.name_ar AS plan_name_ar, pl.name_en AS plan_name_en,
       pl.wallet_limit, pl.member_limit, pl.transaction_limit, pl.record_limit, pl.user_limit,
+      pl.daily_transaction_limit, pl.monthly_transaction_limit, pl.print_limit,
       pl.features_json, pl.monthly_minor, pl.annual_minor,
       CASE WHEN t.enabled_at IS NOT NULL THEN 1 ELSE 0 END AS totp_enabled
     FROM users u
@@ -189,6 +190,9 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
     transactionLimit: Number(profile.transaction_limit ?? 0),
     recordLimit: Number(profile.record_limit ?? 0),
     userLimit: Number(profile.user_limit ?? 1),
+    dailyTransactionLimit: Number(profile.daily_transaction_limit ?? 0),
+    monthlyTransactionLimit: Number(profile.monthly_transaction_limit ?? 0),
+    printLimit: Number(profile.print_limit ?? 0),
     walletLimitOverride: profile.wallet_limit_override as number | null,
     memberLimitOverride: profile.member_limit_override as number | null,
     transactionLimitOverride: profile.transaction_limit_override as number | null,
@@ -209,6 +213,9 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
       effective_transaction_limit: effective.transactionLimit,
       effective_record_limit: effective.recordLimit,
       effective_user_limit: effective.userLimit,
+      effective_daily_transaction_limit: effective.dailyTransactionLimit,
+      effective_monthly_transaction_limit: effective.monthlyTransactionLimit,
+      effective_print_limit: effective.printLimit,
     },
     sessions: sessions.results,
     apiKeys: apiKeys.results.map((row) => {

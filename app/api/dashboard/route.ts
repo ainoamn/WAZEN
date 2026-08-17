@@ -3,7 +3,7 @@ import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
 import { authenticateRequest, csrfCookie, issueCsrfToken } from "../../../lib/auth";
 import { buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
-import { assertApiScope, authorizeSpace, ensureDefaultTenant } from "../../../lib/authorization";
+import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf } from "../../../lib/authorization";
 import { prepareAudit } from "../../../lib/audit";
 import { multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
 import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, periodKeyFromDate, type InstallmentLike } from "../../../lib/installments";
@@ -1023,9 +1023,10 @@ export async function GET(request: Request) {
     const dashboard = await loadDashboard(db, user.id, { refreshDerived: false });
     const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
     const entitlements = await getActivePlanEntitlements(db, user.id);
+    const role = await platformRoleOf(db, user.id);
     const issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
     const headers = new Headers({ "Cache-Control": "no-store" }); if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
-    return Response.json({ user, entitlements, ...dashboard }, { headers });
+    return Response.json({ user: { ...user, role }, entitlements, ...dashboard }, { headers });
   } catch (error) {
     return errorResponse(error);
   }
@@ -2475,6 +2476,19 @@ export async function POST(request: Request) {
           createdAt,
         }),
       ]);
+    } else if (action === "consumeQuota") {
+      const parsed = z.object({
+        kind: z.enum(["print", "download"]),
+        spaceId: z.string().min(1).max(120).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_QUOTA");
+      let ownerUserId = user.id;
+      if (parsed.data.spaceId) {
+        const space = await authorizeSpace(db, user, parsed.data.spaceId, "read");
+        ownerUserId = space.owner_user_id;
+      }
+      const { consumeQuotaEvent } = await import("../../../services/admin/billing-service");
+      await consumeQuotaEvent(db, ownerUserId, parsed.data.kind, user.id);
     } else if (action === "sendReceipt") {
       const parsed = z.object({
         memberId: z.string().min(1).max(120),
@@ -2484,7 +2498,14 @@ export async function POST(request: Request) {
       if (!parsed.success) throw new ApiError(400, "INVALID_RECEIPT");
       const member = await db.prepare("SELECT * FROM members WHERE id=? AND status='active'").bind(parsed.data.memberId).first<MemberRow>();
       if (!member) throw new ApiError(404, "MEMBER_NOT_FOUND");
-      await authorizeSpace(db, user, member.space_id, "read");
+      const spaceAuth = await authorizeSpace(db, user, member.space_id, "read");
+      const { assertPlanShareFeature } = await import("../../../services/admin/billing-service");
+      if (parsed.data.channel === "email" || parsed.data.channel === "both") {
+        await assertPlanShareFeature(db, spaceAuth.owner_user_id, "email", user.id);
+      }
+      if (parsed.data.channel === "whatsapp" || parsed.data.channel === "both") {
+        await assertPlanShareFeature(db, spaceAuth.owner_user_id, "whatsapp", user.id);
+      }
       const txn = parsed.data.transactionId
         ? await db.prepare("SELECT * FROM transactions WHERE id=? AND member_id=?").bind(parsed.data.transactionId, member.id).first<TransactionRow>()
         : await db.prepare("SELECT * FROM transactions WHERE member_id=? AND status<>'voided' ORDER BY occurred_at DESC LIMIT 1").bind(member.id).first<TransactionRow>();
@@ -2527,9 +2548,10 @@ export async function POST(request: Request) {
     const dashboard = await loadDashboard(db, user.id, { refreshDerived: false });
     const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
     const entitlements = await getActivePlanEntitlements(db, user.id);
+    const role = await platformRoleOf(db, user.id);
     const response = {
       ok: true,
-      user: { ...user, displayName: freshUser?.display_name ?? user.displayName, avatarUrl: freshUser?.avatar_url ?? user.avatarUrl ?? null },
+      user: { ...user, role, displayName: freshUser?.display_name ?? user.displayName, avatarUrl: freshUser?.avatar_url ?? user.avatarUrl ?? null },
       entitlements,
       ...dashboard,
       ...(notification ? { notification } : {}),

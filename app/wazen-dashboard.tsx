@@ -19,7 +19,9 @@ import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, sele
 import { formatMoneyMinor, currencyScale } from "../lib/money";
 import { escapeHtml } from "../lib/html";
 import { memberDisplayCreditMinor, netMemberClaim, pendingSettlementsWithCredit } from "../lib/finance";
-import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, upgradeNoticeFor } from "../lib/plan-features";
+import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, quotaRemaining, quotaWarningCopy, upgradeNoticeFor } from "../lib/plan-features";
+import { canOpenPlatformConsole } from "../lib/platform-console";
+import { consumePlanQuota } from "../lib/plan-quota-client";
 import { TRANSACTION_PAGE_SIZES, pageTransactions } from "../lib/transaction-page";
 import type { MemberLedgerFocus } from "../lib/member-ledger";
 import { occurrenceVarianceCopy } from "../lib/personal-finance";
@@ -96,7 +98,7 @@ function isViewId(value: string | null | undefined): value is ViewId {
   return Boolean(value && VIEW_IDS.includes(value as ViewId));
 }
 
-type User = { id: string; email: string; displayName: string; avatarUrl?: string | null; isDemo: boolean };
+type User = { id: string; email: string; displayName: string; avatarUrl?: string | null; isDemo: boolean; role?: string | null };
 type Space = {
   id: string;
   owner_user_id: string;
@@ -144,7 +146,7 @@ type CircleTurn = { id: string; space_id: string; member_id: string; display_nam
 type TripExpense = { id: string; space_id: string; paid_by_member_id: string; paid_by_name: string; amount_minor: number; description: string; occurred_at: string; paid_from?: string };
 type ExpenseSplit = { id: string; expense_id: string; member_id: string; display_name: string; share_minor: number };
 type Settlement = { id: string; space_id: string; from_member_id: string; to_member_id: string; from_member_name: string | null; to_member_name: string | null; amount_minor: number; status: string };
-type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; status: string }; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
+type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; dailyTransactionLimit?: number; monthlyTransactionLimit?: number; printLimit?: number; status: string; usage?: { transactionsTotal: number; transactionsToday: number; transactionsThisMonth: number; printsThisMonth: number }; warnings?: Array<{ kind: string; used: number; limit: number }> }; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
 
 const copy = {
   ar: {
@@ -493,7 +495,9 @@ function memberPosition(member: Member, data?: DashboardData, spaceId?: string) 
 }
 
 function printSpaceStatement(space: Space | null, data: DashboardData, locale: Locale, accountId?: string | null) {
-  void printWazenHtml((logoUrl) => buildAccountStatementHtml({
+  void consumePlanQuota("print", locale, space?.id).then((quota) => {
+    if (!quota.ok) return;
+    void printWazenHtml((logoUrl) => buildAccountStatementHtml({
     locale,
     logoUrl,
     issuerName: data.user.displayName,
@@ -507,13 +511,16 @@ function printSpaceStatement(space: Space | null, data: DashboardData, locale: L
   }), true).then((opened) => {
     if (!opened) window.alert(locale === "ar" ? "اسمح بالنوافذ المنبثقة أو استخدم زر الطباعة داخل المعاينة." : "Allow pop-ups or use Print inside the preview.");
   });
+  });
 }
 
 function printAccountingPeriod(space: Space, period: NonNullable<DashboardData["periods"]>[number], data: DashboardData, locale: Locale) {
   const start = new Date(period.starts_at).getTime();
   const end = new Date(period.ends_at || period.closed_at || new Date().toISOString()).getTime();
   const reportSpace = { id: space.id, name_ar: space.name_ar, name_en: space.name_en, type: space.type, currency: space.currency, balance_minor: space.balance_minor, goal_minor: space.goal_minor };
-  void printWazenHtml((logoUrl) => buildReportHtml({
+  void consumePlanQuota("print", locale, space.id).then((quota) => {
+    if (!quota.ok) return;
+    void printWazenHtml((logoUrl) => buildReportHtml({
     locale,
     reportType: "period",
     logoUrl,
@@ -538,6 +545,7 @@ function printAccountingPeriod(space: Space, period: NonNullable<DashboardData["
     }),
   }), true).then((opened) => {
     if (!opened) window.alert(locale === "ar" ? "اسمح بالنوافذ المنبثقة لطباعة الكشف." : "Allow pop-ups to print the statement.");
+  });
   });
 }
 
@@ -569,6 +577,10 @@ function dashboardError(code: string, locale: Locale) {
       INVALID_PHOTO: "الصورة غير مدعومة. استخدم JPEG أو PNG أو WebP.",
       PHOTO_TOO_LARGE: "الصورة كبيرة. اختر صورة أوضح وأصغر.",
       PLAN_TRANSACTION_LIMIT: "وصلت إلى حد المعاملات في باقتك.",
+      PLAN_DAILY_TRANSACTION_LIMIT: "وصلت إلى حد المعاملات اليومية في باقتك.",
+      PLAN_MONTHLY_TRANSACTION_LIMIT: "وصلت إلى حد المعاملات الشهرية في باقتك.",
+      PLAN_PRINT_LIMIT: "وصلت إلى حد المطبوعات في باقتك هذا الشهر.",
+      PLAN_FEATURE_REQUIRED: "هذه الميزة تحتاج ترقية الباقة.",
       PLAN_RECORD_LIMIT: "وصلت إلى حد السجلات والمستندات في باقتك.",
       PLAN_USER_LIMIT: "وصلت إلى حد المستخدمين في باقتك.",
       PLAN_MEMBER_LIMIT: "وصلت إلى حد الأعضاء في باقتك.",
@@ -590,6 +602,10 @@ function dashboardError(code: string, locale: Locale) {
       INVALID_PHOTO: "Unsupported photo. Use JPEG, PNG, or WebP.",
       PHOTO_TOO_LARGE: "Photo is too large. Choose a smaller image.",
       PLAN_TRANSACTION_LIMIT: "You reached the transaction limit on your plan.",
+      PLAN_DAILY_TRANSACTION_LIMIT: "You reached the daily transaction limit on your plan.",
+      PLAN_MONTHLY_TRANSACTION_LIMIT: "You reached the monthly transaction limit on your plan.",
+      PLAN_PRINT_LIMIT: "You reached this month’s print limit on your plan.",
+      PLAN_FEATURE_REQUIRED: "This feature needs a plan upgrade.",
       PLAN_RECORD_LIMIT: "You reached the record limit on your plan.",
       PLAN_USER_LIMIT: "You reached the user limit on your plan.",
       PLAN_MEMBER_LIMIT: "You reached the member limit on your plan.",
@@ -620,7 +636,9 @@ function openTransactionReceipt(transaction: Transaction, data: DashboardData, l
     ${extra}
     <tr><td>${locale === "ar" ? "المرجع" : "Reference"}</td><td>${transaction.id.slice(0, 8).toUpperCase()}</td></tr>
   </table></section>`;
-  void printWazenHtml((logoUrl) => wrapPrintDocument({
+  void consumePlanQuota("print", locale, transaction.space_id).then((quota) => {
+    if (!quota.ok) return;
+    void printWazenHtml((logoUrl) => wrapPrintDocument({
     locale,
     title,
     entityName: space ? nameOf(space, locale) : "WAZEN",
@@ -628,9 +646,14 @@ function openTransactionReceipt(transaction: Transaction, data: DashboardData, l
     subtitle: new Date(transaction.occurred_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB"),
     bodyHtml: table,
   }), true);
+  });
 }
 
 function shareTransactionWhatsApp(transaction: Transaction, data: DashboardData, locale: Locale) {
+  if (!planHasFeature(planFeaturesOf(data), "whatsapp")) {
+    goToPricing();
+    return;
+  }
   const space = data.spaces.find((item) => item.id === transaction.space_id);
   const member = data.members.find((item) => item.id === transaction.member_id);
   const amount = formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale);
@@ -970,7 +993,7 @@ export function WazenDashboard() {
 
   return (
     <div className="app-shell">
-      <Sidebar locale={locale} active={activeView} open={sidebarOpen} entitlements={data.entitlements} spaces={data.spaces} onNavigate={changeView} onLocked={(id) => showUpgradeNotice(id, id === "documents" ? (locale === "ar" ? "الإيصالات والكشوفات" : "Documents & statements") : t[id])} onClose={() => setSidebarOpen(false)} onLogout={() => void logout()} />
+      <Sidebar locale={locale} active={activeView} open={sidebarOpen} entitlements={data.entitlements} spaces={data.spaces} role={data.user.role} onNavigate={changeView} onLocked={(id) => showUpgradeNotice(id, id === "documents" ? (locale === "ar" ? "الإيصالات والكشوفات" : "Documents & statements") : t[id])} onClose={() => setSidebarOpen(false)} onLogout={() => void logout()} />
 
       <main className="main-shell">
         <header className="topbar">
@@ -1000,6 +1023,17 @@ export function WazenDashboard() {
             <UserMenu locale={locale} name={data.user.displayName} email={data.user.email} avatarUrl={data.user.avatarUrl} onSettings={() => changeView("settings")} onLogout={() => void logout()} />
           </div>
         </header>
+
+        {data.entitlements?.warnings?.length ? (
+          <div className="quota-warning" role="status">
+            <div>
+              {data.entitlements.warnings.map((item) => (
+                <p key={item.kind}>{quotaWarningCopy(item.kind, item.used, item.limit, locale)}</p>
+              ))}
+            </div>
+            <a href="/pricing">{locale === "ar" ? "ترقية الباقة" : "Upgrade plan"}</a>
+          </div>
+        ) : null}
 
         <div className="page-content">
           {activeView === "overview" && (
@@ -1167,6 +1201,8 @@ export function WazenDashboard() {
             member={member}
             locale={locale}
             transactionId={receiptTxnId}
+            canEmail={planHasFeature(planFeaturesOf(data), "email")}
+            canWhatsapp={planHasFeature(planFeaturesOf(data), "whatsapp")}
             onClose={() => setModal(null)}
             onDone={(message) => { setModal(null); flash(message); }}
           />
@@ -1264,7 +1300,7 @@ function UserMenu({ locale, name, email, avatarUrl, onSettings, onLogout }: { lo
   );
 }
 
-function Sidebar({ locale, active, open, entitlements, spaces, onNavigate, onLocked, onClose, onLogout }: { locale: Locale; active: ViewId; open: boolean; entitlements?: DashboardData["entitlements"]; spaces?: Space[]; onNavigate: (id: ViewId) => void; onLocked: (id: ViewId | "documents") => void; onClose: () => void; onLogout: () => void }) {
+function Sidebar({ locale, active, open, entitlements, spaces, role, onNavigate, onLocked, onClose, onLogout }: { locale: Locale; active: ViewId; open: boolean; entitlements?: DashboardData["entitlements"]; spaces?: Space[]; role?: string | null; onNavigate: (id: ViewId) => void; onLocked: (id: ViewId | "documents") => void; onClose: () => void; onLogout: () => void }) {
   const t = copy[locale];
   const features = entitlements?.features?.length ? entitlements.features : ["personal"];
   const existingTypes = (spaces ?? []).map((space) => space.type);
@@ -1318,7 +1354,7 @@ function Sidebar({ locale, active, open, entitlements, spaces, onNavigate, onLoc
             {documentsLocked && <PlanLockBadge locale={locale} />}
           </a>
           <a href="/billing"><CircleDollarSign size={18} /><span>{locale === "ar" ? "الباقة والفوترة" : "Plan & billing"}</span></a>
-          <a href="/admin"><ShieldCheck size={18} /><span>{locale === "ar" ? "إدارة المنصة" : "Platform admin"}</span></a>
+          {canOpenPlatformConsole(role) ? <a href="/admin"><ShieldCheck size={18} /><span>{locale === "ar" ? "إدارة المنصة" : "Platform admin"}</span></a> : null}
         </div>
         <div className="sidebar-spacer" />
         <button className={`sidebar-setting ${active === "settings" ? "active" : ""}`} onClick={() => onNavigate("settings")}><Settings size={19} /><span>{t.settings}</span></button>
@@ -1458,7 +1494,7 @@ function TransactionRow({ transaction, data, locale, onEdit, onVoid }: { transac
     <strong className={positive ? "amount-positive" : "amount-negative"}>{positive ? "+" : "−"}{formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale)}</strong>
     <div className="transaction-actions">
       <button type="button" title={locale === "ar" ? "إيصال" : "Receipt"} onClick={() => openTransactionReceipt(transaction, data, locale)}><Printer size={15} /></button>
-      <button type="button" title="WhatsApp" onClick={() => shareTransactionWhatsApp(transaction, data, locale)}><MessageCircle size={15} /></button>
+      <button type="button" className={planHasFeature(planFeaturesOf(data), "whatsapp") ? "" : "is-plan-locked"} title="WhatsApp" onClick={() => shareTransactionWhatsApp(transaction, data, locale)}><MessageCircle size={15} />{planHasFeature(planFeaturesOf(data), "whatsapp") ? null : <PlanLockBadge locale={locale} />}</button>
       {onEdit && !locked && isLiveTransaction(transaction) && <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => onEdit(transaction)}><Pencil size={15} /></button>}
       {onVoid && !locked && isLiveTransaction(transaction) && <button type="button" className="danger" title={locale === "ar" ? "إلغاء" : "Void"} onClick={() => onVoid(transaction)}><Trash2 size={15} /></button>}
     </div>
@@ -1881,8 +1917,11 @@ function PlanFeaturesPanel({ locale, entitlements }: { locale: Locale; entitleme
     { ar: "المحافظ", en: "Wallets", value: entitlements?.walletLimit ?? 1 },
     { ar: "الأعضاء لكل محفظة", en: "Members per wallet", value: entitlements?.memberLimit ?? 2 },
     { ar: "المستخدمون", en: "Users", value: entitlements?.userLimit ?? 1 },
-    { ar: "المعاملات", en: "Transactions", value: entitlements?.transactionLimit ?? 0 },
+    { ar: "المعاملات الإجمالية", en: "Transactions", value: entitlements?.transactionLimit ?? 0 },
+    { ar: "المعاملات اليومية", en: "Daily transactions", value: entitlements?.dailyTransactionLimit ?? 0 },
+    { ar: "المعاملات الشهرية", en: "Monthly transactions", value: entitlements?.monthlyTransactionLimit ?? 0 },
     { ar: "السجلات", en: "Records", value: entitlements?.recordLimit ?? 0 },
+    { ar: "المطبوعات شهرياً", en: "Prints / month", value: entitlements?.printLimit ?? 0 },
   ];
   return (
     <article className="panel">
@@ -1933,7 +1972,7 @@ function SpaceTransactionsPanel({ space, data, locale, onAdd, onTxnChanged }: { 
   const [working, setWorking] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
-  const canPrint = planAllowsStatements(planFeaturesOf(data));
+  const canPrint = planAllowsStatements(planFeaturesOf(data)) && quotaRemaining(data.entitlements?.usage?.printsThisMonth ?? 0, data.entitlements?.printLimit ?? 0) > 0;
   const transactions = useMemo(
     () => sortTransactionsNewest(data.transactions.filter((transaction) => transaction.space_id === space.id)),
     [data.transactions, space.id],
