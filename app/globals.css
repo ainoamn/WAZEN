@@ -95,7 +95,7 @@ button { color: inherit; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid rgba(28, 150, 124, 0.22); outline-offset: 2px; }
 
 .app-shell { min-height: 100vh; display: flex; background: var(--canvas); }
-.sidebar { position: fixed; inset-block: 0; inset-inline-start: 0; width: 252px; display: flex; flex-direction: column; padding: 24px 16px 18px; background: #fbfcfa; border-inline-end: 1px solid var(--line); z-index: 30; overflow: hidden; }
+.sidebar { position: fixed; inset-block: 0; inset-inline-start: 0; width: 252px; display: flex; flex-direction: column; padding: 24px 16px 18px; background: #fbfcfa; border-inline-end: 1px solid var(--line); z-index: 30; overflow-x: hidden; overflow-y: auto; }
 .brand-row { height: 48px; display: flex; align-items: center; gap: 11px; padding-inline: 8px; margin-bottom: 25px; }
 .brand-mark { width: auto; height: auto; display: grid; place-items: center; background: transparent; box-shadow: none; overflow: visible; }
 .brand-mark .wazen-logo-icon { height: 39px; width: auto; aspect-ratio: 550 / 252; display: block; object-fit: contain; }
@@ -109,13 +109,15 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .workspace-pill div:nth-child(2) { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .workspace-pill small { color: #83908b; font-size: 12px; }
 .workspace-pill strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sidebar-nav { display: flex; flex-direction: column; gap: 3px; }
-.sidebar-nav button, .sidebar-setting { width: 100%; min-height: 46px; border: 0; border-radius: 11px; display: flex; align-items: center; gap: 12px; padding: 0 13px; color: var(--icon); font-weight: 600; font-size: 15px; background: transparent; cursor: pointer; transition: 160ms ease; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 3px; flex: 0 0 auto; }
+.sidebar-nav button, .sidebar-setting { width: 100%; min-height: 42px; flex-shrink: 0; border: 0; border-radius: 11px; display: flex; align-items: center; gap: 12px; padding: 0 13px; color: var(--icon); font-weight: 600; font-size: 15px; background: transparent; cursor: pointer; transition: 160ms ease; }
 .sidebar-nav button:hover, .sidebar-setting:hover { background: #f0f3ef; color: var(--ink); }
 .sidebar-nav button.active, .sidebar-setting.active { background: var(--green-soft); color: var(--green); }
 .sidebar-nav button.active { box-shadow: inset 3px 0 0 var(--green); }
 [dir="rtl"] .sidebar-nav button.active { box-shadow: inset -3px 0 0 var(--green); }
 .sidebar-nav button em { margin-inline-start: auto; min-width: 22px; height: 20px; border-radius: 7px; display: grid; place-items: center; background: #e3ece7; color: #527066; font-size: 10px; font-style: normal; }
+.sidebar-nav button em.plan-lock-badge,
+.sidebar-external a em.plan-lock-badge { min-width: auto; padding: 0 7px; background: #fff4df; color: #8a5a12; }
 .sidebar-spacer { flex: 1; min-height: 20px; }
 .security-card { margin-top: 14px; display: flex; gap: 10px; padding: 13px; background: linear-gradient(140deg, #eaf4ef, #f5f7ef); border: 1px solid #dce9e2; border-radius: 14px; color: var(--green); }
 .security-card div { display: flex; flex-direction: column; gap: 4px; }
@@ -371,7 +373,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .danger-button { min-height: 40px; padding: 0 12px; border: 1px solid #e8b4ae; border-radius: 10px; background: #fff; color: #b42318; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
 .danger-button:hover { background: #fdecea; }
 .plan-lock-badge { margin-inline-start: 6px; display: inline-flex; align-items: center; min-height: 18px; padding: 0 6px; border-radius: 999px; background: #fff4df; color: #8a5a12; font-size: 10px; font-style: normal; font-weight: 800; letter-spacing: .02em; vertical-align: middle; }
-.sidebar-nav button.is-plan-locked, .sidebar-external a.is-plan-locked, .space-switcher button.is-plan-locked, .info-panel.is-plan-locked { opacity: .92; }
+.sidebar-nav button.is-plan-locked, .sidebar-external a.is-plan-locked, .space-switcher button.is-plan-locked, .info-panel.is-plan-locked { opacity: 1; }
+.sidebar-nav button.is-plan-locked .plan-lock-badge,
+.sidebar-external a.is-plan-locked .plan-lock-badge {
+  background: #fff4df;
+  color: #8a5a12;
+}
 .upgrade-gate-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 12px; }
 .plan-feature-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
 .plan-feature-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 42px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfb; }
@@ -574,7 +581,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .settings-grid { grid-template-columns: 1fr; }
 }
 
-.sidebar-external { display: grid; gap: 4px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.sidebar-external { display: grid; gap: 4px; padding: 10px 12px; border-top: 1px solid var(--line); flex-shrink: 0; }
 .sidebar-external > small { padding: 0 10px 5px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .04em; }
 .sidebar-external a { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 0 10px; border-radius: 10px; color: var(--icon); font-size: 12px; font-weight: 700; text-decoration: none; transition: .2s ease; }
 .sidebar-external a:hover { color: var(--green); background: var(--green-soft); }

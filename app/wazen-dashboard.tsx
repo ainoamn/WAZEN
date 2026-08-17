@@ -1241,7 +1241,19 @@ function Sidebar({ locale, active, open, entitlements, spaces, onNavigate, onClo
           {navItems.map(({ id, icon: Icon }) => {
             const locked = dashboardNavLocked(features, existingTypes, id);
             return (
-              <button key={id} className={`${active === id ? "active" : ""}${locked ? " is-plan-locked" : ""}`} onClick={() => onNavigate(id)}>
+              <button
+                key={id}
+                type="button"
+                className={`${active === id ? "active" : ""}${locked ? " is-plan-locked" : ""}`}
+                aria-label={locked ? `${t[id]} — ${locale === "ar" ? "يحتاج ترقية" : "needs upgrade"}` : t[id]}
+                onClick={() => {
+                  if (locked) {
+                    window.location.assign("/pricing");
+                    return;
+                  }
+                  onNavigate(id);
+                }}
+              >
                 <Icon size={19} strokeWidth={active === id ? 2.2 : 1.8} /><span>{t[id]}</span>
                 {locked && <PlanLockBadge locale={locale} />}
               </button>
@@ -1251,7 +1263,7 @@ function Sidebar({ locale, active, open, entitlements, spaces, onNavigate, onClo
         <div className="sidebar-external">
           <small>{locale === "ar" ? "إدارة الحساب" : "Account management"}</small>
           <Link href="/home"><House size={18} /><span>{locale === "ar" ? "الرئيسية" : "Home"}</span></Link>
-          <a href="/documents" className={documentsLocked ? "is-plan-locked" : ""}>
+          <a href={documentsLocked ? "/pricing" : "/documents"} className={documentsLocked ? "is-plan-locked" : ""}>
             <ReceiptText size={18} /><span>{locale === "ar" ? "الإيصالات والكشوفات" : "Documents & statements"}</span>
             {documentsLocked && <PlanLockBadge locale={locale} />}
           </a>

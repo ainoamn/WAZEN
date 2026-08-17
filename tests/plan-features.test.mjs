@@ -27,11 +27,24 @@ test("sidebar keeps wallet types the user already has even on a personal-only pl
 });
 
 test("dashboard nav stays listed but locked when the plan does not include the feature", () => {
-  assert.equal(dashboardNavLocked(["personal"], ["personal"], "household"), true);
-  assert.equal(dashboardNavLocked(["personal"], ["personal"], "reports"), true);
+  const starterViews = ["overview", "personal", "household", "groups", "trip", "society", "transactions", "reports"];
+  const starter = ["personal"];
+  const existing = ["personal"];
+  assert.deepEqual(
+    starterViews.map((view) => [view, dashboardNavLocked(starter, existing, view)]),
+    [
+      ["overview", false],
+      ["personal", false],
+      ["household", true],
+      ["groups", true],
+      ["trip", true],
+      ["society", true],
+      ["transactions", false],
+      ["reports", true],
+    ],
+  );
   assert.equal(dashboardNavLocked(["personal"], ["personal", "household"], "household"), false);
   assert.equal(dashboardNavLocked(["personal", "advanced_reports"], ["personal"], "reports"), false);
-  assert.equal(dashboardNavLocked(["personal"], ["personal"], "overview"), false);
 });
 
 test("transaction pager defaults to five and never shows more than 100", () => {
