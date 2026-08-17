@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { ContentBusy, ErrorCard, money, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
+import { errorLabel } from "../../lib/admin-labels";
 import {
   PLAN_FEATURE_CATALOG,
   PLAN_FEATURE_GROUPS,
@@ -288,7 +289,7 @@ export function AdminPlans() {
         <article><i><Users /></i><span>{l("المشتركون", "Subscribers")}</span><b>{subscribers}</b><small>{l("على كل الباقات", "across all plans")}</small></article>
       </div>
 
-      {error ? <p className="admin-inline-alert is-error">{error}</p> : null}
+      {error ? <p className="admin-inline-alert is-error">{errorLabel(error, locale)}</p> : null}
       {notice ? <p className="admin-inline-alert is-ok">{notice}</p> : null}
 
       <div className="plan-matrix-shell">

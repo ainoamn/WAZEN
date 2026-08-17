@@ -2,9 +2,12 @@
 
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useCommerceLocale } from "../../app/commercial-kit";
 
-const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const WEEKDAYS_AR = ["أحد", "إثن", "ثلا", "أرب", "خمي", "جمع", "سبت"];
+const WEEKDAYS_EN = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const MONTHS_AR = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+const MONTHS_EN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 function pad(value: number) {
   return String(value).padStart(2, "0");
@@ -67,6 +70,9 @@ export function DateField({
   mode?: "date" | "month";
   placeholder?: string;
 }) {
+  const { locale, l } = useCommerceLocale();
+  const weekdays = locale === "ar" ? WEEKDAYS_AR : WEEKDAYS_EN;
+  const months = locale === "ar" ? MONTHS_AR : MONTHS_EN;
   const root = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -126,25 +132,25 @@ export function DateField({
         required={required}
         inputMode="numeric"
         autoComplete="off"
-        placeholder={placeholder ?? (mode === "month" ? "YYYY-MM" : "YYYY-MM-DD")}
+        placeholder={placeholder ?? (mode === "month" ? l("سنة-شهر", "YYYY-MM") : l("سنة-شهر-يوم", "YYYY-MM-DD"))}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commitDraft}
         onFocus={() => setCursor({ year: selectedDate.getFullYear(), month: selectedDate.getMonth() })}
       />
-      <button type="button" className="date-field-toggle" aria-label="Open calendar" onClick={() => setOpen((current) => !current)}>
+      <button type="button" className="date-field-toggle" aria-label={l("فتح التقويم", "Open calendar")} onClick={() => setOpen((current) => !current)}>
         <CalendarDays size={16} />
       </button>
       {open && (
-        <div className="date-calendar" role="dialog" aria-label="Calendar">
+        <div className="date-calendar" role="dialog" aria-label={l("التقويم", "Calendar")}>
           <div className="date-calendar-head">
-            <button type="button" onClick={() => setCursor((current) => current.month === 0 ? { year: current.year - 1, month: 11 } : { year: current.year, month: current.month - 1 })} aria-label="Previous month"><ChevronLeft size={16} /></button>
-            <strong>{MONTHS[cursor.month]} {cursor.year}</strong>
-            <button type="button" onClick={() => setCursor((current) => current.month === 11 ? { year: current.year + 1, month: 0 } : { year: current.year, month: current.month + 1 })} aria-label="Next month"><ChevronRight size={16} /></button>
+            <button type="button" onClick={() => setCursor((current) => current.month === 0 ? { year: current.year - 1, month: 11 } : { year: current.year, month: current.month - 1 })} aria-label={l("الشهر السابق", "Previous month")}><ChevronLeft size={16} /></button>
+            <strong>{months[cursor.month]} {cursor.year}</strong>
+            <button type="button" onClick={() => setCursor((current) => current.month === 11 ? { year: current.year + 1, month: 0 } : { year: current.year, month: current.month + 1 })} aria-label={l("الشهر التالي", "Next month")}><ChevronRight size={16} /></button>
           </div>
           {mode === "date" && (
             <>
-              <div className="date-calendar-week">{WEEKDAYS.map((day) => <span key={day}>{day}</span>)}</div>
+              <div className="date-calendar-week">{weekdays.map((day) => <span key={day}>{day}</span>)}</div>
               <div className="date-calendar-grid">
                 {cells.map((cell, index) => cell ? (
                   <button
@@ -161,19 +167,19 @@ export function DateField({
           )}
           {mode === "month" && (
             <div className="date-calendar-months">
-              {MONTHS.map((label, month) => {
+              {months.map((label, month) => {
                 const iso = toIsoMonth(cursor.year, month);
                 return (
-                  <button type="button" key={label} className={iso === selected ? "selected" : ""} onClick={() => pick(iso)}>
-                    {label.slice(0, 3)}
+                  <button type="button" key={iso} className={iso === selected ? "selected" : ""} onClick={() => pick(iso)}>
+                    {locale === "ar" ? label : label.slice(0, 3)}
                   </button>
                 );
               })}
             </div>
           )}
           <div className="date-calendar-foot">
-            <button type="button" onClick={() => pick(mode === "month" ? todayIso.slice(0, 7) : todayIso)}>Today</button>
-            {!required && <button type="button" onClick={() => { onChange(""); setDraft(""); setOpen(false); }}>Clear</button>}
+            <button type="button" onClick={() => pick(mode === "month" ? todayIso.slice(0, 7) : todayIso)}>{l("اليوم", "Today")}</button>
+            {!required && <button type="button" onClick={() => { onChange(""); setDraft(""); setOpen(false); }}>{l("مسح", "Clear")}</button>}
           </div>
         </div>
       )}
