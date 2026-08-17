@@ -3,6 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCommerceLocale } from "../../commercial-kit";
+import { errorLabel } from "../../../lib/admin-labels";
 
 export default function AdminSetupClient() {
   const { locale, l } = useCommerceLocale();
@@ -43,9 +44,7 @@ export default function AdminSetupClient() {
       router.push(result.next ?? "/account/security");
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : "BOOTSTRAP_FAILED";
-      setError(code === "BOOTSTRAP_FAILED"
-        ? l("تعذر إكمال التهيئة", "Could not complete setup")
-        : code);
+      setError(errorLabel(code, locale));
     } finally {
       setSaving(false);
     }

@@ -68,6 +68,23 @@ const ACTIONS: Record<string, Pair> = {
   "security.api_key_created": ["إنشاء مفتاح API", "API key created"],
   "security.api_key_revoked": ["إلغاء مفتاح API", "API key revoked"],
   "payment_provider.updated": ["تحديث مزوّد الدفع", "Payment provider updated"],
+  "privacy.export_requested": ["طلب تصدير البيانات", "Data export requested"],
+  "privacy.delete_requested": ["طلب حذف البيانات", "Data deletion requested"],
+  "wallet.created": ["إنشاء محفظة", "Wallet created"],
+  "wallet.updated": ["تحديث محفظة", "Wallet updated"],
+  "wallet.deleted": ["حذف محفظة", "Wallet deleted"],
+  "wallet.archived": ["أرشفة محفظة", "Wallet archived"],
+  "wallet.unarchived": ["إلغاء أرشفة محفظة", "Wallet unarchived"],
+  "wallet.reset": ["تصفير محفظة", "Wallet reset"],
+  "wallet.linked": ["ربط محفظة", "Wallet linked"],
+  "wallet.unlinked": ["فك ربط محفظة", "Wallet unlinked"],
+  "wallet.bank_linked": ["ربط حساب بنكي", "Bank account linked"],
+  "wallet.bank_unlinked": ["فك ربط حساب بنكي", "Bank account unlinked"],
+  "wallet.transfer": ["تحويل بين المحافظ", "Wallet transfer"],
+  "transaction.voided": ["إلغاء حركة", "Transaction voided"],
+  "trip.expense_resplit": ["إعادة تقسيم المصروف", "Trip expense resplit"],
+  "personal.account_added": ["إضافة حساب شخصي", "Personal account added"],
+  "personal.account_updated": ["تحديث حساب شخصي", "Personal account updated"],
 };
 
 const ENTITIES: Record<string, Pair> = {
@@ -75,6 +92,7 @@ const ENTITIES: Record<string, Pair> = {
   plan: ["باقة", "Plan"],
   payment: ["دفعة", "Payment"],
   payment_gateway: ["بوابة دفع", "Payment gateway"],
+  payment_provider: ["مزوّد دفع", "Payment provider"],
   coupon: ["كوبون", "Coupon"],
   subscription: ["اشتراك", "Subscription"],
   document: ["مستند", "Document"],
@@ -84,6 +102,10 @@ const ENTITIES: Record<string, Pair> = {
   tenant: ["مستأجر", "Tenant"],
   member: ["عضو", "Member"],
   data_request: ["طلب بيانات", "Data request"],
+  invoice: ["فاتورة", "Invoice"],
+  space: ["محفظة", "Wallet"],
+  personal_account: ["حساب شخصي", "Personal account"],
+  transaction: ["حركة", "Transaction"],
 };
 
 const SPACE_TYPES: Record<string, Pair> = {
@@ -107,6 +129,50 @@ const COUNTRIES: Record<string, Pair> = {
   BH: ["البحرين", "Bahrain"],
   QA: ["قطر", "Qatar"],
   EG: ["مصر", "Egypt"],
+  JO: ["الأردن", "Jordan"],
+  IQ: ["العراق", "Iraq"],
+  YE: ["اليمن", "Yemen"],
+  US: ["الولايات المتحدة", "United States"],
+  GB: ["بريطانيا", "United Kingdom"],
+  IN: ["الهند", "India"],
+  PK: ["باكستان", "Pakistan"],
+};
+
+const SCOPES: Record<string, Pair> = {
+  local: ["محلية", "Local"],
+  regional: ["إقليمية", "Regional"],
+  global: ["عالمية", "Global"],
+};
+
+const CSV_HEADERS: Record<string, Pair> = {
+  id: ["المعرّف", "ID"],
+  email: ["البريد", "Email"],
+  display_name: ["الاسم", "Name"],
+  created_at: ["تاريخ الإنشاء", "Created at"],
+  status: ["الحالة", "Status"],
+  country: ["الدولة", "Country"],
+  last_seen_at: ["آخر نشاط", "Last seen"],
+  subscription_status: ["حالة الاشتراك", "Subscription"],
+  plan_name: ["الباقة", "Plan"],
+  plan_id: ["معرّف الباقة", "Plan ID"],
+  amount_minor: ["المبلغ (بيسة)", "Amount (baisa)"],
+  total_minor: ["الإجمالي (بيسة)", "Total (baisa)"],
+  currency: ["العملة", "Currency"],
+  reference: ["المرجع", "Reference"],
+  method: ["الطريقة", "Method"],
+  settlement_status: ["التسوية", "Settlement"],
+  occurred_at: ["تاريخ العملية", "Occurred at"],
+  user_id: ["معرّف المستخدم", "User ID"],
+  role: ["الدور", "Role"],
+  name_ar: ["الاسم عربي", "Arabic name"],
+  name_en: ["الاسم إنجليزي", "English name"],
+  monthly_minor: ["شهري (بيسة)", "Monthly (baisa)"],
+  annual_minor: ["سنوي (بيسة)", "Annual (baisa)"],
+  code: ["الرمز", "Code"],
+  value: ["القيمة", "Value"],
+  used_count: ["المستخدم", "Used"],
+  usage_limit: ["حد الاستخدام", "Usage limit"],
+  is_active: ["نشط", "Active"],
 };
 
 export function roleLabel(value: string, locale: UiLocale) {
@@ -138,12 +204,28 @@ export function cycleLabel(value: string, locale: UiLocale) {
 }
 
 export function countryLabel(value: string, locale: UiLocale) {
-  return pick(COUNTRIES, value, locale);
+  return pick(COUNTRIES, value.toUpperCase(), locale);
+}
+
+export function scopeLabel(value: string, locale: UiLocale) {
+  return pick(SCOPES, value, locale);
+}
+
+export function csvHeaderLabel(value: string, locale: UiLocale) {
+  return pick(CSV_HEADERS, value, locale);
 }
 
 export function methodListLabel(values: unknown, locale: UiLocale) {
   if (!Array.isArray(values) || !values.length) return "—";
   return values.map((item) => methodLabel(String(item), locale)).join(" · ");
+}
+
+export function formatAdminDate(value: unknown, locale: UiLocale, withTime = false) {
+  if (!value) return "—";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return "—";
+  const tag = locale === "ar" ? "ar-OM" : "en-GB";
+  return withTime ? date.toLocaleString(tag) : date.toLocaleDateString(tag);
 }
 
 const ERRORS: Record<string, Pair> = {
@@ -153,6 +235,19 @@ const ERRORS: Record<string, Pair> = {
   ACTION_FAILED: ["فشل الإجراء", "Action failed"],
   INVALID_PLAN: ["بيانات الباقة غير صالحة", "Invalid plan data"],
   GATEWAY_NOT_FOUND: ["البوابة غير موجودة", "Gateway not found"],
+  SAVE_FAILED: ["تعذر الحفظ", "Could not save"],
+  REVOKE_FAILED: ["تعذر إلغاء الجلسات", "Could not revoke sessions"],
+  VERIFY_FAILED: ["تعذر تفعيل البريد", "Could not verify email"],
+  PLAN_REQUIRED: ["اختر باقة أولاً", "Choose a plan first"],
+  INVALID_SUBSCRIPTION_UPDATE: ["بيانات الاشتراك غير صالحة", "Invalid subscription data"],
+  SUBSCRIPTION_NOT_FOUND: ["تعذر العثور على الاشتراك أو الباقة", "Subscription or plan not found"],
+  NO_CREDENTIALS: ["لا توجد بيانات دخول لهذا المستخدم", "User has no login credentials"],
+  CANNOT_SUSPEND_SELF: ["لا يمكن إيقاف حسابك أنت", "You cannot suspend your own account"],
+  INVALID_USER_UPDATE: ["بيانات الحساب غير صالحة", "Invalid account data"],
+  BOOTSTRAP_FAILED: ["تعذر إكمال التهيئة", "Could not complete setup"],
+  FAILED: ["فشل الإجراء", "Action failed"],
+  PLAN_RECORD_LIMIT: ["وصلت إلى حد السجلات في باقتك", "You reached the record limit on your plan"],
+  PLAN_FEATURE_REQUIRED: ["هذه الميزة تحتاج ترقية الباقة", "This feature needs a plan upgrade"],
 };
 
 export function errorLabel(value: string, locale: UiLocale) {

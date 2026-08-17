@@ -8,7 +8,7 @@ import { ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../com
 import { apiFetch } from "../../lib/client-api";
 import { fetchAdminConsole, patchAdminConsole, readAdminConsole } from "../../lib/admin-session";
 import { AdminConsole, AdminSwitch, EmptyRow } from "./admin-ui";
-import { actionLabel, countryLabel, entityLabel, methodLabel, roleLabel, statusLabel } from "../../lib/admin-labels";
+import { actionLabel, countryLabel, csvHeaderLabel, entityLabel, formatAdminDate, methodLabel, roleLabel, statusLabel } from "../../lib/admin-labels";
 
 type Row = Record<string, unknown>;
 type CustomerRow = Row & { id: string; email: string; display_name: string; created_at: string; status: string | null; country: string | null; last_seen_at: string | null; subscription_status: string | null; plan_name: string | null };
@@ -110,10 +110,11 @@ function Kpi({ icon, label, value, note }: { icon: React.ReactNode; label: strin
   );
 }
 
-function downloadCsv(filename: string, rows: Row[]) {
+function downloadCsv(filename: string, rows: Row[], locale: "ar" | "en") {
   if (!rows.length) return;
   const keys = Object.keys(rows[0]).filter((key) => !key.includes("json"));
-  const csv = [keys.join(","), ...rows.map((row) => keys.map((key) => `"${String(row[key] ?? "").replaceAll('"', '""')}"`).join(","))].join("\n");
+  const header = keys.map((key) => `"${csvHeaderLabel(key, locale).replaceAll('"', '""')}"`).join(",");
+  const csv = [header, ...rows.map((row) => keys.map((key) => `"${String(row[key] ?? "").replaceAll('"', '""')}"`).join(","))].join("\n");
   const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -219,8 +220,8 @@ export function AdminOverview() {
             </div>
           </div>
           <form className="coupon-create" onSubmit={(event) => void submit(event)}>
-            <input required value={coupon} onChange={(event) => setCoupon(event.target.value.toUpperCase())} placeholder="WAZEN25" />
-            <input type="number" min={1} max={100} value={value} onChange={(event) => setValue(event.target.value)} />
+            <input required value={coupon} onChange={(event) => setCoupon(event.target.value.toUpperCase())} placeholder="WAZEN25" aria-label={l("رمز الكوبون", "Coupon code")} />
+            <input type="number" min={1} max={100} value={value} onChange={(event) => setValue(event.target.value)} aria-label={l("نسبة الخصم", "Discount percent")} />
             <button disabled={working}><Plus size={16} />{l("إنشاء", "Create")}</button>
           </form>
           <div className="coupon-list">
@@ -229,7 +230,7 @@ export function AdminOverview() {
                 <BadgePercent />
                 <code>{row.code}</code>
                 <b>{row.value}%</b>
-                <span>{row.used_count}/{row.usage_limit}</span>
+                <span>{row.used_count}/{row.usage_limit} {l("استخدام", "uses")}</span>
                 <Status value={row.is_active ? "active" : "closed"} locale={locale} />
               </div>
             ))}
@@ -270,7 +271,7 @@ export function AdminOverview() {
               <div key={row.id}>
                 <CheckCircle2 />
                 <span><b>{actionLabel(row.action, locale)}</b><small>{row.display_name ?? row.user_id} · {entityLabel(row.entity_type, locale)}</small></span>
-                <time>{new Date(row.created_at).toLocaleString()}</time>
+                <time>{formatAdminDate(row.created_at, locale, true)}</time>
               </div>
             ))
             : <p>{l("ستظهر الإجراءات هنا فور تنفيذها.", "Administrative actions will appear here.")}</p>}
@@ -307,7 +308,7 @@ export function AdminUsers() {
         eyebrow={l("الإدارة / العملاء", "Admin / Customers")}
         title={l("المستخدمون والعملاء", "Users & customers")}
         text={l("صف العناوين ثم رأس كل عميل. فعّل أو أوقف الحساب من العمود مباشرة.", "Title row, then each customer. Activate or suspend from the column.")}
-        actions={<button type="button" onClick={() => downloadCsv("wazen-customers.csv", rows)}><Download size={16} />{l("تصدير", "Export")}</button>}
+        actions={<button type="button" onClick={() => downloadCsv("wazen-customers.csv", rows, locale)}><Download size={16} />{l("تصدير", "Export")}</button>}
       />
       <div className="admin-kpis">
         <Kpi icon={<Users />} label={l("إجمالي الحسابات", "Total accounts")} value={String(data.users.length)} note={l("كل العملاء", "all customers")} />
@@ -352,7 +353,7 @@ export function AdminUsers() {
                   <td>{user.country ? countryLabel(String(user.country), locale) : "—"}</td>
                   <td>{user.plan_name ?? "—"}</td>
                   <td><Status value={user.subscription_status ?? "pending"} locale={locale} /></td>
-                  <td>{user.last_seen_at ? new Date(user.last_seen_at).toLocaleDateString() : "—"}</td>
+                  <td>{formatAdminDate(user.last_seen_at, locale)}</td>
                   <td><Status value={user.status ?? "active"} locale={locale} /></td>
                   <td className="plan-matrix-switch">
                     <AdminSwitch
@@ -404,7 +405,7 @@ export function AdminPayments() {
         eyebrow={l("الإدارة / المالية", "Admin / Finance")}
         title={l("المدفوعات والفواتير", "Payments & invoices")}
         text={l("كل عملية عمود مقارنة: المرجع، العميل، المبلغ، ثم حالة التحصيل من الصف.", "Each payment is a comparable row: reference, customer, amount, then settlement status.")}
-        actions={<button type="button" onClick={() => downloadCsv("wazen-payments.csv", rows)}><Download size={16} />{l("تنزيل الكشف", "Download statement")}</button>}
+        actions={<button type="button" onClick={() => downloadCsv("wazen-payments.csv", rows, locale)}><Download size={16} />{l("تنزيل الكشف", "Download statement")}</button>}
       />
       <div className="admin-kpis">
         <Kpi icon={<TrendingUp />} label={l("المحصل", "Collected")} value={money(total("succeeded"), locale)} note={l("مدفوعات ناجحة", "successful payments")} />
@@ -486,7 +487,7 @@ export function AdminReports() {
         actions={
           <>
             <button type="button" onClick={() => window.print()}><Printer size={16} />{l("طباعة", "Print")}</button>
-            <button type="button" onClick={() => downloadCsv("wazen-reports.csv", data.invoices)}><Download size={16} />{l("تنزيل Excel", "Download Excel")}</button>
+            <button type="button" onClick={() => downloadCsv("wazen-reports.csv", data.invoices, locale)}><Download size={16} />{l("تنزيل Excel", "Download Excel")}</button>
           </>
         }
       />
