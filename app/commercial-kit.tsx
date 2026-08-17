@@ -1,13 +1,16 @@
 "use client";
 
-import { BarChart3, Building2, CreditCard, FileText, Globe2, LayoutDashboard, Menu, ReceiptText, UserCog, Users, WalletCards, X } from "lucide-react";
+import { BarChart3, Building2, CreditCard, FileText, Globe2, LayoutDashboard, LogOut, Menu, ReceiptText, UserCog, Users, WalletCards, X } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import WazenLogo, { WazenIcon } from "../components/brand/WazenLogo";
 import WazenPageLoader from "../components/brand/WazenPageLoader";
 import { formatMoneyMinor } from "../lib/money";
 import { statusLabel } from "../lib/admin-labels";
+import { apiFetch } from "../lib/client-api";
+import { clearAdminConsole } from "../lib/admin-session";
+import { clearDashboardCache } from "../lib/dashboard-session";
 
 export type CommerceLocale = "ar" | "en";
 
@@ -116,19 +119,52 @@ export function adminNavId(pathname: string) {
 
 export function AdminShell({ active, locale, setLocale, children }: { active?: string; locale: CommerceLocale; setLocale: (locale: CommerceLocale) => void; children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const current = active ?? adminNavId(pathname);
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const l = (ar: string, en: string) => locale === "ar" ? ar : en;
+  const logout = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await apiFetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
+    } finally {
+      clearAdminConsole();
+      clearDashboardCache();
+      router.push("/login");
+      router.refresh();
+    }
+  };
+  const logoutLabel = signingOut ? l("جارٍ الخروج...", "Signing out...") : l("تسجيل الخروج", "Sign out");
   return <main className="admin-app">
     {open && <button className="admin-backdrop" onClick={() => setOpen(false)} aria-label={l("إغلاق القائمة", "Close menu")} />}
     <aside className={open ? "open" : ""}>
       <Brand compact />
       <div className="admin-workspace"><WazenIcon className="h-7 w-[2.1rem]" /><div><small>{l("مساحة العمل", "Workspace")}</small><b>{l("إدارة وازن", "Wazen admin")}</b></div></div>
-      <nav>{adminLinks.map(([href, id, Icon, ar, en]) => <Link key={id} href={href} prefetch className={current === id ? "active" : ""}><Icon size={18} strokeWidth={2} /><span>{l(ar, en)}</span></Link>)}</nav>
-      <div className="admin-side-foot"><Link href="/home"><FileText size={17} />{l("العودة للرئيسية", "Back to home")}</Link><small>{l("لوحة عالمية", "Global console")}</small></div>
+      <nav>{adminLinks.map(([href, id, Icon, ar, en]) => <Link key={id} href={href} prefetch className={current === id ? "active" : ""} onClick={() => setOpen(false)}><Icon size={18} strokeWidth={2} /><span>{l(ar, en)}</span></Link>)}</nav>
+      <div className="admin-side-foot">
+        <Link href="/home"><FileText size={17} />{l("العودة للرئيسية", "Back to home")}</Link>
+        <button type="button" className="admin-logout" disabled={signingOut} onClick={() => void logout()}>
+          <LogOut size={17} />
+          {logoutLabel}
+        </button>
+        <small>{l("لوحة عالمية", "Global console")}</small>
+      </div>
     </aside>
     <section className="admin-main">
-      <header><button className="admin-mobile-menu" onClick={() => setOpen(true)} aria-label={l("فتح القائمة", "Open menu")}><Menu size={20} /></button><div><small>{l("مركز إدارة المنصة العالمية", "Global platform administration")}</small><b>{l("مرحباً بك في وازن", "Welcome to Wazen")}</b></div><div className="admin-head-actions"><button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}><Globe2 size={16} />{locale === "ar" ? "EN" : "عربي"}</button><Link href="/documents" aria-label={l("الإيصالات والكشوفات", "Receipts & statements")}><FileText size={17} /></Link><span aria-hidden="true">{locale === "ar" ? "و" : "W"}</span></div></header>
+      <header>
+        <button className="admin-mobile-menu" onClick={() => setOpen(true)} aria-label={l("فتح القائمة", "Open menu")}><Menu size={20} /></button>
+        <div><small>{l("مركز إدارة المنصة العالمية", "Global platform administration")}</small><b>{l("مرحباً بك في وازن", "Welcome to Wazen")}</b></div>
+        <div className="admin-head-actions">
+          <button type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")}><Globe2 size={16} />{locale === "ar" ? "EN" : "عربي"}</button>
+          <Link href="/documents" aria-label={l("الإيصالات والكشوفات", "Receipts & statements")}><FileText size={17} /></Link>
+          <button type="button" className="admin-logout" disabled={signingOut} onClick={() => void logout()}>
+            <LogOut size={16} />
+            {logoutLabel}
+          </button>
+        </div>
+      </header>
       <div className="admin-content">{children}</div>
     </section>
   </main>;

@@ -141,6 +141,25 @@
 }
 .admin-side-foot a{font-size:13px}
 .admin-side-foot small{font-size:12px;line-height:1.5}
+.admin-logout{
+  min-height:40px;
+  padding:0 12px;
+  border:1px solid #e8b4ae;
+  border-radius:10px;
+  background:#fff;
+  color:#b42318;
+  font-size:13px;
+  font-weight:700;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  cursor:pointer;
+}
+.admin-side-foot .admin-logout{
+  width:100%;
+  margin-top:8px;
+}
+.admin-logout:disabled{opacity:.65;cursor:default}
 .admin-main{width:calc(100% - 270px);margin-inline-start:270px}
 .admin-main > header{height:78px;padding:0 28px}
 .admin-main > header small{font-size:13px}

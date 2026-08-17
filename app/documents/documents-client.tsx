@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Download, FileBarChart, FileCheck2, FileDown, FileText, Filter, Plus, Printer, ReceiptText, Search, X } from "lucide-react";
+import { CheckCircle2, Download, FileBarChart, FileCheck2, FileDown, FileText, Filter, LogOut, Plus, Printer, ReceiptText, Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Brand, ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
@@ -11,6 +11,8 @@ import { planHasFeature } from "../../lib/plan-features";
 import { canOpenPlatformConsole } from "../../lib/platform-console";
 import { consumePlanQuota } from "../../lib/plan-quota-client";
 import { errorLabel, methodLabel } from "../../lib/admin-labels";
+import { clearAdminConsole } from "../../lib/admin-session";
+import { clearDashboardCache } from "../../lib/dashboard-session";
 
 type DocumentRow = { id: string; owner_user_id: string; space_id: string | null; type: string; reference: string; person_name: string; description: string; amount_minor: number; currency: string; status: string; payment_method: string; approved_by: string | null; issued_at: string };
 type Data = { user: { displayName: string; email: string }; role: string; documents: DocumentRow[]; spaces: { id: string; name_ar: string; name_en: string }[]; entitlements?: { features: string[]; printLimit?: number; usage?: { printsThisMonth?: number }; warnings?: Array<{ kind: string; used: number; limit: number }> } };
@@ -52,7 +54,14 @@ export function DocumentsClient() {
       void printWazenHtml((logoUrl) => documentHtml(selected, locale, data.user.displayName, logoUrl), true);
     });
   };
-  return <main className="documents-page admin-console"><header className="documents-header"><Brand/><nav><a href="/dashboard">{l("لوحة المستخدم","Dashboard")}</a><a href="/billing">{l("الفوترة","Billing")}</a>{canOpenPlatformConsole(data.role)&&<a href="/admin">{l("الإدارة","Admin")}</a>}</nav><button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button></header>
+  const logout = async () => {
+    await apiFetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
+    clearAdminConsole();
+    clearDashboardCache();
+    router.push("/login");
+    router.refresh();
+  };
+  return <main className="documents-page admin-console"><header className="documents-header"><Brand/><nav><a href="/dashboard">{l("لوحة المستخدم","Dashboard")}</a><a href="/billing">{l("الفوترة","Billing")}</a>{canOpenPlatformConsole(data.role)&&<a href="/admin">{l("الإدارة","Admin")}</a>}</nav><button type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button><button type="button" className="admin-logout" onClick={() => void logout()}><LogOut size={16} />{l("تسجيل الخروج","Sign out")}</button></header>
     <div className="documents-layout"><aside><h2>{l("المستندات المالية","Financial documents")}</h2><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}><FileText/> {l("جميع المستندات","All documents")}<b>{data.documents.length}</b></button>{Object.entries(types).map(([key,value]) => <button className={filter === key ? "active" : ""} onClick={() => setFilter(key)} key={key}><ReceiptText/> {locale === "ar" ? value[0] : value[1]}<b>{counts[key]}</b></button>)}</aside>
     <section className="documents-main"><div className="documents-title"><div><small>{l("الإدارة / الإيصالات والكشوفات","Admin / Receipts & statements")}</small><h1>{l("الإيصالات والكشوفات","Receipts & statements")}</h1><p>{l("قائمة الأنواع في العمود، والمعاينة بجانب التحكم. أنشئ وطبع ونزّل المستندات المرقمة.", "Types in the side column, preview beside controls. Create, print and download numbered documents.")}</p></div><div><button onClick={printSelected}><Printer/>{l("طباعة / PDF","Print / PDF")}</button><button className={canDownload ? "" : "is-plan-locked"} onClick={download}><Download/>{l("تنزيل نسخة","Download")}{canDownload ? null : <em className="plan-lock-badge">{l("ترقية","Upgrade")}</em>}</button><button className="primary" onClick={() => setModal(true)}><Plus/>{l("مستند جديد","New document")}</button></div></div>
     <div className="document-kpis"><article><ReceiptText/><span>{l("إيصالات قبض","Receipts")}</span><b>{counts.receipt}</b></article><article><FileDown/><span>{l("سندات صرف","Disbursements")}</span><b>{counts.disbursement}</b></article><article><FileCheck2/><span>{l("تسليم واستلام","Handovers")}</span><b>{counts.handover}</b></article><article><FileBarChart/><span>{l("كشوف وتقارير","Statements")}</span><b>{data.documents.length-counts.receipt-counts.disbursement-counts.handover}</b></article></div>
