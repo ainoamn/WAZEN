@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, quotaIsUnlimited, quotaNearLimit, quotaRemaining, quotaWouldExceed, quotaWarningCopy, resolveEntitlements, sidebarAllowsWalletView, upgradeNoticeFor } from "../lib/plan-features.ts";
+import { dashboardNavLocked, filterSpacesByPlan, formatQuota, planAllowsSpaceType, planHasFeature, quotaIsUnlimited, quotaNearLimit, quotaRemaining, quotaWouldExceed, quotaWarningCopy, resolveEntitlements, upgradeNoticeFor } from "../lib/plan-features.ts";
 import { canOpenPlatformConsole } from "../lib/platform-console.ts";
 import { pageTransactions } from "../lib/transaction-page.ts";
 
@@ -27,19 +27,29 @@ test("admin deny removes a plan feature and grant adds one", () => {
   assert.equal(resolved.userLimit, 2);
 });
 
-test("sidebar keeps wallet types the user already has even on a personal-only plan", () => {
-  assert.equal(sidebarAllowsWalletView(["personal"], ["personal", "trip", "society"], "trip"), true);
-  assert.equal(sidebarAllowsWalletView(["personal"], ["personal", "group"], "society"), true);
-  assert.equal(sidebarAllowsWalletView(["personal"], ["personal"], "household"), false);
-  assert.equal(sidebarAllowsWalletView([], ["personal"], "personal"), true);
+test("starter plan does not open leftover household trip or circle wallets", () => {
+  const leftover = [{ type: "personal" }, { type: "household" }, { type: "trip" }, { type: "society" }];
+  assert.deepEqual(filterSpacesByPlan(leftover, ["personal"]).map((space) => space.type), ["personal"]);
+  assert.equal(planAllowsSpaceType(["personal"], "trip"), false);
+  assert.equal(planAllowsSpaceType(["personal"], "household"), false);
+  assert.equal(planAllowsSpaceType(["personal"], "society"), false);
+  assert.equal(planAllowsSpaceType(["personal"], "personal"), true);
+});
+
+test("all_wallets unlocks wallet types only, not documents or reports", () => {
+  assert.equal(planAllowsSpaceType(["all_wallets"], "household"), true);
+  assert.equal(planAllowsSpaceType(["all_wallets"], "trip"), true);
+  assert.equal(planHasFeature(["all_wallets"], "household"), true);
+  assert.equal(planHasFeature(["all_wallets"], "documents"), false);
+  assert.equal(planHasFeature(["all_wallets"], "advanced_reports"), false);
+  assert.equal(planHasFeature(["all_wallets", "documents"], "documents"), true);
 });
 
 test("dashboard nav stays listed but locked when the plan does not include the feature", () => {
   const starterViews = ["overview", "personal", "household", "groups", "trip", "society", "transactions", "reports"];
   const starter = ["personal"];
-  const existing = ["personal"];
   assert.deepEqual(
-    starterViews.map((view) => [view, dashboardNavLocked(starter, existing, view)]),
+    starterViews.map((view) => [view, dashboardNavLocked(starter, view)]),
     [
       ["overview", false],
       ["personal", false],
@@ -51,8 +61,8 @@ test("dashboard nav stays listed but locked when the plan does not include the f
       ["reports", true],
     ],
   );
-  assert.equal(dashboardNavLocked(["personal"], ["personal", "household"], "household"), false);
-  assert.equal(dashboardNavLocked(["personal", "advanced_reports"], ["personal"], "reports"), false);
+  assert.equal(dashboardNavLocked(["personal"], "household"), true);
+  assert.equal(dashboardNavLocked(["personal", "advanced_reports"], "reports"), false);
 });
 
 test("locked nav copy tells the user which plan to upgrade to", () => {

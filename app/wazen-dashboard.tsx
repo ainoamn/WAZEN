@@ -76,6 +76,7 @@ import Link from "next/link";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { apiFetch } from "../lib/client-api";
 import { clearDashboardCache, fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../lib/dashboard-session";
+import { notifyLiveRefresh, useLiveDashboard } from "../lib/live-sync";
 
 type Locale = "ar" | "en";
 type ThemeMode = "light" | "dark";
@@ -825,6 +826,7 @@ export function WazenDashboard() {
   const setData = (next: DashboardData) => {
     writeDashboardCache(next);
     setDataState(next);
+    notifyLiveRefresh();
   };
 
   const showUpgradeNotice = (targetKey: string, featureLabel: string) => {
@@ -832,11 +834,11 @@ export function WazenDashboard() {
     setUpgradeNotice(upgradeNoticeFor(locale, featureLabel, targetKey));
   };
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     try {
       setError(false);
-      const result = await fetchDashboardSession<DashboardData>();
-      if (result.data) setData(result.data);
+      const result = await fetchDashboardSession<DashboardData>(force);
+      if (result.data) setDataState(result.data);
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) { router.push("/login?next=/home"); return; }
       if (!readDashboardCache()) setError(true);
@@ -845,7 +847,16 @@ export function WazenDashboard() {
     }
   }, [router]);
 
+  useLiveDashboard(() => { void load(true); }, !loading);
+
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!data) return;
+    if (dashboardNavLocked(planFeaturesOf(data), activeView)) {
+      setActiveView("overview");
+      persistPlace("overview");
+    }
+  }, [data, activeView]);
   useEffect(() => { router.prefetch("/home"); }, [router]);
   useEffect(() => {
     document.documentElement.classList.toggle("nav-open", sidebarOpen);
@@ -926,7 +937,7 @@ export function WazenDashboard() {
     const looksLikeCircle = /جمعي|circle|association|ros[ck]a/i.test(`${space.name_ar} ${space.name_en}`);
     return hasTurns || looksLikeCircle;
   });
-  const walletDefaultType = viewSpaceType[activeView] ?? "trip";
+  const walletDefaultType = viewSpaceType[activeView] ?? "personal";
 
   const totals = useMemo(() => {
     if (!data) return { net: 0, groups: 0, personal: 0, reserves: 0, spend: 0, income: 0, remaining: 0 };
@@ -961,6 +972,11 @@ export function WazenDashboard() {
   };
 
   const changeView = (view: ViewId, spaceId?: string) => {
+    const features = planFeaturesOf(data);
+    if (dashboardNavLocked(features, view)) {
+      showUpgradeNotice(view, t[view]);
+      return;
+    }
     startTransition(() => {
       setActiveView(view);
       setSidebarOpen(false);
@@ -974,11 +990,11 @@ export function WazenDashboard() {
 
   const activeSpace = spacesForView.find((space) => space.id === pickedSpaceId[activeView]) ?? spacesForView[0];
   const planFeatures = planFeaturesOf(data);
-  const viewLocked = dashboardNavLocked(planFeatures, data.spaces.map((space) => space.type), activeView);
+  const viewLocked = dashboardNavLocked(planFeatures, activeView);
   const canCreateCurrentType = planAllowsSpaceType(planFeatures, walletDefaultType);
   const openNewWallet = () => {
-    if (viewSpaceType[activeView] && !canCreateCurrentType) {
-      showUpgradeNotice(activeView, t[activeView]);
+    if (!canCreateCurrentType) {
+      showUpgradeNotice(activeView === "overview" ? "personal" : activeView, t[activeView === "overview" ? "personal" : activeView]);
       return;
     }
     setModal("wallet");
@@ -993,7 +1009,7 @@ export function WazenDashboard() {
 
   return (
     <div className="app-shell">
-      <Sidebar locale={locale} active={activeView} open={sidebarOpen} entitlements={data.entitlements} spaces={data.spaces} role={data.user.role} onNavigate={changeView} onLocked={(id) => showUpgradeNotice(id, id === "documents" ? (locale === "ar" ? "الإيصالات والكشوفات" : "Documents & statements") : t[id])} onClose={() => setSidebarOpen(false)} onLogout={() => void logout()} />
+      <Sidebar locale={locale} active={activeView} open={sidebarOpen} entitlements={data.entitlements} role={data.user.role} onNavigate={changeView} onLocked={(id) => showUpgradeNotice(id, id === "documents" ? (locale === "ar" ? "الإيصالات والكشوفات" : "Documents & statements") : t[id])} onClose={() => setSidebarOpen(false)} onLogout={() => void logout()} />
 
       <main className="main-shell">
         <header className="topbar">
@@ -1014,7 +1030,7 @@ export function WazenDashboard() {
             </button>
             <AccentPicker locale={locale} accent={accent} onPick={applyAccent} />
             <NotificationBell data={data} locale={locale} onOpen={(view, spaceId) => {
-              if (dashboardNavLocked(planFeatures, data.spaces.map((space) => space.type), view)) {
+              if (dashboardNavLocked(planFeatures, view)) {
                 showUpgradeNotice(view, t[view]);
                 return;
               }
@@ -1300,10 +1316,9 @@ function UserMenu({ locale, name, email, avatarUrl, onSettings, onLogout }: { lo
   );
 }
 
-function Sidebar({ locale, active, open, entitlements, spaces, role, onNavigate, onLocked, onClose, onLogout }: { locale: Locale; active: ViewId; open: boolean; entitlements?: DashboardData["entitlements"]; spaces?: Space[]; role?: string | null; onNavigate: (id: ViewId) => void; onLocked: (id: ViewId | "documents") => void; onClose: () => void; onLogout: () => void }) {
+function Sidebar({ locale, active, open, entitlements, role, onNavigate, onLocked, onClose, onLogout }: { locale: Locale; active: ViewId; open: boolean; entitlements?: DashboardData["entitlements"]; role?: string | null; onNavigate: (id: ViewId) => void; onLocked: (id: ViewId | "documents") => void; onClose: () => void; onLogout: () => void }) {
   const t = copy[locale];
   const features = entitlements?.features?.length ? entitlements.features : ["personal"];
-  const existingTypes = (spaces ?? []).map((space) => space.type);
   const documentsLocked = !planHasFeature(features, "documents");
   return (
     <>
@@ -1317,7 +1332,7 @@ function Sidebar({ locale, active, open, entitlements, spaces, role, onNavigate,
         <div className="workspace-pill"><div className="workspace-icon"><Landmark size={17} /></div><div><small>{t.workspace}</small><strong>{locale === "ar" ? "الحساب الرئيسي" : "Main account"}</strong></div><ChevronDown size={15} /></div>
         <nav className="sidebar-nav">
           {navItems.map(({ id, icon: Icon }) => {
-            const locked = dashboardNavLocked(features, existingTypes, id);
+            const locked = dashboardNavLocked(features, id);
             return (
               <button
                 key={id}
@@ -2229,7 +2244,7 @@ function WalletModal({ data, locale, existing, defaultType = "trip", lockType = 
       setError(caught instanceof Error ? caught.message : "SAVE_FAILED");
     } finally { setSaving(false); }
   };
-  return <Modal title={existing ? (isPersonal ? (locale === "ar" ? "ضبط المحفظة" : "Wallet setup") : (locale === "ar" ? "تعديل بيانات الجمعية" : "Edit association")) : t.newWallet} wide={Boolean(existing && isPersonal)} xl={Boolean(existing && isPersonal)} onClose={onClose}><form className={`modal-form${existing && isPersonal ? " wallet-setup-form" : ""}`} onSubmit={submit}><label><span>{t.walletName}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={locale === "ar" ? "مثال: سفرة الإخوة 2027" : "e.g. Siblings trip 2027"} /></label>{!lockType && !existing && <label><span>{t.walletType}</span><select value={type} onChange={(event) => setType(event.target.value)}>{Object.entries(typeLabels[locale]).map(([value, label]) => <option key={value} value={value}>{label}{planAllowsSpaceType(features, value) ? "" : (locale === "ar" ? " — ترقية" : " — Upgrade")}</option>)}</select></label>}{isGroup && <div className="form-row"><label><span>{locale === "ar" ? "المساهمة الشهرية الإلزامية" : "Mandatory monthly contribution"}</span><div className="money-input"><input required min="0.01" step="0.001" type="number" value={monthlyContribution} onChange={(event) => setMonthlyContribution(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label><label><span>{locale === "ar" ? "مدة الخطة (أشهر)" : "Plan duration (months)"}</span><input required type="number" min="1" max="120" value={durationMonths} onChange={(event) => setDurationMonths(event.target.value)} /></label></div>}<label><span>{locale === "ar" ? "تاريخ بداية الجمعية / المحفظة" : "Association / wallet start date"}</span><DateField required value={startsAt} onChange={setStartsAt} /></label>{isGroup && <div className="modal-note split-preview"><span>{locale === "ar" ? "الهدف المالي للشخص = المساهمة × عدد الأشهر" : "Personal financial goal = contribution × months"}</span><strong>{formatMoney(Number.isFinite(liveGoalMinor) ? liveGoalMinor : 0, "OMR", locale)}</strong></div>}{isGroup && <p className="modal-note">{locale === "ar" ? "عند استلام مبلغ من عضو: يُخصم أولاً من المطالبات المتراكمة عليه، وأي زيادة تُسجَّل مقدّماً (له)." : "When a member pays: outstanding dues are cleared first, and any surplus is booked as advance credit."}</p>}{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : (existing ? t.save : t.create)}</button></div></form>{existing && isPersonal && <PersonalRulesSetup spaceId={existing.id} locale={locale} accounts={data.personalAccounts ?? []} rules={data.personalRules ?? []} onChanged={(next) => onLiveData?.(next as Partial<DashboardData>)} />}</Modal>;
+  return <Modal title={existing ? (isPersonal ? (locale === "ar" ? "ضبط المحفظة" : "Wallet setup") : (locale === "ar" ? "تعديل بيانات الجمعية" : "Edit association")) : t.newWallet} wide={Boolean(existing && isPersonal)} xl={Boolean(existing && isPersonal)} onClose={onClose}><form className={`modal-form${existing && isPersonal ? " wallet-setup-form" : ""}`} onSubmit={submit}><label><span>{t.walletName}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={locale === "ar" ? "مثال: سفرة الإخوة 2027" : "e.g. Siblings trip 2027"} /></label>{!lockType && !existing && <label><span>{t.walletType}</span><select value={type} onChange={(event) => setType(event.target.value)}>{Object.entries(typeLabels[locale]).map(([value, label]) => <option key={value} value={value} disabled={!planAllowsSpaceType(features, value)}>{label}{planAllowsSpaceType(features, value) ? "" : (locale === "ar" ? " — ترقية" : " — Upgrade")}</option>)}</select></label>}{isGroup && <div className="form-row"><label><span>{locale === "ar" ? "المساهمة الشهرية الإلزامية" : "Mandatory monthly contribution"}</span><div className="money-input"><input required min="0.01" step="0.001" type="number" value={monthlyContribution} onChange={(event) => setMonthlyContribution(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label><label><span>{locale === "ar" ? "مدة الخطة (أشهر)" : "Plan duration (months)"}</span><input required type="number" min="1" max="120" value={durationMonths} onChange={(event) => setDurationMonths(event.target.value)} /></label></div>}<label><span>{locale === "ar" ? "تاريخ بداية الجمعية / المحفظة" : "Association / wallet start date"}</span><DateField required value={startsAt} onChange={setStartsAt} /></label>{isGroup && <div className="modal-note split-preview"><span>{locale === "ar" ? "الهدف المالي للشخص = المساهمة × عدد الأشهر" : "Personal financial goal = contribution × months"}</span><strong>{formatMoney(Number.isFinite(liveGoalMinor) ? liveGoalMinor : 0, "OMR", locale)}</strong></div>}{isGroup && <p className="modal-note">{locale === "ar" ? "عند استلام مبلغ من عضو: يُخصم أولاً من المطالبات المتراكمة عليه، وأي زيادة تُسجَّل مقدّماً (له)." : "When a member pays: outstanding dues are cleared first, and any surplus is booked as advance credit."}</p>}{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : (existing ? t.save : t.create)}</button></div></form>{existing && isPersonal && <PersonalRulesSetup spaceId={existing.id} locale={locale} accounts={data.personalAccounts ?? []} rules={data.personalRules ?? []} onChanged={(next) => onLiveData?.(next as Partial<DashboardData>)} />}</Modal>;
 }
 
 function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data: DashboardData; locale: Locale; preferredSpaceId?: string; onClose: () => void; onDone: (message: string) => void }) {

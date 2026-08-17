@@ -7,6 +7,7 @@ import {
 } from "../../../db/runtime";
 
 const VERSION = "0.2.0";
+const BUILD_ID = process.env.VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_DEPLOYMENT_ID || VERSION;
 
 function isOpsRequest(request: Request) {
   const secret = process.env.WAZEN_JOB_SECRET?.trim();
@@ -34,6 +35,7 @@ export async function GET(request: Request) {
       return Response.json({
         status,
         version: VERSION,
+        buildId: BUILD_ID,
         database: "ready",
       }, { status: unsafeInProduction || setupPending.length ? 503 : 200, headers: publicHeaders });
     }
@@ -64,7 +66,7 @@ export async function GET(request: Request) {
     }, { status: setupPending.length ? 503 : 200, headers: publicHeaders });
   } catch {
     if (!ops) {
-      return Response.json({ status: "degraded", version: VERSION, database: "unavailable" }, { status: 503, headers: publicHeaders });
+      return Response.json({ status: "degraded", version: VERSION, buildId: BUILD_ID, database: "unavailable" }, { status: 503, headers: publicHeaders });
     }
     return Response.json({
       status: "degraded",

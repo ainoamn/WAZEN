@@ -9,7 +9,7 @@ import {
 } from "../../lib/plan-features";
 import { ApiError } from "../../lib/api-error";
 
-export { parsePlanFeatures, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_KEYS, PLAN_FEATURE_CATALOG } from "../../lib/plan-features";
+export { parsePlanFeatures, planAllowsSpaceType, planHasFeature, filterSpacesByPlan, PLAN_FEATURE_KEYS, PLAN_FEATURE_CATALOG } from "../../lib/plan-features";
 export { resolveEntitlements };
 
 export type GatewayScope = "local" | "regional" | "global";

@@ -51,10 +51,13 @@ export function parsePlanFeatures(raw: unknown): string[] {
   return [];
 }
 
+const WALLET_FEATURE_IDS = new Set(["personal", "household", "trips", "travel", "circles", "circle", "all_wallets"]);
+
 export function planHasFeature(features: string[], feature: string) {
   if (!features.length) return false;
-  if (features.includes("*") || features.includes("unlimited") || features.includes("all_wallets")) return true;
-  return features.includes(feature);
+  if (features.includes("*") || features.includes("unlimited")) return true;
+  if (features.includes(feature)) return true;
+  return features.includes("all_wallets") && WALLET_FEATURE_IDS.has(feature);
 }
 
 export function planAllowsSpaceType(features: string[], spaceType: string) {
@@ -65,12 +68,8 @@ export function planAllowsSpaceType(features: string[], spaceType: string) {
   return aliases.some((key) => features.includes(key));
 }
 
-/** Empty `features: []` must not hide wallets the user already has. */
-export function sidebarAllowsWalletView(features: string[], existingTypes: Iterable<string>, spaceType: string) {
-  if (planAllowsSpaceType(features, spaceType)) return true;
-  const types = new Set(existingTypes);
-  if (spaceType === "society" || spaceType === "group") return types.has("society") || types.has("group");
-  return types.has(spaceType);
+export function filterSpacesByPlan<T extends { type: string }>(spaces: T[], features: string[]) {
+  return spaces.filter((space) => planAllowsSpaceType(features, space.type));
 }
 
 /** Lowest paid plan that includes a locked nav item or feature. */
@@ -103,11 +102,11 @@ export function upgradeNoticeFor(locale: "ar" | "en", featureLabel: string, targ
     text: `To use ${featureLabel}, upgrade to the ${target.planEn} plan or higher. Your current plan does not include this option.`,
   };
 }
-export function dashboardNavLocked(features: string[], existingTypes: Iterable<string>, viewId: string) {
+export function dashboardNavLocked(features: string[], viewId: string) {
   if (viewId === "reports") return !(planHasFeature(features, "advanced_reports") || planHasFeature(features, "exports"));
-  if (viewId === "household") return !sidebarAllowsWalletView(features, existingTypes, "household");
-  if (viewId === "trip") return !sidebarAllowsWalletView(features, existingTypes, "trip");
-  if (viewId === "society" || viewId === "groups") return !sidebarAllowsWalletView(features, existingTypes, "society");
+  if (viewId === "household") return !planAllowsSpaceType(features, "household");
+  if (viewId === "trip") return !planAllowsSpaceType(features, "trip");
+  if (viewId === "society" || viewId === "groups") return !planAllowsSpaceType(features, "society");
   return false;
 }
 

@@ -19,6 +19,7 @@ import WazenLogo from "../../components/brand/WazenLogo";
 import WazenPageLoader from "../../components/brand/WazenPageLoader";
 import { apiFetch } from "../../lib/client-api";
 import { clearDashboardCache, fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../../lib/dashboard-session";
+import { useLiveDashboard } from "../../lib/live-sync";
 import { formatMoneyMinor, currencyScale } from "../../lib/money";
 import { memberDisplayCreditMinor, pendingSettlementsWithCredit } from "../../lib/finance";
 import { memberAccruedDueMinor } from "../../components/members/association-members";
@@ -103,10 +104,10 @@ export function HomeClient() {
   const [pendingOpen, setPendingOpen] = useState(false);
   const [toast, setToast] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     try {
       setError(false);
-      const result = await fetchDashboardSession<HomeData>();
+      const result = await fetchDashboardSession<HomeData>(force);
       if (result.data) {
         writeDashboardCache(result.data);
         setData(result.data);
@@ -123,6 +124,7 @@ export function HomeClient() {
   }, [router]);
 
   useEffect(() => { void load(); }, [load]);
+  useLiveDashboard(() => { void load(true); }, !loading);
   useEffect(() => { router.prefetch("/dashboard"); }, [router]);
   useEffect(() => {
     try {

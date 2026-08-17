@@ -18,6 +18,8 @@ import {
   listAdminPlans,
   listGatewaysWithPlans,
   planHasFeature,
+  planAllowsSpaceType,
+  filterSpacesByPlan,
   updatePaymentGateway,
   upsertAdminPlan,
   assertOwnerPlanQuota,
@@ -295,6 +297,10 @@ export async function GET(request: Request) {
 
     if (view === "documents") {
       assertApiScope(user, "documents:read");
+      const entitlements = await getActivePlanEntitlements(db, user.id);
+      if (!planHasFeature(entitlements.features, "documents")) {
+        return Response.json({ user, role, documents: [], spaces: [], entitlements }, { headers: responseHeaders });
+      }
       const [documents, spaces] = await Promise.all([
         db.prepare(`SELECT * FROM documents
           WHERE owner_user_id=? OR space_id IN (
@@ -308,7 +314,10 @@ export async function GET(request: Request) {
           )
           ORDER BY s.created_at`).bind(user.id, user.id).all(),
       ]);
-      return Response.json({ user, role, documents: documents.results ?? [], spaces: spaces.results ?? [], entitlements: await getActivePlanEntitlements(db, user.id) }, { headers: responseHeaders });
+      const allowedSpaces = (spaces.results ?? []).filter((space) => planAllowsSpaceType(entitlements.features, String(space.type)));
+      const allowedIds = new Set(allowedSpaces.map((space) => String(space.id)));
+      const allowedDocs = (documents.results ?? []).filter((doc) => !doc.space_id || allowedIds.has(String(doc.space_id)));
+      return Response.json({ user, role, documents: allowedDocs, spaces: allowedSpaces, entitlements }, { headers: responseHeaders });
     }
     if (view === "billing") {
       assertApiScope(user, "billing:read");
@@ -330,16 +339,22 @@ export async function GET(request: Request) {
       const entitlements = await getActivePlanEntitlements(db, user.id);
       if (!planHasFeature(entitlements.features, "exports")) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
       const spaces = await db.prepare("SELECT * FROM spaces WHERE owner_user_id=? ORDER BY created_at").bind(user.id).all<Record<string, unknown>>();
-      const ids = spaces.results.map((space) => String(space.id)); const placeholders = ids.map(() => "?").join(",");
+      const allowedSpaces = filterSpacesByPlan(
+        (spaces.results ?? []).map((space) => ({ ...space, id: String(space.id ?? ""), type: String(space.type ?? "") })),
+        entitlements.features,
+      );
+      const ids = allowedSpaces.map((space) => space.id); const placeholders = ids.map(() => "?").join(",");
       const [members, transactions, documents, subscriptions, invoices, payments] = await Promise.all([
         ids.length ? db.prepare(`SELECT * FROM members WHERE space_id IN (${placeholders})`).bind(...ids).all() : Promise.resolve({ results: [] }),
         ids.length ? db.prepare(`SELECT * FROM transactions WHERE space_id IN (${placeholders}) ORDER BY occurred_at`).bind(...ids).all() : Promise.resolve({ results: [] }),
-        db.prepare("SELECT * FROM documents WHERE owner_user_id=? ORDER BY issued_at").bind(user.id).all(),
+        db.prepare("SELECT * FROM documents WHERE owner_user_id=? ORDER BY issued_at").bind(user.id).all<{ space_id?: string | null }>(),
         db.prepare("SELECT * FROM subscriptions WHERE user_id=? ORDER BY created_at").bind(user.id).all(),
         db.prepare("SELECT * FROM invoices WHERE user_id=? ORDER BY created_at").bind(user.id).all(),
         db.prepare("SELECT * FROM payments WHERE user_id=? ORDER BY occurred_at").bind(user.id).all(),
       ]);
-      const exportData = { exportedAt: isoNow(), user, spaces: spaces.results, members: members.results, transactions: transactions.results, documents: documents.results, subscriptions: subscriptions.results, invoices: invoices.results, payments: payments.results };
+      const allowedIds = new Set(ids);
+      const allowedDocs = (documents.results ?? []).filter((doc) => !doc.space_id || allowedIds.has(String(doc.space_id)));
+      const exportData = { exportedAt: isoNow(), user, spaces: allowedSpaces, members: members.results, transactions: transactions.results, documents: allowedDocs, subscriptions: subscriptions.results, invoices: invoices.results, payments: payments.results };
       responseHeaders.set("Content-Type", "application/json; charset=utf-8");
       responseHeaders.set("Content-Disposition", `attachment; filename="wazen-export-${new Date().toISOString().slice(0, 10)}.json"`);
       return new Response(JSON.stringify(exportData, null, 2), { headers: responseHeaders });
@@ -502,11 +517,8 @@ export async function POST(request: Request) {
       assertApiScope(user, "documents:write");
       const parsed = z.object({ type: z.enum(["receipt", "disbursement", "handover", "member_statement", "society_statement", "trip_statement", "household_statement", "personal_report"]), personName: z.string().trim().min(2).max(120), description: z.string().trim().min(2).max(500), amount: z.union([z.string().min(1).max(40), z.number().nonnegative()]), spaceId: z.string().max(120).optional(), paymentMethod: z.enum(["bank_transfer", "cash", "card", "other"]).default("bank_transfer") }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_DOCUMENT");
-      const advancedDocs = ["disbursement", "handover", "member_statement", "society_statement", "trip_statement", "household_statement", "personal_report"];
-      if (advancedDocs.includes(parsed.data.type)) {
-        const entitlements = await getActivePlanEntitlements(db, user.id);
-        if (!planHasFeature(entitlements.features, "documents")) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
-      }
+      const entitlements = await getActivePlanEntitlements(db, user.id);
+      if (!planHasFeature(entitlements.features, "documents")) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
       await assertOwnerPlanQuota(db, user.id, "record", 1);
       const { type, personName, description } = parsed.data;
       const space = parsed.data.spaceId ? await authorizeSpace(db, user, parsed.data.spaceId, "transact") : null;
