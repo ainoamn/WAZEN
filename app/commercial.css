@@ -1383,9 +1383,24 @@
 .documents-page .statement-launcher button b { font-size: 14px; }
 .documents-page .statement-launcher button small { font-size: 12px; }
 .documents-page .receipt-preview { border-radius: 22px; }
-.documents-page .receipt-title h2 { font-size: 26px; }
-.documents-page .receipt-preview dt { font-size: 12px; }
-.documents-page .receipt-preview dd { font-size: 15px; }
+.documents-page .receipt-title h2 { font-size: 28px; }
+.documents-page .receipt-preview > header > span { font-size: 13px; font-weight: 700; color: #3f4f49; }
+.documents-page .receipt-preview dt { font-size: 14px; color: #3f4f49; font-weight: 700; }
+.documents-page .receipt-preview dd { font-size: 17px; font-weight: 800; color: #12231f; }
+.documents-page .receipt-preview > footer { font-size: 13px; color: #3f4f49; font-weight: 600; }
+@media print {
+  .documents-page .receipt-preview,
+  .documents-page .receipt-preview dt,
+  .documents-page .receipt-preview dd,
+  .documents-page .receipt-preview > header > span,
+  .documents-page .receipt-preview > footer {
+    color: #000 !important;
+  }
+  .documents-page .receipt-title h2 { font-size: 30px !important; }
+  .documents-page .receipt-preview dt { font-size: 14px !important; }
+  .documents-page .receipt-preview dd { font-size: 17px !important; }
+  .documents-page .receipt-preview > footer { font-size: 13px !important; }
+}
 
 @media (max-width: 1100px) {
   .admin-console .admin-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }

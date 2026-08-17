@@ -43,42 +43,72 @@ export const PRINT_DOCUMENT_CSS = `
 :root { color-scheme: light; }
 * { box-sizing: border-box; }
 @page { size: A4; margin: 12mm; }
-body { margin: 0; font-family: "Segoe UI", Tahoma, Arial, sans-serif; color: #14221f; background: #f4f7f5; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif;
+  color: #12231f;
+  background: #f4f7f5;
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
 .print-actions { position: sticky; top: 0; z-index: 5; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px; background: #fff; border-bottom: 1px solid #e5ebe7; }
-.print-actions button { border: 0; border-radius: 10px; padding: 10px 16px; background: #0d7a65; color: #fff; font-weight: 700; cursor: pointer; }
+.print-actions button { border: 0; border-radius: 10px; padding: 10px 16px; background: #0d7a65; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
 .sheet { max-width: 960px; margin: 20px auto 40px; background: white; border: 1px solid #d7e0db; border-radius: 18px; overflow: visible; }
-.brand-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; background: #fff; border-bottom: 3px solid #0d7a65; }
-.brand-bar img { height: 48px; width: auto; }
-.brand-bar small { display: block; color: #66766f; font-size: 11px; }
-.brand-bar strong { font-size: 15px; color: #143a36; }
-.head { padding: 22px 24px 8px; }
-.head h1 { margin: 0 0 6px; font-size: 24px; color: #0d7a65; }
-.head p { margin: 0; color: #66766f; font-size: 14px; }
-.meta { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px 18px; margin: 14px 24px; padding: 12px 14px; border: 1px solid #e5ebe7; border-radius: 12px; background: #fbfcfb; }
-.meta span { color: #809089; font-size: 12px; display: block; }
-.meta b { font-size: 14px; }
-.kpis { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; padding: 0 24px 16px; }
-.kpi { border: 1px solid #e5ebe7; border-radius: 12px; padding: 10px 12px; }
-.kpi span { display: block; color: #809089; font-size: 12px; margin-bottom: 4px; }
-section { padding: 8px 24px 20px; }
-section h2 { margin: 0 0 10px; font-size: 16px; color: #244c56; }
-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-th, td { padding: 8px 6px; border-bottom: 1px solid #e8eeea; text-align: start; vertical-align: top; }
-th { color: #66766f; font-size: 11px; background: #f3f7f5; }
-.num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.in { color: #0d7a65; font-weight: 700; }
-.out { color: #a84d58; font-weight: 700; }
-.voided td { text-decoration: line-through; color: #809089; }
-.footer-note { margin: 10px 0 0; font-weight: 700; color: #0d7a65; }
-.empty { color: #809089; }
-footer.sheet-foot { padding: 16px 24px 24px; color: #809089; font-size: 12px; border-top: 1px solid #eef2f0; }
+.brand-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 28px; background: #fff; border-bottom: 3px solid #0d7a65; }
+.brand-bar img { height: 56px; width: auto; }
+.brand-bar small { display: block; color: #3f4f49; font-size: 14px; font-weight: 700; }
+.brand-bar strong { font-size: 18px; color: #12231f; }
+.head { padding: 26px 28px 10px; }
+.head h1 { margin: 0 0 8px; font-size: 30px; line-height: 1.25; color: #0d7a65; }
+.head p { margin: 0; color: #3f4f49; font-size: 16px; font-weight: 600; }
+.meta { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px 20px; margin: 16px 28px; padding: 14px 16px; border: 1px solid #d7e0db; border-radius: 12px; background: #fbfcfb; }
+.meta span { color: #3f4f49; font-size: 14px; display: block; font-weight: 700; }
+.meta b { font-size: 17px; color: #12231f; font-weight: 800; }
+.kpis { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; padding: 0 28px 18px; }
+.kpi { border: 1px solid #d7e0db; border-radius: 12px; padding: 12px 14px; }
+.kpi span { display: block; color: #3f4f49; font-size: 14px; margin-bottom: 6px; font-weight: 700; }
+.kpi strong { font-size: 18px; color: #12231f; }
+section { padding: 10px 28px 24px; }
+section h2 { margin: 0 0 14px; font-size: 20px; color: #1a3d36; }
+table { width: 100%; border-collapse: collapse; font-size: 16px; }
+th, td { padding: 12px 10px; border-bottom: 1px solid #d7e0db; text-align: start; vertical-align: top; }
+th { color: #3f4f49; font-size: 14px; background: #f3f7f5; font-weight: 800; }
+td { color: #12231f; font-size: 16px; font-weight: 600; }
+td:first-child { color: #3f4f49; font-weight: 700; width: 34%; }
+.num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 16px; font-weight: 800; }
+.in { color: #0d7a65; font-weight: 800; }
+.out { color: #a84d58; font-weight: 800; }
+.voided td { text-decoration: line-through; color: #5b6b66; }
+.footer-note { margin: 12px 0 0; font-weight: 800; color: #0d7a65; font-size: 15px; }
+.empty { color: #5b6b66; font-size: 15px; }
+footer.sheet-foot {
+  padding: 18px 28px 28px;
+  color: #3f4f49;
+  font-size: 14px;
+  font-weight: 600;
+  border-top: 1px solid #d7e0db;
+  line-height: 1.6;
+}
 thead { display: table-header-group; }
 tr { break-inside: avoid; page-break-inside: avoid; }
 @media print {
-  body { background: white; }
+  body {
+    background: white;
+    font-size: 16px;
+    color: #000;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
   .print-actions { display: none !important; }
   .sheet { margin: 0; border: 0; border-radius: 0; max-width: none; overflow: visible; }
-  .brand-bar, th { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .brand-bar, th, .meta, .kpi { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .brand-bar small, .meta span, .kpi span, th, td:first-child, footer.sheet-foot { color: #222 !important; }
+  .brand-bar strong, .meta b, .kpi strong, td, .head p { color: #000 !important; }
+  .head h1 { font-size: 32px; color: #0a5c4c !important; }
+  table, td, .num { font-size: 16px; }
+  th { font-size: 14px; }
+  footer.sheet-foot { font-size: 13px; }
 }
 @media (max-width: 760px) { .kpis, .meta { grid-template-columns: 1fr 1fr; } }
 `;

@@ -106,3 +106,23 @@ test("account statement looks like a bank ledger with running balance", () => {
   assert.match(html, /onclick="window.print\(\)"/);
   assert.match(html, /@page \{ size: A4;/);
 });
+
+test("print document CSS uses large readable fonts for paper output", async () => {
+  const { PRINT_DOCUMENT_CSS, wrapPrintDocument } = await import("../lib/print-document.ts");
+  assert.match(PRINT_DOCUMENT_CSS, /body \{[\s\S]*font-size: 16px;/);
+  assert.match(PRINT_DOCUMENT_CSS, /table \{[\s\S]*font-size: 16px;/);
+  assert.match(PRINT_DOCUMENT_CSS, /\.head h1 \{[\s\S]*font-size: 30px;/);
+  assert.match(PRINT_DOCUMENT_CSS, /footer\.sheet-foot \{[\s\S]*font-size: 14px;/);
+  assert.match(PRINT_DOCUMENT_CSS, /@media print \{[\s\S]*font-size: 16px;/);
+  assert.doesNotMatch(PRINT_DOCUMENT_CSS, /table \{[^}]*font-size: 12px;/);
+  const html = wrapPrintDocument({
+    locale: "ar",
+    title: "إيصال وازن",
+    entityName: "جمعية السفر",
+    logoUrl: "/brand/wazen-lockup.png",
+    subtitle: "2026/08/16",
+    bodyHtml: "<section><table><tr><td>الوصف</td><td>تسوية</td></tr></table></section>",
+  });
+  assert.match(html, /font-size: 16px/);
+  assert.match(html, /إيصال وازن/);
+});
