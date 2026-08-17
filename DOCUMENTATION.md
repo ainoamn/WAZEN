@@ -2,7 +2,7 @@
 
 **الإصدار:** 0.2.0 (`wazen-finance`)
 **تاريخ التوثيق الأصلي:** 11 أغسطس 2026  
-**آخر تسليم تشغيلي:** 17 أغسطس 2026 — **[docs/HANDOFF-2026-08-17.md](./docs/HANDOFF-2026-08-17.md)** (شارة الترقية، حدود الاشتراك، جدول الباقات، توحيد لوحة الإدارة؛ السابق: [16 أغسطس](./docs/HANDOFF-2026-08-16.md))  
+**آخر تسليم تشغيلي:** 17 أغسطس 2026 — **[docs/HANDOFF-2026-08-17.md](./docs/HANDOFF-2026-08-17.md)** (شارة الترقية، حدود الاشتراك، جدول الباقات، حدود الاستخدام اليومية/الشهرية، توحيد لوحة الإدارة؛ السابق: [16 أغسطس](./docs/HANDOFF-2026-08-16.md))  
 **المستودع:** https://github.com/ainoamn/WAZEN  
 **الفرع الرئيسي:** `main`  
 **الإنتاج:** https://wazen-roan.vercel.app  
@@ -149,11 +149,11 @@ fe6db47  fix: support Vercel Next.js build path   ← آخر نقطة في أر�
 
 ### 2.9 17 أغسطس 2026 — شارة الترقية وحدود الباقات ومقارنة الإدارة
 
-التفاصيل: **[docs/HANDOFF-2026-08-17.md](./docs/HANDOFF-2026-08-17.md)** — [#10](https://github.com/ainoamn/WAZEN/pull/10) ثم [#11](https://github.com/ainoamn/WAZEN/pull/11) ثم [#12](https://github.com/ainoamn/WAZEN/pull/12)
+التفاصيل: **[docs/HANDOFF-2026-08-17.md](./docs/HANDOFF-2026-08-17.md)** — [#10](https://github.com/ainoamn/WAZEN/pull/10) ثم [#11](https://github.com/ainoamn/WAZEN/pull/11) ثم [#12](https://github.com/ainoamn/WAZEN/pull/12) ثم [#16](https://github.com/ainoamn/WAZEN/pull/16)
 
 - تخفيض الباقة إلى البداية لم يعد يخفي بنود الشريط الجانبي. البنود المقفلة تحمل شارة ترقية وتفتح ملاحظة لترقية الباقة.
 - ترقيم أحدث العمليات: 5 / 10 / 50 / 100 (حد 100). تصفية وتصفير ظاهرة على شريط المحفظة الشخصية.
-- حدود الاشتراك (`SCHEMA_VERSION = 7`): محافظ، أعضاء، مستخدمون، معاملات إجمالية/يومية/شهرية، سجلات، مطبوعات شهرية. المشاركة: بريد، واتساب، تنزيل إيصالات. الواجهة ترفض التجاوز: `PLAN_TRANSACTION_LIMIT` / `PLAN_DAILY_TRANSACTION_LIMIT` / `PLAN_MONTHLY_TRANSACTION_LIMIT` / `PLAN_RECORD_LIMIT` / `PLAN_USER_LIMIT` / `PLAN_PRINT_LIMIT` / `PLAN_FEATURE_REQUIRED`. تنبيه عند 80%. زر إدارة المنصة للطاقم فقط.
+- حدود الاشتراك ([#16](https://github.com/ainoamn/WAZEN/pull/16)، `SCHEMA_VERSION = 7`): محافظ، أعضاء، مستخدمون، معاملات إجمالية/يومية/شهرية، سجلات، مطبوعات شهرية. المشاركة: بريد، واتساب، تنزيل إيصالات. الواجهة ترفض التجاوز: `PLAN_TRANSACTION_LIMIT` / `PLAN_DAILY_TRANSACTION_LIMIT` / `PLAN_MONTHLY_TRANSACTION_LIMIT` / `PLAN_RECORD_LIMIT` / `PLAN_USER_LIMIT` / `PLAN_PRINT_LIMIT` / `PLAN_FEATURE_REQUIRED`. تنبيه عند 80%. زر إدارة المنصة للطاقم فقط. مدمج في `main`.
 - `/admin/plans`: جدول مقارنة — عمود ثابت «العناوين»، رأس كل باقة، ثم صفوف التحكم (هوية، سعر، حدود بما فيها اليومي/الشهري/المطبوعات، خصائص المشاركة، بوابات). الحفظ لكل عمود أو لكل التغييرات.
 - بقية الإدارة ([#13](https://github.com/ainoamn/WAZEN/pull/13)): نظرة عامة، المستخدمون، المستأجرون، الفريق، البوابات، المدفوعات، التقارير، والإيصالات بنفس لغة الجدول (أعمدة + صف عناوين + تحكم). مدمج في `main`.
 - تعريب لوحة الإدارة ([#14](https://github.com/ainoamn/WAZEN/pull/14)): الأدوار، التدقيق، طرق الدفع، التسوية، الدول، التقويم، أزرار الخطأ، وعناوين الصفحات بالعربية والإنجليزية. مدمج في `main`.
