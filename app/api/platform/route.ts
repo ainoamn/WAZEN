@@ -20,6 +20,7 @@ import {
   planHasFeature,
   updatePaymentGateway,
   upsertAdminPlan,
+  assertOwnerPlanQuota,
 } from "../../../services/admin/billing-service";
 
 const isoNow = () => new Date().toISOString();
@@ -31,25 +32,25 @@ const planSeeds = [
   {
     id: "starter", nameAr: "البداية", nameEn: "Starter",
     descriptionAr: "لتبدأ تنظيم أموالك", descriptionEn: "Start organizing your money",
-    monthly: 0, annual: 0, wallets: 1, members: 2,
+    monthly: 0, annual: 0, wallets: 1, members: 2, transactions: 50, records: 20, users: 1,
     features: ["personal", "basic_reports"], order: 1,
   },
   {
     id: "family", nameAr: "العائلة", nameEn: "Family",
     descriptionAr: "للأفراد والعائلات الصغيرة", descriptionEn: "For individuals and families",
-    monthly: 2900, annual: 27840, wallets: 5, members: 15,
+    monthly: 2900, annual: 27840, wallets: 5, members: 15, transactions: 300, records: 100, users: 5,
     features: ["personal", "household", "trips", "travel", "circles", "circle", "exports", "statements", "advanced_reports"], order: 2,
   },
   {
     id: "pro", nameAr: "الاحتراف", nameEn: "Professional",
     descriptionAr: "لمديري المجموعات والجمعيات", descriptionEn: "For group and circle managers",
-    monthly: 7900, annual: 75840, wallets: 20, members: 75,
+    monthly: 7900, annual: 75840, wallets: 20, members: 75, transactions: 2000, records: 500, users: 25,
     features: ["personal", "household", "trips", "circles", "all_wallets", "documents", "exports", "statements", "advanced_reports", "draws", "voting", "custom_roles"], order: 3,
   },
   {
     id: "business", nameAr: "الأعمال", nameEn: "Business",
     descriptionAr: "للفرق والمؤسسات", descriptionEn: "For teams and organizations",
-    monthly: 19900, annual: 191040, wallets: 9999, members: 9999,
+    monthly: 19900, annual: 191040, wallets: 9999, members: 9999, transactions: 0, records: 0, users: 9999,
     features: ["personal", "household", "trips", "circles", "unlimited", "documents", "exports", "multi_approval", "audit", "api", "priority_support"], order: 4,
   },
 ] as const;
@@ -59,8 +60,8 @@ async function seedPlans(db: D1Database) {
   if ((count?.count ?? 0) > 0) return;
   const createdAt = isoNow();
   await db.batch(planSeeds.map((plan) => db.prepare(
-    "INSERT INTO plans (id,name_ar,name_en,description_ar,description_en,monthly_minor,annual_minor,wallet_limit,member_limit,features_json,is_active,sort_order,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?)",
-  ).bind(plan.id, plan.nameAr, plan.nameEn, plan.descriptionAr, plan.descriptionEn, plan.monthly, plan.annual, plan.wallets, plan.members, JSON.stringify(plan.features), plan.order, createdAt)));
+    "INSERT INTO plans (id,name_ar,name_en,description_ar,description_en,monthly_minor,annual_minor,wallet_limit,member_limit,transaction_limit,record_limit,user_limit,features_json,is_active,sort_order,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)",
+  ).bind(plan.id, plan.nameAr, plan.nameEn, plan.descriptionAr, plan.descriptionEn, plan.monthly, plan.annual, plan.wallets, plan.members, plan.transactions, plan.records, plan.users, JSON.stringify(plan.features), plan.order, createdAt)));
   const { ensurePaymentGateways } = await import("../../../services/admin/billing-service");
   await ensurePaymentGateways(db);
 }
@@ -308,7 +309,7 @@ export async function GET(request: Request) {
     if (view === "billing") {
       assertApiScope(user, "billing:read");
       const [subscription, invoices, payments, plans] = await Promise.all([
-        db.prepare("SELECT s.*,p.name_ar,p.name_en,p.wallet_limit,p.member_limit FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.user_id=? ORDER BY s.created_at DESC LIMIT 1").bind(user.id).first(),
+        db.prepare("SELECT s.*,p.name_ar,p.name_en,p.wallet_limit,p.member_limit,p.transaction_limit,p.record_limit,p.user_limit FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.user_id=? ORDER BY s.created_at DESC LIMIT 1").bind(user.id).first(),
         db.prepare("SELECT id,subscription_id,reference,subtotal_minor,discount_minor,tax_minor,total_minor,currency,status,due_at,paid_at,created_at FROM invoices WHERE user_id=? ORDER BY created_at DESC").bind(user.id).all(),
         db.prepare("SELECT id,invoice_id,reference,amount_minor,currency,method,status,settlement_status,occurred_at FROM payments WHERE user_id=? ORDER BY occurred_at DESC").bind(user.id).all(),
         publicPlans(db),
@@ -502,6 +503,7 @@ export async function POST(request: Request) {
         const entitlements = await getActivePlanEntitlements(db, user.id);
         if (!planHasFeature(entitlements.features, "documents")) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
       }
+      await assertOwnerPlanQuota(db, user.id, "record", 1);
       const { type, personName, description } = parsed.data;
       const space = parsed.data.spaceId ? await authorizeSpace(db, user, parsed.data.spaceId, "transact") : null;
       const ownCurrency = await db.prepare("SELECT currency FROM users WHERE id=?").bind(user.id).first<{ currency: string }>();
@@ -530,6 +532,14 @@ export async function POST(request: Request) {
       const memberCount = await db.prepare(`SELECT (SELECT COUNT(*) FROM members WHERE space_id=? AND status='active') +
         (SELECT COUNT(*) FROM invites WHERE space_id=? AND status='pending' AND expires_at>?) AS count`).bind(spaceId, spaceId, isoNow()).first<{ count: number }>();
       if (Number(memberCount?.count ?? 0) >= Number(plan?.member_limit ?? 2)) throw new ApiError(403, "PLAN_MEMBER_LIMIT");
+      const owner = await db.prepare("SELECT owner_user_id FROM spaces WHERE id=?").bind(spaceId).first<{ owner_user_id: string }>();
+      if (owner?.owner_user_id) {
+        const pending = await db.prepare(
+          `SELECT COUNT(*) AS count FROM invites i JOIN spaces s ON s.id=i.space_id
+           WHERE s.owner_user_id=? AND i.status='pending' AND i.expires_at>?`,
+        ).bind(owner.owner_user_id, isoNow()).first<{ count: number }>();
+        await assertOwnerPlanQuota(db, owner.owner_user_id, "user", 1 + Number(pending?.count ?? 0));
+      }
       const duplicate = await db.prepare("SELECT id FROM invites WHERE space_id=? AND email=? COLLATE NOCASE AND status='pending' AND expires_at>?").bind(spaceId, email, isoNow()).first();
       if (duplicate) throw new ApiError(409, "INVITATION_EXISTS");
       const invitationId = id(); const token = id().replaceAll("-", "") + id().replaceAll("-", ""); const tokenHash = await sha256(token); const createdAt = isoNow();
@@ -549,6 +559,9 @@ export async function POST(request: Request) {
       if (!parsed.success) throw new ApiError(400, "INVALID_INVITATION");
       const invitation = await db.prepare("SELECT * FROM invites WHERE token=? AND status='pending' AND expires_at>?").bind(await sha256(parsed.data.token), isoNow()).first<{ id: string; space_id: string; email: string; role: string }>();
       if (!invitation || normalizeEmail(invitation.email) !== normalizeEmail(user.email)) throw new ApiError(404, "INVITATION_NOT_FOUND");
+      const spaceOwner = await db.prepare("SELECT owner_user_id FROM spaces WHERE id=?").bind(invitation.space_id).first<{ owner_user_id: string }>();
+      const alreadyLinked = await db.prepare("SELECT id FROM members WHERE space_id=? AND user_id=? AND status='active'").bind(invitation.space_id, user.id).first();
+      if (spaceOwner?.owner_user_id && !alreadyLinked) await assertOwnerPlanQuota(db, spaceOwner.owner_user_id, "user", 1);
       const createdAt = isoNow();
       const ledgerMember = await db.prepare("SELECT id FROM members WHERE space_id=? AND email=? COLLATE NOCASE AND user_id IS NULL LIMIT 1").bind(invitation.space_id, user.email).first<{ id: string }>();
       const contribution = await db.prepare("SELECT amount_minor,duration_months FROM contribution_plans WHERE space_id=? LIMIT 1").bind(invitation.space_id).first<{ amount_minor: number; duration_months: number }>();
@@ -692,6 +705,9 @@ export async function POST(request: Request) {
         annualMinor: z.coerce.number().int().min(0).max(100_000_000),
         walletLimit: z.coerce.number().int().min(1).max(9999),
         memberLimit: z.coerce.number().int().min(1).max(9999),
+        transactionLimit: z.coerce.number().int().min(0).max(999999).default(0),
+        recordLimit: z.coerce.number().int().min(0).max(999999).default(0),
+        userLimit: z.coerce.number().int().min(0).max(9999).default(1),
         features: z.array(z.string().min(1).max(40)).max(40),
         isActive: z.boolean().default(true),
         sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
@@ -729,6 +745,9 @@ export async function POST(request: Request) {
         featuresDeny: z.array(z.string().min(1).max(40)).max(40).optional(),
         walletLimitOverride: z.coerce.number().int().min(0).max(9999).nullable().optional(),
         memberLimitOverride: z.coerce.number().int().min(0).max(9999).nullable().optional(),
+        transactionLimitOverride: z.coerce.number().int().min(0).max(999999).nullable().optional(),
+        recordLimitOverride: z.coerce.number().int().min(0).max(999999).nullable().optional(),
+        userLimitOverride: z.coerce.number().int().min(0).max(9999).nullable().optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_SUBSCRIPTION_UPDATE");
       if (!parsed.data.planId) {

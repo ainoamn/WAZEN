@@ -3,16 +3,16 @@ import { ArrowRight, CreditCard, Download, ReceiptText, WalletCards } from "luci
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ErrorCard, money, PageLoader, PublicHeader, Status, useCommerceLocale } from "../commercial-kit";
-import { PLAN_FEATURE_CATALOG, planHasFeature } from "../../lib/plan-features";
+import { PLAN_FEATURE_CATALOG, formatQuota, planHasFeature } from "../../lib/plan-features";
 
-type SubscriptionRow = { name_ar: string; name_en: string; status: string; billing_cycle: string; current_period_end: string; wallet_limit: number; member_limit: number };
+type SubscriptionRow = { name_ar: string; name_en: string; status: string; billing_cycle: string; current_period_end: string; wallet_limit: number; member_limit: number; transaction_limit?: number; record_limit?: number; user_limit?: number };
 type InvoiceRow = { id: string; reference: string; created_at: string; total_minor: number; currency: string; status: string };
 type PaymentRow = { id: string; reference: string; method: string; amount_minor: number; currency: string; status: string };
 type BillingData = {
   subscription?: SubscriptionRow | null;
   invoices: InvoiceRow[];
   payments: PaymentRow[];
-  entitlements?: { features: string[]; walletLimit: number; memberLimit: number; status: string };
+  entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; status: string };
 };
 
 export function BillingClient() {
@@ -62,11 +62,23 @@ export function BillingClient() {
             </div>
             <div>
               <dt>{l("حد المحافظ", "Wallet limit")}</dt>
-              <dd>{data.entitlements?.walletLimit ?? sub?.wallet_limit ?? 1}</dd>
+              <dd>{formatQuota(data.entitlements?.walletLimit ?? sub?.wallet_limit ?? 1, locale)}</dd>
             </div>
             <div>
               <dt>{l("حد الأعضاء", "Member limit")}</dt>
-              <dd>{data.entitlements?.memberLimit ?? sub?.member_limit ?? 2}</dd>
+              <dd>{formatQuota(data.entitlements?.memberLimit ?? sub?.member_limit ?? 2, locale)}</dd>
+            </div>
+            <div>
+              <dt>{l("المستخدمون", "Users")}</dt>
+              <dd>{formatQuota(data.entitlements?.userLimit ?? sub?.user_limit ?? 1, locale)}</dd>
+            </div>
+            <div>
+              <dt>{l("المعاملات", "Transactions")}</dt>
+              <dd>{formatQuota(data.entitlements?.transactionLimit ?? sub?.transaction_limit ?? 0, locale)}</dd>
+            </div>
+            <div>
+              <dt>{l("السجلات", "Records")}</dt>
+              <dd>{formatQuota(data.entitlements?.recordLimit ?? sub?.record_limit ?? 0, locale)}</dd>
             </div>
           </dl>
         </section>

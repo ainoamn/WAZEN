@@ -44,6 +44,9 @@ function applyProfileToForm(
     setFeaturesDeny: (v: string[]) => void;
     setWalletLimitOverride: (v: string) => void;
     setMemberLimitOverride: (v: string) => void;
+    setTransactionLimitOverride: (v: string) => void;
+    setRecordLimitOverride: (v: string) => void;
+    setUserLimitOverride: (v: string) => void;
   },
 ) {
   setters.setPlanId(String(profile.plan_id ?? "starter"));
@@ -60,6 +63,9 @@ function applyProfileToForm(
   setters.setFeaturesDeny(Array.isArray(profile.features_deny) ? profile.features_deny.map(String) : []);
   setters.setWalletLimitOverride(String(profile.wallet_limit_override ?? 0));
   setters.setMemberLimitOverride(String(profile.member_limit_override ?? 0));
+  setters.setTransactionLimitOverride(String(profile.transaction_limit_override ?? 0));
+  setters.setRecordLimitOverride(String(profile.record_limit_override ?? 0));
+  setters.setUserLimitOverride(String(profile.user_limit_override ?? 0));
 }
 
 export function AdminUserDetail() {
@@ -87,12 +93,16 @@ export function AdminUserDetail() {
   const [featuresDeny, setFeaturesDeny] = useState<string[]>([]);
   const [walletLimitOverride, setWalletLimitOverride] = useState("0");
   const [memberLimitOverride, setMemberLimitOverride] = useState("0");
+  const [transactionLimitOverride, setTransactionLimitOverride] = useState("0");
+  const [recordLimitOverride, setRecordLimitOverride] = useState("0");
+  const [userLimitOverride, setUserLimitOverride] = useState("0");
 
   const syncForm = useCallback((profile: Row) => {
     applyProfileToForm(profile, {
       setPlanId, setStatus, setAccountStatus, setDisplayName, setBillingCycle,
       setPeriodEnd, setDiscountPercent, setDiscountFixed, setDiscountLabel, setAdminNote,
       setFeaturesGrant, setFeaturesDeny, setWalletLimitOverride, setMemberLimitOverride,
+      setTransactionLimitOverride, setRecordLimitOverride, setUserLimitOverride,
     });
   }, []);
 
@@ -225,6 +235,9 @@ export function AdminUserDetail() {
           featuresDeny,
           walletLimitOverride: Number(walletLimitOverride || 0) || null,
           memberLimitOverride: Number(memberLimitOverride || 0) || null,
+          transactionLimitOverride: Number(transactionLimitOverride || 0) || null,
+          recordLimitOverride: Number(recordLimitOverride || 0) || null,
+          userLimitOverride: Number(userLimitOverride || 0) || null,
         }),
       });
       const result = await response.json() as { error?: string; detail?: UserDetail };
@@ -390,6 +403,18 @@ export function AdminUserDetail() {
             <span>{l("حد الأعضاء (0 = الباقة)", "Member cap (0 = plan)")}</span>
             <input type="number" min={0} value={memberLimitOverride} onChange={(e) => setMemberLimitOverride(e.target.value)} />
           </label>
+          <label>
+            <span>{l("حد المستخدمين (0 = الباقة)", "User cap (0 = plan)")}</span>
+            <input type="number" min={0} value={userLimitOverride} onChange={(e) => setUserLimitOverride(e.target.value)} />
+          </label>
+          <label>
+            <span>{l("حد المعاملات (0 = الباقة)", "Transaction cap (0 = plan)")}</span>
+            <input type="number" min={0} value={transactionLimitOverride} onChange={(e) => setTransactionLimitOverride(e.target.value)} />
+          </label>
+          <label>
+            <span>{l("حد السجلات (0 = الباقة)", "Record cap (0 = plan)")}</span>
+            <input type="number" min={0} value={recordLimitOverride} onChange={(e) => setRecordLimitOverride(e.target.value)} />
+          </label>
           <div className="admin-account-actions">
             <button disabled={working || !planId} type="submit">{l("حفظ الاشتراك", "Save subscription")}</button>
             <button disabled={working || !planId} type="button" onClick={(event) => void saveSubscription(event as unknown as FormEvent, true)}>{l("إيقاف الاشتراك", "Pause subscription")}</button>
@@ -397,7 +422,7 @@ export function AdminUserDetail() {
           </div>
         </form>
         {Array.isArray(profile.effective_features) && (
-          <p style={{ marginTop: 12 }}><small>{l("الصلاحيات الفعلية", "Effective entitlements")}: {profile.effective_features.map(String).join(", ") || "—"} · {l("محافظ", "wallets")} {String(profile.effective_wallet_limit ?? "—")} · {l("أعضاء", "members")} {String(profile.effective_member_limit ?? "—")}</small></p>
+          <p style={{ marginTop: 12 }}><small>{l("الصلاحيات الفعلية", "Effective entitlements")}: {profile.effective_features.map(String).join(", ") || "—"} · {l("محافظ", "wallets")} {String(profile.effective_wallet_limit ?? "—")} · {l("أعضاء", "members")} {String(profile.effective_member_limit ?? "—")} · {l("مستخدمون", "users")} {String(profile.effective_user_limit ?? "—")} · {l("معاملات", "txns")} {String(profile.effective_transaction_limit ?? "—")} · {l("سجلات", "records")} {String(profile.effective_record_limit ?? "—")}</small></p>
         )}
         <div className="admin-feature-grid">
           {PLAN_FEATURE_CATALOG.map((feature) => {

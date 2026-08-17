@@ -19,7 +19,7 @@ import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, sele
 import { formatMoneyMinor, currencyScale } from "../lib/money";
 import { escapeHtml } from "../lib/html";
 import { memberDisplayCreditMinor, netMemberClaim, pendingSettlementsWithCredit } from "../lib/finance";
-import { dashboardNavLocked, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, upgradeNoticeFor } from "../lib/plan-features";
+import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, upgradeNoticeFor } from "../lib/plan-features";
 import { TRANSACTION_PAGE_SIZES, pageTransactions } from "../lib/transaction-page";
 import type { MemberLedgerFocus } from "../lib/member-ledger";
 import { occurrenceVarianceCopy } from "../lib/personal-finance";
@@ -144,7 +144,7 @@ type CircleTurn = { id: string; space_id: string; member_id: string; display_nam
 type TripExpense = { id: string; space_id: string; paid_by_member_id: string; paid_by_name: string; amount_minor: number; description: string; occurred_at: string; paid_from?: string };
 type ExpenseSplit = { id: string; expense_id: string; member_id: string; display_name: string; share_minor: number };
 type Settlement = { id: string; space_id: string; from_member_id: string; to_member_id: string; from_member_name: string | null; to_member_name: string | null; amount_minor: number; status: string };
-type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; entitlements?: { features: string[]; walletLimit: number; memberLimit: number; status: string }; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
+type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; status: string }; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
 
 const copy = {
   ar: {
@@ -568,6 +568,11 @@ function dashboardError(code: string, locale: Locale) {
       INVALID_PROFILE: "تحقق من الاسم (حرفان على الأقل).",
       INVALID_PHOTO: "الصورة غير مدعومة. استخدم JPEG أو PNG أو WebP.",
       PHOTO_TOO_LARGE: "الصورة كبيرة. اختر صورة أوضح وأصغر.",
+      PLAN_TRANSACTION_LIMIT: "وصلت إلى حد المعاملات في باقتك.",
+      PLAN_RECORD_LIMIT: "وصلت إلى حد السجلات والمستندات في باقتك.",
+      PLAN_USER_LIMIT: "وصلت إلى حد المستخدمين في باقتك.",
+      PLAN_MEMBER_LIMIT: "وصلت إلى حد الأعضاء في باقتك.",
+      PLAN_WALLET_LIMIT: "وصلت إلى حد المحافظ في باقتك.",
     }
     : {
       INTERNAL_ERROR: "Could not complete the delete. Refresh and try again.",
@@ -584,6 +589,11 @@ function dashboardError(code: string, locale: Locale) {
       INVALID_PROFILE: "Check the name (at least 2 characters).",
       INVALID_PHOTO: "Unsupported photo. Use JPEG, PNG, or WebP.",
       PHOTO_TOO_LARGE: "Photo is too large. Choose a smaller image.",
+      PLAN_TRANSACTION_LIMIT: "You reached the transaction limit on your plan.",
+      PLAN_RECORD_LIMIT: "You reached the record limit on your plan.",
+      PLAN_USER_LIMIT: "You reached the user limit on your plan.",
+      PLAN_MEMBER_LIMIT: "You reached the member limit on your plan.",
+      PLAN_WALLET_LIMIT: "You reached the wallet limit on your plan.",
     };
   return table[code as keyof typeof table] ?? code;
 }
@@ -1867,6 +1877,13 @@ function SettingsView({ user, locale, entitlements, onLogout, onSaved }: { user:
 
 function PlanFeaturesPanel({ locale, entitlements }: { locale: Locale; entitlements?: DashboardData["entitlements"] }) {
   const features = entitlements?.features?.length ? entitlements.features : ["personal"];
+  const quotas = [
+    { ar: "المحافظ", en: "Wallets", value: entitlements?.walletLimit ?? 1 },
+    { ar: "الأعضاء لكل محفظة", en: "Members per wallet", value: entitlements?.memberLimit ?? 2 },
+    { ar: "المستخدمون", en: "Users", value: entitlements?.userLimit ?? 1 },
+    { ar: "المعاملات", en: "Transactions", value: entitlements?.transactionLimit ?? 0 },
+    { ar: "السجلات", en: "Records", value: entitlements?.recordLimit ?? 0 },
+  ];
   return (
     <article className="panel">
       <h2>{locale === "ar" ? "ميزات باقتك" : "Your plan features"}</h2>
@@ -1875,6 +1892,14 @@ function PlanFeaturesPanel({ locale, entitlements }: { locale: Locale; entitleme
           ? "الأزرار تظهر لكل الميزات. ما ليس مشمولاً يحمل شارة ترقية ويفتح صفحة الباقات. واجهة البرمجة ترفض الإنشاء إن لم تكن الباقة تسمح به."
           : "Every feature stays visible. Locked items show an upgrade badge and open the plans page. The API still rejects create/use when the plan does not include the feature."}
       </p>
+      <dl className="plan-quota-summary">
+        {quotas.map((item) => (
+          <div key={item.en}>
+            <dt>{locale === "ar" ? item.ar : item.en}</dt>
+            <dd>{formatQuota(item.value, locale)}</dd>
+          </div>
+        ))}
+      </dl>
       <ul className="plan-feature-list">
         {PLAN_FEATURE_CATALOG.map((item) => {
           const included = planHasFeature(features, item.id);

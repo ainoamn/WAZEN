@@ -1,0 +1,10 @@
+ALTER TABLE plans ADD COLUMN transaction_limit INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plans ADD COLUMN record_limit INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plans ADD COLUMN user_limit INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE subscriptions ADD COLUMN transaction_limit_override INTEGER;
+ALTER TABLE subscriptions ADD COLUMN record_limit_override INTEGER;
+ALTER TABLE subscriptions ADD COLUMN user_limit_override INTEGER;
+UPDATE plans SET transaction_limit=50, record_limit=20, user_limit=1 WHERE id='starter';
+UPDATE plans SET transaction_limit=300, record_limit=100, user_limit=5 WHERE id='family';
+UPDATE plans SET transaction_limit=2000, record_limit=500, user_limit=25 WHERE id='pro';
+UPDATE plans SET transaction_limit=0, record_limit=0, user_limit=9999 WHERE id='business';

@@ -758,3 +758,134 @@
   .pricing-grid { grid-template-columns: 1fr; padding: 0 16px 40px; }
   .pricing-grid article { min-height: 0; }
 }
+
+.plan-matrix-panel { margin-top: 8px; overflow: hidden; }
+.plan-matrix-scroll { overflow: auto; margin-top: 16px; border: 1px solid var(--c-line); border-radius: 14px; }
+.plan-matrix { width: 100%; min-width: 720px; border-collapse: separate; border-spacing: 0; }
+.plan-matrix th, .plan-matrix td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #edf0ed;
+  text-align: center;
+  font-size: 13px;
+  background: white;
+}
+.plan-matrix thead th { position: sticky; top: 0; z-index: 2; background: #f4f6f3; }
+.plan-matrix tbody th, .plan-matrix thead th:first-child {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  text-align: start;
+  min-width: 180px;
+  background: #fbfcfa;
+  font-weight: 800;
+  color: #4b5c56;
+}
+.plan-matrix thead th:first-child { z-index: 3; }
+.plan-matrix thead th button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.plan-matrix thead th b { display: block; font-size: 14px; }
+.plan-matrix thead th small { display: block; color: #809089; font-size: 11px; }
+.plan-matrix td.is-selected, .plan-matrix th.is-selected { background: #ecfdf5; }
+.plan-matrix td.is-on { color: #047857; }
+.plan-matrix td.is-off { color: #cbd5d1; }
+.plan-matrix-group th {
+  background: #eef3f0;
+  text-align: start;
+  font-size: 12px;
+  letter-spacing: .04em;
+  color: #0d7a65;
+}
+.plan-unlimited-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #0d7a65;
+  font-weight: 800;
+}
+.plan-editor { margin-top: 16px; }
+.plan-editor-form { display: flex; flex-direction: column; gap: 18px; margin-top: 16px; }
+.plan-editor-form fieldset {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--c-line);
+  border-radius: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.plan-editor-form legend { padding: 0 8px; font-size: 13px; font-weight: 800; color: #0d7a65; }
+.plan-editor-form label { display: flex; flex-direction: column; gap: 6px; }
+.plan-editor-form label > span { font-size: 12px; font-weight: 700; color: #5b6b66; }
+.plan-editor-form input[type="text"],
+.plan-editor-form input[type="number"] {
+  height: 42px;
+  border: 1px solid var(--c-line);
+  border-radius: 10px;
+  padding: 0 12px;
+  background: #fbfcfa;
+  font: inherit;
+}
+.plan-active, .plan-unlimited {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.plan-quota-field small { color: #809089; font-size: 11px; line-height: 1.4; }
+.plan-quota-field > div { display: flex; align-items: center; gap: 10px; }
+.plan-quota-field input[type="number"] { flex: 1; min-width: 0; }
+.plan-feature-group { grid-column: 1 / -1; }
+.plan-feature-group h3 { margin: 0 0 8px; font-size: 13px; }
+.plan-feature-group > div, .plan-gateway-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.plan-feature-group label, .plan-gateway-grid label {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid var(--c-line);
+  border-radius: 10px;
+  background: white;
+  font-size: 13px;
+}
+.plan-gateway-grid small { color: #809089; }
+.plan-editor-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.plan-editor-actions button {
+  height: 44px;
+  border: 0;
+  border-radius: 11px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--c-green);
+  color: white;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.plan-editor-actions button[type="button"] {
+  background: white;
+  color: #344b44;
+  border: 1px solid var(--c-line);
+}
+.billing-current dl { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+.plan-quota-summary { margin: 14px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.plan-quota-summary > div { padding: 10px 12px; border: 1px solid var(--c-line); border-radius: 12px; background: #f8faf8; }
+.plan-quota-summary dt { color: #809089; font-size: 11px; }
+.plan-quota-summary dd { margin: 4px 0 0; font-size: 16px; font-weight: 800; }
+@media (max-width: 760px) {
+  .plan-matrix { min-width: 640px; }
+  .plan-editor-form fieldset { grid-template-columns: 1fr; }
+}

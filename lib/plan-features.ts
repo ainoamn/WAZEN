@@ -1,18 +1,27 @@
 export const PLAN_FEATURE_CATALOG = [
-  { id: "personal", ar: "محفظة شخصية", en: "Personal wallet" },
-  { id: "household", ar: "المنزل والعائلة", en: "Household" },
-  { id: "trips", ar: "محافظ السفر", en: "Travel wallets" },
-  { id: "circles", ar: "الجمعيات والمجموعات", en: "Circles & groups" },
-  { id: "statements", ar: "كشوف الحساب والطباعة", en: "Statements & print" },
-  { id: "advanced_reports", ar: "التقارير التفصيلية", en: "Advanced reports" },
-  { id: "documents", ar: "المستندات والإيصالات", en: "Documents & receipts" },
-  { id: "exports", ar: "تصدير البيانات", en: "Data export" },
-  { id: "smart_accountant", ar: "المحاسب الذكي", en: "Smart accountant" },
-  { id: "draws", ar: "القرعة وترتيب الأدوار", en: "Draws & turn order" },
-  { id: "voting", ar: "التصويت", en: "Voting" },
-  { id: "api", ar: "واجهة برمجية", en: "API access" },
-  { id: "priority_support", ar: "دعم أولوية", en: "Priority support" },
+  { id: "personal", ar: "محفظة شخصية", en: "Personal wallet", group: "wallets" },
+  { id: "household", ar: "المنزل والعائلة", en: "Household", group: "wallets" },
+  { id: "trips", ar: "محافظ السفر", en: "Travel wallets", group: "wallets" },
+  { id: "circles", ar: "الجمعيات والمجموعات", en: "Circles & groups", group: "wallets" },
+  { id: "statements", ar: "كشوف الحساب والطباعة", en: "Statements & print", group: "records" },
+  { id: "advanced_reports", ar: "التقارير التفصيلية", en: "Advanced reports", group: "records" },
+  { id: "documents", ar: "المستندات والإيصالات", en: "Documents & receipts", group: "records" },
+  { id: "exports", ar: "تصدير البيانات", en: "Data export", group: "records" },
+  { id: "smart_accountant", ar: "المحاسب الذكي", en: "Smart accountant", group: "tools" },
+  { id: "draws", ar: "القرعة وترتيب الأدوار", en: "Draws & turn order", group: "tools" },
+  { id: "voting", ar: "التصويت", en: "Voting", group: "tools" },
+  { id: "api", ar: "واجهة برمجية", en: "API access", group: "tools" },
+  { id: "priority_support", ar: "دعم أولوية", en: "Priority support", group: "tools" },
 ] as const;
+
+export const PLAN_FEATURE_GROUPS = [
+  { id: "wallets", ar: "المحافظ", en: "Wallets" },
+  { id: "records", ar: "التقارير والمستندات", en: "Reports & documents" },
+  { id: "tools", ar: "الأدوات والدعم", en: "Tools & support" },
+] as const;
+
+/** 0 or ≥ 9999 means unlimited for transaction / record / user quotas. */
+export const UNLIMITED_QUOTA = 0;
 
 export type PlanFeatureId = (typeof PLAN_FEATURE_CATALOG)[number]["id"];
 export const PLAN_FEATURE_KEYS = PLAN_FEATURE_CATALOG.map((item) => item.id);
@@ -95,25 +104,63 @@ export function dashboardNavLocked(features: string[], existingTypes: Iterable<s
   return false;
 }
 
+export function featuresInGroup(groupId: string) {
+  return PLAN_FEATURE_CATALOG.filter((item) => item.group === groupId);
+}
+
+export function quotaIsUnlimited(limit: number) {
+  const value = Number(limit);
+  return !Number.isFinite(value) || value <= 0 || value >= 9999;
+}
+
+export function quotaWouldExceed(used: number, extra: number, limit: number) {
+  if (quotaIsUnlimited(limit)) return false;
+  return Number(used) + Number(extra) > Number(limit);
+}
+
+export function formatQuota(limit: number, locale: "ar" | "en") {
+  if (quotaIsUnlimited(limit)) return locale === "ar" ? "غير محدود" : "Unlimited";
+  return String(Number(limit) || 0);
+}
+
+function resolveCappedLimit(planValue: number, override: number | null | undefined, fallback: number) {
+  if (Number(override ?? 0) > 0) return Number(override);
+  return Number(planValue) || fallback;
+}
+
+function resolveOpenLimit(planValue: number, override: number | null | undefined, fallback: number) {
+  if (override != null && Number(override) > 0) return Number(override);
+  const value = Number(planValue);
+  if (!Number.isFinite(value) || value < 0) return fallback;
+  return value;
+}
+
 export function resolveEntitlements(input: {
   planFeatures: string[];
   grant?: string[];
   deny?: string[];
   walletLimit: number;
   memberLimit: number;
+  transactionLimit?: number;
+  recordLimit?: number;
+  userLimit?: number;
   walletLimitOverride?: number | null;
   memberLimitOverride?: number | null;
+  transactionLimitOverride?: number | null;
+  recordLimitOverride?: number | null;
+  userLimitOverride?: number | null;
   status?: string;
 }) {
   const granted = new Set([...input.planFeatures, ...(input.grant ?? [])]);
   for (const key of input.deny ?? []) granted.delete(key);
   const features = [...granted];
-  const walletLimit = Number(input.walletLimitOverride ?? 0) > 0 ? Number(input.walletLimitOverride) : Number(input.walletLimit) || 1;
-  const memberLimit = Number(input.memberLimitOverride ?? 0) > 0 ? Number(input.memberLimitOverride) : Number(input.memberLimit) || 2;
   return {
     features,
-    walletLimit,
-    memberLimit,
+    walletLimit: resolveCappedLimit(input.walletLimit, input.walletLimitOverride, 1),
+    memberLimit: resolveCappedLimit(input.memberLimit, input.memberLimitOverride, 2),
+    transactionLimit: resolveOpenLimit(input.transactionLimit ?? 0, input.transactionLimitOverride, 0),
+    recordLimit: resolveOpenLimit(input.recordLimit ?? 0, input.recordLimitOverride, 0),
+    userLimit: resolveOpenLimit(input.userLimit ?? 1, input.userLimitOverride, 1),
     status: input.status ?? "none",
   };
 }
