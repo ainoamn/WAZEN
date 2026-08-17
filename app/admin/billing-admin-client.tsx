@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CreditCard, WalletCards } from "lucide-react";
-import { ContentBusy, ErrorCard, Status, useCommerceLocale } from "../commercial-kit";
+import { CreditCard, Globe2, Landmark, WalletCards } from "lucide-react";
+import { ContentBusy, ErrorCard, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import { fetchAdminConsole, patchAdminConsole, readAdminConsole } from "../../lib/admin-session";
+import { AdminConsole, AdminSwitch } from "./admin-ui";
 
 type Row = Record<string, unknown>;
 
@@ -48,6 +49,15 @@ export function AdminGateways() {
 
   useEffect(() => { void load(); }, [load]);
 
+  const applyResult = (result: Record<string, unknown>) => {
+    setGateways((result.gateways as Row[]) ?? []);
+    if (result.plans) setPlans(result.plans as Row[]);
+    patchAdminConsole({
+      gateways: (result.gateways as Row[]) ?? [],
+      ...(result.plans ? { plans: result.plans as Row[] } : {}),
+    });
+  };
+
   const toggle = async (gateway: Row, field: "isEnabled" | "isTestMode") => {
     setWorking(String(gateway.id));
     try {
@@ -55,12 +65,7 @@ export function AdminGateways() {
         gatewayId: gateway.id,
         [field]: !(Number(gateway[field === "isEnabled" ? "is_enabled" : "is_test_mode"]) === 1),
       });
-      setGateways((result.gateways as Row[]) ?? []);
-      if (result.plans) setPlans(result.plans as Row[]);
-      patchAdminConsole({
-        gateways: (result.gateways as Row[]) ?? [],
-        ...(result.plans ? { plans: result.plans as Row[] } : {}),
-      });
+      applyResult(result);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "SAVE");
     } finally {
@@ -72,8 +77,7 @@ export function AdminGateways() {
     setWorking(gatewayId);
     try {
       const result = await postAction("updateGateway", { gatewayId, planIds });
-      setGateways((result.gateways as Row[]) ?? []);
-      patchAdminConsole({ gateways: (result.gateways as Row[]) ?? [] });
+      applyResult(result);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "SAVE");
     } finally {
@@ -87,80 +91,112 @@ export function AdminGateways() {
   if (!loaded) return <ContentBusy />;
 
   const scopeLabel = (scope: string) => scope === "local" ? l("محلية", "Local") : scope === "regional" ? l("إقليمية", "Regional") : l("عالمية", "Global");
+  const enabledCount = gateways.filter((gateway) => Number(gateway.is_enabled) === 1).length;
+  const localCount = gateways.filter((gateway) => String(gateway.scope) === "local").length;
 
   return (
-    <>
+    <AdminConsole>
       <div className="admin-page-head">
         <div>
           <small>{l("الإدارة / بوابات الدفع", "Admin / Payment gateways")}</small>
-          <h1>{l("بوابات الدفع المحلية والعالمية", "Local & global payment gateways")}</h1>
-          <p>{l("فعّل البوابات واربطها بالباقات. الإعدادات التقنية تُدار لاحقاً لكل مزوّد.", "Enable gateways and link them to plans. Provider credentials can be configured later.")}</p>
+          <h1>{l("بوابات الدفع", "Payment gateways")}</h1>
+          <p>{l("البوابات أعمدة. الصف الأول العناوين، الرأس اسم البوابة، ثم التفعيل والوضع وربط كل باقة.", "Gateways are columns. Title row, gateway header, then enable, mode, and a switch per plan.")}</p>
         </div>
       </div>
+      {error ? <p className="admin-inline-alert is-error">{error}</p> : null}
       <div className="admin-kpis">
         <article><i><CreditCard /></i><span>{l("إجمالي البوابات", "Total gateways")}</span><b>{gateways.length}</b><small>{l("في الكتالوج", "in catalog")}</small></article>
-        <article><i><CreditCard /></i><span>{l("مفعّلة", "Enabled")}</span><b>{gateways.filter((g) => Number(g.is_enabled) === 1).length}</b><small>{l("جاهزة للاستخدام", "ready")}</small></article>
+        <article><i><CreditCard /></i><span>{l("مفعّلة", "Enabled")}</span><b>{enabledCount}</b><small>{l("جاهزة للاستخدام", "ready")}</small></article>
+        <article><i><Landmark /></i><span>{l("محلية", "Local")}</span><b>{localCount}</b><small>{l("عُمان والخليج", "Oman & GCC")}</small></article>
         <article><i><WalletCards /></i><span>{l("الباقات", "Plans")}</span><b>{plans.length}</b><small>{l("قابلة للربط", "linkable")}</small></article>
       </div>
-      <section className="admin-panel admin-table-panel">
-        <div className="admin-table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>{l("البوابة", "Gateway")}</th>
-                <th>{l("النطاق", "Scope")}</th>
-                <th>{l("الطرق", "Methods")}</th>
-                <th>{l("الوضع", "Mode")}</th>
-                <th>{l("الباقات المرتبطة", "Linked plans")}</th>
-                <th>{l("التفعيل", "Enable")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {gateways.map((gateway) => {
-                const planIds = Array.isArray(gateway.plan_ids) ? gateway.plan_ids.map(String) : [];
-                return (
-                  <tr key={String(gateway.id)}>
-                    <td>
-                      <b>{locale === "ar" ? String(gateway.name_ar) : String(gateway.name_en)}</b>
-                      <small>{String(gateway.provider_key)}</small>
-                    </td>
-                    <td>{scopeLabel(String(gateway.scope))}</td>
-                    <td><small>{Array.isArray(gateway.methods) ? gateway.methods.join(", ") : "—"}</small></td>
-                    <td>
-                      <button disabled={working === gateway.id} onClick={() => void toggle(gateway, "isTestMode")}>
-                        {Number(gateway.is_test_mode) === 1 ? l("تجريبي", "Test") : l("إنتاج", "Live")}
-                      </button>
-                    </td>
-                    <td>
-                      <select
-                        multiple
-                        disabled={working === String(gateway.id)}
-                        value={planIds}
-                        style={{ minWidth: 160, minHeight: 72 }}
-                        onChange={(event) => {
-                          const selected = Array.from(event.target.selectedOptions).map((option) => option.value);
-                          void linkPlans(String(gateway.id), selected);
-                        }}
-                      >
-                        {plans.map((plan) => (
-                          <option key={String(plan.id)} value={String(plan.id)}>
-                            {locale === "ar" ? String(plan.name_ar) : String(plan.name_en)}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <button disabled={working === gateway.id} onClick={() => void toggle(gateway, "isEnabled")}>
-                        <Status value={Number(gateway.is_enabled) === 1 ? "active" : "closed"} locale={locale} />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </>
+      <div className="plan-matrix-shell">
+        <table className="plan-matrix">
+          <thead>
+            <tr>
+              <th className="plan-matrix-titles" scope="col">{l("العناوين", "Titles")}</th>
+              {gateways.map((gateway) => (
+                <th key={String(gateway.id)} className={`plan-matrix-head${Number(gateway.is_enabled) === 1 ? "" : " is-inactive"}`} scope="col">
+                  <span>{String(gateway.provider_key)}</span>
+                  <strong>{locale === "ar" ? String(gateway.name_ar) : String(gateway.name_en)}</strong>
+                  <small>{scopeLabel(String(gateway.scope))}</small>
+                  <span className="plan-head-chip">{Array.isArray(gateway.methods) ? gateway.methods.slice(0, 2).join(" · ") : "—"}</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="plan-matrix-section">
+              <th colSpan={gateways.length + 1}>{l("التشغيل", "Operation")}</th>
+            </tr>
+            <tr>
+              <th className="plan-matrix-label" scope="row"><div><span><b>{l("مفعّلة", "Enabled")}</b><small>{l("ظاهرة للدفع", "Visible for checkout")}</small></span></div></th>
+              {gateways.map((gateway) => (
+                <td key={String(gateway.id)} className="plan-matrix-switch">
+                  <AdminSwitch
+                    on={Number(gateway.is_enabled) === 1}
+                    disabled={working === String(gateway.id)}
+                    label={l("تفعيل", "Enable")}
+                    onToggle={() => void toggle(gateway, "isEnabled")}
+                  />
+                </td>
+              ))}
+            </tr>
+            <tr>
+              <th className="plan-matrix-label" scope="row"><div><span><b>{l("وضع تجريبي", "Test mode")}</b><small>{l("بدون تحصيل حقيقي", "No live capture")}</small></span></div></th>
+              {gateways.map((gateway) => (
+                <td key={String(gateway.id)} className="plan-matrix-switch">
+                  <AdminSwitch
+                    on={Number(gateway.is_test_mode) === 1}
+                    disabled={working === String(gateway.id)}
+                    label={l("تجريبي", "Test")}
+                    onToggle={() => void toggle(gateway, "isTestMode")}
+                  />
+                </td>
+              ))}
+            </tr>
+            <tr className="plan-matrix-section">
+              <th colSpan={gateways.length + 1}>{l("الباقات المرتبطة", "Linked plans")}</th>
+            </tr>
+            {plans.map((plan) => {
+              const planId = String(plan.id);
+              const label = locale === "ar" ? String(plan.name_ar) : String(plan.name_en);
+              return (
+                <tr key={planId}>
+                  <th className="plan-matrix-label" scope="row">
+                    <div>
+                      <span>
+                        <b>{label}</b>
+                        <small>{planId}</small>
+                      </span>
+                    </div>
+                  </th>
+                  {gateways.map((gateway) => {
+                    const planIds = Array.isArray(gateway.plan_ids) ? gateway.plan_ids.map(String) : [];
+                    const on = planIds.includes(planId);
+                    return (
+                      <td key={String(gateway.id)} className="plan-matrix-switch">
+                        <AdminSwitch
+                          on={on}
+                          disabled={working === String(gateway.id)}
+                          label={`${label} / ${String(gateway.id)}`}
+                          onToggle={() => void linkPlans(String(gateway.id), on ? planIds.filter((id) => id !== planId) : [...planIds, planId])}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+            <tr>
+              <th className="plan-matrix-label" scope="row"><div><i><Globe2 size={14} /></i><span><b>{l("النطاق", "Scope")}</b></span></div></th>
+              {gateways.map((gateway) => (
+                <td key={String(gateway.id)}>{scopeLabel(String(gateway.scope))}</td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </AdminConsole>
   );
 }

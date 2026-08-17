@@ -759,6 +759,7 @@
   .pricing-grid article { min-height: 0; }
 }
 
+.admin-console,
 .plan-studio {
   --ps-ink: #10231e;
   --ps-muted: #66756f;
@@ -767,6 +768,7 @@
   color: var(--ps-ink);
   font-size: 15px;
 }
+.admin-console .admin-page-head p,
 .plan-studio .admin-page-head p { max-width: 68ch; }
 .plan-studio .admin-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .plan-matrix-toolbar {
@@ -1028,4 +1030,195 @@
 @media (max-width: 760px) {
   .plan-matrix-toolbar { width: 100%; }
   .plan-matrix-toolbar button { flex: 1; justify-content: center; }
+}
+
+.admin-console .admin-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.admin-console .admin-page-head button,
+.admin-console .plan-matrix-toolbar button {
+  height: 44px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 800;
+}
+.admin-console .admin-panel {
+  border: 1px solid var(--ps-line);
+  border-radius: 22px;
+  box-shadow: 0 18px 50px rgba(16, 35, 30, .05);
+}
+.admin-console .admin-panel-head h2 { font-size: 17px; }
+.admin-console .admin-panel-head p { font-size: 13px; color: var(--ps-muted); }
+.admin-console .coupon-list > div,
+.admin-console .role-list > div,
+.admin-console .audit-list > div {
+  min-height: 56px;
+  gap: 10px;
+}
+.admin-console .coupon-list code,
+.admin-console .coupon-list b,
+.admin-console .role-list b,
+.admin-console .audit-list b { font-size: 14px; }
+.admin-console .role-list small,
+.admin-console .audit-list small,
+.admin-console .audit-list time { font-size: 12px; }
+.admin-console .coupon-create input,
+.admin-console .coupon-create button {
+  height: 44px;
+  font-size: 14px;
+}
+.admin-module-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.admin-module-grid a {
+  min-height: 88px;
+  padding: 14px;
+  border: 1px solid var(--ps-line);
+  border-radius: 16px;
+  background: #fbfefc;
+  color: inherit;
+  text-decoration: none;
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  grid-template-rows: auto auto;
+  gap: 4px 10px;
+}
+.admin-module-grid a:hover { border-color: #10b981; background: #ecfdf5; }
+.admin-module-grid i {
+  grid-row: 1 / 3;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: var(--ps-soft);
+  color: #0d7a65;
+}
+.admin-module-grid span { color: var(--ps-muted); font-size: 12px; font-weight: 700; }
+.admin-module-grid b { font-size: 18px; letter-spacing: -.03em; }
+.admin-data-table { width: 100%; min-width: 860px; }
+.admin-empty-cell {
+  padding: 28px 16px;
+  color: var(--ps-muted);
+  text-align: center;
+  font-weight: 700;
+}
+.admin-row-link {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: #10231e;
+  color: white;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 800;
+}
+.admin-role-chip {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--ps-soft);
+  color: #0d7a65;
+  font-size: 12px;
+  font-weight: 800;
+}
+.admin-pager { margin-top: 14px; }
+.admin-share { display: grid; gap: 6px; }
+.admin-share i {
+  height: 8px;
+  border-radius: 99px;
+  background: #e7ece9;
+  overflow: hidden;
+  display: block;
+}
+.admin-share i em {
+  display: block;
+  height: 100%;
+  background: #10b981;
+}
+.admin-share small { color: var(--ps-muted); font-size: 12px; font-weight: 700; }
+.plan-head-chip {
+  display: block;
+  margin-top: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--ps-soft);
+  color: #0d7a65;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  width: max-content;
+}
+.plan-switch:disabled { opacity: .45; cursor: wait; }
+.admin-console .admin-filters > label {
+  width: min(420px, 100%);
+  height: 44px;
+  font-size: 14px;
+}
+.admin-console .admin-filters input,
+.admin-console .admin-filters select,
+.admin-console .admin-filters > button,
+.admin-console .filter-tabs > button {
+  height: 44px;
+  font-size: 14px;
+}
+.admin-console .filter-tabs > button { padding: 0 14px; }
+.admin-console .plan-matrix td b { font-size: 15px; }
+.admin-console .plan-matrix td small { font-size: 12px; }
+.admin-console .plan-matrix select {
+  height: 40px;
+  border: 1px solid var(--ps-line);
+  border-radius: 10px;
+  padding: 0 10px;
+  background: #fcfefd;
+  font: inherit;
+  font-size: 13px;
+}
+
+.documents-page .documents-title small { font-size: 13px; font-weight: 800; color: #0d7a65; }
+.documents-page .documents-title h1 { font-size: clamp(26px, 3vw, 34px); }
+.documents-page .documents-title p { font-size: 15px; line-height: 1.7; max-width: 62ch; }
+.documents-page .documents-title button {
+  height: 44px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 800;
+  border-radius: 12px;
+}
+.documents-page .document-kpis article {
+  min-height: 96px;
+  border-radius: 18px;
+  box-shadow: 0 12px 32px rgba(16, 35, 30, .04);
+}
+.documents-page .document-kpis span { font-size: 13px; }
+.documents-page .document-kpis b { font-size: 22px; }
+.documents-page .documents-layout > aside h2 { font-size: 15px; }
+.documents-page .documents-layout > aside button { min-height: 46px; font-size: 13px; font-weight: 700; }
+.documents-page .document-list > label { height: 44px; }
+.documents-page .document-list > label input { font-size: 14px; }
+.documents-page .document-list > button { min-height: 76px; }
+.documents-page .document-list > button b { font-size: 14px; }
+.documents-page .document-list > button small,
+.documents-page .document-list > button em { font-size: 12px; }
+.documents-page .document-list > button strong { font-size: 14px; }
+.documents-page .statement-launcher { border-radius: 22px; box-shadow: 0 18px 50px rgba(16, 35, 30, .05); }
+.documents-page .statement-launcher h2 { font-size: 18px; }
+.documents-page .statement-launcher p { font-size: 13px; }
+.documents-page .statement-launcher button { min-height: 88px; border-radius: 16px; }
+.documents-page .statement-launcher button b { font-size: 14px; }
+.documents-page .statement-launcher button small { font-size: 12px; }
+.documents-page .receipt-preview { border-radius: 22px; }
+.documents-page .receipt-title h2 { font-size: 26px; }
+.documents-page .receipt-preview dt { font-size: 12px; }
+.documents-page .receipt-preview dd { font-size: 15px; }
+
+@media (max-width: 1100px) {
+  .admin-console .admin-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-module-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .admin-console .admin-kpis { grid-template-columns: 1fr; }
 }
