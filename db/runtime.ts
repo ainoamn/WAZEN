@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -180,8 +180,9 @@ async function ensureSchemaPatches(db: D1Database) {
   if (!totpNames.has("pending_key_version")) {
     try { await db.prepare("ALTER TABLE totp_credentials ADD COLUMN pending_key_version TEXT").run(); } catch { /* exists */ }
   }
-  const { ensureSubscriptionAdminColumns, ensurePaymentGateways } = await import("../services/admin/billing-service");
+  const { ensureSubscriptionAdminColumns, ensurePlanQuotaColumns, ensurePaymentGateways } = await import("../services/admin/billing-service");
   await ensureSubscriptionAdminColumns(db);
+  await ensurePlanQuotaColumns(db);
   await ensurePaymentGateways(db);
   await db.batch([
     db.prepare(`INSERT OR IGNORE INTO tenants (id,name,country,currency,locale,timezone,created_by,created_at)
@@ -324,6 +325,9 @@ async function initializeSchema(db: D1Database) {
       annual_minor INTEGER NOT NULL DEFAULT 0,
       wallet_limit INTEGER NOT NULL DEFAULT 1,
       member_limit INTEGER NOT NULL DEFAULT 2,
+      transaction_limit INTEGER NOT NULL DEFAULT 0,
+      record_limit INTEGER NOT NULL DEFAULT 0,
+      user_limit INTEGER NOT NULL DEFAULT 1,
       features_json TEXT NOT NULL DEFAULT '[]',
       is_active INTEGER NOT NULL DEFAULT 1,
       sort_order INTEGER NOT NULL DEFAULT 0,

@@ -385,6 +385,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .upgrade-notice .modal-actions { width: 100%; }
 .upgrade-notice .primary-button { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 .plan-feature-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.plan-quota-summary { margin: 14px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.plan-quota-summary > div { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #f8faf8; }
+.plan-quota-summary dt { color: var(--muted); font-size: 11px; }
+.plan-quota-summary dd { margin: 4px 0 0; font-size: 16px; font-weight: 800; }
 .plan-feature-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 42px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfb; }
 .plan-feature-list li.is-locked { background: #fffaf3; }
 .plan-feature-list .muted { color: var(--muted); font-size: 12px; }

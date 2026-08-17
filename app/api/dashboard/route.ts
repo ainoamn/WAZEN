@@ -83,6 +83,11 @@ type PersonalOccurrenceRow = {
 
 const now = () => new Date().toISOString();
 
+async function guardOwnerTransactionQuota(db: D1Database, ownerUserId: string, extra = 1) {
+  const { assertOwnerPlanQuota } = await import("../../../services/admin/billing-service");
+  await assertOwnerPlanQuota(db, ownerUserId, "transaction", extra);
+}
+
 function cleanId(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
 }
@@ -1121,6 +1126,7 @@ export async function POST(request: Request) {
       const pair = await db.prepare("SELECT id FROM space_links WHERE hub_space_id=? AND linked_space_id=? AND status='active'")
         .bind(hub.id, linked.id).first();
       if (!pair) throw new ApiError(409, "WALLET_NOT_LINKED");
+      await guardOwnerTransactionQuota(db, hub.owner_user_id, 2);
       const account = await db.prepare("SELECT id,opening_minor FROM personal_accounts WHERE id=? AND space_id=? AND status='active'")
         .bind(parsed.data.accountId, hub.id).first<{ id: string; opening_minor: number }>();
       if (!account) throw new ApiError(400, "INVALID_ACCOUNT");
@@ -1484,6 +1490,7 @@ export async function POST(request: Request) {
       if (!occurrence) throw new ApiError(404, "OCCURRENCE_NOT_FOUND");
       if (occurrence.status !== "pending") throw new ApiError(409, "OCCURRENCE_NOT_PENDING");
       const space = await authorizeSpace(db, user, occurrence.space_id, "transact", ["personal"]);
+      await guardOwnerTransactionQuota(db, space.owner_user_id, 1);
       let amountMinor = Number(occurrence.expected_minor);
       try {
         if (parsed.data.amount !== undefined && parsed.data.amount !== "") amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency);
@@ -1652,6 +1659,7 @@ export async function POST(request: Request) {
       const { spaceId, allocation, description } = parsed.data;
       let kind = parsed.data.kind;
       const space = await authorizeSpace(db, user, spaceId, "transact"); const memberId = parsed.data.memberId ?? null;
+      await guardOwnerTransactionQuota(db, space.owner_user_id, 2);
       await assertPeriodWritable(db, spaceId, parsed.data.occurredAt ?? now());
       // Group payments linked to a member count as contributions toward dues (not plain income).
       if (memberId && kind === "income" && ["household", "trip", "society", "group"].includes(space.type)) {
@@ -1886,7 +1894,8 @@ export async function POST(request: Request) {
         WHERE ct.id=? AND ct.status='scheduled' AND ct.turn_number=(SELECT MIN(turn_number) FROM circle_turns WHERE space_id=ct.space_id AND status='scheduled')`)
         .bind(parsed.data.turnId).first<{ id: string; space_id: string; member_id: string; turn_number: number; amount_minor: number; balance_minor: number; display_name: string }>();
       if (!turn) throw new ApiError(409, "TURN_NOT_CURRENT");
-      await authorizeSpace(db, user, turn.space_id, "circle:write", ["society", "group"]);
+      const circleSpace = await authorizeSpace(db, user, turn.space_id, "circle:write", ["society", "group"]);
+      await guardOwnerTransactionQuota(db, circleSpace.owner_user_id, 1);
       if (Number(turn.balance_minor) < Number(turn.amount_minor)) throw new ApiError(409, "INSUFFICIENT_FUNDS");
       const transactionId = crypto.randomUUID(); const entryId = crypto.randomUUID(); const createdAt = now(); const description = `Circle payout #${turn.turn_number} — ${turn.display_name}`;
       await db.batch([
@@ -1906,7 +1915,8 @@ export async function POST(request: Request) {
       const settlement = await db.prepare(`SELECT st.id,st.space_id,st.from_member_id,st.to_member_id,st.amount_minor,st.expense_id,s.balance_minor FROM settlements st
         JOIN spaces s ON s.id=st.space_id WHERE st.id=? AND st.status='pending'`).bind(parsed.data.settlementId).first<{ id: string; space_id: string; from_member_id: string; to_member_id: string; amount_minor: number; expense_id: string | null; balance_minor: number }>();
       if (!settlement) throw new ApiError(404, "SETTLEMENT_NOT_FOUND");
-      await authorizeSpace(db, user, settlement.space_id, "settlements:write", ["household", "trip", "society", "group"]);
+      const settlementSpace = await authorizeSpace(db, user, settlement.space_id, "settlements:write", ["household", "trip", "society", "group"]);
+      await guardOwnerTransactionQuota(db, settlementSpace.owner_user_id, 2);
       const fromFund = String(settlement.from_member_id).startsWith("space:");
       const toFund = String(settlement.to_member_id).startsWith("space:");
       const entryId = crypto.randomUUID(); const createdAt = now();
@@ -2015,6 +2025,7 @@ export async function POST(request: Request) {
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_TRIP_EXPENSE");
       const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["household", "trip", "society", "group"]);
+      await guardOwnerTransactionQuota(db, space.owner_user_id, 1);
       const members = await db.prepare("SELECT id FROM members WHERE space_id=? AND status='active' ORDER BY joined_at").bind(parsed.data.spaceId).all<{ id: string }>();
       if (!members.results.length) throw new ApiError(400, "NO_ACTIVE_MEMBERS");
       let amountMinor: number;
@@ -2180,6 +2191,7 @@ export async function POST(request: Request) {
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_CONTRIBUTION_PAYMENT");
       const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["household", "trip", "society", "group"]);
+      await guardOwnerTransactionQuota(db, space.owner_user_id, 2);
       const member = await db.prepare("SELECT id,space_id,display_name,due_minor,paid_minor,extra_minor FROM members WHERE id=? AND space_id=? AND status='active'")
         .bind(parsed.data.memberId, parsed.data.spaceId)
         .first<{ id: string; space_id: string; display_name: string; due_minor: number; paid_minor: number; extra_minor: number }>();
@@ -2300,6 +2312,7 @@ export async function POST(request: Request) {
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_SURPLUS_WITHDRAWAL");
       const space = await authorizeSpace(db, user, parsed.data.spaceId, "settlements:write", ["household", "trip", "society", "group"]);
+      await guardOwnerTransactionQuota(db, space.owner_user_id, 1);
       const member = await db.prepare("SELECT id,display_name,extra_minor FROM members WHERE id=? AND space_id=? AND status='active'")
         .bind(parsed.data.memberId, parsed.data.spaceId)
         .first<{ id: string; display_name: string; extra_minor: number }>();
@@ -2340,6 +2353,7 @@ export async function POST(request: Request) {
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_SMART_PAY");
       const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["household", "trip", "society", "group"]);
+      await guardOwnerTransactionQuota(db, space.owner_user_id, 2);
       const member = await db.prepare("SELECT id,space_id,display_name,due_minor,paid_minor,extra_minor FROM members WHERE id=? AND space_id=? AND status='active'")
         .bind(parsed.data.memberId, parsed.data.spaceId)
         .first<{ id: string; space_id: string; display_name: string; due_minor: number; paid_minor: number; extra_minor: number }>();

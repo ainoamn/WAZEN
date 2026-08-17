@@ -144,8 +144,10 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
       s.current_period_start, s.current_period_end, s.paused_at, s.admin_note,
       s.discount_percent, s.discount_fixed_minor, s.discount_label, s.gateway_id,
       s.features_grant_json, s.features_deny_json, s.wallet_limit_override, s.member_limit_override,
+      s.transaction_limit_override, s.record_limit_override, s.user_limit_override,
       pl.id AS plan_id, pl.name_ar AS plan_name_ar, pl.name_en AS plan_name_en,
-      pl.wallet_limit, pl.member_limit, pl.features_json, pl.monthly_minor, pl.annual_minor,
+      pl.wallet_limit, pl.member_limit, pl.transaction_limit, pl.record_limit, pl.user_limit,
+      pl.features_json, pl.monthly_minor, pl.annual_minor,
       CASE WHEN t.enabled_at IS NOT NULL THEN 1 ELSE 0 END AS totp_enabled
     FROM users u
     LEFT JOIN customer_profiles p ON p.user_id=u.id
@@ -184,8 +186,14 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
     deny: parsePlanFeatures(profile.features_deny_json),
     walletLimit: Number(profile.wallet_limit ?? 1),
     memberLimit: Number(profile.member_limit ?? 2),
+    transactionLimit: Number(profile.transaction_limit ?? 0),
+    recordLimit: Number(profile.record_limit ?? 0),
+    userLimit: Number(profile.user_limit ?? 1),
     walletLimitOverride: profile.wallet_limit_override as number | null,
     memberLimitOverride: profile.member_limit_override as number | null,
+    transactionLimitOverride: profile.transaction_limit_override as number | null,
+    recordLimitOverride: profile.record_limit_override as number | null,
+    userLimitOverride: profile.user_limit_override as number | null,
     status: String(profile.subscription_status ?? "none"),
   });
 
@@ -198,6 +206,9 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
       effective_features: effective.features,
       effective_wallet_limit: effective.walletLimit,
       effective_member_limit: effective.memberLimit,
+      effective_transaction_limit: effective.transactionLimit,
+      effective_record_limit: effective.recordLimit,
+      effective_user_limit: effective.userLimit,
     },
     sessions: sessions.results,
     apiKeys: apiKeys.results.map((row) => {
