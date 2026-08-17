@@ -160,12 +160,32 @@
   margin-top:8px;
 }
 .admin-logout:disabled{opacity:.65;cursor:default}
+.admin-account-menu{position:relative;z-index:30}
+.admin-head-actions .admin-account-mark{
+  width:40px;
+  height:40px;
+  min-width:40px;
+  padding:0;
+  border:0;
+  border-radius:11px;
+  background:#b26c49;
+  color:#fff;
+  font-size:16px;
+  font-weight:800;
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+}
+.admin-head-actions .admin-account-mark:hover{filter:brightness(1.08)}
+.admin-head-actions .admin-account-menu .user-menu-panel{
+  z-index:50;
+}
 .admin-main{width:calc(100% - 270px);margin-inline-start:270px}
-.admin-main > header{height:78px;padding:0 28px}
+.admin-main > header{height:78px;padding:0 28px;overflow:visible}
 .admin-main > header small{font-size:13px}
 .admin-main > header b{font-size:16px}
-.admin-head-actions button,
-.admin-head-actions a{
+.admin-head-actions > button,
+.admin-head-actions > a{
   height:40px;
   padding:0 12px;
   font-size:13px;
