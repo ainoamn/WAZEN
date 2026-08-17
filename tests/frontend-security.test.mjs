@@ -54,12 +54,29 @@ test("dashboard and home keep a live revision poll without restarting it every r
   assert.match(live, /onChangeRef/);
   assert.match(live, /LiveBuildGuard/);
   assert.match(live, /visibilityState/);
+  assert.match(live, /DATA_POLL_MS = 12_000/);
+  assert.match(live, /inflight/);
   assert.match(dashboard, /useLiveDashboard/);
   assert.match(home, /useLiveDashboard/);
   assert.match(route, /searchParams.get\("view"\) === "revision"/);
   assert.match(route, /filterSpacesByPlan/);
+  assert.doesNotMatch(route, /getActivePlanEntitlements\(db, userId\)/);
+  assert.match(route, /plan_stamp/);
   assert.match(health, /buildId/);
   assert.doesNotMatch(dashboard, /sidebarAllowsWalletView/);
+});
+
+test("pricing pays after select and schedules downgrades", () => {
+  const pricing = fs.readFileSync(path.join(root, "app/pricing/pricing-client.tsx"), "utf8");
+  const planChange = fs.readFileSync(path.join(root, "lib/plan-change.ts"), "utf8");
+  const platform = fs.readFileSync(path.join(root, "app/api/platform/route.ts"), "utf8");
+  assert.match(pricing, /confirmInvoicePayment/);
+  assert.match(pricing, /scheduled_downgrade/);
+  assert.match(pricing, /errorLabel/);
+  assert.match(planChange, /dayAfterIso/);
+  assert.match(planChange, /upgrade_pending_payment/);
+  assert.match(platform, /selectCustomerPlan/);
+  assert.match(platform, /confirmInvoicePayment/);
 });
 
 test("proxy redirects anonymous /admin visitors to login", () => {

@@ -321,9 +321,11 @@ export async function GET(request: Request) {
     }
     if (view === "billing") {
       assertApiScope(user, "billing:read");
+      const { ensurePendingPlanColumns } = await import("../../../lib/plan-change");
+      await ensurePendingPlanColumns(db);
       const [subscription, invoices, payments, plans] = await Promise.all([
-        db.prepare("SELECT s.*,p.name_ar,p.name_en,p.wallet_limit,p.member_limit,p.transaction_limit,p.record_limit,p.user_limit,p.daily_transaction_limit,p.monthly_transaction_limit,p.print_limit FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.user_id=? ORDER BY s.created_at DESC LIMIT 1").bind(user.id).first(),
-        db.prepare("SELECT id,subscription_id,reference,subtotal_minor,discount_minor,tax_minor,total_minor,currency,status,due_at,paid_at,created_at FROM invoices WHERE user_id=? ORDER BY created_at DESC").bind(user.id).all(),
+        db.prepare("SELECT s.*,p.name_ar,p.name_en,p.wallet_limit,p.member_limit,p.transaction_limit,p.record_limit,p.user_limit,p.daily_transaction_limit,p.monthly_transaction_limit,p.print_limit,p.sort_order, pending_plan.name_ar AS pending_plan_name_ar, pending_plan.name_en AS pending_plan_name_en FROM subscriptions s JOIN plans p ON p.id=s.plan_id LEFT JOIN plans pending_plan ON pending_plan.id=s.pending_plan_id WHERE s.user_id=? ORDER BY s.created_at DESC LIMIT 1").bind(user.id).first(),
+        db.prepare("SELECT id,subscription_id,reference,subtotal_minor,discount_minor,tax_minor,total_minor,currency,status,due_at,paid_at,created_at,target_plan_id,target_billing_cycle FROM invoices WHERE user_id=? ORDER BY created_at DESC").bind(user.id).all(),
         db.prepare("SELECT id,invoice_id,reference,amount_minor,currency,method,status,settlement_status,occurred_at FROM payments WHERE user_id=? ORDER BY occurred_at DESC").bind(user.id).all(),
         publicPlans(db),
       ]);
@@ -468,49 +470,16 @@ export async function POST(request: Request) {
       if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
       const parsed = z.object({ planId: z.string().min(1).max(50), cycle: z.enum(["monthly", "annual"]), coupon: z.string().max(20).optional() }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_PLAN_SELECTION");
-      const { planId, cycle } = parsed.data;
-      const plan = await db.prepare("SELECT * FROM plans WHERE id=? AND is_active=1").bind(planId).first<Record<string, unknown>>();
-      if (!plan) throw new ApiError(404, "PLAN_NOT_FOUND");
-      const subtotal = Number(cycle === "annual" ? plan.annual_minor : plan.monthly_minor);
-      let discount = 0; let couponId: string | null = null;
-      const couponCode = String(parsed.data.coupon ?? "").trim().toUpperCase();
-      if (couponCode) {
-        const coupon = await db.prepare(`SELECT * FROM coupons c WHERE code=? AND is_active=1 AND
-          used_count+(SELECT COUNT(*) FROM coupon_redemptions r WHERE r.coupon_id=c.id AND r.status='reserved')<usage_limit`).bind(couponCode).first<Record<string, unknown>>();
-        if (coupon && (!coupon.expires_at || new Date(String(coupon.expires_at)) > new Date())) {
-          discount = coupon.discount_type === "fixed" ? Number(coupon.value) : calculatePercentMinor(subtotal, Number(coupon.value) * 100);
-          couponId = String(coupon.id);
-        }
-      }
-      const personal = await db.prepare("SELECT discount_percent,discount_fixed_minor FROM subscriptions WHERE user_id=? ORDER BY created_at DESC LIMIT 1")
-        .bind(user.id).first<{ discount_percent: number; discount_fixed_minor: number }>();
-      if (personal) {
-        discount += calculatePercentMinor(subtotal, Number(personal.discount_percent ?? 0) * 100);
-        discount += Number(personal.discount_fixed_minor ?? 0);
-      }
-      discount = Math.min(discount, subtotal);
-      const profile = await db.prepare("SELECT p.country,u.currency FROM customer_profiles p JOIN users u ON u.id=p.user_id WHERE p.user_id=?").bind(user.id).first<{ country: string; currency: string }>();
-      const pack = countryPack(profile?.country ?? "SA"); const currency = profile?.currency ?? pack.currency;
-      const tax = calculatePercentMinor(subtotal - discount, pack.taxBasisPoints); const total = subtotal - discount + tax;
-      const now = isoNow();
-      const periodEnd = cycle === "annual" ? atOffset(365) : atOffset(30);
-      const current = await db.prepare("SELECT id FROM subscriptions WHERE user_id=? ORDER BY created_at DESC LIMIT 1").bind(user.id).first<{ id: string }>();
-      const subscriptionId = current?.id ?? id();
-      const invoiceId = id(); const reference = await nextReference(db, "invoice", "INV");
-      const tenantId = await ensureDefaultTenant(db, user);
-      const status = total === 0 ? "active" : "pending_payment";
-      const statements: D1PreparedStatement[] = [];
-      if (current) statements.push(db.prepare("UPDATE subscriptions SET plan_id=?,status=?,billing_cycle=?,current_period_start=?,current_period_end=?,updated_at=? WHERE id=?").bind(planId, status, cycle, now, periodEnd, now, subscriptionId));
-      else statements.push(db.prepare(`INSERT INTO subscriptions (id,user_id,plan_id,status,billing_cycle,current_period_start,current_period_end,cancel_at_period_end,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,0,?,?)`).bind(subscriptionId, user.id, planId, status, cycle, now, periodEnd, now, now));
-      statements.push(
-        db.prepare("INSERT INTO invoices VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(invoiceId, user.id, subscriptionId, reference, subtotal, discount, tax, total, currency, total === 0 ? "paid" : "pending", atOffset(7), total === 0 ? now : null, now),
-        db.prepare("INSERT INTO tenant_resources (tenant_id,resource_type,resource_id,created_at) VALUES (?,?,?,?)").bind(tenantId, "invoice", invoiceId, now),
-        prepareAudit(db, { userId: user.id, action: "subscription.plan_selected", entityType: "subscription", entityId: subscriptionId, metadata: { planId, cycle, invoiceId, couponCode: couponCode || null }, createdAt: now }),
-      );
-      if (couponId && total > 0) statements.push(db.prepare("INSERT INTO coupon_redemptions (id,coupon_id,user_id,invoice_id,status,created_at) VALUES (?,?,?,?,'reserved',?)").bind(id(), couponId, user.id, invoiceId, now));
-      await db.batch(statements);
-      return respond({ ok: true, invoice: { id: invoiceId, reference, subtotal_minor: subtotal, discount_minor: discount, tax_minor: tax, total_minor: total, currency } });
+      const { selectCustomerPlan } = await import("../../../lib/plan-change");
+      return respond(await selectCustomerPlan(db, user, parsed.data) as Record<string, unknown>);
+    }
+
+    if (action === "confirmInvoicePayment") {
+      if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
+      const parsed = z.object({ invoiceId: z.string().min(1).max(120) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_INVOICE");
+      const { confirmInvoicePayment } = await import("../../../lib/plan-change");
+      return respond(await confirmInvoicePayment(db, user, parsed.data.invoiceId) as Record<string, unknown>);
     }
 
     if (action === "createDocument") {

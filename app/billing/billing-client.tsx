@@ -4,9 +4,31 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ErrorCard, money, PageLoader, PublicHeader, Status, useCommerceLocale } from "../commercial-kit";
 import { PLAN_FEATURE_CATALOG, formatQuota, planHasFeature } from "../../lib/plan-features";
+import { apiFetch } from "../../lib/client-api";
+import { errorLabel } from "../../lib/admin-labels";
+import { clearDashboardCache } from "../../lib/dashboard-session";
+import { notifyLiveRefresh } from "../../lib/live-sync";
 
-type SubscriptionRow = { name_ar: string; name_en: string; status: string; billing_cycle: string; current_period_end: string; wallet_limit: number; member_limit: number; transaction_limit?: number; record_limit?: number; user_limit?: number; daily_transaction_limit?: number; monthly_transaction_limit?: number; print_limit?: number };
-type InvoiceRow = { id: string; reference: string; created_at: string; total_minor: number; currency: string; status: string };
+type SubscriptionRow = {
+  name_ar: string;
+  name_en: string;
+  status: string;
+  billing_cycle: string;
+  current_period_end: string;
+  wallet_limit: number;
+  member_limit: number;
+  transaction_limit?: number;
+  record_limit?: number;
+  user_limit?: number;
+  daily_transaction_limit?: number;
+  monthly_transaction_limit?: number;
+  print_limit?: number;
+  pending_plan_id?: string | null;
+  pending_effective_at?: string | null;
+  pending_plan_name_ar?: string | null;
+  pending_plan_name_en?: string | null;
+};
+type InvoiceRow = { id: string; reference: string; created_at: string; total_minor: number; currency: string; status: string; target_plan_id?: string | null };
 type PaymentRow = { id: string; reference: string; method: string; amount_minor: number; currency: string; status: string };
 type BillingData = {
   subscription?: SubscriptionRow | null;
@@ -20,14 +42,43 @@ export function BillingClient() {
   const { locale, setLocale, l } = useCommerceLocale();
   const [data, setData] = useState<BillingData | null>(null);
   const [error, setError] = useState("");
-  useEffect(() => {
+  const [payingId, setPayingId] = useState("");
+
+  const load = () => {
     fetch("/api/platform?view=billing", { cache: "no-store" }).then(async (r) => {
       if (r.status === 401) { router.push("/login?next=/billing"); throw new Error(); }
       if (!r.ok) throw new Error();
       return await r.json() as BillingData;
     }).then(setData).catch(() => setError(locale === "ar" ? "تعذر تحميل الفوترة" : "Could not load billing"));
-  }, [locale, router]);
-  if (error) return <ErrorCard message={error} />;
+  };
+
+  useEffect(() => { load(); }, [locale, router]);
+
+  const payInvoice = async (invoiceId: string) => {
+    setPayingId(invoiceId);
+    setError("");
+    try {
+      const response = await apiFetch("/api/platform", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "confirmInvoicePayment", idempotencyKey: crypto.randomUUID(), invoiceId }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) {
+        setError(errorLabel(result.error ?? "INTERNAL_ERROR", locale));
+        return;
+      }
+      clearDashboardCache();
+      notifyLiveRefresh();
+      load();
+    } catch {
+      setError(errorLabel("INTERNAL_ERROR", locale));
+    } finally {
+      setPayingId("");
+    }
+  };
+
+  if (error && !data) return <ErrorCard message={error} />;
   if (!data) return <PageLoader />;
   const sub = data.subscription;
   const features = data.entitlements?.features?.length ? data.entitlements.features : ["personal"];
@@ -44,6 +95,7 @@ export function BillingClient() {
           </div>
           <a className="primary-link" href="/pricing">{l("تغيير الباقة", "Change plan")}<ArrowRight size={17} /></a>
         </div>
+        {error ? <p className="admin-inline-alert is-error">{error}</p> : null}
         <section className="billing-current">
           <div>
             <WalletCards />
@@ -58,7 +110,7 @@ export function BillingClient() {
             </div>
             <div>
               <dt>{l("نهاية الفترة", "Period ends")}</dt>
-              <dd>{sub ? new Intl.DateTimeFormat(locale === "ar" ? "ar-SA" : "en-GB", { dateStyle: "medium" }).format(new Date(sub.current_period_end)) : "—"}</dd>
+              <dd>{sub ? new Intl.DateTimeFormat(locale === "ar" ? "ar-OM" : "en-GB", { dateStyle: "medium" }).format(new Date(sub.current_period_end)) : "—"}</dd>
             </div>
             <div>
               <dt>{l("حد المحافظ", "Wallet limit")}</dt>
@@ -94,6 +146,15 @@ export function BillingClient() {
             </div>
           </dl>
         </section>
+        {sub?.pending_plan_id && sub.pending_effective_at ? (
+          <section className="panel billing-features">
+            <h2>{l("تخفيض مجدول", "Scheduled downgrade")}</h2>
+            <p>{l(
+              `ستنتقل إلى «${locale === "ar" ? (sub.pending_plan_name_ar ?? sub.pending_plan_id) : (sub.pending_plan_name_en ?? sub.pending_plan_id)}» من ${new Intl.DateTimeFormat(locale === "ar" ? "ar-OM" : "en-GB", { dateStyle: "medium" }).format(new Date(sub.pending_effective_at))} (اليوم التالي لانتهاء الفترة الحالية).`,
+              `You will move to “${sub.pending_plan_name_en ?? sub.pending_plan_id}” on ${new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(new Date(sub.pending_effective_at))} (the day after the current period ends).`,
+            )}</p>
+          </section>
+        ) : null}
         <section className="panel billing-features">
           <h2>{l("ميزات الباقة", "Plan features")}</h2>
           <p>{l("كل الميزات ظاهرة. ما ليس مشمولاً يحمل شارة ترقية.", "Every feature stays listed. Locked items show an upgrade badge.")}</p>
@@ -137,15 +198,23 @@ export function BillingClient() {
                     <th>{l("التاريخ", "Date")}</th>
                     <th>{l("الإجمالي", "Total")}</th>
                     <th>{l("الحالة", "Status")}</th>
+                    <th>{l("إجراء", "Action")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.invoices.map((row) => (
                     <tr key={row.id}>
                       <td><code>{row.reference}</code></td>
-                      <td>{new Date(row.created_at).toLocaleDateString()}</td>
+                      <td>{new Intl.DateTimeFormat(locale === "ar" ? "ar-OM" : "en-GB").format(new Date(row.created_at))}</td>
                       <td>{money(row.total_minor, locale, row.currency)}</td>
                       <td><Status value={row.status} locale={locale} /></td>
+                      <td>
+                        {row.status === "pending" ? (
+                          <button type="button" disabled={payingId === row.id} onClick={() => void payInvoice(row.id)}>
+                            {payingId === row.id ? l("جارٍ...", "Paying...") : l("تأكيد الدفع", "Confirm payment")}
+                          </button>
+                        ) : "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

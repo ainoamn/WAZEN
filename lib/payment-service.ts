@@ -41,7 +41,6 @@ export async function applyPaymentWebhook(db: D1Database, event: PaymentEvent, p
   ];
   if (payment.invoice_id && event.status === "succeeded") statements.push(
     db.prepare("UPDATE invoices SET status='paid',paid_at=? WHERE id=?").bind(now, payment.invoice_id),
-    db.prepare("UPDATE subscriptions SET status='active',updated_at=? WHERE id=(SELECT subscription_id FROM invoices WHERE id=?)").bind(now, payment.invoice_id),
     db.prepare("UPDATE coupons SET used_count=used_count+1 WHERE id=(SELECT coupon_id FROM coupon_redemptions WHERE invoice_id=? AND status='reserved')").bind(payment.invoice_id),
     db.prepare("UPDATE coupon_redemptions SET status='redeemed',redeemed_at=? WHERE invoice_id=? AND status='reserved'").bind(now, payment.invoice_id),
   );
@@ -58,6 +57,10 @@ export async function applyPaymentWebhook(db: D1Database, event: PaymentEvent, p
     const current = await db.prepare("SELECT status FROM payments WHERE id=?").bind(event.paymentId).first<{ status: string }>();
     if (current?.status === event.status) return { received: true, duplicate: true };
     throw error;
+  }
+  if (payment.invoice_id && event.status === "succeeded") {
+    const { applyInvoicePlanChange } = await import("./plan-change");
+    await applyInvoicePlanChange(db, payment.invoice_id, payment.user_id);
   }
   return { received: true };
 }

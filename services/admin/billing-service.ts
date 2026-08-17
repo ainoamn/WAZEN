@@ -56,6 +56,9 @@ export async function ensureSubscriptionAdminColumns(db: D1Database) {
     ["transaction_limit_override", "INTEGER"],
     ["record_limit_override", "INTEGER"],
     ["user_limit_override", "INTEGER"],
+    ["pending_plan_id", "TEXT"],
+    ["pending_billing_cycle", "TEXT"],
+    ["pending_effective_at", "TEXT"],
   ];
   for (const [name, ddl] of additions) {
     if (names.has(name)) continue;
@@ -590,6 +593,8 @@ export async function getUserBillingHistory(db: D1Database, userId: string) {
 }
 
 export async function getActivePlanEntitlements(db: D1Database, userId: string) {
+  const { applyDuePlanChanges } = await import("../../lib/plan-change");
+  await applyDuePlanChanges(db, userId);
   const row = await db
     .prepare(
       `SELECT p.wallet_limit, p.member_limit, p.transaction_limit, p.record_limit, p.user_limit,
