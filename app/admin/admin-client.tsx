@@ -8,6 +8,7 @@ import { ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../com
 import { apiFetch } from "../../lib/client-api";
 import { fetchAdminConsole, patchAdminConsole, readAdminConsole } from "../../lib/admin-session";
 import { AdminConsole, AdminSwitch, EmptyRow } from "./admin-ui";
+import { actionLabel, countryLabel, entityLabel, methodLabel, roleLabel, statusLabel } from "../../lib/admin-labels";
 
 type Row = Record<string, unknown>;
 type CustomerRow = Row & { id: string; email: string; display_name: string; created_at: string; status: string | null; country: string | null; last_seen_at: string | null; subscription_status: string | null; plan_name: string | null };
@@ -247,7 +248,7 @@ export function AdminOverview() {
               <div key={row.user_id}>
                 <i><UserCog /></i>
                 <span><b>{row.display_name}</b><small>{row.email}</small></span>
-                <code>{row.role}</code>
+                <code>{roleLabel(row.role, locale)}</code>
               </div>
             ))}
             {!data.roles.some((row) => row.role !== "customer") ? <p>{l("حسابك هو مدير المنصة الأول.", "Your account is the first platform administrator.")}</p> : null}
@@ -268,7 +269,7 @@ export function AdminOverview() {
             ? data.logs.map((row) => (
               <div key={row.id}>
                 <CheckCircle2 />
-                <span><b>{row.action}</b><small>{row.display_name ?? row.user_id} · {row.entity_type}</small></span>
+                <span><b>{actionLabel(row.action, locale)}</b><small>{row.display_name ?? row.user_id} · {entityLabel(row.entity_type, locale)}</small></span>
                 <time>{new Date(row.created_at).toLocaleString()}</time>
               </div>
             ))
@@ -348,7 +349,7 @@ export function AdminUsers() {
                       </span>
                     </div>
                   </th>
-                  <td>{user.country || "—"}</td>
+                  <td>{user.country ? countryLabel(String(user.country), locale) : "—"}</td>
                   <td>{user.plan_name ?? "—"}</td>
                   <td><Status value={user.subscription_status ?? "pending"} locale={locale} /></td>
                   <td>{user.last_seen_at ? new Date(user.last_seen_at).toLocaleDateString() : "—"}</td>
@@ -443,14 +444,14 @@ export function AdminPayments() {
                 </th>
                 <td><b>{payment.display_name}</b><small>{payment.email}</small></td>
                 <td><b>{money(payment.amount_minor, locale, payment.currency)}</b></td>
-                <td>{payment.method}</td>
-                <td>{payment.settlement_status}</td>
+                <td>{methodLabel(payment.method, locale)}</td>
+                <td>{statusLabel(payment.settlement_status, locale)}</td>
                 <td>
                   <select disabled={working === payment.id} value={payment.status} onChange={(event) => void change(payment.id, event.target.value)}>
-                    <option value="pending">{l("معلّق", "pending")}</option>
-                    <option value="succeeded">{l("ناجح", "succeeded")}</option>
-                    <option value="failed">{l("فاشل", "failed")}</option>
-                    <option value="refunded">{l("مسترد", "refunded")}</option>
+                    <option value="pending">{l("معلّق", "Pending")}</option>
+                    <option value="succeeded">{l("ناجح", "Succeeded")}</option>
+                    <option value="failed">{l("فاشل", "Failed")}</option>
+                    <option value="refunded">{l("مسترد", "Refunded")}</option>
                   </select>
                 </td>
               </tr>
@@ -485,14 +486,14 @@ export function AdminReports() {
         actions={
           <>
             <button type="button" onClick={() => window.print()}><Printer size={16} />{l("طباعة", "Print")}</button>
-            <button type="button" onClick={() => downloadCsv("wazen-reports.csv", data.invoices)}><Download size={16} />Excel</button>
+            <button type="button" onClick={() => downloadCsv("wazen-reports.csv", data.invoices)}><Download size={16} />{l("تنزيل Excel", "Download Excel")}</button>
           </>
         }
       />
       <div className="admin-kpis">
-        <Kpi icon={<TrendingUp />} label={l("الإيراد السنوي المتوقع", "Annual recurring revenue")} value={money(mrr * 12, locale)} note="ARR" />
-        <Kpi icon={<BarChart3 />} label={l("الإيراد الشهري المتكرر", "Monthly recurring revenue")} value={money(mrr, locale)} note="MRR" />
-        <Kpi icon={<Users />} label={l("متوسط دخل العميل", "Revenue per customer")} value={money(arpu, locale)} note="ARPU" />
+        <Kpi icon={<TrendingUp />} label={l("الإيراد السنوي المتوقع", "Annual recurring revenue")} value={money(mrr * 12, locale)} note={l("سنوي متكرر", "ARR")} />
+        <Kpi icon={<BarChart3 />} label={l("الإيراد الشهري المتكرر", "Monthly recurring revenue")} value={money(mrr, locale)} note={l("شهري متكرر", "MRR")} />
+        <Kpi icon={<Users />} label={l("متوسط دخل العميل", "Revenue per customer")} value={money(arpu, locale)} note={l("متوسط العميل", "ARPU")} />
         <Kpi icon={<Activity />} label={l("معدل الإلغاء/الإيقاف", "Churn / suspension")} value={`${churn}%`} note={l("من الحسابات", "of accounts")} />
       </div>
 

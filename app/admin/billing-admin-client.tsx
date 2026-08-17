@@ -7,6 +7,7 @@ import { ContentBusy, ErrorCard, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import { fetchAdminConsole, patchAdminConsole, readAdminConsole } from "../../lib/admin-session";
 import { AdminConsole, AdminSwitch } from "./admin-ui";
+import { methodListLabel, errorLabel } from "../../lib/admin-labels";
 
 type Row = Record<string, unknown>;
 
@@ -103,7 +104,7 @@ export function AdminGateways() {
           <p>{l("البوابات أعمدة. الصف الأول العناوين، الرأس اسم البوابة، ثم التفعيل والوضع وربط كل باقة.", "Gateways are columns. Title row, gateway header, then enable, mode, and a switch per plan.")}</p>
         </div>
       </div>
-      {error ? <p className="admin-inline-alert is-error">{error}</p> : null}
+      {error ? <p className="admin-inline-alert is-error">{errorLabel(error, locale)}</p> : null}
       <div className="admin-kpis">
         <article><i><CreditCard /></i><span>{l("إجمالي البوابات", "Total gateways")}</span><b>{gateways.length}</b><small>{l("في الكتالوج", "in catalog")}</small></article>
         <article><i><CreditCard /></i><span>{l("مفعّلة", "Enabled")}</span><b>{enabledCount}</b><small>{l("جاهزة للاستخدام", "ready")}</small></article>
@@ -120,7 +121,7 @@ export function AdminGateways() {
                   <span>{String(gateway.provider_key)}</span>
                   <strong>{locale === "ar" ? String(gateway.name_ar) : String(gateway.name_en)}</strong>
                   <small>{scopeLabel(String(gateway.scope))}</small>
-                  <span className="plan-head-chip">{Array.isArray(gateway.methods) ? gateway.methods.slice(0, 2).join(" · ") : "—"}</span>
+                  <span className="plan-head-chip">{methodListLabel(gateway.methods, locale)}</span>
                 </th>
               ))}
             </tr>

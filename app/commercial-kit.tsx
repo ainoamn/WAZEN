@@ -7,6 +7,7 @@ import { createContext, ReactNode, useContext, useEffect, useMemo, useState } fr
 import WazenLogo, { WazenIcon } from "../components/brand/WazenLogo";
 import WazenPageLoader from "../components/brand/WazenPageLoader";
 import { formatMoneyMinor } from "../lib/money";
+import { statusLabel } from "../lib/admin-labels";
 
 export type CommerceLocale = "ar" | "en";
 
@@ -119,7 +120,7 @@ export function AdminShell({ active, locale, setLocale, children }: { active?: s
   const [open, setOpen] = useState(false);
   const l = (ar: string, en: string) => locale === "ar" ? ar : en;
   return <main className="admin-app">
-    {open && <button className="admin-backdrop" onClick={() => setOpen(false)} aria-label="Close" />}
+    {open && <button className="admin-backdrop" onClick={() => setOpen(false)} aria-label={l("إغلاق القائمة", "Close menu")} />}
     <aside className={open ? "open" : ""}>
       <Brand compact />
       <div className="admin-workspace"><WazenIcon className="h-7 w-[2.1rem]" /><div><small>{l("مساحة العمل", "Workspace")}</small><b>{l("إدارة وازن", "Wazen admin")}</b></div></div>
@@ -127,28 +128,31 @@ export function AdminShell({ active, locale, setLocale, children }: { active?: s
       <div className="admin-side-foot"><Link href="/home"><FileText size={17} />{l("العودة للرئيسية", "Back to home")}</Link><small>{l("لوحة عالمية", "Global console")}</small></div>
     </aside>
     <section className="admin-main">
-      <header><button className="admin-mobile-menu" onClick={() => setOpen(true)}><Menu size={20} /></button><div><small>{l("مركز إدارة المنصة العالمية", "Global platform administration")}</small><b>{l("مرحباً بك في وازن", "Welcome to Wazen")}</b></div><div className="admin-head-actions"><button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}><Globe2 size={16} />{locale === "ar" ? "EN" : "عربي"}</button><Link href="/documents"><FileText size={17} /></Link><span>أ</span></div></header>
+      <header><button className="admin-mobile-menu" onClick={() => setOpen(true)} aria-label={l("فتح القائمة", "Open menu")}><Menu size={20} /></button><div><small>{l("مركز إدارة المنصة العالمية", "Global platform administration")}</small><b>{l("مرحباً بك في وازن", "Welcome to Wazen")}</b></div><div className="admin-head-actions"><button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}><Globe2 size={16} />{locale === "ar" ? "EN" : "عربي"}</button><Link href="/documents" aria-label={l("الإيصالات والكشوفات", "Receipts & statements")}><FileText size={17} /></Link><span aria-hidden="true">{locale === "ar" ? "و" : "W"}</span></div></header>
       <div className="admin-content">{children}</div>
     </section>
   </main>;
 }
 
-export function PageLoader({ label = "جاري التحميل…" }: { label?: string }) {
-  return <WazenPageLoader label={label} />;
+export function PageLoader({ label }: { label?: string }) {
+  const { l } = useCommerceLocale();
+  return <WazenPageLoader label={label ?? l("جاري التحميل…", "Loading…")} />;
 }
 
 /** In-page wait state — no full-screen logo (that looked like a site reload). */
-export function ContentBusy({ label = "جاري التحميل…" }: { label?: string }) {
+export function ContentBusy({ label }: { label?: string }) {
+  const { l } = useCommerceLocale();
   return (
     <div className="admin-content-busy" role="status" aria-live="polite">
       <i />
-      <span>{label}</span>
+      <span>{label ?? l("جاري التحميل…", "Loading…")}</span>
     </div>
   );
 }
 
 export function ErrorCard({ message, retry }: { message: string; retry?: () => void }) {
-  return <div className="commerce-error"><X size={24} /><b>{message}</b>{retry && <button onClick={retry}>Try again</button>}</div>;
+  const { l } = useCommerceLocale();
+  return <div className="commerce-error"><X size={24} /><b>{message}</b>{retry && <button onClick={retry}>{l("إعادة المحاولة", "Try again")}</button>}</div>;
 }
 
 export function money(minor: number, locale: CommerceLocale, currency = "OMR") {
@@ -156,11 +160,5 @@ export function money(minor: number, locale: CommerceLocale, currency = "OMR") {
 }
 
 export function Status({ value, locale }: { value: string; locale: CommerceLocale }) {
-  const labels: Record<string, [string, string]> = {
-    active: ["نشط", "Active"], trialing: ["تجريبي", "Trial"], suspended: ["موقوف", "Suspended"], closed: ["مغلق", "Closed"],
-    cancelled: ["ملغى", "Cancelled"], paid: ["مدفوعة", "Paid"], pending: ["معلقة", "Pending"], pending_payment: ["بانتظار الدفع", "Awaiting payment"],
-    succeeded: ["ناجحة", "Succeeded"], failed: ["فاشلة", "Failed"], refunded: ["مستردة", "Refunded"], issued: ["صادر", "Issued"],
-  };
-  const text = labels[value]?.[locale === "ar" ? 0 : 1] ?? value;
-  return <span className={`commerce-status ${value}`}>{text}</span>;
+  return <span className={`commerce-status ${value}`}>{statusLabel(value, locale)}</span>;
 }

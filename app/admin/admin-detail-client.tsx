@@ -10,6 +10,7 @@ import { DateField } from "../../components/ui/date-field";
 import { PLAN_FEATURE_CATALOG } from "../../lib/plan-features";
 import { fetchAdminConsole, readAdminConsole } from "../../lib/admin-session";
 import { AdminConsole, EmptyRow } from "./admin-ui";
+import { actionLabel, countryLabel, cycleLabel, entityLabel, methodLabel, roleLabel, spaceTypeLabel, statusLabel } from "../../lib/admin-labels";
 
 type Row = Record<string, unknown>;
 
@@ -300,10 +301,10 @@ export function AdminUserDetail() {
       )}
 
       <div className="admin-kpis">
-        <article><i><WalletCards /></i><span>{l("الباقة", "Plan")}</span><b>{String(profile.plan_name_ar ?? profile.plan_name_en ?? "—")}</b><small><Status value={String(profile.subscription_status ?? "pending")} locale={locale} /></small></article>
-        <article><i><CreditCard /></i><span>{l("ينتهي", "Ends")}</span><b>{profile.current_period_end ? new Date(String(profile.current_period_end)).toLocaleDateString(locale === "ar" ? "ar" : "en-GB") : "—"}</b><small>{String(profile.billing_cycle ?? "—")}</small></article>
-        <article><i><Users /></i><span>{l("خصم خاص", "Special discount")}</span><b>{Number(profile.discount_percent ?? 0)}% + {money(Number(profile.discount_fixed_minor ?? 0), locale)}</b><small>{String(profile.discount_label ?? "—")}</small></article>
-        <article><i><ShieldCheck /></i><span>{l("البريد", "Email")}</span><b>{emailVerified ? l("مفعّل", "Verified") : l("غير مفعّل", "Unverified")}</b><small>{String(profile.role)}</small></article>
+        <article><i><WalletCards /></i><span>{l("الباقة", "Plan")}</span><b>{String((locale === "ar" ? profile.plan_name_ar : profile.plan_name_en) ?? profile.plan_name_ar ?? profile.plan_name_en ?? "—")}</b><small><Status value={String(profile.subscription_status ?? "pending")} locale={locale} /></small></article>
+        <article><i><CreditCard /></i><span>{l("ينتهي", "Ends")}</span><b>{profile.current_period_end ? new Date(String(profile.current_period_end)).toLocaleDateString(locale === "ar" ? "ar" : "en-GB") : "—"}</b><small>{profile.billing_cycle ? cycleLabel(String(profile.billing_cycle), locale) : "—"}</small></article>
+        <article><i><Users /></i><span>{l("خصم خاص", "Special discount")}</span><b>{Number(profile.discount_percent ?? 0)}% + {money(Number(profile.discount_fixed_minor ?? 0), locale)}</b><small>{String(profile.discount_label || "—")}</small></article>
+        <article><i><ShieldCheck /></i><span>{l("البريد", "Email")}</span><b>{emailVerified ? l("مفعّل", "Verified") : l("غير مفعّل", "Unverified")}</b><small>{roleLabel(String(profile.role), locale)}</small></article>
       </div>
 
       <section className="admin-panel">
@@ -365,7 +366,7 @@ export function AdminUserDetail() {
             <span>{l("حالة الاشتراك", "Subscription status")}</span>
             <select value={status} onChange={(e) => setStatus(e.target.value)}>
               {["active", "trialing", "pending_payment", "suspended", "cancelled"].map((value) => (
-                <option key={value} value={value}>{value}</option>
+                <option key={value} value={value}>{statusLabel(value, locale)}</option>
               ))}
             </select>
           </label>
@@ -423,7 +424,7 @@ export function AdminUserDetail() {
           </div>
         </form>
         {Array.isArray(profile.effective_features) && (
-          <p style={{ marginTop: 12 }}><small>{l("الصلاحيات الفعلية", "Effective entitlements")}: {profile.effective_features.map(String).join(", ") || "—"} · {l("محافظ", "wallets")} {String(profile.effective_wallet_limit ?? "—")} · {l("أعضاء", "members")} {String(profile.effective_member_limit ?? "—")} · {l("مستخدمون", "users")} {String(profile.effective_user_limit ?? "—")} · {l("معاملات", "txns")} {String(profile.effective_transaction_limit ?? "—")} · {l("سجلات", "records")} {String(profile.effective_record_limit ?? "—")}</small></p>
+          <p style={{ marginTop: 12 }}><small>{l("الصلاحيات الفعلية", "Effective entitlements")}: {(Array.isArray(profile.effective_features) ? profile.effective_features.map((id) => PLAN_FEATURE_CATALOG.find((feature) => feature.id === id)?.[locale === "ar" ? "ar" : "en"] ?? String(id)).join("، ") : "—") || "—"} · {l("محافظ", "wallets")} {String(profile.effective_wallet_limit ?? "—")} · {l("أعضاء", "members")} {String(profile.effective_member_limit ?? "—")} · {l("مستخدمون", "users")} {String(profile.effective_user_limit ?? "—")} · {l("معاملات", "transactions")} {String(profile.effective_transaction_limit ?? "—")} · {l("سجلات", "records")} {String(profile.effective_record_limit ?? "—")}</small></p>
         )}
         <div className="admin-feature-grid">
           {PLAN_FEATURE_CATALOG.map((feature) => {
@@ -469,7 +470,7 @@ export function AdminUserDetail() {
                 <CreditCard />
                 <span>
                   <b>{String(payment.reference)}</b>
-                  <small>{money(Number(payment.amount_minor ?? 0), locale, String(payment.currency ?? "OMR"))} · {String(payment.method)} · {fmt(payment.occurred_at)}</small>
+                  <small>{money(Number(payment.amount_minor ?? 0), locale, String(payment.currency ?? "OMR"))} · {methodLabel(String(payment.method), locale)} · {fmt(payment.occurred_at)}</small>
                 </span>
                 <Status value={String(payment.status)} locale={locale} />
               </div>
@@ -519,7 +520,7 @@ export function AdminUserDetail() {
           <div className="admin-panel-head"><h2>{l("المحافظ المملوكة", "Owned wallets")}</h2></div>
           <div className="audit-list">
             {detail.spaces.map((space) => (
-              <div key={String(space.id)}><Users /><span><b>{String(space.name_ar ?? space.name_en)}</b><small>{String(space.type)} · {String(space.currency)}</small></span></div>
+              <div key={String(space.id)}><Users /><span><b>{String(locale === "ar" ? space.name_ar ?? space.name_en : space.name_en ?? space.name_ar)}</b><small>{spaceTypeLabel(String(space.type), locale)} · {String(space.currency)}</small></span></div>
             ))}
             {!detail.spaces.length && <p>{l("لا محافظ.", "No wallets.")}</p>}
           </div>
@@ -528,7 +529,7 @@ export function AdminUserDetail() {
           <div className="admin-panel-head"><h2>{l("المستأجرون", "Tenants")}</h2></div>
           <div className="audit-list">
             {detail.tenants.map((tenant) => (
-              <div key={String(tenant.tenant_id)}><Users /><span><b>{String(tenant.tenant_name)}</b><small>{String(tenant.role)} · {String(tenant.status)}</small></span></div>
+              <div key={String(tenant.tenant_id)}><Users /><span><b>{String(tenant.tenant_name)}</b><small>{roleLabel(String(tenant.role), locale)} · {statusLabel(String(tenant.status), locale)}</small></span></div>
             ))}
             {!detail.tenants.length && <p>{l("لا مستأجرين.", "No tenants.")}</p>}
           </div>
@@ -541,7 +542,7 @@ export function AdminUserDetail() {
           {detail.audit.map((row) => (
             <div key={String(row.id)}>
               <Search />
-              <span><b>{String(row.action)}</b><small>{String(row.entity_type)}/{String(row.entity_id)} · {fmt(row.created_at)}</small></span>
+              <span><b>{actionLabel(String(row.action), locale)}</b><small>{entityLabel(String(row.entity_type), locale)} · {fmt(row.created_at)}</small></span>
             </div>
           ))}
           {!detail.audit.length && <p>{l("لا أحداث.", "No events.")}</p>}
@@ -641,7 +642,7 @@ export function AdminTenants() {
                   </div>
                 </th>
                 <td><b>{String(tenant.owner_name ?? "—")}</b><small>{String(tenant.owner_email ?? "")}</small></td>
-                <td>{String(tenant.country)} · {String(tenant.currency)}</td>
+                <td>{countryLabel(String(tenant.country), locale)} · {String(tenant.currency)}</td>
                 <td><b>{String(tenant.member_count)}</b></td>
                 <td><b>{String(tenant.space_count)}</b></td>
                 <td><Link className="admin-row-link" href={`/admin/tenants/${encodeURIComponent(String(tenant.id))}`}>{l("فتح", "Open")}</Link></td>
@@ -701,7 +702,7 @@ export function AdminTenantDetail() {
       </div>
       <div className="admin-kpis">
         <article><i><Users /></i><span>{l("المالك", "Owner")}</span><b>{String(detail.tenant.owner_name ?? "—")}</b><small>{String(detail.tenant.owner_email ?? "")}</small></article>
-        <article><i><Users /></i><span>{l("الدولة", "Country")}</span><b>{String(detail.tenant.country)}</b><small>{String(detail.tenant.currency)}</small></article>
+        <article><i><Users /></i><span>{l("الدولة", "Country")}</span><b>{countryLabel(String(detail.tenant.country), locale)}</b><small>{String(detail.tenant.currency)}</small></article>
         <article><i><Users /></i><span>{l("الأعضاء", "Members")}</span><b>{detail.members.length}</b><small>{l("نشطون/مسجّلون", "recorded")}</small></article>
         <article><i><Users /></i><span>{l("الموارد", "Resources")}</span><b>{detail.resources.length}</b><small>{l("حتى 100", "up to 100")}</small></article>
       </div>
@@ -714,7 +715,7 @@ export function AdminTenantDetail() {
                 <i><Users /></i>
                 <span>
                   <b><Link href={`/admin/users/${encodeURIComponent(String(member.user_id))}`}>{String(member.display_name ?? member.email)}</Link></b>
-                  <small>{String(member.role)} · {String(member.status)}</small>
+                  <small>{roleLabel(String(member.role), locale)} · {statusLabel(String(member.status), locale)}</small>
                 </span>
               </div>
             ))}
@@ -726,7 +727,7 @@ export function AdminTenantDetail() {
             {detail.resources.map((resource) => (
               <div key={`${resource.resource_type}:${resource.resource_id}`}>
                 <WalletCards />
-                <span><b>{String(resource.resource_type)}</b><small>{String(resource.resource_id)}</small></span>
+                <span><b>{entityLabel(String(resource.resource_type), locale)}</b><small>{String(resource.resource_id)}</small></span>
               </div>
             ))}
             {!detail.resources.length && <p>{l("لا موارد.", "No resources.")}</p>}
@@ -802,7 +803,7 @@ export function AdminStaff() {
                   </div>
                 </th>
                 <td>{String(row.email ?? "—")}</td>
-                <td><code className="admin-role-chip">{String(row.role)}</code></td>
+                <td><code className="admin-role-chip">{roleLabel(String(row.role), locale)}</code></td>
                 <td><Link className="admin-row-link" href={`/admin/users/${encodeURIComponent(String(row.user_id))}`}>{l("فتح", "Open")}</Link></td>
               </tr>
             ))}
