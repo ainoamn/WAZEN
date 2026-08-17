@@ -3,8 +3,9 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
-const BUILD_POLL_MS = 45_000;
-const DATA_POLL_MS = 4_000;
+const BUILD_POLL_MS = 60_000;
+const DATA_POLL_MS = 12_000;
+const DATA_POLL_MAX_MS = 60_000;
 const CHANNEL = "wazen-live";
 
 function currentBuildHint() {
@@ -34,9 +35,12 @@ export function LiveBuildGuard() {
     if (pathname.startsWith("/admin")) return;
     let stopped = false;
     let seen = "";
+    let inflight = false;
     const check = async () => {
+      if (stopped || inflight) return;
       if (document.visibilityState !== "visible") return;
-      if (document.querySelector("input:focus, textarea:focus, select:focus")) return;
+      if (document.querySelector("input:focus, textarea:focus, select:focus, [contenteditable='true']:focus")) return;
+      inflight = true;
       try {
         const response = await fetch("/api/health", { cache: "no-store" });
         const result = await response.json() as { buildId?: string; version?: string };
@@ -52,9 +56,11 @@ export function LiveBuildGuard() {
         }
       } catch {
         /* ignore */
+      } finally {
+        inflight = false;
       }
     };
-    const timer = window.setInterval(() => { if (!stopped) void check(); }, BUILD_POLL_MS);
+    const timer = window.setInterval(() => { void check(); }, BUILD_POLL_MS);
     document.addEventListener("visibilitychange", check);
     void check();
     return () => {
@@ -75,36 +81,68 @@ export function useLiveDashboard(onChange: () => void, enabled: boolean) {
     let stopped = false;
     let revision = "";
     let timer = 0;
+    let delay = DATA_POLL_MS;
+    let inflight = false;
+    let lastRefreshAt = 0;
     const channel = typeof BroadcastChannel === "function" ? new BroadcastChannel(CHANNEL) : null;
 
-    const refresh = () => { onChangeRef.current(); };
+    const refresh = () => {
+      const now = Date.now();
+      if (now - lastRefreshAt < 1_500) return;
+      lastRefreshAt = now;
+      onChangeRef.current();
+    };
+
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => { void pull(); }, delay);
+    };
+
     const pull = async () => {
-      if (stopped || document.visibilityState !== "visible") return;
-      const next = await fetchDashboardRevision();
-      if (next == null) return;
-      if (!revision) {
-        revision = next;
+      if (stopped || inflight) return;
+      if (document.visibilityState !== "visible") {
+        schedule();
         return;
       }
-      if (next !== revision) {
-        revision = next;
-        refresh();
+      inflight = true;
+      try {
+        const next = await fetchDashboardRevision();
+        if (next == null) {
+          delay = Math.min(delay * 2, DATA_POLL_MAX_MS);
+          return;
+        }
+        delay = DATA_POLL_MS;
+        if (!revision) {
+          revision = next;
+          return;
+        }
+        if (next !== revision) {
+          revision = next;
+          refresh();
+        }
+      } catch {
+        delay = Math.min(delay * 2, DATA_POLL_MAX_MS);
+      } finally {
+        inflight = false;
+        if (!stopped) schedule();
       }
     };
 
     const onVisible = () => {
-      if (document.visibilityState === "visible") void pull();
+      if (document.visibilityState === "visible") {
+        delay = DATA_POLL_MS;
+        void pull();
+      }
     };
     channel?.addEventListener("message", (event: MessageEvent) => {
       if (event.data === "refresh") refresh();
     });
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
-    timer = window.setInterval(() => { void pull(); }, DATA_POLL_MS);
     void pull();
     return () => {
       stopped = true;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
       channel?.close();

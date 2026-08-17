@@ -1015,29 +1015,17 @@ function redactDashboardForViewer<T extends {
 }
 
 async function readDashboardRevision(db: D1Database, userId: string) {
-  const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
-  const entitlements = await getActivePlanEntitlements(db, userId);
   const owned = `s.owner_user_id=? OR EXISTS (SELECT 1 FROM members m WHERE m.space_id=s.id AND m.status='active' AND m.user_id=?)`;
   const row = await db.prepare(
     `SELECT
-      (SELECT COUNT(*) FROM spaces s WHERE ${owned}) AS spaces,
-      (SELECT COUNT(*) FROM transactions t JOIN spaces s ON s.id=t.space_id WHERE ${owned}) AS txns,
-      (SELECT COALESCE(MAX(t.created_at),'') FROM transactions t JOIN spaces s ON s.id=t.space_id WHERE ${owned}) AS txn_at,
       (SELECT COALESCE(MAX(s.created_at),'') FROM spaces s WHERE ${owned}) AS space_at,
-      (SELECT COALESCE(MAX(updated_at),'') FROM subscriptions WHERE user_id=?) AS sub_at`,
-  ).bind(userId, userId, userId, userId, userId, userId, userId, userId, userId).first<{
-    spaces: number; txns: number; txn_at: string; space_at: string; sub_at: string;
+      (SELECT COALESCE(MAX(t.created_at),'') FROM transactions t JOIN spaces s ON s.id=t.space_id WHERE ${owned}) AS txn_at,
+      (SELECT COALESCE(MAX(updated_at),'') FROM subscriptions WHERE user_id=?) AS sub_at,
+      (SELECT COALESCE(plan_id,'') || ':' || COALESCE(status,'') || ':' || COALESCE(pending_plan_id,'') FROM subscriptions WHERE user_id=? ORDER BY created_at DESC LIMIT 1) AS plan_stamp`,
+  ).bind(userId, userId, userId, userId, userId, userId, userId).first<{
+    space_at: string; txn_at: string; sub_at: string; plan_stamp: string;
   }>();
-  return [
-    Number(row?.spaces ?? 0),
-    Number(row?.txns ?? 0),
-    row?.txn_at ?? "",
-    row?.space_at ?? "",
-    row?.sub_at ?? "",
-    entitlements.features.slice().sort().join(","),
-    entitlements.walletLimit,
-    entitlements.status,
-  ].join("|");
+  return [row?.space_at ?? "", row?.txn_at ?? "", row?.sub_at ?? "", row?.plan_stamp ?? ""].join("|");
 }
 
 export async function GET(request: Request) {

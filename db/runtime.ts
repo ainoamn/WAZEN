@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -184,6 +184,8 @@ async function ensureSchemaPatches(db: D1Database) {
   await ensureSubscriptionAdminColumns(db);
   await ensurePlanQuotaColumns(db);
   await ensurePaymentGateways(db);
+  const { ensureInvoicePlanColumns } = await import("../lib/plan-change");
+  await ensureInvoicePlanColumns(db);
   await db.batch([
     db.prepare(`INSERT OR IGNORE INTO tenants (id,name,country,currency,locale,timezone,created_by,created_at)
       SELECT 'tenant:'||id,display_name,'OM',currency,locale,'Asia/Muscat',id,created_at FROM users`),

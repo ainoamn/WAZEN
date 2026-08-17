@@ -62,6 +62,9 @@ const ACTIONS: Record<string, Pair> = {
   "plan.upserted": ["حفظ الباقة", "Plan saved"],
   "subscription.admin_updated": ["تعديل الاشتراك", "Subscription updated"],
   "subscription.plan_selected": ["اختيار باقة", "Plan selected"],
+  "subscription.upgrade_applied": ["تفعيل ترقية الباقة", "Plan upgrade applied"],
+  "subscription.downgrade_scheduled": ["جدولة تخفيض الباقة", "Plan downgrade scheduled"],
+  "subscription.downgrade_applied": ["تطبيق تخفيض الباقة", "Plan downgrade applied"],
   "document.created": ["إنشاء مستند", "Document created"],
   "member.invited": ["دعوة عضو", "Member invited"],
   "member.invite_accepted": ["قبول دعوة", "Invite accepted"],
@@ -251,6 +254,11 @@ const ERRORS: Record<string, Pair> = {
   PLAN_DAILY_TRANSACTION_LIMIT: ["وصلت إلى حد المعاملات اليومية في باقتك", "You reached the daily transaction limit on your plan"],
   PLAN_MONTHLY_TRANSACTION_LIMIT: ["وصلت إلى حد المعاملات الشهرية في باقتك", "You reached the monthly transaction limit on your plan"],
   PLAN_PRINT_LIMIT: ["وصلت إلى حد المطبوعات في باقتك هذا الشهر", "You reached this month’s print limit on your plan"],
+  INVALID_PLAN_SELECTION: ["بيانات اختيار الباقة غير مكتملة", "Plan selection details are incomplete"],
+  PLAN_NOT_FOUND: ["الباقة غير موجودة", "Plan not found"],
+  INVOICE_NOT_FOUND: ["الفاتورة غير موجودة", "Invoice not found"],
+  INVOICE_NOT_PAYABLE: ["لا يمكن دفع هذه الفاتورة الآن", "This invoice cannot be paid now"],
+  INTERNAL_ERROR: ["تعذر إكمال الطلب. حاول مرة أخرى", "Could not complete the request. Try again"],
 };
 
 export function errorLabel(value: string, locale: UiLocale) {
