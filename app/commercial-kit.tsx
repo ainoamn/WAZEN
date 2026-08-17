@@ -93,12 +93,62 @@ export function PublicHeader({ locale, setLocale }: { locale: CommerceLocale; se
   </header>;
 }
 
+/** Signed-in header for customer commerce pages — never links to /admin/plans. */
+export function AccountHeader({
+  locale,
+  setLocale,
+  active,
+}: {
+  locale: CommerceLocale;
+  setLocale: (locale: CommerceLocale) => void;
+  active?: "dashboard" | "pricing" | "billing" | "documents";
+}) {
+  const router = useRouter();
+  const [signingOut, setSigningOut] = useState(false);
+  const l = (ar: string, en: string) => (locale === "ar" ? ar : en);
+  const logout = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await apiFetch("/api/auth", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "logout" }),
+      });
+    } finally {
+      clearAdminConsole();
+      clearDashboardCache();
+      router.push("/login");
+      router.refresh();
+    }
+  };
+  const linkClass = (id: typeof active) => (active === id ? "is-active" : undefined);
+  return (
+    <header className="documents-header account-header">
+      <Brand />
+      <nav>
+        <Link href="/dashboard" className={linkClass("dashboard")}>{l("لوحة المستخدم", "Dashboard")}</Link>
+        <Link href="/pricing" className={linkClass("pricing")}>{l("الباقات", "Plans")}</Link>
+        <Link href="/billing" className={linkClass("billing")}>{l("الفوترة", "Billing")}</Link>
+        <Link href="/documents" className={linkClass("documents")}>{l("المستندات", "Documents")}</Link>
+      </nav>
+      <button type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>
+        <Globe2 size={16} />{locale === "ar" ? "EN" : "عربي"}
+      </button>
+      <button type="button" className="admin-logout" disabled={signingOut} onClick={() => void logout()}>
+        <LogOut size={16} />
+        {signingOut ? l("جارٍ الخروج...", "Signing out...") : l("تسجيل الخروج", "Sign out")}
+      </button>
+    </header>
+  );
+}
+
 const adminLinks = [
   ["/admin", "overview", LayoutDashboard, "نظرة عامة", "Overview"],
   ["/admin/users", "users", Users, "المستخدمون والعملاء", "Customers"],
   ["/admin/tenants", "tenants", Building2, "الشركات والمستأجرون", "Tenants"],
   ["/admin/staff", "staff", UserCog, "فريق الإدارة", "Staff"],
-  ["/admin/plans", "plans", WalletCards, "الباقات والاشتراكات", "Plans"],
+  ["/admin/plans", "plans", WalletCards, "مصفوفة الباقات", "Plan matrix"],
   ["/admin/gateways", "gateways", CreditCard, "بوابات الدفع", "Payment gateways"],
   ["/admin/payments", "payments", ReceiptText, "المدفوعات والفواتير", "Payments"],
   ["/admin/reports", "reports", BarChart3, "التقارير والإيرادات", "Reports"],

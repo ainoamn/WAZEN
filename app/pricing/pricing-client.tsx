@@ -3,7 +3,7 @@
 import { Check, ChevronDown, ShieldCheck, Sparkles, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { ErrorCard, money, PageLoader, PublicHeader, useCommerceLocale } from "../commercial-kit";
+import { ErrorCard, money, PageLoader, AccountHeader, PublicHeader, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import { errorLabel } from "../../lib/admin-labels";
 import { formatQuota } from "../../lib/plan-features";
@@ -52,10 +52,17 @@ export function PricingClient() {
   const [error, setError] = useState("");
   const [working, setWorking] = useState("");
   const [result, setResult] = useState<SelectResult | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
 
-  useEffect(() => { fetch("/api/platform?view=pricing").then(async (response) => {
-    if (!response.ok) throw new Error(); return response.json();
-  }).then((payload: unknown) => setPlans((payload as { plans: Plan[] }).plans)).catch(() => setError(locale === "ar" ? "تعذر تحميل الباقات" : "Could not load plans")).finally(() => setLoading(false)); }, [locale]);
+  useEffect(() => {
+    fetch("/api/platform?view=pricing", { cache: "no-store", credentials: "same-origin" }).then(async (response) => {
+      if (!response.ok) throw new Error();
+      return response.json();
+    }).then((payload: unknown) => setPlans((payload as { plans: Plan[] }).plans)).catch(() => setError(locale === "ar" ? "تعذر تحميل الباقات" : "Could not load plans")).finally(() => setLoading(false));
+    fetch("/api/platform?view=billing", { cache: "no-store", credentials: "same-origin" })
+      .then((response) => setSignedIn(response.ok))
+      .catch(() => setSignedIn(false));
+  }, [locale]);
 
   const validateCoupon = async (event: FormEvent) => {
     event.preventDefault(); setWorking("coupon");
@@ -114,7 +121,9 @@ export function PricingClient() {
   };
 
   if (loading) return <PageLoader />;
-  return <main className="pricing-page"><PublicHeader locale={locale} setLocale={setLocale} />
+  return <main className="pricing-page">{signedIn
+    ? <AccountHeader locale={locale} setLocale={setLocale} active="pricing" />
+    : <PublicHeader locale={locale} setLocale={setLocale} />}
     <section className="pricing-hero"><span><Sparkles size={15}/>{l("خطط واضحة بلا رسوم مخفية", "Transparent plans, no hidden fees")}</span><h1>{l("باقة تنمو مع احتياجك", "A plan that grows with you")}</h1><p>{l("ابدأ مجاناً وانتقل عندما تحتاج محافظ أو أعضاء أو تقارير أكثر.", "Start free and upgrade when you need more wallets, members or reports.")}</p><div className="billing-toggle"><button className={!annual ? "active" : ""} onClick={() => setAnnual(false)}>{l("شهري", "Monthly")}</button><button className={annual ? "active" : ""} onClick={() => setAnnual(true)}>{l("سنوي", "Annual")}<em>{l("وفر 20%", "Save 20%")}</em></button></div></section>
     {error && <ErrorCard message={error} />}
     <section className="pricing-grid">{plans.map((plan, index) => { const price = annual ? plan.annual_minor / 12 : plan.monthly_minor; return <article className={index === 2 ? "popular" : ""} key={plan.id}>{index === 2 && <span className="popular-label">{l("الأكثر اختياراً", "Most popular")}</span>}<small>{l("باقة", "Plan")}</small><h2>{locale === "ar" ? plan.name_ar : plan.name_en}</h2><p>{locale === "ar" ? plan.description_ar : plan.description_en}</p><div className="plan-price"><b>{plan.monthly_minor === 0 ? l("مجاناً", "Free") : money(Math.round(price), locale)}</b>{plan.monthly_minor > 0 && <span>/ {l("شهرياً", "month")}</span>}</div>{annual && plan.monthly_minor > 0 && <em className="annual-note">{l("تدفع سنوياً", "Billed annually")} · {money(plan.annual_minor, locale)}</em>}<button disabled={working === plan.id} onClick={() => void selectPlan(plan.id)}>{working === plan.id ? l("جارٍ التجهيز...", "Preparing...") : plan.monthly_minor === 0 ? l("ابدأ مجاناً", "Start free") : l("اختر الباقة", "Choose plan")}</button><ul><li><Check/>{plan.wallet_limit >= 9999 ? l("محافظ غير محدودة", "Unlimited wallets") : `${plan.wallet_limit} ${l("محافظ", "wallets")}`}</li><li><Check/>{plan.member_limit >= 9999 ? l("أعضاء غير محدودين", "Unlimited members") : `${plan.member_limit} ${l("عضواً", "members")}`}</li><li><Check/>{formatQuota(plan.user_limit ?? 1, locale)} {l("مستخدمين", "users")}</li><li><Check/>{formatQuota(plan.transaction_limit ?? 0, locale)} {l("معاملة", "transactions")}</li><li><Check/>{formatQuota(plan.daily_transaction_limit ?? 0, locale)} {l("معاملة يومياً", "daily transactions")}</li><li><Check/>{formatQuota(plan.monthly_transaction_limit ?? 0, locale)} {l("معاملة شهرياً", "monthly transactions")}</li><li><Check/>{formatQuota(plan.record_limit ?? 0, locale)} {l("سجل", "records")}</li><li><Check/>{formatQuota(plan.print_limit ?? 0, locale)} {l("مطبوعات شهرياً", "prints / month")}</li>{plan.features.map((feature) => <li key={feature}><Check/>{featureCopy[feature]?.[locale === "ar" ? 0 : 1] ?? feature}</li>)}</ul></article>; })}</section>

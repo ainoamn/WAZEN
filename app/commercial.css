@@ -1098,6 +1098,107 @@
 .retention-warning strong { display: block; margin-bottom: 4px; font-size: 14px; }
 .retention-warning p { margin: 0; font-size: 13px; line-height: 1.6; font-weight: 600; }
 .retention-warning a { font-size: 13px; font-weight: 800; color: #991b1b; white-space: nowrap; }
+
+/* Billing page: keep quota grid and invoice/payment tables inside the viewport */
+.billing-page {
+  overflow-x: clip;
+}
+.billing-page .route-wrap {
+  width: 100%;
+  max-width: 1260px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding-inline: max(14px, 3vw);
+}
+.billing-page .billing-current {
+  min-width: 0;
+  overflow: hidden;
+  align-items: start;
+}
+.billing-page .billing-current > div {
+  min-width: 0;
+  grid-template-columns: 36px minmax(0, 1fr);
+}
+.billing-page .billing-current span {
+  font-size: 12px;
+}
+.billing-page .billing-current dt {
+  font-size: 12px;
+}
+.billing-page .billing-current dd {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.billing-page .billing-current dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+}
+.billing-page .billing-current dl > div {
+  min-width: 0;
+}
+.billing-page .billing-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+  width: 100%;
+}
+@media (min-width: 1200px) {
+  .billing-page .billing-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+.billing-page .commerce-table-card,
+.billing-page .billing-features,
+.billing-page .plan-feature-list {
+  min-width: 0;
+  max-width: 100%;
+}
+.billing-page .commerce-table-card {
+  overflow: hidden;
+}
+.billing-page .table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+.billing-page .table-scroll table {
+  min-width: 520px;
+  width: 100%;
+}
+.billing-page .plan-feature-list li {
+  flex-wrap: wrap;
+}
+.account-header nav a.is-active {
+  color: #0f766e;
+  font-weight: 800;
+}
+@media (max-width: 760px) {
+  .billing-page .billing-current {
+    grid-template-columns: 1fr;
+    padding: 18px;
+  }
+  .billing-page .billing-current dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .account-header {
+    height: auto;
+    min-height: 64px;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 10px 14px;
+  }
+  .account-header nav {
+    width: 100%;
+    margin-inline-start: 0;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+}
+
 @media (max-width: 760px) {
   .plan-matrix-toolbar { width: 100%; }
   .plan-matrix-toolbar button { flex: 1; justify-content: center; }

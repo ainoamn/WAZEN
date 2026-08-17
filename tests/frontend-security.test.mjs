@@ -59,7 +59,7 @@ test("dashboard and home keep a live revision poll without restarting it every r
   assert.match(dashboard, /useLiveDashboard/);
   assert.match(home, /useLiveDashboard/);
   assert.match(route, /searchParams.get\("view"\) === "revision"/);
-  assert.match(route, /filterSpacesByPlan/);
+  assert.match(route, /filterSpacesForPlanAccess|filterSpacesByPlan/);
   assert.doesNotMatch(route, /getActivePlanEntitlements\(db, userId\)/);
   assert.match(route, /plan_stamp/);
   assert.match(health, /buildId/);
@@ -77,6 +77,24 @@ test("pricing pays after select and schedules downgrades", () => {
   assert.match(planChange, /upgrade_pending_payment/);
   assert.match(platform, /selectCustomerPlan/);
   assert.match(platform, /confirmInvoicePayment/);
+});
+
+test("customer billing uses account header and never links to admin plans", () => {
+  const billing = fs.readFileSync(path.join(root, "app/billing/billing-client.tsx"), "utf8");
+  const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
+  const kit = fs.readFileSync(path.join(root, "app/commercial-kit.tsx"), "utf8");
+  assert.match(billing, /AccountHeader/);
+  assert.doesNotMatch(billing, /\/admin\/plans/);
+  assert.match(billing, /href="\/pricing"/);
+  assert.match(dashboard, /href="\/billing"/);
+  assert.doesNotMatch(dashboard, /href="\/admin\/plans"/);
+  assert.match(kit, /Signed-in header for customer commerce pages/);
+  assert.match(kit, /never links to \/admin\/plans/);
+  assert.match(kit, /function AccountHeader/);
+  const accountHeader = kit.slice(kit.indexOf("function AccountHeader"), kit.indexOf("const adminLinks"));
+  assert.match(accountHeader, /href="\/pricing"/);
+  assert.match(accountHeader, /href="\/billing"/);
+  assert.doesNotMatch(accountHeader, /\/admin\/plans/);
 });
 
 test("proxy redirects anonymous /admin visitors to login", () => {

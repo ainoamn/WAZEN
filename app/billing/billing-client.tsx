@@ -2,7 +2,7 @@
 import { ArrowRight, CreditCard, Download, ReceiptText, WalletCards } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ErrorCard, money, PageLoader, PublicHeader, Status, useCommerceLocale } from "../commercial-kit";
+import { ErrorCard, money, PageLoader, AccountHeader, Status, useCommerceLocale } from "../commercial-kit";
 import { PLAN_FEATURE_CATALOG, formatQuota, planHasFeature } from "../../lib/plan-features";
 import { userGraceWarningCopy } from "../../lib/plan-retention";
 import { apiFetch } from "../../lib/client-api";
@@ -98,7 +98,7 @@ export function BillingClient() {
   const canExport = planHasFeature(features, "exports");
   return (
     <main className="billing-page">
-      <PublicHeader locale={locale} setLocale={setLocale} />
+      <AccountHeader locale={locale} setLocale={setLocale} active="billing" />
       <section className="route-wrap">
         <div className="route-head">
           <div>

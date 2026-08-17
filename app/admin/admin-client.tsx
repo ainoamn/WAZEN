@@ -155,7 +155,7 @@ export function AdminOverview() {
   const modules = [
     { href: "/admin/users", icon: <Users size={18} />, ar: "المستخدمون والعملاء", en: "Users & customers", value: String(data.users.length) },
     { href: "/admin/tenants", icon: <Building2 size={18} />, ar: "الشركات والمستأجرون", en: "Tenants", value: String(plat.spaces) },
-    { href: "/admin/plans", icon: <WalletCards size={18} />, ar: "الباقات والصلاحيات", en: "Plans & entitlements", value: String(data.plans.length) },
+    { href: "/admin/plans", icon: <WalletCards size={18} />, ar: "مصفوفة الباقات (إدارة)", en: "Plan matrix (admin)", value: String(data.plans.length) },
     { href: "/admin/gateways", icon: <CreditCard size={18} />, ar: "بوابات الدفع", en: "Payment gateways", value: l("محلي / عالمي", "Local / global") },
     { href: "/admin/payments", icon: <FileText size={18} />, ar: "فواتير معلّقة", en: "Pending invoices", value: money(pending, locale) },
     { href: "/admin/reports", icon: <BarChart3 size={18} />, ar: "التقارير والإيرادات", en: "Reports & revenue", value: money(paid, locale) },
