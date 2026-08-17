@@ -14,6 +14,37 @@ import OmrSymbol from "../brand/OmrSymbol";
 import { DateField } from "../ui/date-field";
 
 type Locale = "ar" | "en";
+
+export async function confirmResetWalletData(
+  locale: Locale,
+  spaceId: string,
+  onChanged: (next: Record<string, unknown>) => void,
+) {
+  const first = window.confirm(locale === "ar"
+    ? "تصفية المحفظة تصفّر الرصيد وتحذف الحسابات والدخل والخصوم وكل العمليات. المحفظة نفسها تبقى. لا يمكن التراجع."
+    : "This wipes balances, accounts, income, bills, and every transaction. The wallet itself stays. This cannot be undone.");
+  if (!first) return false;
+  const typed = window.prompt(locale === "ar" ? "اكتب تصفير للتأكيد" : "Type RESET to confirm", "");
+  if ((locale === "ar" && typed !== "تصفير") || (locale !== "ar" && typed !== "RESET")) {
+    if (typed != null && typed !== "") {
+      window.alert(locale === "ar" ? "لم يُطابق النص. أُلغي التصفير." : "Confirmation text did not match. Reset cancelled.");
+    }
+    return false;
+  }
+  const response = await apiFetch("/api/dashboard", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "resetWalletData", idempotencyKey: crypto.randomUUID(), spaceId, confirm: "RESET" }),
+  });
+  const result = await response.json() as Record<string, unknown> & { error?: string };
+  if (!response.ok) {
+    window.alert(result.error ?? "FAILED");
+    return false;
+  }
+  onChanged(result);
+  return true;
+}
+
 type LinkedSpace = { id: string; name_ar: string; name_en: string; type: string; balance_minor: number; status?: string; currency?: string };
 type SpaceLink = { hub_space_id: string; linked_space_id: string; status: string };
 type SpaceBankLink = { hub_space_id: string; linked_space_id: string; account_id: string };
@@ -368,21 +399,12 @@ export function PersonalRulesSetup({
     onChanged(result);
   };
   const resetWallet = async () => {
-    const first = window.confirm(locale === "ar"
-      ? "تصفية المحفظة تصفّر الرصيد وتحذف الحسابات والدخل والخصوم وكل العمليات. المحفظة نفسها تبقى. لا يمكن التراجع."
-      : "This wipes balances, accounts, income, bills, and every transaction. The wallet itself stays. This cannot be undone.");
-    if (!first) return;
-    const typed = window.prompt(locale === "ar" ? "اكتب تصفير للتأكيد" : "Type RESET to confirm", "");
-    if ((locale === "ar" && typed !== "تصفير") || (locale !== "ar" && typed !== "RESET")) {
-      if (typed != null && typed !== "") window.alert(locale === "ar" ? "لم يُطابق النص. أُلغي التصفير." : "Confirmation text did not match. Reset cancelled.");
-      return;
-    }
     setBusyReset(true);
-    const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "resetWalletData", idempotencyKey: crypto.randomUUID(), spaceId, confirm: "RESET" }) });
-    const result = await response.json() as Record<string, unknown> & { error?: string };
-    setBusyReset(false);
-    if (!response.ok) { window.alert(result.error ?? "FAILED"); return; }
-    onChanged(result);
+    try {
+      await confirmResetWalletData(locale, spaceId, onChanged);
+    } finally {
+      setBusyReset(false);
+    }
   };
   const removeRule = async (ruleId: string) => {
     if (!window.confirm(locale === "ar" ? "حذف هذا البند؟ القيود المرحلة تبقى، والاستحقاقات المعلقة تُلغى." : "Delete this rule? Posted entries stay; pending months are removed.")) return;

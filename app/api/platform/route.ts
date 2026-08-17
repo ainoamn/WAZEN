@@ -14,8 +14,10 @@ import { listAdminUsers, getAdminUserDetail, adminVerifyUserEmail, adminUpdateUs
 import { listAdminTenants, getAdminTenantDetail } from "../../../services/admin/tenants-service";
 import {
   adminUpdateSubscription,
+  getActivePlanEntitlements,
   listAdminPlans,
   listGatewaysWithPlans,
+  planHasFeature,
   updatePaymentGateway,
   upsertAdminPlan,
 } from "../../../services/admin/billing-service";
@@ -301,7 +303,7 @@ export async function GET(request: Request) {
           )
           ORDER BY s.created_at`).bind(user.id, user.id).all(),
       ]);
-      return Response.json({ user, role, documents: documents.results ?? [], spaces: spaces.results ?? [] }, { headers: responseHeaders });
+      return Response.json({ user, role, documents: documents.results ?? [], spaces: spaces.results ?? [], entitlements: await getActivePlanEntitlements(db, user.id) }, { headers: responseHeaders });
     }
     if (view === "billing") {
       assertApiScope(user, "billing:read");
@@ -311,7 +313,7 @@ export async function GET(request: Request) {
         db.prepare("SELECT id,invoice_id,reference,amount_minor,currency,method,status,settlement_status,occurred_at FROM payments WHERE user_id=? ORDER BY occurred_at DESC").bind(user.id).all(),
         publicPlans(db),
       ]);
-      return Response.json({ user, role, subscription, invoices: invoices.results, payments: payments.results, plans }, { headers: responseHeaders });
+      return Response.json({ user, role, subscription, invoices: invoices.results, payments: payments.results, plans, entitlements: await getActivePlanEntitlements(db, user.id) }, { headers: responseHeaders });
     }
     if (view === "security") {
       if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
@@ -320,6 +322,8 @@ export async function GET(request: Request) {
     }
     if (view === "export") {
       assertApiScope(user, "data:export");
+      const entitlements = await getActivePlanEntitlements(db, user.id);
+      if (!planHasFeature(entitlements.features, "exports")) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
       const spaces = await db.prepare("SELECT * FROM spaces WHERE owner_user_id=? ORDER BY created_at").bind(user.id).all<Record<string, unknown>>();
       const ids = spaces.results.map((space) => String(space.id)); const placeholders = ids.map(() => "?").join(",");
       const [members, transactions, documents, subscriptions, invoices, payments] = await Promise.all([
@@ -493,9 +497,8 @@ export async function POST(request: Request) {
       assertApiScope(user, "documents:write");
       const parsed = z.object({ type: z.enum(["receipt", "disbursement", "handover", "member_statement", "society_statement", "trip_statement", "household_statement", "personal_report"]), personName: z.string().trim().min(2).max(120), description: z.string().trim().min(2).max(500), amount: z.union([z.string().min(1).max(40), z.number().nonnegative()]), spaceId: z.string().max(120).optional(), paymentMethod: z.enum(["bank_transfer", "cash", "card", "other"]).default("bank_transfer") }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_DOCUMENT");
-      const advancedDocs = ["disbursement", "handover", "member_statement", "society_statement", "trip_statement", "household_statement"];
+      const advancedDocs = ["disbursement", "handover", "member_statement", "society_statement", "trip_statement", "household_statement", "personal_report"];
       if (advancedDocs.includes(parsed.data.type)) {
-        const { getActivePlanEntitlements, planHasFeature } = await import("../../../services/admin/billing-service");
         const entitlements = await getActivePlanEntitlements(db, user.id);
         if (!planHasFeature(entitlements.features, "documents")) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
       }

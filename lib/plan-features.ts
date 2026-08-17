@@ -52,6 +52,23 @@ export function planAllowsSpaceType(features: string[], spaceType: string) {
   return aliases.some((key) => features.includes(key));
 }
 
+/** Empty `features: []` must not hide wallets the user already has. */
+export function sidebarAllowsWalletView(features: string[], existingTypes: Iterable<string>, spaceType: string) {
+  if (planAllowsSpaceType(features, spaceType)) return true;
+  const types = new Set(existingTypes);
+  if (spaceType === "society" || spaceType === "group") return types.has("society") || types.has("group");
+  return types.has(spaceType);
+}
+
+/** Nav stays visible; locked items need an upgrade badge instead of being removed. */
+export function dashboardNavLocked(features: string[], existingTypes: Iterable<string>, viewId: string) {
+  if (viewId === "reports") return !(planHasFeature(features, "advanced_reports") || planHasFeature(features, "exports"));
+  if (viewId === "household") return !sidebarAllowsWalletView(features, existingTypes, "household");
+  if (viewId === "trip") return !sidebarAllowsWalletView(features, existingTypes, "trip");
+  if (viewId === "society" || viewId === "groups") return !sidebarAllowsWalletView(features, existingTypes, "society");
+  return false;
+}
+
 export function resolveEntitlements(input: {
   planFeatures: string[];
   grant?: string[];
