@@ -1,54 +1,568 @@
 "use client";
 
-import { Activity, ArrowUpRight, BadgePercent, BarChart3, CheckCircle2, CreditCard, Download, FileText, Plus, Printer, Search, ShieldCheck, TrendingUp, UserCog, Users, WalletCards } from "lucide-react";
+import { Activity, ArrowUpRight, BadgePercent, BarChart3, Building2, CheckCircle2, CreditCard, Download, FileText, Plus, Printer, Search, ShieldCheck, TrendingUp, UserCog, Users, WalletCards } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import { fetchAdminConsole, patchAdminConsole, readAdminConsole } from "../../lib/admin-session";
+import { AdminConsole, AdminSwitch, EmptyRow } from "./admin-ui";
 
 type Row = Record<string, unknown>;
-type CustomerRow = Row & { id:string; email:string; display_name:string; created_at:string; status:string|null; country:string|null; last_seen_at:string|null; subscription_status:string|null; plan_name:string|null };
-type SubscriptionRow = Row & { id:string; status:string; plan_id:string };
-type InvoiceRow = Row & { id:string; status:string; total_minor:number };
-type PaymentRow = Row & { id:string; status:string; amount_minor:number; currency:string; reference:string; display_name:string|null; email:string|null; method:string; settlement_status:string };
-type CouponRow = Row & { id:string; code:string; value:number; used_count:number; usage_limit:number; is_active:number };
-type PlanRow = Row & { id:string; name_ar:string; name_en:string; monthly_minor:number };
-type RoleRow = Row & { user_id:string; role:string; display_name:string|null; email:string|null };
-type LogRow = Row & { id:string; action:string; display_name:string|null; user_id:string; entity_type:string; created_at:string };
-type AdminData = { user:Row; role:string; users:CustomerRow[]; subscriptions:SubscriptionRow[]; invoices:InvoiceRow[]; payments:PaymentRow[]; coupons:CouponRow[]; plans:PlanRow[]; roles:RoleRow[]; logs:LogRow[]; platform?: { spaces:number; members:number; transactions:number; countries:number; monthlyRevenue?: Array<{ month:string; total:number }> } };
+type CustomerRow = Row & { id: string; email: string; display_name: string; created_at: string; status: string | null; country: string | null; last_seen_at: string | null; subscription_status: string | null; plan_name: string | null };
+type SubscriptionRow = Row & { id: string; status: string; plan_id: string };
+type InvoiceRow = Row & { id: string; status: string; total_minor: number };
+type PaymentRow = Row & { id: string; status: string; amount_minor: number; currency: string; reference: string; display_name: string | null; email: string | null; method: string; settlement_status: string };
+type CouponRow = Row & { id: string; code: string; value: number; used_count: number; usage_limit: number; is_active: number };
+type PlanRow = Row & { id: string; name_ar: string; name_en: string; monthly_minor: number };
+type RoleRow = Row & { user_id: string; role: string; display_name: string | null; email: string | null };
+type LogRow = Row & { id: string; action: string; display_name: string | null; user_id: string; entity_type: string; created_at: string };
+type AdminData = {
+  user: Row;
+  role: string;
+  users: CustomerRow[];
+  subscriptions: SubscriptionRow[];
+  invoices: InvoiceRow[];
+  payments: PaymentRow[];
+  coupons: CouponRow[];
+  plans: PlanRow[];
+  roles: RoleRow[];
+  logs: LogRow[];
+  platform?: { spaces: number; members: number; transactions: number; countries: number; monthlyRevenue?: Array<{ month: string; total: number }> };
+};
 
-function useAdminData(){
-  const pathname=usePathname();
-  const router=useRouter();
-  const [data,setData]=useState<AdminData|null>(() => readAdminConsole<AdminData>());
-  const [error,setError]=useState("");
-  const load=useCallback(()=>{
+function useAdminData() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [data, setData] = useState<AdminData | null>(() => readAdminConsole<AdminData>());
+  const [error, setError] = useState("");
+  const load = useCallback(() => {
     return fetchAdminConsole()
-      .then((result)=>{
+      .then((result) => {
         setData(result as unknown as AdminData);
         setError("");
       })
-      .catch((e:Error)=>{
-        if(e.message==="AUTH"){router.push(`/login?next=${encodeURIComponent(pathname)}`);return;}
-        if(!readAdminConsole()) setError(e.message==="FORBIDDEN"?"FORBIDDEN":"LOAD");
+      .catch((caught: Error) => {
+        if (caught.message === "AUTH") {
+          router.push(`/login?next=${encodeURIComponent(pathname)}`);
+          return;
+        }
+        if (!readAdminConsole()) setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD");
       });
-  },[pathname,router]);
-  useEffect(()=>{void load();},[load]);
-  return{data,setData:(next: AdminData | null)=>{ if(next) patchAdminConsole(next as unknown as Parameters<typeof patchAdminConsole>[0]); setData(next); },error,load};
+  }, [pathname, router]);
+  useEffect(() => { void load(); }, [load]);
+  return {
+    data,
+    setData: (next: AdminData | null) => {
+      if (next) patchAdminConsole(next as unknown as Parameters<typeof patchAdminConsole>[0]);
+      setData(next);
+    },
+    error,
+    load,
+  };
 }
-async function adminAction(action:string,payload:Record<string,unknown>={}):Promise<Partial<AdminData>>{const r=await apiFetch("/api/platform",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action,idempotencyKey:crypto.randomUUID(),...payload})});const result=await r.json() as Partial<AdminData> & {error?:string};if(!r.ok)throw new Error(result.error);return result;}
 
-export function AdminOverview(){const {locale,l}=useCommerceLocale();const {data,setData,error,load}=useAdminData();const [coupon,setCoupon]=useState("");const [value,setValue]=useState("20");const [working,setWorking]=useState(false);if(error)return <AdminAccessError locale={locale} forbidden={error==="FORBIDDEN"} retry={load}/>;if(!data)return <ContentBusy/>;const paid=data.payments.filter(p=>p.status==="succeeded").reduce((s,p)=>s+p.amount_minor,0);const active=data.subscriptions.filter(s=>["active","trialing"].includes(s.status)).length;const pending=data.invoices.filter(i=>i.status==="pending").reduce((s,i)=>s+i.total_minor,0);const plat=data.platform??{spaces:0,members:0,transactions:0,countries:0,monthlyRevenue:[]};const months=plat.monthlyRevenue??[];const maxMonth=Math.max(1,...months.map(m=>Number(m.total)||0));const submit=async(e:FormEvent)=>{e.preventDefault();setWorking(true);try{const next=await adminAction("createCoupon",{code:coupon,value:Number(value)});setData({...data,...next});setCoupon("");}finally{setWorking(false);}};return <><PageHead eyebrow={l("الإدارة / نظرة عامة عالمية","Admin / Global overview")} title={l("لوحة تحكم منصة وازن","Wazen global control")} text={l("تحكم بالمستخدمين والباقات والحدود والمحافظ والكشوف من بيانات النظام الفعلية في كل الدول.","Control users, plans, limits, wallets and statements from live data across every country.")}/><div className="admin-kpis"><Kpi icon={<Users/>} label={l("الحسابات","Accounts")} value={String(data.users.length)} note={`${active} ${l("اشتراك نشط","active plans")}`}/><Kpi icon={<WalletCards/>} label={l("المحافظ","Wallets")} value={String(plat.spaces)} note={`${plat.members} ${l("عضو نشط","active members")}`}/><Kpi icon={<Activity/>} label={l("الحركات المعتمدة","Posted movements")} value={String(plat.transactions)} note={l("بعد الإلغاء لا تُحتسب","voids excluded")}/><Kpi icon={<TrendingUp/>} label={l("الإيراد المحصل","Collected")} value={money(paid,locale)} note={`${plat.countries} ${l("دولة","countries")}`}/></div><div className="admin-overview-grid"><section className="admin-panel admin-revenue"><div className="admin-panel-head"><div><h2>{l("التحصيل الشهري","Monthly collections")}</h2><p>{l("من المدفوعات الناجحة","Successful payments")}</p></div><span><TrendingUp/>{money(pending,locale)}</span></div><div className="admin-bars">{(months.length?months:[{month:"—",total:0}]).map((row,i)=><i key={row.month+i} style={{height:`${Math.max(8,Math.round((Number(row.total)||0)/maxMonth*100))}%`}} title={`${row.month} ${money(Number(row.total)||0,locale)}`}><em/></i>)}</div></section><section className="admin-panel"><div className="admin-panel-head"><div><h2>{l("مفاصل المنصة","Platform modules")}</h2><p>{l("إدارة مباشرة","Direct control")}</p></div></div><div className="plan-distribution"><Link href="/admin/users"><span>{l("المستخدمون والقيود","Users & restrictions")}</span><b>{data.users.length}</b></Link><Link href="/admin/plans"><span>{l("الباقات والصلاحيات","Plans & entitlements")}</span><b>{data.plans.length}</b></Link><Link href="/admin/gateways"><span>{l("بوابات عالمية","Global gateways")}</span><b>{l("محلي / إقليمي / عالمي","Local / regional / global")}</b></Link><Link href="/admin/payments"><span>{l("فواتير معلّقة","Pending invoices")}</span><b>{money(pending,locale)}</b></Link></div></section></div><div className="admin-overview-grid bottom"><section className="admin-panel"><div className="admin-panel-head"><div><h2>{l("الكوبونات والخصومات","Coupons & discounts")}</h2><p>{l("رموز نشطة ومحكومة بحدود استخدام","Active codes with usage limits")}</p></div></div><form className="coupon-create" onSubmit={submit}><input required value={coupon} onChange={e=>setCoupon(e.target.value.toUpperCase())} placeholder="WAZEN25"/><input type="number" min="1" max="100" value={value} onChange={e=>setValue(e.target.value)}/><button disabled={working}><Plus/>{l("إنشاء","Create")}</button></form><div className="coupon-list">{data.coupons.map(row=><div key={row.id}><BadgePercent/><code>{row.code}</code><b>{row.value}%</b><span>{row.used_count}/{row.usage_limit}</span><Status value={row.is_active?"active":"closed"} locale={locale}/></div>)}</div></section><section className="admin-panel"><div className="admin-panel-head"><div><h2>{l("فريق الإدارة","Admin team")}</h2><p>{l("الأدوار المطبقة من جهة الخادم","Server-enforced roles")}</p></div></div><div className="role-list">{data.roles.filter(r=>r.role!=="customer").map(row=><div key={row.user_id}><i><UserCog/></i><span><b>{row.display_name}</b><small>{row.email}</small></span><code>{row.role}</code></div>)}{!data.roles.some(r=>r.role!=="customer")&&<p>{l("حسابك هو مدير المنصة الأول.","Your account is the first platform administrator.")}</p>}</div></section></div><section className="admin-panel"><div className="admin-panel-head"><div><h2>{l("سجل التدقيق","Audit log")}</h2><p>{l("آخر العمليات الإدارية الحساسة","Recent sensitive administrative actions")}</p></div><Activity/></div><div className="audit-list">{data.logs.length?data.logs.map(row=><div key={row.id}><CheckCircle2/><span><b>{row.action}</b><small>{row.display_name??row.user_id} · {row.entity_type}</small></span><time>{new Date(row.created_at).toLocaleString()}</time></div>):<p>{l("ستظهر الإجراءات هنا فور تنفيذها.","Administrative actions will appear here.")}</p>}</div></section></>}
+async function adminAction(action: string, payload: Record<string, unknown> = {}): Promise<Partial<AdminData>> {
+  const response = await apiFetch("/api/platform", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action, idempotencyKey: crypto.randomUUID(), ...payload }),
+  });
+  const result = await response.json() as Partial<AdminData> & { error?: string };
+  if (!response.ok) throw new Error(result.error);
+  return result;
+}
 
-export function AdminUsers(){const {locale,l}=useCommerceLocale();const{data,setData,error,load}=useAdminData();const[query,setQuery]=useState("");const[filter,setFilter]=useState("all");const[working,setWorking]=useState("");if(error)return <AdminAccessError locale={locale} forbidden={error==="FORBIDDEN"} retry={load}/>;if(!data)return<ContentBusy/>;const rows=data.users.filter(u=>(filter==="all"||u.status===filter)&&`${u.display_name} ${u.email}`.toLowerCase().includes(query.toLowerCase()));const change=async(userId:string,status:string)=>{setWorking(userId);const next=await adminAction("setUserStatus",{userId,status});setData({...data,...next});setWorking("");};return <><PageHead eyebrow={l("الإدارة / العملاء","Admin / Customers")} title={l("المستخدمون والعملاء","Users & customers")} text={l("الحسابات والباقات والاستخدام وحالة الوصول.","Accounts, plans, usage and access status.")}/><div className="admin-kpis"><Kpi icon={<Users/>} label={l("إجمالي الحسابات","Total accounts")} value={String(data.users.length)} note={l("كل العملاء","all customers")}/><Kpi icon={<CheckCircle2/>} label={l("نشطون","Active")} value={String(data.users.filter(u=>u.status==="active").length)} note={l("يمكنهم الدخول","can sign in")}/><Kpi icon={<CreditCard/>} label={l("تجربة مجانية","Trialing")} value={String(data.users.filter(u=>u.subscription_status==="trialing").length)} note={l("قيد التجربة","in trial")}/><Kpi icon={<ShieldCheck/>} label={l("موقوفون","Suspended")} value={String(data.users.filter(u=>u.status==="suspended").length)} note={l("مراجعة مطلوبة","review needed")}/></div><section className="admin-panel admin-table-panel"><div className="admin-filters"><label><Search/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={l("بحث بالاسم أو البريد...","Search name or email...")}/></label><select value={filter} onChange={e=>setFilter(e.target.value)}><option value="all">{l("كل الحالات","All statuses")}</option><option value="active">{l("نشط","Active")}</option><option value="suspended">{l("موقوف","Suspended")}</option></select><button onClick={()=>downloadCsv("wazen-customers.csv",rows)}><Download/>{l("تصدير","Export")}</button></div><div className="admin-table-scroll"><table><thead><tr><th>{l("العميل","Customer")}</th><th>{l("الدولة","Country")}</th><th>{l("الباقة","Plan")}</th><th>{l("الاشتراك","Subscription")}</th><th>{l("آخر نشاط","Last seen")}</th><th>{l("الحالة","Status")}</th><th>{l("إجراء","Action")}</th></tr></thead><tbody>{rows.map(u=><tr key={u.id}><td><b><Link href={`/admin/users/${encodeURIComponent(u.id)}`}>{u.display_name}</Link></b><small>{u.email}</small></td><td>{u.country}</td><td>{u.plan_name??"—"}</td><td><Status value={u.subscription_status??"pending"} locale={locale}/></td><td>{u.last_seen_at?new Date(u.last_seen_at).toLocaleDateString():"—"}</td><td><Status value={u.status??"active"} locale={locale}/></td><td><button disabled={working===u.id} onClick={()=>void change(u.id,u.status==="suspended"?"active":"suspended")}>{u.status==="suspended"?l("تفعيل","Activate"):l("إيقاف","Suspend")}</button></td></tr>)}</tbody></table></div></section></>}
+function AdminAccessError({ locale, forbidden, retry }: { locale: "ar" | "en"; forbidden: boolean; retry: () => void }) {
+  return (
+    <ErrorCard
+      message={forbidden
+        ? (locale === "ar" ? "لا تملك صلاحية دخول الإدارة" : "You do not have admin access")
+        : (locale === "ar" ? "تعذر تحميل بيانات الإدارة" : "Could not load admin data")}
+      retry={retry}
+    />
+  );
+}
 
-export function AdminPayments(){const{locale,l}=useCommerceLocale();const{data,setData,error,load}=useAdminData();const[filter,setFilter]=useState("all");const[working,setWorking]=useState("");if(error)return<AdminAccessError locale={locale} forbidden={error==="FORBIDDEN"} retry={load}/>;if(!data)return<ContentBusy/>;const rows=data.payments.filter(p=>filter==="all"||p.status===filter);const total=(status:string)=>data.payments.filter(p=>p.status===status).reduce((s,p)=>s+p.amount_minor,0);const change=async(paymentId:string,status:string)=>{setWorking(paymentId);const next=await adminAction("setPaymentStatus",{paymentId,status});setData({...data,...next});setWorking("");};return <><PageHead eyebrow={l("الإدارة / المالية","Admin / Finance")} title={l("المدفوعات والفواتير","Payments & invoices")} text={l("التحصيل والتجديدات والتسويات والاستردادات.","Collections, renewals, settlements and refunds.")} actions={<button onClick={()=>downloadCsv("wazen-payments.csv",rows)}><Download/>{l("تنزيل الكشف","Download statement")}</button>}/><div className="admin-kpis"><Kpi icon={<TrendingUp/>} label={l("المحصل","Collected")} value={money(total("succeeded"),locale)} note={l("مدفوعات ناجحة","successful payments")}/><Kpi icon={<CreditCard/>} label={l("بانتظار التسوية","Pending settlement")} value={money(total("pending"),locale)} note={`${data.payments.filter(p=>p.status==="pending").length} ${l("عملية","transactions")}`}/><Kpi icon={<Activity/>} label={l("مدفوعات فاشلة","Failed payments")} value={money(total("failed"),locale)} note={l("تحتاج متابعة","needs attention")}/><Kpi icon={<FileText/>} label={l("مبالغ مستردة","Refunded")} value={money(total("refunded"),locale)} note={l("موثقة في السجل","logged")}/></div><section className="admin-panel admin-table-panel"><div className="admin-filters"><div className="filter-tabs">{["all","succeeded","pending","failed","refunded"].map(value=><button className={filter===value?"active":""} onClick={()=>setFilter(value)} key={value}>{value==="all"?l("الكل","All"):<Status value={value} locale={locale}/>}</button>)}</div></div><div className="admin-table-scroll"><table><thead><tr><th>{l("المرجع","Reference")}</th><th>{l("العميل","Customer")}</th><th>{l("المبلغ","Amount")}</th><th>{l("الطريقة","Method")}</th><th>{l("التسوية","Settlement")}</th><th>{l("الحالة","Status")}</th><th>{l("إجراء","Action")}</th></tr></thead><tbody>{rows.map(p=><tr key={p.id}><td><code>{p.reference}</code></td><td><b>{p.display_name}</b><small>{p.email}</small></td><td>{money(p.amount_minor,locale,p.currency)}</td><td>{p.method}</td><td>{p.settlement_status}</td><td><Status value={p.status} locale={locale}/></td><td><select disabled={working===p.id} value={p.status} onChange={e=>void change(p.id,e.target.value)}><option value="pending">pending</option><option value="succeeded">succeeded</option><option value="failed">failed</option><option value="refunded">refunded</option></select></td></tr>)}</tbody></table></div></section></>}
+function PageHead({ eyebrow, title, text, actions }: { eyebrow: string; title: string; text: string; actions?: React.ReactNode }) {
+  return (
+    <div className="admin-page-head">
+      <div>
+        <small>{eyebrow}</small>
+        <h1>{title}</h1>
+        <p>{text}</p>
+      </div>
+      {actions ? <div className="plan-matrix-toolbar">{actions}</div> : null}
+    </div>
+  );
+}
 
-export function AdminReports(){const{locale,l}=useCommerceLocale();const{data,error,load}=useAdminData();if(error)return<AdminAccessError locale={locale} forbidden={error==="FORBIDDEN"} retry={load}/>;if(!data)return<ContentBusy/>;const active=data.subscriptions.filter(s=>["active","trialing"].includes(s.status));const mrr=active.reduce((sum,s)=>sum+(data.plans.find(p=>p.id===s.plan_id)?.monthly_minor??0),0);const paid=data.payments.filter(p=>p.status==="succeeded").reduce((sum,p)=>sum+p.amount_minor,0);const arpu=Math.round(mrr/Math.max(1,active.length));const churn=Math.round(data.users.filter(u=>u.status==="suspended").length/Math.max(1,data.users.length)*1000)/10;return <><PageHead eyebrow={l("الإدارة / التقارير","Admin / Reports")} title={l("الإيرادات والتحليلات","Revenue & analytics")} text={l("مؤشرات الاشتراك والتحصيل والنمو من السجلات الفعلية.","Subscription, collection and growth metrics from live records.")} actions={<><button onClick={()=>window.print()}><Printer/>{l("طباعة","Print")}</button><button onClick={()=>downloadCsv("wazen-reports.csv",data.invoices)}><Download/>Excel</button></>}/><div className="admin-kpis"><Kpi icon={<TrendingUp/>} label={l("الإيراد السنوي المتوقع","Annual recurring revenue")} value={money(mrr*12,locale)} note="ARR"/><Kpi icon={<BarChart3/>} label={l("الإيراد الشهري المتكرر","Monthly recurring revenue")} value={money(mrr,locale)} note="MRR"/><Kpi icon={<Users/>} label={l("متوسط دخل العميل","Revenue per customer")} value={money(arpu,locale)} note="ARPU"/><Kpi icon={<Activity/>} label={l("معدل الإلغاء/الإيقاف","Churn / suspension")} value={`${churn}%`} note={l("من الحسابات","of accounts")}/></div><div className="admin-report-grid"><section className="admin-panel"><div className="admin-panel-head"><h2>{l("الإيراد حسب الباقة","Revenue by plan")}</h2></div><div className="plan-distribution">{data.plans.map(plan=>{const value=data.subscriptions.filter(s=>s.plan_id===plan.id).length;return<div key={plan.id}><span>{locale==="ar"?plan.name_ar:plan.name_en}</span><i><em style={{width:`${Math.min(100,value*20)}%`}}/></i><b>{value}</b></div>})}</div></section><section className="admin-panel"><div className="admin-panel-head"><h2>{l("مؤشرات الاشتراك","Subscription metrics")}</h2></div><dl className="report-metrics"><div><dt>{l("نشطة وتجريبية","Active & trial")}</dt><dd>{active.length}</dd></div><div><dt>{l("بانتظار الدفع","Awaiting payment")}</dt><dd>{data.subscriptions.filter(s=>s.status==="pending_payment").length}</dd></div><div><dt>{l("فواتير مدفوعة","Paid invoices")}</dt><dd>{data.invoices.filter(i=>i.status==="paid").length}</dd></div><div><dt>{l("إجمالي التحصيل","Total collected")}</dt><dd>{money(paid,locale)}</dd></div></dl></section><section className="admin-panel"><div className="admin-panel-head"><h2>{l("تقارير جاهزة","Ready reports")}</h2></div><div className="report-buttons">{[l("تقرير الإيراد الشهري","Monthly revenue"),l("تقرير الضريبة","Tax report"),l("تقرير الاشتراكات","Subscriptions"),l("تقرير الكوبونات","Coupon usage"),l("تقرير التحصيل","Collections"),l("سجل التدقيق","Audit log")].map(label=><button onClick={()=>window.print()} key={label}><FileText/>{label}<ArrowUpRight/></button>)}</div></section></div></>}
+function Kpi({ icon, label, value, note }: { icon: React.ReactNode; label: string; value: string; note: string }) {
+  return (
+    <article>
+      <i>{icon}</i>
+      <span>{label}</span>
+      <b>{value}</b>
+      <small>{note}</small>
+    </article>
+  );
+}
 
-function AdminAccessError({locale,forbidden,retry}:{locale:"ar"|"en";forbidden:boolean;retry:()=>void}){return <ErrorCard message={forbidden?(locale==="ar"?"لا تملك صلاحية دخول الإدارة":"You do not have admin access"):(locale==="ar"?"تعذر تحميل بيانات الإدارة":"Could not load admin data")} retry={retry}/>}
-function PageHead({eyebrow,title,text,actions}:{eyebrow:string;title:string;text:string;actions?:React.ReactNode}){return <div className="admin-page-head"><div><small>{eyebrow}</small><h1>{title}</h1><p>{text}</p></div>{actions&&<div>{actions}</div>}</div>}
-function Kpi({icon,label,value,note}:{icon:React.ReactNode;label:string;value:string;note:string}){return <article><i>{icon}</i><span>{label}</span><b>{value}</b><small>{note}</small></article>}
-function downloadCsv(filename:string,rows:Row[]){if(!rows.length)return;const keys=Object.keys(rows[0]).filter(k=>!k.includes("json"));const csv=[keys.join(","),...rows.map(row=>keys.map(key=>`"${String(row[key]??"").replaceAll('"','""')}"`).join(","))].join("\n");const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download=filename;link.click();URL.revokeObjectURL(url)}
+function downloadCsv(filename: string, rows: Row[]) {
+  if (!rows.length) return;
+  const keys = Object.keys(rows[0]).filter((key) => !key.includes("json"));
+  const csv = [keys.join(","), ...rows.map((row) => keys.map((key) => `"${String(row[key] ?? "").replaceAll('"', '""')}"`).join(","))].join("\n");
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+export function AdminOverview() {
+  const { locale, l } = useCommerceLocale();
+  const { data, setData, error, load } = useAdminData();
+  const [coupon, setCoupon] = useState("");
+  const [value, setValue] = useState("20");
+  const [working, setWorking] = useState(false);
+  if (error) return <AdminAccessError locale={locale} forbidden={error === "FORBIDDEN"} retry={load} />;
+  if (!data) return <ContentBusy />;
+
+  const paid = data.payments.filter((payment) => payment.status === "succeeded").reduce((sum, payment) => sum + payment.amount_minor, 0);
+  const active = data.subscriptions.filter((subscription) => ["active", "trialing"].includes(subscription.status)).length;
+  const pending = data.invoices.filter((invoice) => invoice.status === "pending").reduce((sum, invoice) => sum + invoice.total_minor, 0);
+  const plat = data.platform ?? { spaces: 0, members: 0, transactions: 0, countries: 0, monthlyRevenue: [] };
+  const months = plat.monthlyRevenue ?? [];
+  const maxMonth = Math.max(1, ...months.map((month) => Number(month.total) || 0));
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setWorking(true);
+    try {
+      const next = await adminAction("createCoupon", { code: coupon, value: Number(value) });
+      setData({ ...data, ...next });
+      setCoupon("");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const modules = [
+    { href: "/admin/users", icon: <Users size={18} />, ar: "المستخدمون والعملاء", en: "Users & customers", value: String(data.users.length) },
+    { href: "/admin/tenants", icon: <Building2 size={18} />, ar: "الشركات والمستأجرون", en: "Tenants", value: String(plat.spaces) },
+    { href: "/admin/plans", icon: <WalletCards size={18} />, ar: "الباقات والصلاحيات", en: "Plans & entitlements", value: String(data.plans.length) },
+    { href: "/admin/gateways", icon: <CreditCard size={18} />, ar: "بوابات الدفع", en: "Payment gateways", value: l("محلي / عالمي", "Local / global") },
+    { href: "/admin/payments", icon: <FileText size={18} />, ar: "فواتير معلّقة", en: "Pending invoices", value: money(pending, locale) },
+    { href: "/admin/reports", icon: <BarChart3 size={18} />, ar: "التقارير والإيرادات", en: "Reports & revenue", value: money(paid, locale) },
+  ];
+
+  return (
+    <AdminConsole>
+      <PageHead
+        eyebrow={l("الإدارة / نظرة عامة", "Admin / Overview")}
+        title={l("نظرة عامة", "Overview")}
+        text={l("مؤشرات المنصة ومفاصل التحكم في أعمدة واضحة: حسابات، محافظ، تحصيل، ثم الكوبونات والتدقيق.", "Platform metrics and controls in clear columns: accounts, wallets, collections, then coupons and audit.")}
+      />
+      <div className="admin-kpis">
+        <Kpi icon={<Users />} label={l("الحسابات", "Accounts")} value={String(data.users.length)} note={`${active} ${l("اشتراك نشط", "active plans")}`} />
+        <Kpi icon={<WalletCards />} label={l("المحافظ", "Wallets")} value={String(plat.spaces)} note={`${plat.members} ${l("عضو نشط", "active members")}`} />
+        <Kpi icon={<Activity />} label={l("الحركات المعتمدة", "Posted movements")} value={String(plat.transactions)} note={l("بعد الإلغاء لا تُحتسب", "voids excluded")} />
+        <Kpi icon={<TrendingUp />} label={l("الإيراد المحصل", "Collected")} value={money(paid, locale)} note={`${plat.countries} ${l("دولة", "countries")}`} />
+      </div>
+
+      <div className="admin-overview-grid">
+        <section className="admin-panel admin-revenue">
+          <div className="admin-panel-head">
+            <div>
+              <h2>{l("التحصيل الشهري", "Monthly collections")}</h2>
+              <p>{l("من المدفوعات الناجحة", "Successful payments")}</p>
+            </div>
+            <span><TrendingUp size={16} />{money(pending, locale)}</span>
+          </div>
+          <div className="admin-bars">
+            {(months.length ? months : [{ month: "—", total: 0 }]).map((row, index) => (
+              <i key={row.month + index} style={{ height: `${Math.max(8, Math.round((Number(row.total) || 0) / maxMonth * 100))}%` }} title={`${row.month} ${money(Number(row.total) || 0, locale)}`}>
+                <em />
+              </i>
+            ))}
+          </div>
+        </section>
+        <section className="admin-panel">
+          <div className="admin-panel-head">
+            <div>
+              <h2>{l("مفاصل المنصة", "Platform modules")}</h2>
+              <p>{l("افتح الصفحة للمقارنة والتعديل", "Open a page to compare and edit")}</p>
+            </div>
+          </div>
+          <div className="admin-module-grid">
+            {modules.map((item) => (
+              <Link key={item.href} href={item.href}>
+                <i>{item.icon}</i>
+                <span>{locale === "ar" ? item.ar : item.en}</span>
+                <b>{item.value}</b>
+              </Link>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="admin-overview-grid bottom">
+        <section className="admin-panel">
+          <div className="admin-panel-head">
+            <div>
+              <h2>{l("الكوبونات والخصومات", "Coupons & discounts")}</h2>
+              <p>{l("رموز نشطة ومحكومة بحدود استخدام", "Active codes with usage limits")}</p>
+            </div>
+          </div>
+          <form className="coupon-create" onSubmit={(event) => void submit(event)}>
+            <input required value={coupon} onChange={(event) => setCoupon(event.target.value.toUpperCase())} placeholder="WAZEN25" />
+            <input type="number" min={1} max={100} value={value} onChange={(event) => setValue(event.target.value)} />
+            <button disabled={working}><Plus size={16} />{l("إنشاء", "Create")}</button>
+          </form>
+          <div className="coupon-list">
+            {data.coupons.map((row) => (
+              <div key={row.id}>
+                <BadgePercent />
+                <code>{row.code}</code>
+                <b>{row.value}%</b>
+                <span>{row.used_count}/{row.usage_limit}</span>
+                <Status value={row.is_active ? "active" : "closed"} locale={locale} />
+              </div>
+            ))}
+            {!data.coupons.length ? <p>{l("لا كوبونات بعد.", "No coupons yet.")}</p> : null}
+          </div>
+        </section>
+        <section className="admin-panel">
+          <div className="admin-panel-head">
+            <div>
+              <h2>{l("فريق الإدارة", "Admin team")}</h2>
+              <p>{l("الأدوار المطبقة من جهة الخادم", "Server-enforced roles")}</p>
+            </div>
+          </div>
+          <div className="role-list">
+            {data.roles.filter((row) => row.role !== "customer").map((row) => (
+              <div key={row.user_id}>
+                <i><UserCog /></i>
+                <span><b>{row.display_name}</b><small>{row.email}</small></span>
+                <code>{row.role}</code>
+              </div>
+            ))}
+            {!data.roles.some((row) => row.role !== "customer") ? <p>{l("حسابك هو مدير المنصة الأول.", "Your account is the first platform administrator.")}</p> : null}
+          </div>
+        </section>
+      </div>
+
+      <section className="admin-panel">
+        <div className="admin-panel-head">
+          <div>
+            <h2>{l("سجل التدقيق", "Audit log")}</h2>
+            <p>{l("آخر العمليات الإدارية الحساسة", "Recent sensitive administrative actions")}</p>
+          </div>
+          <Activity />
+        </div>
+        <div className="audit-list">
+          {data.logs.length
+            ? data.logs.map((row) => (
+              <div key={row.id}>
+                <CheckCircle2 />
+                <span><b>{row.action}</b><small>{row.display_name ?? row.user_id} · {row.entity_type}</small></span>
+                <time>{new Date(row.created_at).toLocaleString()}</time>
+              </div>
+            ))
+            : <p>{l("ستظهر الإجراءات هنا فور تنفيذها.", "Administrative actions will appear here.")}</p>}
+        </div>
+      </section>
+    </AdminConsole>
+  );
+}
+
+export function AdminUsers() {
+  const { locale, l } = useCommerceLocale();
+  const { data, setData, error, load } = useAdminData();
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [working, setWorking] = useState("");
+  if (error) return <AdminAccessError locale={locale} forbidden={error === "FORBIDDEN"} retry={load} />;
+  if (!data) return <ContentBusy />;
+
+  const rows = data.users.filter((user) =>
+    (filter === "all" || user.status === filter)
+    && `${user.display_name} ${user.email}`.toLowerCase().includes(query.toLowerCase()),
+  );
+
+  const change = async (userId: string, status: string) => {
+    setWorking(userId);
+    const next = await adminAction("setUserStatus", { userId, status });
+    setData({ ...data, ...next });
+    setWorking("");
+  };
+
+  return (
+    <AdminConsole>
+      <PageHead
+        eyebrow={l("الإدارة / العملاء", "Admin / Customers")}
+        title={l("المستخدمون والعملاء", "Users & customers")}
+        text={l("صف العناوين ثم رأس كل عميل. فعّل أو أوقف الحساب من العمود مباشرة.", "Title row, then each customer. Activate or suspend from the column.")}
+        actions={<button type="button" onClick={() => downloadCsv("wazen-customers.csv", rows)}><Download size={16} />{l("تصدير", "Export")}</button>}
+      />
+      <div className="admin-kpis">
+        <Kpi icon={<Users />} label={l("إجمالي الحسابات", "Total accounts")} value={String(data.users.length)} note={l("كل العملاء", "all customers")} />
+        <Kpi icon={<CheckCircle2 />} label={l("نشطون", "Active")} value={String(data.users.filter((user) => user.status === "active").length)} note={l("يمكنهم الدخول", "can sign in")} />
+        <Kpi icon={<CreditCard />} label={l("تجربة مجانية", "Trialing")} value={String(data.users.filter((user) => user.subscription_status === "trialing").length)} note={l("قيد التجربة", "in trial")} />
+        <Kpi icon={<ShieldCheck />} label={l("موقوفون", "Suspended")} value={String(data.users.filter((user) => user.status === "suspended").length)} note={l("مراجعة مطلوبة", "review needed")} />
+      </div>
+      <div className="admin-filters">
+        <label><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={l("بحث بالاسم أو البريد...", "Search name or email...")} /></label>
+        <select value={filter} onChange={(event) => setFilter(event.target.value)}>
+          <option value="all">{l("كل الحالات", "All statuses")}</option>
+          <option value="active">{l("نشط", "Active")}</option>
+          <option value="suspended">{l("موقوف", "Suspended")}</option>
+        </select>
+      </div>
+      <div className="plan-matrix-shell">
+        <table className="plan-matrix admin-data-table">
+          <thead>
+            <tr>
+              <th className="plan-matrix-titles" scope="col">{l("العناوين", "Titles")}</th>
+              <th scope="col">{l("الدولة", "Country")}</th>
+              <th scope="col">{l("الباقة", "Plan")}</th>
+              <th scope="col">{l("الاشتراك", "Subscription")}</th>
+              <th scope="col">{l("آخر نشاط", "Last seen")}</th>
+              <th scope="col">{l("الحالة", "Status")}</th>
+              <th scope="col">{l("الوصول", "Access")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((user) => {
+              const active = user.status !== "suspended";
+              return (
+                <tr key={user.id}>
+                  <th className="plan-matrix-label" scope="row">
+                    <div>
+                      <span>
+                        <b><Link href={`/admin/users/${encodeURIComponent(user.id)}`}>{user.display_name}</Link></b>
+                        <small>{user.email}</small>
+                      </span>
+                    </div>
+                  </th>
+                  <td>{user.country || "—"}</td>
+                  <td>{user.plan_name ?? "—"}</td>
+                  <td><Status value={user.subscription_status ?? "pending"} locale={locale} /></td>
+                  <td>{user.last_seen_at ? new Date(user.last_seen_at).toLocaleDateString() : "—"}</td>
+                  <td><Status value={user.status ?? "active"} locale={locale} /></td>
+                  <td className="plan-matrix-switch">
+                    <AdminSwitch
+                      on={active}
+                      disabled={working === user.id}
+                      label={active ? l("إيقاف", "Suspend") : l("تفعيل", "Activate")}
+                      onToggle={() => void change(user.id, active ? "suspended" : "active")}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+            {!rows.length ? <EmptyRow cols={7} message={l("لا عملاء مطابقون.", "No matching customers.")} /> : null}
+          </tbody>
+        </table>
+      </div>
+    </AdminConsole>
+  );
+}
+
+export function AdminPayments() {
+  const { locale, l } = useCommerceLocale();
+  const { data, setData, error, load } = useAdminData();
+  const [filter, setFilter] = useState("all");
+  const [working, setWorking] = useState("");
+  if (error) return <AdminAccessError locale={locale} forbidden={error === "FORBIDDEN"} retry={load} />;
+  if (!data) return <ContentBusy />;
+
+  const rows = data.payments.filter((payment) => filter === "all" || payment.status === filter);
+  const total = (status: string) => data.payments.filter((payment) => payment.status === status).reduce((sum, payment) => sum + payment.amount_minor, 0);
+  const change = async (paymentId: string, status: string) => {
+    setWorking(paymentId);
+    const next = await adminAction("setPaymentStatus", { paymentId, status });
+    setData({ ...data, ...next });
+    setWorking("");
+  };
+
+  const tabs = [
+    ["all", l("الكل", "All")],
+    ["succeeded", l("ناجح", "Succeeded")],
+    ["pending", l("معلّق", "Pending")],
+    ["failed", l("فاشل", "Failed")],
+    ["refunded", l("مسترد", "Refunded")],
+  ] as const;
+
+  return (
+    <AdminConsole>
+      <PageHead
+        eyebrow={l("الإدارة / المالية", "Admin / Finance")}
+        title={l("المدفوعات والفواتير", "Payments & invoices")}
+        text={l("كل عملية عمود مقارنة: المرجع، العميل، المبلغ، ثم حالة التحصيل من الصف.", "Each payment is a comparable row: reference, customer, amount, then settlement status.")}
+        actions={<button type="button" onClick={() => downloadCsv("wazen-payments.csv", rows)}><Download size={16} />{l("تنزيل الكشف", "Download statement")}</button>}
+      />
+      <div className="admin-kpis">
+        <Kpi icon={<TrendingUp />} label={l("المحصل", "Collected")} value={money(total("succeeded"), locale)} note={l("مدفوعات ناجحة", "successful payments")} />
+        <Kpi icon={<CreditCard />} label={l("بانتظار التسوية", "Pending settlement")} value={money(total("pending"), locale)} note={`${data.payments.filter((payment) => payment.status === "pending").length} ${l("عملية", "transactions")}`} />
+        <Kpi icon={<Activity />} label={l("مدفوعات فاشلة", "Failed payments")} value={money(total("failed"), locale)} note={l("تحتاج متابعة", "needs attention")} />
+        <Kpi icon={<FileText />} label={l("مبالغ مستردة", "Refunded")} value={money(total("refunded"), locale)} note={l("موثقة في السجل", "logged")} />
+      </div>
+      <div className="admin-filters">
+        <div className="filter-tabs">
+          {tabs.map(([value, label]) => (
+            <button type="button" className={filter === value ? "active" : ""} onClick={() => setFilter(value)} key={value}>{label}</button>
+          ))}
+        </div>
+      </div>
+      <div className="plan-matrix-shell">
+        <table className="plan-matrix admin-data-table">
+          <thead>
+            <tr>
+              <th className="plan-matrix-titles" scope="col">{l("العناوين", "Titles")}</th>
+              <th scope="col">{l("العميل", "Customer")}</th>
+              <th scope="col">{l("المبلغ", "Amount")}</th>
+              <th scope="col">{l("الطريقة", "Method")}</th>
+              <th scope="col">{l("التسوية", "Settlement")}</th>
+              <th scope="col">{l("الحالة", "Status")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((payment) => (
+              <tr key={payment.id}>
+                <th className="plan-matrix-label" scope="row">
+                  <div>
+                    <span>
+                      <b><code>{payment.reference}</code></b>
+                      <small>{payment.id}</small>
+                    </span>
+                  </div>
+                </th>
+                <td><b>{payment.display_name}</b><small>{payment.email}</small></td>
+                <td><b>{money(payment.amount_minor, locale, payment.currency)}</b></td>
+                <td>{payment.method}</td>
+                <td>{payment.settlement_status}</td>
+                <td>
+                  <select disabled={working === payment.id} value={payment.status} onChange={(event) => void change(payment.id, event.target.value)}>
+                    <option value="pending">{l("معلّق", "pending")}</option>
+                    <option value="succeeded">{l("ناجح", "succeeded")}</option>
+                    <option value="failed">{l("فاشل", "failed")}</option>
+                    <option value="refunded">{l("مسترد", "refunded")}</option>
+                  </select>
+                </td>
+              </tr>
+            ))}
+            {!rows.length ? <EmptyRow cols={6} message={l("لا مدفوعات في هذا التبويب.", "No payments in this tab.")} /> : null}
+          </tbody>
+        </table>
+      </div>
+    </AdminConsole>
+  );
+}
+
+export function AdminReports() {
+  const { locale, l } = useCommerceLocale();
+  const { data, error, load } = useAdminData();
+  if (error) return <AdminAccessError locale={locale} forbidden={error === "FORBIDDEN"} retry={load} />;
+  if (!data) return <ContentBusy />;
+
+  const active = data.subscriptions.filter((subscription) => ["active", "trialing"].includes(subscription.status));
+  const mrr = active.reduce((sum, subscription) => sum + (data.plans.find((plan) => plan.id === subscription.plan_id)?.monthly_minor ?? 0), 0);
+  const paid = data.payments.filter((payment) => payment.status === "succeeded").reduce((sum, payment) => sum + payment.amount_minor, 0);
+  const arpu = Math.round(mrr / Math.max(1, active.length));
+  const churn = Math.round(data.users.filter((user) => user.status === "suspended").length / Math.max(1, data.users.length) * 1000) / 10;
+  const maxPlan = Math.max(1, ...data.plans.map((plan) => data.subscriptions.filter((subscription) => subscription.plan_id === plan.id).length));
+
+  return (
+    <AdminConsole>
+      <PageHead
+        eyebrow={l("الإدارة / التقارير", "Admin / Reports")}
+        title={l("التقارير والإيرادات", "Reports & revenue")}
+        text={l("الباقات أعمدة مقارنة: الإيراد المتوقع، عدد الاشتراكات، ونسبة كل باقة من المحفظة.", "Plans as comparison columns: expected revenue, subscriber count, and share of the book.")}
+        actions={
+          <>
+            <button type="button" onClick={() => window.print()}><Printer size={16} />{l("طباعة", "Print")}</button>
+            <button type="button" onClick={() => downloadCsv("wazen-reports.csv", data.invoices)}><Download size={16} />Excel</button>
+          </>
+        }
+      />
+      <div className="admin-kpis">
+        <Kpi icon={<TrendingUp />} label={l("الإيراد السنوي المتوقع", "Annual recurring revenue")} value={money(mrr * 12, locale)} note="ARR" />
+        <Kpi icon={<BarChart3 />} label={l("الإيراد الشهري المتكرر", "Monthly recurring revenue")} value={money(mrr, locale)} note="MRR" />
+        <Kpi icon={<Users />} label={l("متوسط دخل العميل", "Revenue per customer")} value={money(arpu, locale)} note="ARPU" />
+        <Kpi icon={<Activity />} label={l("معدل الإلغاء/الإيقاف", "Churn / suspension")} value={`${churn}%`} note={l("من الحسابات", "of accounts")} />
+      </div>
+
+      <div className="plan-matrix-shell">
+        <table className="plan-matrix">
+          <thead>
+            <tr>
+              <th className="plan-matrix-titles" scope="col">{l("العناوين", "Titles")}</th>
+              {data.plans.map((plan) => (
+                <th key={plan.id} className="plan-matrix-head" scope="col">
+                  <span>{plan.id}</span>
+                  <strong>{locale === "ar" ? plan.name_ar : plan.name_en}</strong>
+                  <b>{money(plan.monthly_minor, locale)}</b>
+                  <small>{l("شهرياً", "per month")}</small>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th className="plan-matrix-label" scope="row"><div><span><b>{l("الاشتراكات", "Subscriptions")}</b></span></div></th>
+              {data.plans.map((plan) => {
+                const count = data.subscriptions.filter((subscription) => subscription.plan_id === plan.id).length;
+                return <td key={plan.id}><b>{count}</b></td>;
+              })}
+            </tr>
+            <tr>
+              <th className="plan-matrix-label" scope="row"><div><span><b>{l("حصة المحفظة", "Share")}</b></span></div></th>
+              {data.plans.map((plan) => {
+                const count = data.subscriptions.filter((subscription) => subscription.plan_id === plan.id).length;
+                return (
+                  <td key={plan.id}>
+                    <div className="admin-share">
+                      <i><em style={{ width: `${Math.round(count / maxPlan * 100)}%` }} /></i>
+                      <small>{Math.round(count / maxPlan * 100)}%</small>
+                    </div>
+                  </td>
+                );
+              })}
+            </tr>
+            <tr>
+              <th className="plan-matrix-label" scope="row"><div><span><b>{l("إيراد شهري تقديري", "Estimated MRR")}</b></span></div></th>
+              {data.plans.map((plan) => {
+                const count = data.subscriptions.filter((subscription) => subscription.plan_id === plan.id).length;
+                return <td key={plan.id}><b>{money(plan.monthly_minor * count, locale)}</b></td>;
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className="admin-report-grid">
+        <section className="admin-panel">
+          <div className="admin-panel-head"><h2>{l("مؤشرات الاشتراك", "Subscription metrics")}</h2></div>
+          <dl className="report-metrics">
+            <div><dt>{l("نشطة وتجريبية", "Active & trial")}</dt><dd>{active.length}</dd></div>
+            <div><dt>{l("بانتظار الدفع", "Awaiting payment")}</dt><dd>{data.subscriptions.filter((subscription) => subscription.status === "pending_payment").length}</dd></div>
+            <div><dt>{l("فواتير مدفوعة", "Paid invoices")}</dt><dd>{data.invoices.filter((invoice) => invoice.status === "paid").length}</dd></div>
+            <div><dt>{l("إجمالي التحصيل", "Total collected")}</dt><dd>{money(paid, locale)}</dd></div>
+          </dl>
+        </section>
+        <section className="admin-panel">
+          <div className="admin-panel-head"><h2>{l("تقارير جاهزة", "Ready reports")}</h2></div>
+          <div className="report-buttons">
+            {[l("تقرير الإيراد الشهري", "Monthly revenue"), l("تقرير الضريبة", "Tax report"), l("تقرير الاشتراكات", "Subscriptions"), l("تقرير الكوبونات", "Coupon usage"), l("تقرير التحصيل", "Collections"), l("سجل التدقيق", "Audit log")].map((label) => (
+              <button type="button" onClick={() => window.print()} key={label}><FileText size={16} />{label}<ArrowUpRight size={16} /></button>
+            ))}
+          </div>
+        </section>
+      </div>
+    </AdminConsole>
+  );
+}

@@ -9,6 +9,7 @@ import { apiFetch } from "../../lib/client-api";
 import { DateField } from "../../components/ui/date-field";
 import { PLAN_FEATURE_CATALOG } from "../../lib/plan-features";
 import { fetchAdminConsole, readAdminConsole } from "../../lib/admin-session";
+import { AdminConsole, EmptyRow } from "./admin-ui";
 
 type Row = Record<string, unknown>;
 
@@ -282,7 +283,7 @@ export function AdminUserDetail() {
   };
 
   return (
-    <>
+    <AdminConsole>
       <div className="admin-page-head">
         <div>
           <small><Link href="/admin/users">{l("المستخدمون", "Users")}</Link> / {String(profile.email)}</small>
@@ -546,7 +547,7 @@ export function AdminUserDetail() {
           {!detail.audit.length && <p>{l("لا أحداث.", "No events.")}</p>}
         </div>
       </section>
-    </>
+    </AdminConsole>
   );
 }
 
@@ -605,51 +606,57 @@ export function AdminTenants() {
   if (!data) return <ContentBusy />;
 
   return (
-    <>
+    <AdminConsole>
       <div className="admin-page-head">
         <div>
           <small>{l("الإدارة / المستأجرون", "Admin / Tenants")}</small>
           <h1>{l("الشركات والمستأجرون", "Companies & tenants")}</h1>
-          <p>{l("عرض المالك والأعضاء والاستخدام دون انتحال صامت.", "Owner, members and usage — no silent impersonation.")}</p>
+          <p>{l("صف العناوين ثم كل شركة: المالك، الأعضاء، المحافظ. افتح التفاصيل من العمود.", "Title row, then each company: owner, members, wallets. Open details from the row.")}</p>
         </div>
       </div>
-      <section className="admin-panel admin-table-panel">
-        <div className="admin-filters">
-          <label><Search /><input value={query} onChange={(event) => { setPage(1); setQuery(event.target.value); }} placeholder={l("بحث بالاسم أو البريد…", "Search name or email…")} /></label>
-        </div>
-        <div className="admin-table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>{l("المستأجر", "Tenant")}</th>
-                <th>{l("المالك", "Owner")}</th>
-                <th>{l("الدولة", "Country")}</th>
-                <th>{l("أعضاء", "Members")}</th>
-                <th>{l("محافظ", "Spaces")}</th>
-                <th>{l("تفاصيل", "Details")}</th>
+      <div className="admin-filters">
+        <label><Search /><input value={query} onChange={(event) => { setPage(1); setQuery(event.target.value); }} placeholder={l("بحث بالاسم أو البريد…", "Search name or email…")} /></label>
+      </div>
+      <div className="plan-matrix-shell">
+        <table className="plan-matrix admin-data-table">
+          <thead>
+            <tr>
+              <th className="plan-matrix-titles" scope="col">{l("العناوين", "Titles")}</th>
+              <th scope="col">{l("المالك", "Owner")}</th>
+              <th scope="col">{l("الدولة", "Country")}</th>
+              <th scope="col">{l("أعضاء", "Members")}</th>
+              <th scope="col">{l("محافظ", "Spaces")}</th>
+              <th scope="col">{l("تفاصيل", "Details")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.items.map((tenant) => (
+              <tr key={String(tenant.id)}>
+                <th className="plan-matrix-label" scope="row">
+                  <div>
+                    <span>
+                      <b>{String(tenant.name)}</b>
+                      <small>{String(tenant.id)}</small>
+                    </span>
+                  </div>
+                </th>
+                <td><b>{String(tenant.owner_name ?? "—")}</b><small>{String(tenant.owner_email ?? "")}</small></td>
+                <td>{String(tenant.country)} · {String(tenant.currency)}</td>
+                <td><b>{String(tenant.member_count)}</b></td>
+                <td><b>{String(tenant.space_count)}</b></td>
+                <td><Link className="admin-row-link" href={`/admin/tenants/${encodeURIComponent(String(tenant.id))}`}>{l("فتح", "Open")}</Link></td>
               </tr>
-            </thead>
-            <tbody>
-              {data.items.map((tenant) => (
-                <tr key={String(tenant.id)}>
-                  <td><b>{String(tenant.name)}</b><small>{String(tenant.id)}</small></td>
-                  <td><b>{String(tenant.owner_name ?? "—")}</b><small>{String(tenant.owner_email ?? "")}</small></td>
-                  <td>{String(tenant.country)} · {String(tenant.currency)}</td>
-                  <td>{String(tenant.member_count)}</td>
-                  <td>{String(tenant.space_count)}</td>
-                  <td><Link href={`/admin/tenants/${encodeURIComponent(String(tenant.id))}`}>{l("فتح", "Open")}</Link></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="admin-filters" style={{ marginTop: 12 }}>
-          <button type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>{l("السابق", "Prev")}</button>
-          <span>{l("صفحة", "Page")} {data.page} · {data.total} {l("إجمالي", "total")}</span>
-          <button type="button" disabled={page * data.pageSize >= data.total} onClick={() => setPage((value) => value + 1)}>{l("التالي", "Next")}</button>
-        </div>
-      </section>
-    </>
+            ))}
+            {!data.items.length ? <EmptyRow cols={6} message={l("لا مستأجرون مطابقون.", "No matching tenants.")} /> : null}
+          </tbody>
+        </table>
+      </div>
+      <div className="admin-filters admin-pager">
+        <button type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>{l("السابق", "Prev")}</button>
+        <span>{l("صفحة", "Page")} {data.page} · {data.total} {l("إجمالي", "total")}</span>
+        <button type="button" disabled={page * data.pageSize >= data.total} onClick={() => setPage((value) => value + 1)}>{l("التالي", "Next")}</button>
+      </div>
+    </AdminConsole>
   );
 }
 
@@ -684,7 +691,7 @@ export function AdminTenantDetail() {
   if (!detail) return <ContentBusy />;
 
   return (
-    <>
+    <AdminConsole>
       <div className="admin-page-head">
         <div>
           <small><Link href="/admin/tenants">{l("المستأجرون", "Tenants")}</Link> / {String(detail.tenant.id)}</small>
@@ -701,10 +708,10 @@ export function AdminTenantDetail() {
       <div className="admin-overview-grid">
         <section className="admin-panel">
           <div className="admin-panel-head"><h2>{l("الأعضاء", "Members")}</h2></div>
-          <div className="audit-list">
+          <div className="role-list">
             {detail.members.map((member) => (
               <div key={String(member.user_id)}>
-                <Users />
+                <i><Users /></i>
                 <span>
                   <b><Link href={`/admin/users/${encodeURIComponent(String(member.user_id))}`}>{String(member.display_name ?? member.email)}</Link></b>
                   <small>{String(member.role)} · {String(member.status)}</small>
@@ -718,7 +725,7 @@ export function AdminTenantDetail() {
           <div className="audit-list">
             {detail.resources.map((resource) => (
               <div key={`${resource.resource_type}:${resource.resource_id}`}>
-                <Users />
+                <WalletCards />
                 <span><b>{String(resource.resource_type)}</b><small>{String(resource.resource_id)}</small></span>
               </div>
             ))}
@@ -726,7 +733,7 @@ export function AdminTenantDetail() {
           </div>
         </section>
       </div>
-    </>
+    </AdminConsole>
   );
 }
 
@@ -760,36 +767,55 @@ export function AdminStaff() {
   if (!roles) return <ContentBusy />;
 
   return (
-    <>
+    <AdminConsole>
       <div className="admin-page-head">
         <div>
           <small>{l("الإدارة / الفريق", "Admin / Staff")}</small>
-          <h1>{l("فريق الإدارة والصلاحيات", "Admin staff & roles")}</h1>
-          <p>{l("عرض الأدوار الحالية. دعوات الموظفين ومصفوفة الصلاحيات الكاملة تُستكمل لاحقاً.", "Current roles. Staff invites and full permission matrix come next.")}</p>
+          <h1>{l("فريق الإدارة", "Admin staff")}</h1>
+          <p>{l("صف العناوين ثم كل موظف: الاسم، البريد، الدور. دعوات الموظفين تُستكمل لاحقاً.", "Title row, then each staff member: name, email, role. Invites come next.")}</p>
         </div>
       </div>
-      <section className="admin-panel">
-        <div className="admin-panel-head"><h2>{l("الأدوار النشطة", "Active roles")}</h2></div>
-        <div className="role-list">
-          {roles.map((row) => (
-            <div key={String(row.user_id)}>
-              <i><ShieldCheck /></i>
-              <span>
-                <b><Link href={`/admin/users/${encodeURIComponent(String(row.user_id))}`}>{String(row.display_name ?? row.email ?? row.user_id)}</Link></b>
-                <small>{String(row.email ?? "")}</small>
-              </span>
-              <code>{String(row.role)}</code>
-            </div>
-          ))}
-          {!roles.length && <p>{l("لا يوجد موظفون إداريون بعد. أنشئ المدير عبر bootstrap.", "No admin staff yet. Bootstrap the first admin.")}</p>}
-        </div>
-        <p className="modal-note" style={{ marginTop: 16 }}>
-          {l(
-            "التهيئة الآمنة: أضف DATABASE_URL من Neon ثم npm run admin:bootstrap وافتح /admin/setup.",
-            "Safe bootstrap: set DATABASE_URL from Neon, run npm run admin:bootstrap, open /admin/setup.",
-          )}
-        </p>
-      </section>
-    </>
+      <div className="admin-kpis">
+        <article><i><ShieldCheck /></i><span>{l("أعضاء الفريق", "Staff")}</span><b>{roles.length}</b><small>{l("أدوار غير عميل", "non-customer roles")}</small></article>
+        <article><i><ShieldCheck /></i><span>{l("مديرو المنصة", "Admins")}</span><b>{roles.filter((row) => ["super_admin", "admin"].includes(String(row.role))).length}</b><small>{l("صلاحية كاملة", "full access")}</small></article>
+        <article><i><Users /></i><span>{l("دعم ومالية", "Support & finance")}</span><b>{roles.filter((row) => ["support", "finance"].includes(String(row.role))).length}</b><small>{l("تشغيل يومي", "day-to-day")}</small></article>
+      </div>
+      <div className="plan-matrix-shell">
+        <table className="plan-matrix admin-data-table">
+          <thead>
+            <tr>
+              <th className="plan-matrix-titles" scope="col">{l("العناوين", "Titles")}</th>
+              <th scope="col">{l("البريد", "Email")}</th>
+              <th scope="col">{l("الدور", "Role")}</th>
+              <th scope="col">{l("الحساب", "Account")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {roles.map((row) => (
+              <tr key={String(row.user_id)}>
+                <th className="plan-matrix-label" scope="row">
+                  <div>
+                    <span>
+                      <b>{String(row.display_name ?? row.email ?? row.user_id)}</b>
+                      <small>{String(row.user_id)}</small>
+                    </span>
+                  </div>
+                </th>
+                <td>{String(row.email ?? "—")}</td>
+                <td><code className="admin-role-chip">{String(row.role)}</code></td>
+                <td><Link className="admin-row-link" href={`/admin/users/${encodeURIComponent(String(row.user_id))}`}>{l("فتح", "Open")}</Link></td>
+              </tr>
+            ))}
+            {!roles.length ? <EmptyRow cols={4} message={l("لا يوجد موظفون إداريون بعد. أنشئ المدير عبر bootstrap.", "No admin staff yet. Bootstrap the first admin.")} /> : null}
+          </tbody>
+        </table>
+      </div>
+      <p className="admin-help-text">
+        {l(
+          "التهيئة الآمنة: أضف DATABASE_URL من Neon ثم npm run admin:bootstrap وافتح /admin/setup.",
+          "Safe bootstrap: set DATABASE_URL from Neon, run npm run admin:bootstrap, open /admin/setup.",
+        )}
+      </p>
+    </AdminConsole>
   );
 }
