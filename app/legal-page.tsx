@@ -14,7 +14,7 @@ const content = {
     ["الاستخدام المقبول", "Acceptable use", "يُمنع إساءة الاستخدام أو الاحتيال أو محاولة تجاوز الصلاحيات أو تعطيل الخدمة.", "Fraud, abuse, unauthorized access attempts and service disruption are prohibited."],
   ]},
   security: { title: ["مركز الأمان", "Security Center"], intro: ["طبقات دفاع لحماية الهوية والبيانات المالية وتقليل أثر الأخطاء البشرية والتقنية.", "Layered controls protect identity and financial data while reducing human and technical risk."], sections: [
-    ["الهوية والوصول", "Identity and access", "كلمات المرور مشتقة بخوارزمية PBKDF2، والجلسات في ملفات HttpOnly تنتهي بإغلاق المتصفح أو بعد ثلاث دقائق من السكون، والصلاحيات مفروضة على الخادم.", "Passwords use PBKDF2 derivation, sessions use HttpOnly cookies that end when the browser closes or after three minutes idle, and authorization is enforced server-side."],
+    ["الهوية والوصول", "Identity and access", "كلمات المرور مشتقة بخوارزمية PBKDF2، والجلسات في ملفات HttpOnly تنتهي بإغلاق المتصفح أو بعد عشر دقائق من السكون، والصلاحيات مفروضة على الخادم.", "Passwords use PBKDF2 derivation, sessions use HttpOnly cookies that end when the browser closes or after ten minutes idle, and authorization is enforced server-side."],
     ["سلامة الحسابات", "Financial integrity", "تُسجل الحركات المهمة بقيود مزدوجة ومفاتيح منع التكرار وسجل تدقيق لا يحتاج المستخدم إلى كشف الأسرار فيه.", "Important money movements use double-entry journals, idempotency keys and secret-safe audit logs."],
     ["الاستجابة", "Response", "راقب صفحة الحالة ونبّهنا فوراً عند الاشتباه في دخول غير مصرح أو خطأ مالي.", "Monitor service health and notify us promptly about suspected unauthorized access or financial discrepancies."],
   ]},
