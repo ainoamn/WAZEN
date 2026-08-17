@@ -1,12 +1,12 @@
 import { z } from "zod";
 import { ensureSchema, getRawDb } from "../../../db/runtime";
 import { authenticateRequest, clearCsrfCookie, clearSessionCookie, createSession, createSessionToken, csrfCookie, hashPassword, issueCsrfToken, normalizeEmail, revokeSession, sessionHeaders, sha256, verifyPassword } from "../../../lib/auth";
+import { ensureDefaultTenant, platformRoleOf } from "../../../lib/authorization";
 import { ApiError, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit } from "../../../lib/security";
 import { appOrigin } from "../../../lib/app-origin";
 import { writeAudit } from "../../../lib/audit";
 import { decryptSecret, encryptSecret, loadKeyring } from "../../../lib/encryption";
 import { createTotpSecret, verifyTotp } from "../../../lib/totp";
-import { ensureDefaultTenant } from "../../../lib/authorization";
 import { isEmailProviderConfigured } from "../../../lib/email-provider";
 import { isProductionLikeRuntime } from "../../../lib/production-setup";
 
@@ -23,10 +23,16 @@ export async function GET(request: Request) {
   try {
     const db = getRawDb(); await ensureSchema(db);
     const user = await authenticateRequest(db, request);
-    if (!user) return Response.json({ authenticated: false }, { status: 401 });
+    if (!user) {
+      const headers = new Headers({ "Cache-Control": "no-store" });
+      headers.append("Set-Cookie", clearSessionCookie());
+      headers.append("Set-Cookie", clearCsrfCookie());
+      return Response.json({ authenticated: false }, { status: 401, headers });
+    }
+    const role = await platformRoleOf(db, user.id);
     const issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
     const headers = new Headers({ "Cache-Control": "no-store" }); if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
-    return Response.json({ authenticated: true, user }, { headers });
+    return Response.json({ authenticated: true, user, role }, { headers });
   } catch (error) { return errorResponse(error); }
 }
 
@@ -215,6 +221,7 @@ export async function POST(request: Request) {
       if (Number(update.meta.changes) !== 1) throw new ApiError(401, "TOTP_REPLAYED");
     }
     const session = await createSession(db, row.id);
-    return Response.json({ ok: true, user: { id: row.id, email: row.email, displayName: row.display_name, isDemo: false } }, { headers: sessionHeaders(session) });
+    const role = await platformRoleOf(db, row.id);
+    return Response.json({ ok: true, user: { id: row.id, email: row.email, displayName: row.display_name, isDemo: false }, role }, { headers: sessionHeaders(session) });
   } catch (error) { return errorResponse(error); }
 }

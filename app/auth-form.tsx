@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { WazenIcon } from "../components/brand/WazenLogo";
 import { Brand, useCommerceLocale } from "./commercial-kit";
+import { canOpenPlatformConsole } from "../lib/platform-console";
 
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
@@ -20,6 +21,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         verificationRequired?: boolean;
         emailDelivery?: "queued" | "not_configured";
         verifyUrl?: string;
+        role?: string;
       };
       if (!response.ok) throw new Error(result.error ?? "AUTH_FAILED");
       if (result.verificationRequired) {
@@ -31,7 +33,8 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         return;
       }
       const requested = new URLSearchParams(window.location.search).get("next");
-      router.push(requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/home");
+      const safeNext = requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/home";
+      router.push(safeNext.startsWith("/admin") && !canOpenPlatformConsole(result.role) ? "/home" : safeNext);
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : "AUTH_FAILED"; if (code === "TOTP_REQUIRED") setTotpRequired(true);
       setError(

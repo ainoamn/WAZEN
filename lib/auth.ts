@@ -1,9 +1,9 @@
 import { getRequestUser, type RequestUser } from "../db/runtime";
+import { browserCsrfCookie, browserSessionCookie, csrfCookieName, idleCutoffIso, isSessionIdle, SESSION_MAX_MS, sessionCookieName } from "./session-policy";
 
-const SESSION_COOKIE = process.env.NODE_ENV === "production" ? "__Host-wazen_session" : "wazen_session";
-const CSRF_COOKIE = process.env.NODE_ENV === "production" ? "__Host-wazen_csrf" : "wazen_csrf";
+const SESSION_COOKIE = sessionCookieName();
+const CSRF_COOKIE = csrfCookieName();
 const PASSWORD_ITERATIONS = 600_000;
-const SESSION_DAYS = 30;
 
 function bytesToBase64(bytes: Uint8Array) {
   let binary = "";
@@ -43,20 +43,18 @@ export function createSessionToken() {
   return bytesToBase64(crypto.getRandomValues(new Uint8Array(32))).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
 
-export function sessionCookie(token: string, expiresAt: Date) {
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Expires=${expiresAt.toUTCString()}${secure}`;
+export function sessionCookie(token: string, _expiresAt?: Date) {
+  return browserSessionCookie(token);
 }
 
-export function csrfCookie(token: string, expiresAt: Date) {
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${CSRF_COOKIE}=${encodeURIComponent(token)}; Path=/; SameSite=Strict; Expires=${expiresAt.toUTCString()}${secure}`;
+export function csrfCookie(token: string, _expiresAt?: Date) {
+  return browserCsrfCookie(token);
 }
 
 export function sessionHeaders(session: { token: string; csrfToken: string; expiresAt: Date }) {
   const headers = new Headers({ "Cache-Control": "no-store" });
-  headers.append("Set-Cookie", sessionCookie(session.token, session.expiresAt));
-  headers.append("Set-Cookie", csrfCookie(session.csrfToken, session.expiresAt));
+  headers.append("Set-Cookie", sessionCookie(session.token));
+  headers.append("Set-Cookie", csrfCookie(session.csrfToken));
   return headers;
 }
 
@@ -83,7 +81,7 @@ export async function createSession(db: D1Database, userId: string) {
   const token = createSessionToken();
   const csrfToken = createSessionToken(); const tokenHash = await sha256(token); const csrfTokenHash = await sha256(csrfToken);
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + SESSION_DAYS * 86_400_000);
+  const expiresAt = new Date(now.getTime() + SESSION_MAX_MS);
   await db.prepare("INSERT INTO auth_sessions (id,user_id,token_hash,csrf_token_hash,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?,?)")
     .bind(crypto.randomUUID(), userId, tokenHash, csrfTokenHash, expiresAt.toISOString(), now.toISOString(), now.toISOString()).run();
   return { token, csrfToken, expiresAt };
@@ -111,13 +109,17 @@ export async function authenticateRequest(db: D1Database, request: Request): Pro
   }
   const token = cookieValue(request, SESSION_COOKIE);
   if (!token) return null;
-  const row = await db.prepare(`SELECT u.id,u.email,u.display_name,u.avatar_url,p.status,s.id AS session_id
+  const row = await db.prepare(`SELECT u.id,u.email,u.display_name,u.avatar_url,p.status,s.id AS session_id,s.last_seen_at
     FROM auth_sessions s JOIN users u ON u.id=s.user_id
     LEFT JOIN customer_profiles p ON p.user_id=u.id
     WHERE s.token_hash=? AND s.expires_at>? LIMIT 1`)
     .bind(await sha256(token), new Date().toISOString())
-    .first<{ id: string; email: string; display_name: string; avatar_url: string | null; status: string | null; session_id: string }>();
+    .first<{ id: string; email: string; display_name: string; avatar_url: string | null; status: string | null; session_id: string; last_seen_at: string }>();
   if (!row || row.status === "suspended" || row.status === "closed") return null;
+  if (isSessionIdle(row.last_seen_at)) {
+    await db.prepare("DELETE FROM auth_sessions WHERE id=?").bind(row.session_id).run();
+    return null;
+  }
   await db.prepare("UPDATE auth_sessions SET last_seen_at=? WHERE id=?").bind(new Date().toISOString(), row.session_id).run();
   return { id: row.id, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url, isDemo: false, authType: "session" };
 }
@@ -125,7 +127,7 @@ export async function authenticateRequest(db: D1Database, request: Request): Pro
 export async function issueCsrfToken(db: D1Database, request: Request) {
   const sessionToken = cookieValue(request, SESSION_COOKIE); if (!sessionToken) return null;
   const now = new Date().toISOString(); const sessionHash = await sha256(sessionToken);
-  const row = await db.prepare("SELECT csrf_token_hash,expires_at FROM auth_sessions WHERE token_hash=? AND expires_at>?").bind(sessionHash, now).first<{ csrf_token_hash: string | null; expires_at: string }>();
+  const row = await db.prepare("SELECT csrf_token_hash,expires_at FROM auth_sessions WHERE token_hash=? AND expires_at>? AND last_seen_at>?").bind(sessionHash, now, idleCutoffIso()).first<{ csrf_token_hash: string | null; expires_at: string }>();
   if (!row) return null;
   const existingToken = cookieValue(request, CSRF_COOKIE);
   if (existingToken && row.csrf_token_hash && constantTimeEqual(await sha256(existingToken), row.csrf_token_hash)) return { csrfToken: existingToken, expiresAt: new Date(row.expires_at) };
@@ -139,8 +141,8 @@ export async function verifyCsrfToken(db: D1Database, request: Request) {
   const authorization = request.headers.get("authorization") ?? ""; if (authorization.startsWith("Bearer wzn_")) return true;
   const sessionToken = cookieValue(request, SESSION_COOKIE); const cookieToken = cookieValue(request, CSRF_COOKIE); const headerToken = request.headers.get("x-csrf-token");
   if (!sessionToken || !cookieToken || !headerToken || !constantTimeEqual(cookieToken, headerToken)) return false;
-  const row = await db.prepare("SELECT id FROM auth_sessions WHERE token_hash=? AND csrf_token_hash=? AND expires_at>? LIMIT 1")
-    .bind(await sha256(sessionToken), await sha256(cookieToken), new Date().toISOString()).first();
+  const row = await db.prepare("SELECT id FROM auth_sessions WHERE token_hash=? AND csrf_token_hash=? AND expires_at>? AND last_seen_at>? LIMIT 1")
+    .bind(await sha256(sessionToken), await sha256(cookieToken), new Date().toISOString(), idleCutoffIso()).first();
   return Boolean(row);
 }
 
