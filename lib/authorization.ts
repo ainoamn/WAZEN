@@ -44,18 +44,21 @@ export function assertApiScope(user: RequestUser, required: string) {
 
 export async function authorizeSpace(db: D1Database, user: RequestUser, spaceId: string, capability: SpaceCapability, allowedTypes?: string[]) {
   assertApiScope(user, apiScopes[capability]);
-  const row = await db.prepare(`SELECT s.id,s.owner_user_id,s.type,s.currency,s.balance_minor,
+  const row = await db.prepare(`SELECT s.id,s.owner_user_id,s.type,s.currency,s.balance_minor,s.grace_until,s.status,
       CASE WHEN s.owner_user_id=? THEN 'owner' ELSE m.role END AS effective_role
     FROM spaces s LEFT JOIN members m ON m.space_id=s.id AND m.user_id=? AND m.status='active'
     WHERE s.id=? AND (s.owner_user_id=? OR m.user_id=?) LIMIT 1`)
     .bind(user.id, user.id, spaceId, user.id, user.id)
-    .first<{ id: string; owner_user_id: string; type: string; currency: string; balance_minor: number; effective_role: string }>();
+    .first<{ id: string; owner_user_id: string; type: string; currency: string; balance_minor: number; grace_until: string | null; status: string | null; effective_role: string }>();
   if (!row) throw new ApiError(404, "WALLET_NOT_FOUND");
   if (!spaceRoles[capability].has(row.effective_role)) throw new ApiError(403, "FORBIDDEN");
   if (allowedTypes && !allowedTypes.includes(row.type)) throw new ApiError(400, "INVALID_WALLET_TYPE");
   const { getActivePlanEntitlements, planAllowsSpaceType } = await import("../services/admin/billing-service");
+  const { spaceInUserGrace } = await import("./plan-retention");
   const entitlements = await getActivePlanEntitlements(db, user.id);
-  if (!planAllowsSpaceType(entitlements.features, row.type)) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
+  if (!planAllowsSpaceType(entitlements.features, row.type) && !spaceInUserGrace(row)) {
+    throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
+  }
   return row;
 }
 

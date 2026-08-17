@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ErrorCard, money, PageLoader, PublicHeader, Status, useCommerceLocale } from "../commercial-kit";
 import { PLAN_FEATURE_CATALOG, formatQuota, planHasFeature } from "../../lib/plan-features";
+import { userGraceWarningCopy } from "../../lib/plan-retention";
 import { apiFetch } from "../../lib/client-api";
 import { errorLabel } from "../../lib/admin-labels";
 import { clearDashboardCache } from "../../lib/dashboard-session";
@@ -34,7 +35,19 @@ type BillingData = {
   subscription?: SubscriptionRow | null;
   invoices: InvoiceRow[];
   payments: PaymentRow[];
-  entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; dailyTransactionLimit?: number; monthlyTransactionLimit?: number; printLimit?: number; status: string };
+  entitlements?: {
+    features: string[];
+    walletLimit: number;
+    memberLimit: number;
+    transactionLimit?: number;
+    recordLimit?: number;
+    userLimit?: number;
+    dailyTransactionLimit?: number;
+    monthlyTransactionLimit?: number;
+    printLimit?: number;
+    status: string;
+    retention?: { graceEndsAt: string; spaceCount: number; spaceTypes: string[]; userVisibleDays: number } | null;
+  };
 };
 
 export function BillingClient() {
@@ -96,6 +109,18 @@ export function BillingClient() {
           <a className="primary-link" href="/pricing">{l("تغيير الباقة", "Change plan")}<ArrowRight size={17} /></a>
         </div>
         {error ? <p className="admin-inline-alert is-error">{error}</p> : null}
+        {data.entitlements?.retention ? (() => {
+          const notice = userGraceWarningCopy(locale, data.entitlements.retention.graceEndsAt, data.entitlements.retention.spaceCount);
+          return (
+            <div className="retention-warning" role="status">
+              <div>
+                <strong>{notice.title}</strong>
+                <p>{notice.text}</p>
+              </div>
+              <a href="/pricing">{l("ترقية الباقة", "Upgrade plan")}</a>
+            </div>
+          );
+        })() : null}
         <section className="billing-current">
           <div>
             <WalletCards />
@@ -150,8 +175,8 @@ export function BillingClient() {
           <section className="panel billing-features">
             <h2>{l("تخفيض مجدول", "Scheduled downgrade")}</h2>
             <p>{l(
-              `ستنتقل إلى «${locale === "ar" ? (sub.pending_plan_name_ar ?? sub.pending_plan_id) : (sub.pending_plan_name_en ?? sub.pending_plan_id)}» من ${new Intl.DateTimeFormat(locale === "ar" ? "ar-OM" : "en-GB", { dateStyle: "medium" }).format(new Date(sub.pending_effective_at))} (اليوم التالي لانتهاء الفترة الحالية).`,
-              `You will move to “${sub.pending_plan_name_en ?? sub.pending_plan_id}” on ${new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(new Date(sub.pending_effective_at))} (the day after the current period ends).`,
+              `ستنتقل إلى «${locale === "ar" ? (sub.pending_plan_name_ar ?? sub.pending_plan_id) : (sub.pending_plan_name_en ?? sub.pending_plan_id)}» من ${new Intl.DateTimeFormat(locale === "ar" ? "ar-OM" : "en-GB", { dateStyle: "medium" }).format(new Date(sub.pending_effective_at))} (اليوم التالي لانتهاء الفترة الحالية). بعدها تبقى المحافظ غير المشمولة ظاهرة 15 يوماً ثم تُحذف من حسابك.`,
+              `You will move to “${sub.pending_plan_name_en ?? sub.pending_plan_id}” on ${new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(new Date(sub.pending_effective_at))} (the day after the current period ends). Out-of-plan wallets then stay visible for 15 days before they are removed from your account.`,
             )}</p>
           </section>
         ) : null}

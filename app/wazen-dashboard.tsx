@@ -20,6 +20,7 @@ import { formatMoneyMinor, currencyScale } from "../lib/money";
 import { escapeHtml } from "../lib/html";
 import { memberDisplayCreditMinor, netMemberClaim, pendingSettlementsWithCredit } from "../lib/finance";
 import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, quotaRemaining, quotaWarningCopy, upgradeNoticeFor } from "../lib/plan-features";
+import { userGraceWarningCopy } from "../lib/plan-retention";
 import { canOpenPlatformConsole } from "../lib/platform-console";
 import { consumePlanQuota } from "../lib/plan-quota-client";
 import { TRANSACTION_PAGE_SIZES, pageTransactions } from "../lib/transaction-page";
@@ -147,7 +148,7 @@ type CircleTurn = { id: string; space_id: string; member_id: string; display_nam
 type TripExpense = { id: string; space_id: string; paid_by_member_id: string; paid_by_name: string; amount_minor: number; description: string; occurred_at: string; paid_from?: string };
 type ExpenseSplit = { id: string; expense_id: string; member_id: string; display_name: string; share_minor: number };
 type Settlement = { id: string; space_id: string; from_member_id: string; to_member_id: string; from_member_name: string | null; to_member_name: string | null; amount_minor: number; status: string };
-type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; dailyTransactionLimit?: number; monthlyTransactionLimit?: number; printLimit?: number; status: string; usage?: { transactionsTotal: number; transactionsToday: number; transactionsThisMonth: number; printsThisMonth: number }; warnings?: Array<{ kind: string; used: number; limit: number }> }; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
+type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; dailyTransactionLimit?: number; monthlyTransactionLimit?: number; printLimit?: number; status: string; usage?: { transactionsTotal: number; transactionsToday: number; transactionsThisMonth: number; printsThisMonth: number }; warnings?: Array<{ kind: string; used: number; limit: number }>; retention?: { graceEndsAt: string; spaceCount: number; spaceTypes: string[]; userVisibleDays: number } | null }; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
 
 const copy = {
   ar: {
@@ -338,6 +339,10 @@ const typeLabels = {
 
 function planFeaturesOf(data?: DashboardData | null) {
   return data?.entitlements?.features?.length ? data.entitlements.features : ["personal"];
+}
+
+function graceSpaceTypesOf(data?: DashboardData | null) {
+  return data?.entitlements?.retention?.spaceTypes ?? [];
 }
 
 function planAllowsStatements(features: string[]) {
@@ -852,7 +857,7 @@ export function WazenDashboard() {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     if (!data) return;
-    if (dashboardNavLocked(planFeaturesOf(data), activeView)) {
+    if (dashboardNavLocked(planFeaturesOf(data), activeView, graceSpaceTypesOf(data))) {
       setActiveView("overview");
       persistPlace("overview");
     }
@@ -973,7 +978,7 @@ export function WazenDashboard() {
 
   const changeView = (view: ViewId, spaceId?: string) => {
     const features = planFeaturesOf(data);
-    if (dashboardNavLocked(features, view)) {
+    if (dashboardNavLocked(features, view, graceSpaceTypesOf(data))) {
       showUpgradeNotice(view, t[view]);
       return;
     }
@@ -990,8 +995,12 @@ export function WazenDashboard() {
 
   const activeSpace = spacesForView.find((space) => space.id === pickedSpaceId[activeView]) ?? spacesForView[0];
   const planFeatures = planFeaturesOf(data);
-  const viewLocked = dashboardNavLocked(planFeatures, activeView);
+  const graceTypes = graceSpaceTypesOf(data);
+  const viewLocked = dashboardNavLocked(planFeatures, activeView, graceTypes);
   const canCreateCurrentType = planAllowsSpaceType(planFeatures, walletDefaultType);
+  const retentionNotice = data.entitlements?.retention
+    ? userGraceWarningCopy(locale, data.entitlements.retention.graceEndsAt, data.entitlements.retention.spaceCount)
+    : null;
   const openNewWallet = () => {
     if (!canCreateCurrentType) {
       showUpgradeNotice(activeView === "overview" ? "personal" : activeView, t[activeView === "overview" ? "personal" : activeView]);
@@ -1030,7 +1039,7 @@ export function WazenDashboard() {
             </button>
             <AccentPicker locale={locale} accent={accent} onPick={applyAccent} />
             <NotificationBell data={data} locale={locale} onOpen={(view, spaceId) => {
-              if (dashboardNavLocked(planFeatures, view)) {
+              if (dashboardNavLocked(planFeatures, view, graceTypes)) {
                 showUpgradeNotice(view, t[view]);
                 return;
               }
@@ -1039,6 +1048,16 @@ export function WazenDashboard() {
             <UserMenu locale={locale} name={data.user.displayName} email={data.user.email} avatarUrl={data.user.avatarUrl} onSettings={() => changeView("settings")} onLogout={() => void logout()} />
           </div>
         </header>
+
+        {retentionNotice ? (
+          <div className="retention-warning" role="status">
+            <div>
+              <strong>{retentionNotice.title}</strong>
+              <p>{retentionNotice.text}</p>
+            </div>
+            <a href="/pricing">{locale === "ar" ? "ترقية الباقة" : "Upgrade plan"}</a>
+          </div>
+        ) : null}
 
         {data.entitlements?.warnings?.length ? (
           <div className="quota-warning" role="status">
@@ -1319,6 +1338,7 @@ function UserMenu({ locale, name, email, avatarUrl, onSettings, onLogout }: { lo
 function Sidebar({ locale, active, open, entitlements, role, onNavigate, onLocked, onClose, onLogout }: { locale: Locale; active: ViewId; open: boolean; entitlements?: DashboardData["entitlements"]; role?: string | null; onNavigate: (id: ViewId) => void; onLocked: (id: ViewId | "documents") => void; onClose: () => void; onLogout: () => void }) {
   const t = copy[locale];
   const features = entitlements?.features?.length ? entitlements.features : ["personal"];
+  const graceTypes = entitlements?.retention?.spaceTypes ?? [];
   const documentsLocked = !planHasFeature(features, "documents");
   return (
     <>
@@ -1332,7 +1352,7 @@ function Sidebar({ locale, active, open, entitlements, role, onNavigate, onLocke
         <div className="workspace-pill"><div className="workspace-icon"><Landmark size={17} /></div><div><small>{t.workspace}</small><strong>{locale === "ar" ? "الحساب الرئيسي" : "Main account"}</strong></div><ChevronDown size={15} /></div>
         <nav className="sidebar-nav">
           {navItems.map(({ id, icon: Icon }) => {
-            const locked = dashboardNavLocked(features, id);
+            const locked = dashboardNavLocked(features, id, graceTypes);
             return (
               <button
                 key={id}

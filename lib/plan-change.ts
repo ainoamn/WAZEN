@@ -97,6 +97,8 @@ export async function applyDuePlanChanges(db: D1Database, userId: string) {
       createdAt: now,
     }),
   ]);
+  const { syncRetentionForUser } = await import("./plan-retention");
+  await syncRetentionForUser(db, userId, "downgrade");
   return true;
 }
 
@@ -137,6 +139,8 @@ export async function applyInvoicePlanChange(db: D1Database, invoiceId: string, 
     metadata: { planId, invoiceId, cycle },
     createdAt: now,
   }).run();
+  const { syncRetentionForUser } = await import("./plan-retention");
+  await syncRetentionForUser(db, userId, "upgrade");
   return { applied: true, planId, cycle };
 }
 
@@ -301,6 +305,8 @@ export async function selectCustomerPlan(db: D1Database, user: RequestUser, inpu
       }),
     );
     await db.batch(statements);
+    const { syncRetentionForUser } = await import("./plan-retention");
+    await syncRetentionForUser(db, user.id, "upgrade");
     return {
       ok: true,
       change: change === "same" || change === "renew" ? "renewed" : "upgraded",

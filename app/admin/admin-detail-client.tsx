@@ -27,6 +27,12 @@ type UserDetail = {
     payments: Row[];
     couponRedemptions: Row[];
   };
+  retention?: {
+    userVisibleGraceDays: number;
+    adminArchiveDays: number;
+    adminNote: string;
+    archives: Array<Row & { restorable?: boolean }>;
+  };
 };
 
 function applyProfileToForm(
@@ -205,6 +211,44 @@ export function AdminUserDetail() {
         : l("تم تفعيل الحساب يدوياً. يمكن للمستخدم تسجيل الدخول الآن.", "Account activated manually. The user can sign in now."));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "VERIFY_FAILED");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const restoreArchive = async (archiveId: string) => {
+    const note = window.prompt(
+      l(
+        "ملاحظة الاسترجاع بمقابل (للإدارة فقط — لا تظهر للمستخدم):",
+        "Paid restore note (admin only — never shown to the user):",
+      ),
+      l("استرجاع بمقابل بعد مخاطبة الإدارة", "Paid restore after admin request"),
+    );
+    if (!note || note.trim().length < 3) return;
+    setWorking(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await apiFetch("/api/platform", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "restoreRetentionArchive",
+          idempotencyKey: crypto.randomUUID(),
+          archiveId,
+          userId,
+          note: note.trim(),
+        }),
+      });
+      const result = await response.json() as { error?: string; detail?: UserDetail };
+      if (!response.ok) throw new Error(result.error ?? "RESTORE_FAILED");
+      if (result.detail) {
+        setDetail(result.detail);
+        syncForm(result.detail.profile);
+      } else void load();
+      setNotice(l("تم استرجاع المحفظة من الأرشيف الإداري.", "Wallet restored from the admin archive."));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "RESTORE_FAILED");
     } finally {
       setWorking(false);
     }
@@ -508,7 +552,7 @@ export function AdminUserDetail() {
           <div className="admin-panel-head"><h2>{l("المحافظ المملوكة", "Owned wallets")}</h2></div>
           <div className="audit-list">
             {detail.spaces.map((space) => (
-              <div key={String(space.id)}><Users /><span><b>{String(locale === "ar" ? space.name_ar ?? space.name_en : space.name_en ?? space.name_ar)}</b><small>{spaceTypeLabel(String(space.type), locale)} · {String(space.currency)}</small></span></div>
+              <div key={String(space.id)}><Users /><span><b>{String(locale === "ar" ? space.name_ar ?? space.name_en : space.name_en ?? space.name_ar)}</b><small>{spaceTypeLabel(String(space.type), locale)} · {String(space.currency)}{space.grace_until ? ` · ${l("مهلة", "grace")} ${formatAdminDate(space.grace_until, locale)}` : ""}</small></span></div>
             ))}
             {!detail.spaces.length && <p>{l("لا محافظ.", "No wallets.")}</p>}
           </div>
@@ -523,6 +567,39 @@ export function AdminUserDetail() {
           </div>
         </section>
       </div>
+
+      <section className="admin-panel">
+        <div className="admin-panel-head">
+          <div>
+            <h2>{l("أرشيف الاحتفاظ (إدارة فقط)", "Retention archive (admin only)")}</h2>
+            <p>{l(
+              `المستخدم يرى 15 يوماً فقط. بعد الحذف من حسابه تُحفظ اللقطة هنا ${detail.retention?.adminArchiveDays ?? 60} يوماً للاسترجاع بمقابل بعد مخاطبة الإدارة. لا تُعرض هذه الإمكانية في واجهة العميل.`,
+              `The user only sees a 15-day window. After removal from their account, snapshots stay here for ${detail.retention?.adminArchiveDays ?? 60} days for a paid restore after contacting admin. Never expose this to the customer UI.`,
+            )}</p>
+          </div>
+        </div>
+        <div className="audit-list">
+          {(detail.retention?.archives ?? []).map((row) => (
+            <div key={String(row.id)}>
+              <WalletCards />
+              <span>
+                <b>{String(locale === "ar" ? row.name_ar ?? row.name_en : row.name_en ?? row.name_ar)}</b>
+                <small>
+                  {spaceTypeLabel(String(row.space_type), locale)} · {l("أُرشف", "Archived")} {fmt(row.archived_at)} · {l("يُحذف", "Purge")} {fmt(row.purge_after)}
+                  {row.restored_at ? ` · ${l("مُسترجع", "Restored")} ${fmt(row.restored_at)}` : ""}
+                  {row.purged_at ? ` · ${l("مُصفّى", "Purged")} ${fmt(row.purged_at)}` : ""}
+                </small>
+              </span>
+              {row.restorable ? (
+                <button type="button" disabled={working} onClick={() => void restoreArchive(String(row.id))}>
+                  {l("استرجاع بمقابل", "Paid restore")}
+                </button>
+              ) : null}
+            </div>
+          ))}
+          {!(detail.retention?.archives ?? []).length && <p>{l("لا أرشيف احتفاظ.", "No retention archives.")}</p>}
+        </div>
+      </section>
 
       <section className="admin-panel">
         <div className="admin-panel-head"><h2>{l("سجل التدقيق", "Audit log")}</h2></div>

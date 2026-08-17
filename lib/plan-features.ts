@@ -102,11 +102,14 @@ export function upgradeNoticeFor(locale: "ar" | "en", featureLabel: string, targ
     text: `To use ${featureLabel}, upgrade to the ${target.planEn} plan or higher. Your current plan does not include this option.`,
   };
 }
-export function dashboardNavLocked(features: string[], viewId: string) {
+export function dashboardNavLocked(features: string[], viewId: string, graceSpaceTypes: string[] = []) {
+  const grace = new Set(graceSpaceTypes);
   if (viewId === "reports") return !(planHasFeature(features, "advanced_reports") || planHasFeature(features, "exports"));
-  if (viewId === "household") return !planAllowsSpaceType(features, "household");
-  if (viewId === "trip") return !planAllowsSpaceType(features, "trip");
-  if (viewId === "society" || viewId === "groups") return !planAllowsSpaceType(features, "society");
+  if (viewId === "household") return !planAllowsSpaceType(features, "household") && !grace.has("household");
+  if (viewId === "trip") return !planAllowsSpaceType(features, "trip") && !grace.has("trip");
+  if (viewId === "society" || viewId === "groups") {
+    return !planAllowsSpaceType(features, "society") && !grace.has("society") && !grace.has("group");
+  }
   return false;
 }
 

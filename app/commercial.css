@@ -1094,6 +1094,10 @@
 .quota-warning { margin: 0 0 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border: 1px solid #fdba74; border-radius: 14px; background: #fff7ed; color: #9a3412; }
 .quota-warning p { margin: 0; font-size: 13px; line-height: 1.6; font-weight: 600; }
 .quota-warning a { font-size: 13px; font-weight: 800; color: #9a3412; white-space: nowrap; }
+.retention-warning { margin: 0 0 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border: 1px solid #fca5a5; border-radius: 14px; background: #fef2f2; color: #991b1b; }
+.retention-warning strong { display: block; margin-bottom: 4px; font-size: 14px; }
+.retention-warning p { margin: 0; font-size: 13px; line-height: 1.6; font-weight: 600; }
+.retention-warning a { font-size: 13px; font-weight: 800; color: #991b1b; white-space: nowrap; }
 @media (max-width: 760px) {
   .plan-matrix-toolbar { width: 100%; }
   .plan-matrix-toolbar button { flex: 1; justify-content: center; }

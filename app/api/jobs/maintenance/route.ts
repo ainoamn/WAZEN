@@ -3,6 +3,11 @@ import { ApiError, errorResponse } from "../../../../lib/security";
 import { loadKeyring, rotateSecret } from "../../../../lib/encryption";
 import { sanitizeAuditMetadata } from "../../../../lib/audit";
 import { idleCutoffIso } from "../../../../lib/session-policy";
+import {
+  archiveExpiredGraceSpaces,
+  expireLapsedPaidSubscriptions,
+  purgeExpiredRetentionArchives,
+} from "../../../../lib/plan-retention";
 
 export async function POST(request: Request) {
   try {
@@ -36,6 +41,19 @@ export async function POST(request: Request) {
       if (sanitized !== row.metadata_json) auditStatements.push(db.prepare("UPDATE audit_logs SET metadata_json=? WHERE id=?").bind(sanitized, row.id));
     }
     if (auditStatements.length) await db.batch(auditStatements); auditRowsSanitized = auditStatements.length;
-    return Response.json({ ok: true, cleanedAt: now, encryptedRowsRotated: rotated, auditRowsSanitized });
+
+    const expired = await expireLapsedPaidSubscriptions(db);
+    const archived = await archiveExpiredGraceSpaces(db);
+    const purged = await purgeExpiredRetentionArchives(db);
+
+    return Response.json({
+      ok: true,
+      cleanedAt: now,
+      encryptedRowsRotated: rotated,
+      auditRowsSanitized,
+      subscriptionsExpired: expired.expired,
+      retentionArchived: archived.archived,
+      retentionPurged: purged.purged,
+    });
   } catch (error) { return errorResponse(error); }
 }

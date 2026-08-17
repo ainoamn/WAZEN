@@ -19,7 +19,7 @@ import {
   listGatewaysWithPlans,
   planHasFeature,
   planAllowsSpaceType,
-  filterSpacesByPlan,
+  filterSpacesForPlanAccess,
   updatePaymentGateway,
   upsertAdminPlan,
   assertOwnerPlanQuota,
@@ -341,8 +341,8 @@ export async function GET(request: Request) {
       const entitlements = await getActivePlanEntitlements(db, user.id);
       if (!planHasFeature(entitlements.features, "exports")) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
       const spaces = await db.prepare("SELECT * FROM spaces WHERE owner_user_id=? ORDER BY created_at").bind(user.id).all<Record<string, unknown>>();
-      const allowedSpaces = filterSpacesByPlan(
-        (spaces.results ?? []).map((space) => ({ ...space, id: String(space.id ?? ""), type: String(space.type ?? "") })),
+      const allowedSpaces = filterSpacesForPlanAccess(
+        (spaces.results ?? []).map((space) => ({ ...space, id: String(space.id ?? ""), type: String(space.type ?? ""), grace_until: space.grace_until == null ? null : String(space.grace_until), status: space.status == null ? null : String(space.status) })),
         entitlements.features,
       );
       const ids = allowedSpaces.map((space) => space.id); const placeholders = ids.map(() => "?").join(",");
@@ -609,7 +609,7 @@ export async function POST(request: Request) {
     }
 
     const actorRole = await roleOf(db, user.id);
-    if (["setUserStatus", "setRole", "setPaymentStatus", "createCoupon", "revokeUserSessions", "updateGateway", "upsertPlan", "adminUpdateSubscription", "adminVerifyEmail", "adminUpdateUser"].includes(action) && user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
+    if (["setUserStatus", "setRole", "setPaymentStatus", "createCoupon", "revokeUserSessions", "updateGateway", "upsertPlan", "adminUpdateSubscription", "adminVerifyEmail", "adminUpdateUser", "restoreRetentionArchive"].includes(action) && user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
     if (action === "setUserStatus") {
       assertPlatformPermission(actorRole, "users:status");
       const targetUserId = String(payload.userId ?? "");
@@ -769,6 +769,26 @@ export async function POST(request: Request) {
       const detail = await adminUpdateUserProfile(db, { ...parsed.data, actorUserId: user.id });
       if (!detail) throw new ApiError(404, "USER_NOT_FOUND");
       return respond({ ok: true, detail });
+    } else if (action === "restoreRetentionArchive") {
+      assertPlatformPermission(actorRole, "users:status");
+      if (!["super_admin", "admin"].includes(actorRole)) throw new ApiError(403, "FORBIDDEN");
+      const parsed = z.object({
+        archiveId: z.string().min(1).max(120),
+        userId: z.string().min(1).max(120),
+        note: z.string().trim().min(3).max(300),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_RETENTION_RESTORE");
+      const { restoreRetentionArchive } = await import("../../../lib/plan-retention");
+      const restored = await restoreRetentionArchive(db, parsed.data.archiveId, user.id);
+      await writeAudit(db, {
+        userId: user.id,
+        action: "wallet.retention_restored",
+        entityType: "space",
+        entityId: restored.spaceId,
+        metadata: { archiveId: parsed.data.archiveId, ownerUserId: parsed.data.userId, note: parsed.data.note, paidRestore: true },
+      });
+      const detail = await getAdminUserDetail(db, parsed.data.userId);
+      return respond({ ok: true, detail, restored });
     } else if (action === "requestDataExport" || action === "requestDeletion") {
       const type = action === "requestDataExport" ? "export" : "deletion";
       const requestId = id(); await db.prepare("INSERT INTO data_requests (id,user_id,type,status,requested_at) VALUES (?,?,?,'pending',?)").bind(requestId, user.id, type, isoNow()).run();
@@ -778,7 +798,7 @@ export async function POST(request: Request) {
       throw new ApiError(400, "UNSUPPORTED_ACTION");
     }
     const scope = action === "setPaymentStatus" ? "payments"
-      : ["setUserStatus", "revokeUserSessions", "adminUpdateSubscription", "adminVerifyEmail", "adminUpdateUser"].includes(action) ? "users"
+      : ["setUserStatus", "revokeUserSessions", "adminUpdateSubscription", "adminVerifyEmail", "adminUpdateUser", "restoreRetentionArchive"].includes(action) ? "users"
       : ["updateGateway"].includes(action) ? "gateways"
       : ["upsertPlan"].includes(action) ? "plans"
       : "overview";

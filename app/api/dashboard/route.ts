@@ -12,6 +12,7 @@ import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
 import { accountLiveBalance, dueAtForPeriod, monthKeysForRule, occurrenceLedgerStatus } from "../../../lib/personal-finance";
 import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-forecast";
 import { filterSpacesByPlan } from "../../../lib/plan-features";
+import { filterSpacesForPlanAccess } from "../../../lib/plan-retention";
 
 type SpaceRow = {
   id: string;
@@ -797,7 +798,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
       .all<SpaceRow>(),
     db.prepare("SELECT * FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name").bind(userId).all(),
   ]);
-  const allowed = filterSpacesByPlan(spaces.results, options?.features ?? []);
+  const allowed = filterSpacesForPlanAccess(spaces.results, options?.features ?? []);
   const ids = allowed.map((space) => space.id);
   if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results, periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [] };
 

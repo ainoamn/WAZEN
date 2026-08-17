@@ -163,12 +163,13 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
   if (!profile) return null;
 
   const { getUserBillingHistory } = await import("./billing-service");
-  const [sessions, apiKeys, spaces, memberships, recentAudit, billing] = await Promise.all([
+  const { listRetentionArchivesForUser, ADMIN_ARCHIVE_DAYS, USER_GRACE_DAYS } = await import("../../lib/plan-retention");
+  const [sessions, apiKeys, spaces, memberships, recentAudit, billing, retentionArchives] = await Promise.all([
     db.prepare(`SELECT id, created_at, last_seen_at, expires_at FROM auth_sessions WHERE user_id=? ORDER BY last_seen_at DESC LIMIT 50`)
       .bind(userId).all(),
     db.prepare(`SELECT id, name, key_prefix, scopes_json, expires_at, last_used_at, revoked_at, created_at
       FROM api_keys WHERE user_id=? ORDER BY created_at DESC LIMIT 50`).bind(userId).all<Record<string, unknown>>(),
-    db.prepare(`SELECT id, name_ar, name_en, type, currency, balance_minor, created_at FROM spaces WHERE owner_user_id=? ORDER BY created_at DESC`)
+    db.prepare(`SELECT id, name_ar, name_en, type, currency, balance_minor, grace_until, status, created_at FROM spaces WHERE owner_user_id=? ORDER BY created_at DESC`)
       .bind(userId).all(),
     db.prepare(`SELECT tm.tenant_id, tm.role, tm.status, t.name AS tenant_name, t.country, t.currency
       FROM tenant_memberships tm JOIN tenants t ON t.id=tm.tenant_id WHERE tm.user_id=? ORDER BY tm.created_at DESC`)
@@ -176,6 +177,7 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
     db.prepare(`SELECT id, action, entity_type, entity_id, created_at FROM audit_logs WHERE user_id=? OR entity_id=? ORDER BY created_at DESC LIMIT 30`)
       .bind(userId, userId).all(),
     getUserBillingHistory(db, userId),
+    listRetentionArchivesForUser(db, userId),
   ]);
 
   let features: string[] = [];
@@ -226,5 +228,11 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
     tenants: memberships.results,
     audit: recentAudit.results,
     billing,
+    retention: {
+      userVisibleGraceDays: USER_GRACE_DAYS,
+      adminArchiveDays: ADMIN_ARCHIVE_DAYS,
+      archives: retentionArchives,
+      adminNote: "paid_restore_within_60_days_admin_only",
+    },
   };
 }

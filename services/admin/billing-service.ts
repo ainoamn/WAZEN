@@ -10,6 +10,7 @@ import {
 import { ApiError } from "../../lib/api-error";
 
 export { parsePlanFeatures, planAllowsSpaceType, planHasFeature, filterSpacesByPlan, PLAN_FEATURE_KEYS, PLAN_FEATURE_CATALOG } from "../../lib/plan-features";
+export { filterSpacesForPlanAccess, USER_GRACE_DAYS, ADMIN_ARCHIVE_DAYS } from "../../lib/plan-retention";
 export { resolveEntitlements };
 
 export type GatewayScope = "local" | "regional" | "global";
@@ -558,7 +559,11 @@ export async function adminUpdateSubscription(
       .run();
   }
 
-  return getUserBillingHistory(db, input.userId);
+  return getUserBillingHistory(db, input.userId).then(async (history) => {
+    const { syncRetentionForUser } = await import("../../lib/plan-retention");
+    await syncRetentionForUser(db, input.userId, "admin");
+    return history;
+  });
 }
 
 export async function getUserBillingHistory(db: D1Database, userId: string) {
@@ -594,7 +599,9 @@ export async function getUserBillingHistory(db: D1Database, userId: string) {
 
 export async function getActivePlanEntitlements(db: D1Database, userId: string) {
   const { applyDuePlanChanges } = await import("../../lib/plan-change");
+  const { expireLapsedPaidSubscriptions, readUserGraceSummary, USER_GRACE_DAYS } = await import("../../lib/plan-retention");
   await applyDuePlanChanges(db, userId);
+  await expireLapsedPaidSubscriptions(db, userId);
   const row = await db
     .prepare(
       `SELECT p.wallet_limit, p.member_limit, p.transaction_limit, p.record_limit, p.user_limit,
@@ -661,12 +668,21 @@ export async function getActivePlanEntitlements(db: D1Database, userId: string) 
       status: "none",
     });
   const usage = await getOwnerQuotaUsage(db, userId);
+  const grace = await readUserGraceSummary(db, userId);
   return {
     ...resolved,
     discountPercent: Number(row?.discount_percent ?? 0),
     discountFixedMinor: Number(row?.discount_fixed_minor ?? 0),
     usage,
     warnings: buildQuotaWarnings(resolved, usage),
+    retention: grace
+      ? {
+        graceEndsAt: grace.graceEndsAt,
+        spaceCount: grace.spaceCount,
+        spaceTypes: grace.spaceTypes,
+        userVisibleDays: USER_GRACE_DAYS,
+      }
+      : null,
   };
 }
 
