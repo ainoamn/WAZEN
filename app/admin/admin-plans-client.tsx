@@ -1,22 +1,32 @@
 "use client";
 
-import { FormEvent, Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Infinity as InfinityIcon, Plus, Users, WalletCards, X } from "lucide-react";
-import { ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
+import {
+  ArrowLeftRight,
+  Check,
+  FileStack,
+  Plus,
+  UserRound,
+  Users,
+  WalletCards,
+} from "lucide-react";
+import { ContentBusy, ErrorCard, money, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import {
-  formatQuota,
   PLAN_FEATURE_CATALOG,
   PLAN_FEATURE_GROUPS,
+  PLAN_FEATURE_KEYS,
   planHasFeature,
   quotaIsUnlimited,
 } from "../../lib/plan-features";
 import { fetchAdminConsole, patchAdminConsole, readAdminConsole } from "../../lib/admin-session";
 
 type Row = Record<string, unknown>;
+type Locale = "ar" | "en";
 
 type PlanForm = {
+  key: string;
   id: string;
   nameAr: string;
   nameEn: string;
@@ -35,7 +45,20 @@ type PlanForm = {
   gatewayIds: string[];
 };
 
-const emptyPlan: PlanForm = {
+type QuotaField = {
+  key: "walletLimit" | "memberLimit" | "userLimit" | "transactionLimit" | "recordLimit";
+  ar: string;
+  en: string;
+  hintAr: string;
+  hintEn: string;
+  min: number;
+  unlimitedValue: number;
+  restore: number;
+  icon: ReactNode;
+};
+
+const emptyPlan = (sortOrder: number): PlanForm => ({
+  key: `new-${crypto.randomUUID()}`,
   id: "",
   nameAr: "",
   nameEn: "",
@@ -50,9 +73,9 @@ const emptyPlan: PlanForm = {
   userLimit: 1,
   features: ["personal"],
   isActive: true,
-  sortOrder: 10,
+  sortOrder,
   gatewayIds: [],
-};
+});
 
 async function postAction(action: string, payload: Record<string, unknown>) {
   const response = await apiFetch("/api/platform", {
@@ -76,8 +99,10 @@ function omrToMinor(value: string) {
 }
 
 function planToForm(plan: Row): PlanForm {
+  const id = String(plan.id ?? "");
   return {
-    id: String(plan.id ?? ""),
+    key: id,
+    id,
     nameAr: String(plan.name_ar ?? ""),
     nameEn: String(plan.name_en ?? ""),
     descriptionAr: String(plan.description_ar ?? ""),
@@ -96,48 +121,26 @@ function planToForm(plan: Row): PlanForm {
   };
 }
 
-function QuotaField({
-  label,
-  hint,
-  value,
-  min,
-  unlimitedValue,
-  onChange,
-  unlimitedLabel,
-}: {
-  label: string;
-  hint: string;
-  value: number;
-  min: number;
-  unlimitedValue: number;
-  onChange: (next: number) => void;
-  unlimitedLabel: string;
-}) {
-  const unlimited = quotaIsUnlimited(value);
+function snapshot(form: PlanForm) {
+  const { key: _key, ...rest } = form;
+  return JSON.stringify(rest);
+}
+
+function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
   return (
-    <label className="plan-quota-field">
-      <span>{label}</span>
-      <small>{hint}</small>
-      <div>
-        <input
-          type="number"
-          min={min}
-          disabled={unlimited}
-          value={unlimited ? "" : value}
-          placeholder={unlimited ? "∞" : String(min)}
-          onChange={(event) => onChange(Math.max(min, Number(event.target.value) || min))}
-        />
-        <label className="plan-unlimited">
-          <input
-            type="checkbox"
-            checked={unlimited}
-            onChange={(event) => onChange(event.target.checked ? unlimitedValue : Math.max(min, 1))}
-          />
-          {unlimitedLabel}
-        </label>
-      </div>
-    </label>
+    <button type="button" className={`plan-switch${on ? " is-on" : ""}`} role="switch" aria-checked={on} aria-label={label} onClick={onToggle}>
+      <i />
+    </button>
   );
+}
+
+function toggleFeature(features: string[], featureId: string) {
+  const expanded = features.includes("*") || features.includes("unlimited") || features.includes("all_wallets")
+    ? [...PLAN_FEATURE_KEYS]
+    : features;
+  return expanded.includes(featureId)
+    ? expanded.filter((item) => item !== featureId)
+    : [...expanded, featureId];
 }
 
 export function AdminPlans() {
@@ -146,17 +149,24 @@ export function AdminPlans() {
   const cached = readAdminConsole();
   const [plans, setPlans] = useState<Row[]>(() => cached?.plans ?? []);
   const [gateways, setGateways] = useState<Row[]>(() => cached?.gateways ?? []);
-  const [form, setForm] = useState<PlanForm>(emptyPlan);
+  const [drafts, setDrafts] = useState<PlanForm[]>(() => (cached?.plans ?? []).map(planToForm));
   const [error, setError] = useState("");
-  const [working, setWorking] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [savingKey, setSavingKey] = useState("");
   const [loaded, setLoaded] = useState(() => Boolean(cached));
-  const editing = Boolean(form.id && plans.some((plan) => String(plan.id) === form.id));
+
+  const originals = useMemo(
+    () => Object.fromEntries((plans ?? []).map((plan) => [String(plan.id), snapshot(planToForm(plan))])),
+    [plans],
+  );
 
   const load = useCallback(() => {
     return fetchAdminConsole()
       .then((result) => {
-        setPlans(result.plans ?? []);
+        const nextPlans = result.plans ?? [];
+        setPlans(nextPlans);
         setGateways(result.gateways ?? []);
+        setDrafts(nextPlans.map(planToForm));
         setLoaded(true);
       })
       .catch((caught: Error) => {
@@ -170,41 +180,70 @@ export function AdminPlans() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const edit = (plan: Row) => setForm(planToForm(plan));
+  const patchDraft = (key: string, patch: Partial<PlanForm> | ((current: PlanForm) => PlanForm)) => {
+    setDrafts((current) => current.map((draft) => {
+      if (draft.key !== key) return draft;
+      return typeof patch === "function" ? patch(draft) : { ...draft, ...patch };
+    }));
+    setNotice("");
+  };
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setWorking(true);
+  const addPlan = () => {
+    const sortOrder = drafts.reduce((max, draft) => Math.max(max, draft.sortOrder), 0) + 10;
+    setDrafts((current) => [...current, emptyPlan(sortOrder)]);
+    setNotice("");
+  };
+
+  const saveDraft = async (draft: PlanForm) => {
+    setSavingKey(draft.key);
     setError("");
+    setNotice("");
     try {
       const result = await postAction("upsertPlan", {
-        id: form.id,
-        nameAr: form.nameAr,
-        nameEn: form.nameEn,
-        descriptionAr: form.descriptionAr,
-        descriptionEn: form.descriptionEn,
-        monthlyMinor: omrToMinor(form.monthlyOmr),
-        annualMinor: omrToMinor(form.annualOmr),
-        walletLimit: form.walletLimit,
-        memberLimit: form.memberLimit,
-        transactionLimit: form.transactionLimit,
-        recordLimit: form.recordLimit,
-        userLimit: form.userLimit,
-        features: form.features,
-        isActive: form.isActive,
-        sortOrder: form.sortOrder,
-        gatewayIds: form.gatewayIds,
+        id: draft.id.trim().toLowerCase(),
+        nameAr: draft.nameAr,
+        nameEn: draft.nameEn,
+        descriptionAr: draft.descriptionAr,
+        descriptionEn: draft.descriptionEn,
+        monthlyMinor: omrToMinor(draft.monthlyOmr),
+        annualMinor: omrToMinor(draft.annualOmr),
+        walletLimit: draft.walletLimit,
+        memberLimit: draft.memberLimit,
+        transactionLimit: draft.transactionLimit,
+        recordLimit: draft.recordLimit,
+        userLimit: draft.userLimit,
+        features: draft.features,
+        isActive: draft.isActive,
+        sortOrder: draft.sortOrder,
+        gatewayIds: draft.gatewayIds,
       });
-      setPlans((result.plans as Row[]) ?? []);
+      const nextPlans = (result.plans as Row[]) ?? [];
+      const savedId = draft.id.trim().toLowerCase();
+      const saved = nextPlans.find((plan) => String(plan.id) === savedId);
+      setPlans(nextPlans);
       if (result.gateways) setGateways(result.gateways as Row[]);
       patchAdminConsole({
-        plans: (result.plans as Row[]) ?? [],
+        plans: nextPlans,
         ...(result.gateways ? { gateways: result.gateways as Row[] } : {}),
       });
+      if (saved) {
+        setDrafts((current) => current.map((item) => item.key === draft.key ? planToForm(saved) : item));
+      }
+      setNotice(l("تم حفظ الباقة.", "Plan saved."));
+      return true;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "SAVE");
+      return false;
     } finally {
-      setWorking(false);
+      setSavingKey("");
+    }
+  };
+
+  const saveDirty = async () => {
+    const dirty = drafts.filter((draft) => isDirty(draft, originals));
+    for (const draft of dirty) {
+      const ok = await saveDraft(draft);
+      if (!ok) break;
     }
   };
 
@@ -213,28 +252,34 @@ export function AdminPlans() {
     [plans],
   );
 
-  if (error && !plans.length) {
+  const quotaFields: QuotaField[] = [
+    { key: "walletLimit", ar: "المحافظ", en: "Wallets", hintAr: "عدد المحافظ التي يمكن إنشاؤها", hintEn: "Wallets the subscriber can create", min: 1, unlimitedValue: 9999, restore: 1, icon: <WalletCards size={14} /> },
+    { key: "memberLimit", ar: "الأعضاء لكل محفظة", en: "Members per wallet", hintAr: "سجلات الأعضاء داخل المحفظة", hintEn: "Member records inside one wallet", min: 1, unlimitedValue: 9999, restore: 2, icon: <Users size={14} /> },
+    { key: "userLimit", ar: "المستخدمون", en: "Users", hintAr: "حسابات الدخول المرتبطة بالاشتراك", hintEn: "Login seats on this subscription", min: 0, unlimitedValue: 0, restore: 1, icon: <UserRound size={14} /> },
+    { key: "transactionLimit", ar: "المعاملات", en: "Transactions", hintAr: "إجمالي الحركات في محافظ المشترك", hintEn: "Ledger entries across subscriber wallets", min: 0, unlimitedValue: 0, restore: 50, icon: <ArrowLeftRight size={14} /> },
+    { key: "recordLimit", ar: "السجلات", en: "Records", hintAr: "المستندات والإيصالات والكشوف", hintEn: "Documents, receipts, and statements", min: 0, unlimitedValue: 0, restore: 20, icon: <FileStack size={14} /> },
+  ];
+
+  if (error && !plans.length && !drafts.length) {
     return <ErrorCard message={error === "FORBIDDEN" ? l("لا تملك صلاحية", "Forbidden") : l("تعذر التحميل", "Load failed")} retry={load} />;
   }
   if (!loaded) return <ContentBusy />;
 
-  const quotaRows = [
-    { key: "wallets", ar: "المحافظ", en: "Wallets", read: (plan: Row) => Number(plan.wallet_limit ?? 1) },
-    { key: "members", ar: "الأعضاء لكل محفظة", en: "Members per wallet", read: (plan: Row) => Number(plan.member_limit ?? 2) },
-    { key: "users", ar: "المستخدمون", en: "Users", read: (plan: Row) => Number(plan.user_limit ?? 1) },
-    { key: "transactions", ar: "المعاملات", en: "Transactions", read: (plan: Row) => Number(plan.transaction_limit ?? 0) },
-    { key: "records", ar: "السجلات", en: "Records", read: (plan: Row) => Number(plan.record_limit ?? 0) },
-  ];
+  const colSpan = drafts.length + 1;
+  const dirtyCount = drafts.filter((draft) => isDirty(draft, originals)).length;
 
   return (
-    <>
+    <div className="plan-studio">
       <div className="admin-page-head">
         <div>
           <small>{l("الإدارة / الباقات", "Admin / Plans")}</small>
-          <h1>{l("مصفوفة الباقات والصلاحيات", "Plan comparison & entitlements")}</h1>
-          <p>{l("قارن الحدود والميزات جنباً إلى جنب، ثم حدّد ما يُمنح للمشترك: معاملات، سجلات، مستخدمون، وصلاحيات.", "Compare limits and features side by side, then grant transactions, records, users, and permissions per subscription.")}</p>
+          <h1>{l("الباقات والاشتراكات", "Plans & subscriptions")}</h1>
+          <p>{l("صف العناوين، ثم رأس كل باقة، ثم صفوف التحكم. الباقات أعمدة للمقارنة والتعديل في نفس الجدول.", "Title row, then each plan header, then control rows. Plans are columns so you can compare and edit in one table.")}</p>
         </div>
-        <button type="button" onClick={() => setForm(emptyPlan)}><Plus />{l("باقة جديدة", "New plan")}</button>
+        <div className="plan-matrix-toolbar">
+          {dirtyCount ? <button type="button" onClick={() => void saveDirty()} disabled={Boolean(savingKey)}>{savingKey ? l("جارٍ الحفظ...", "Saving...") : l(`حفظ التغييرات (${dirtyCount})`, `Save changes (${dirtyCount})`)}</button> : null}
+          <button type="button" onClick={addPlan}><Plus />{l("عمود باقة جديدة", "New plan column")}</button>
+        </div>
       </div>
 
       <div className="admin-kpis">
@@ -244,262 +289,218 @@ export function AdminPlans() {
       </div>
 
       {error ? <p className="admin-inline-alert is-error">{error}</p> : null}
+      {notice ? <p className="admin-inline-alert is-ok">{notice}</p> : null}
 
-      <section className="admin-panel plan-matrix-panel">
-        <div className="admin-panel-head">
-          <div>
-            <h2>{l("مقارنة الباقات", "Plan comparison")}</h2>
-            <p>{l("اضغط عمود الباقة لتعديل حدودها وخصائصها.", "Select a plan column to edit its quotas and features.")}</p>
-          </div>
-        </div>
-        <div className="plan-matrix-scroll">
-          <table className="plan-matrix">
-            <thead>
-              <tr>
-                <th>{l("البند", "Item")}</th>
-                {plans.map((plan) => {
-                  const selected = form.id === String(plan.id);
-                  return (
-                    <th key={String(plan.id)} className={selected ? "is-selected" : undefined}>
-                      <button type="button" onClick={() => edit(plan)}>
-                        <b>{locale === "ar" ? String(plan.name_ar) : String(plan.name_en)}</b>
-                        <small>{String(plan.id)}</small>
+      <div className="plan-matrix-shell">
+        <table className="plan-matrix" aria-label={l("مقارنة الباقات وتعديلها", "Compare and edit plans")}>
+          <thead>
+            <tr>
+              <th className="plan-matrix-titles" scope="col">{l("العناوين", "Titles")}</th>
+              {drafts.map((draft, index) => {
+                const monthly = omrToMinor(draft.monthlyOmr);
+                const dirty = isDirty(draft, originals);
+                const saved = plans.find((plan) => String(plan.id) === draft.id);
+                return (
+                  <th key={draft.key} scope="col" className={`plan-matrix-head${index === 2 ? " is-featured" : ""}${dirty ? " is-dirty" : ""}${draft.isActive ? "" : " is-inactive"}`}>
+                    {index === 2 ? <em>{l("الأوسع استخداماً", "Most used")}</em> : null}
+                    <span>{draft.id || l("باقة جديدة", "New plan")}</span>
+                    <strong>{(locale === "ar" ? draft.nameAr : draft.nameEn) || l("بدون اسم", "Untitled")}</strong>
+                    <b>{monthly === 0 ? l("مجاناً", "Free") : money(monthly, locale)}</b>
+                    <small>{saved ? `${saved.subscriber_count ?? 0} ${l("مشترك", "subscribers")}` : l("غير محفوظة", "Unsaved")}</small>
+                    <div className="plan-matrix-head-actions">
+                      <label>
+                        <Switch on={draft.isActive} label={l("نشطة", "Active")} onToggle={() => patchDraft(draft.key, { isActive: !draft.isActive })} />
+                        {l("نشطة", "Active")}
+                      </label>
+                      <button type="button" disabled={!dirty || savingKey === draft.key} onClick={() => void saveDraft(draft)}>
+                        {savingKey === draft.key ? l("حفظ...", "Saving...") : l("حفظ", "Save")}
                       </button>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th>{l("السعر الشهري", "Monthly price")}</th>
-                {plans.map((plan) => (
-                  <td key={`${plan.id}-price`} className={form.id === String(plan.id) ? "is-selected" : undefined}>
-                    {Number(plan.monthly_minor ?? 0) === 0 ? l("مجاناً", "Free") : money(Number(plan.monthly_minor ?? 0), locale)}
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <th>{l("السعر السنوي", "Annual price")}</th>
-                {plans.map((plan) => (
-                  <td key={`${plan.id}-annual`} className={form.id === String(plan.id) ? "is-selected" : undefined}>
-                    {Number(plan.annual_minor ?? 0) === 0 ? "—" : money(Number(plan.annual_minor ?? 0), locale)}
-                  </td>
-                ))}
-              </tr>
-              {quotaRows.map((row) => (
-                <tr key={row.key}>
-                  <th>{locale === "ar" ? row.ar : row.en}</th>
-                  {plans.map((plan) => {
-                    const value = row.read(plan);
-                    return (
-                      <td key={`${plan.id}-${row.key}`} className={form.id === String(plan.id) ? "is-selected" : undefined}>
-                        {quotaIsUnlimited(value) ? <span className="plan-unlimited-chip"><InfinityIcon size={14} />{formatQuota(value, locale)}</span> : value}
-                      </td>
-                    );
-                  })}
-                </tr>
+                    </div>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            <SectionRow label={l("هوية الباقة", "Plan identity")} span={colSpan} />
+            <ControlRow label={l("المعرّف", "Plan ID")} hint={l("لا يُغيَّر بعد الحفظ", "Locked after save")}>
+              {drafts.map((draft) => (
+                <td key={draft.key}>
+                  <input
+                    value={draft.id}
+                    disabled={!draft.key.startsWith("new-")}
+                    placeholder="starter"
+                    onChange={(event) => patchDraft(draft.key, { id: event.target.value })}
+                  />
+                </td>
               ))}
-              {PLAN_FEATURE_GROUPS.map((group) => (
-                <Fragment key={group.id}>
-                  <tr className="plan-matrix-group">
-                    <th colSpan={plans.length + 1}>{locale === "ar" ? group.ar : group.en}</th>
-                  </tr>
-                  {PLAN_FEATURE_CATALOG.filter((feature) => feature.group === group.id).map((feature) => (
-                    <tr key={feature.id}>
-                      <th>{locale === "ar" ? feature.ar : feature.en}</th>
-                      {plans.map((plan) => {
-                        const features = Array.isArray(plan.features) ? plan.features.map(String) : [];
-                        const included = planHasFeature(features, feature.id);
+            </ControlRow>
+            <ControlRow label={l("الاسم عربي", "Arabic name")}>
+              {drafts.map((draft) => (
+                <td key={draft.key}><input value={draft.nameAr} onChange={(event) => patchDraft(draft.key, { nameAr: event.target.value })} /></td>
+              ))}
+            </ControlRow>
+            <ControlRow label={l("الاسم إنجليزي", "English name")}>
+              {drafts.map((draft) => (
+                <td key={draft.key}><input value={draft.nameEn} onChange={(event) => patchDraft(draft.key, { nameEn: event.target.value })} /></td>
+              ))}
+            </ControlRow>
+            <ControlRow label={l("الوصف عربي", "Arabic description")}>
+              {drafts.map((draft) => (
+                <td key={draft.key}><input value={draft.descriptionAr} onChange={(event) => patchDraft(draft.key, { descriptionAr: event.target.value })} /></td>
+              ))}
+            </ControlRow>
+            <ControlRow label={l("الوصف إنجليزي", "English description")}>
+              {drafts.map((draft) => (
+                <td key={draft.key}><input value={draft.descriptionEn} onChange={(event) => patchDraft(draft.key, { descriptionEn: event.target.value })} /></td>
+              ))}
+            </ControlRow>
+            <ControlRow label={l("ترتيب العرض", "Display order")}>
+              {drafts.map((draft) => (
+                <td key={draft.key}><input type="number" min={0} value={draft.sortOrder} onChange={(event) => patchDraft(draft.key, { sortOrder: Number(event.target.value) })} /></td>
+              ))}
+            </ControlRow>
+
+            <SectionRow label={l("التسعير", "Pricing")} span={colSpan} />
+            <ControlRow label={l("شهري (ر.ع)", "Monthly (OMR)")}>
+              {drafts.map((draft) => (
+                <td key={draft.key}><input type="number" min={0} step="0.001" value={draft.monthlyOmr} onChange={(event) => patchDraft(draft.key, { monthlyOmr: event.target.value })} /></td>
+              ))}
+            </ControlRow>
+            <ControlRow label={l("سنوي (ر.ع)", "Annual (OMR)")}>
+              {drafts.map((draft) => (
+                <td key={draft.key}><input type="number" min={0} step="0.001" value={draft.annualOmr} onChange={(event) => patchDraft(draft.key, { annualOmr: event.target.value })} /></td>
+              ))}
+            </ControlRow>
+
+            <SectionRow label={l("حدود الاشتراك", "Subscription quotas")} span={colSpan} />
+            {quotaFields.map((field) => (
+              <ControlRow key={field.key} label={locale === "ar" ? field.ar : field.en} hint={locale === "ar" ? field.hintAr : field.hintEn} icon={field.icon}>
+                {drafts.map((draft) => (
+                  <td key={draft.key}>
+                    <QuotaCell
+                      value={draft[field.key]}
+                      min={field.min}
+                      unlimitedValue={field.unlimitedValue}
+                      restore={field.restore}
+                      unlimitedLabel={l("غير محدود", "Unlimited")}
+                      onChange={(value) => patchDraft(draft.key, { [field.key]: value })}
+                    />
+                  </td>
+                ))}
+              </ControlRow>
+            ))}
+
+            {PLAN_FEATURE_GROUPS.map((group) => (
+              <Fragment key={group.id}>
+                <SectionRow label={locale === "ar" ? group.ar : group.en} span={colSpan} />
+                {PLAN_FEATURE_CATALOG.filter((feature) => feature.group === group.id).map((feature) => {
+                  const label = locale === "ar" ? feature.ar : feature.en;
+                  return (
+                    <ControlRow key={feature.id} label={label}>
+                      {drafts.map((draft) => {
+                        const on = planHasFeature(draft.features, feature.id);
                         return (
-                          <td key={`${plan.id}-${feature.id}`} className={`${form.id === String(plan.id) ? "is-selected " : ""}${included ? "is-on" : "is-off"}`}>
-                            {included ? <Check size={16} /> : <X size={16} />}
+                          <td key={draft.key} className="plan-matrix-switch">
+                            <Switch on={on} label={label} onToggle={() => patchDraft(draft.key, { features: toggleFeature(draft.features, feature.id) })} />
                           </td>
                         );
                       })}
-                    </tr>
-                  ))}
-                </Fragment>
-              ))}
-              <tr>
-                <th>{l("المشتركون", "Subscribers")}</th>
-                {plans.map((plan) => (
-                  <td key={`${plan.id}-subs`} className={form.id === String(plan.id) ? "is-selected" : undefined}>
-                    {String(plan.subscriber_count ?? 0)}
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <th>{l("الحالة", "Status")}</th>
-                {plans.map((plan) => (
-                  <td key={`${plan.id}-status`} className={form.id === String(plan.id) ? "is-selected" : undefined}>
-                    <Status value={Number(plan.is_active) === 1 ? "active" : "closed"} locale={locale} />
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="admin-panel plan-editor">
-        <div className="admin-panel-head">
-          <div>
-            <h2>{editing ? l("تعديل الباقة", "Edit plan") : l("باقة جديدة", "New plan")}</h2>
-            <p>{l("هذه الحدود تُطبَّق عند الاشتراك: عدد المعاملات والسجلات والمستخدمين والخصائص الممنوحة.", "These quotas apply on subscribe: transactions, records, users, and granted features.")}</p>
-          </div>
-        </div>
-        <form className="plan-editor-form" onSubmit={submit}>
-          <fieldset>
-            <legend>{l("الهوية", "Identity")}</legend>
-            <label>
-              <span>{l("المعرّف", "Plan ID")}</span>
-              <input required value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })} placeholder="starter" />
-            </label>
-            <label>
-              <span>{l("الاسم عربي", "Arabic name")}</span>
-              <input required value={form.nameAr} onChange={(event) => setForm({ ...form, nameAr: event.target.value })} />
-            </label>
-            <label>
-              <span>{l("الاسم إنجليزي", "English name")}</span>
-              <input required value={form.nameEn} onChange={(event) => setForm({ ...form, nameEn: event.target.value })} />
-            </label>
-            <label>
-              <span>{l("الوصف عربي", "Arabic description")}</span>
-              <input required value={form.descriptionAr} onChange={(event) => setForm({ ...form, descriptionAr: event.target.value })} />
-            </label>
-            <label>
-              <span>{l("الوصف إنجليزي", "English description")}</span>
-              <input required value={form.descriptionEn} onChange={(event) => setForm({ ...form, descriptionEn: event.target.value })} />
-            </label>
-            <label>
-              <span>{l("الترتيب", "Sort order")}</span>
-              <input type="number" min={0} value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: Number(event.target.value) })} />
-            </label>
-            <label className="plan-active">
-              <input type="checkbox" checked={form.isActive} onChange={(event) => setForm({ ...form, isActive: event.target.checked })} />
-              {l("باقة نشطة ظاهرة في التسعير", "Active plan visible on pricing")}
-            </label>
-          </fieldset>
-
-          <fieldset>
-            <legend>{l("التسعير (ر.ع)", "Pricing (OMR)")}</legend>
-            <label>
-              <span>{l("شهري", "Monthly")}</span>
-              <input type="number" min={0} step="0.001" value={form.monthlyOmr} onChange={(event) => setForm({ ...form, monthlyOmr: event.target.value })} />
-            </label>
-            <label>
-              <span>{l("سنوي", "Annual")}</span>
-              <input type="number" min={0} step="0.001" value={form.annualOmr} onChange={(event) => setForm({ ...form, annualOmr: event.target.value })} />
-            </label>
-          </fieldset>
-
-          <fieldset className="plan-quota-grid">
-            <legend>{l("حدود الاشتراك", "Subscription quotas")}</legend>
-            <QuotaField
-              label={l("المحافظ", "Wallets")}
-              hint={l("عدد المحافظ التي يمكن إنشاؤها", "Wallets the subscriber can create")}
-              value={form.walletLimit}
-              min={1}
-              unlimitedValue={9999}
-              unlimitedLabel={l("غير محدود", "Unlimited")}
-              onChange={(walletLimit) => setForm({ ...form, walletLimit })}
-            />
-            <QuotaField
-              label={l("الأعضاء لكل محفظة", "Members per wallet")}
-              hint={l("سجلات الأعضاء داخل المحفظة الواحدة", "Member records inside one wallet")}
-              value={form.memberLimit}
-              min={1}
-              unlimitedValue={9999}
-              unlimitedLabel={l("غير محدود", "Unlimited")}
-              onChange={(memberLimit) => setForm({ ...form, memberLimit })}
-            />
-            <QuotaField
-              label={l("المستخدمون", "Users")}
-              hint={l("حسابات الدخول المرتبطة بالاشتراك", "Login seats on this subscription")}
-              value={form.userLimit}
-              min={0}
-              unlimitedValue={0}
-              unlimitedLabel={l("غير محدود", "Unlimited")}
-              onChange={(userLimit) => setForm({ ...form, userLimit })}
-            />
-            <QuotaField
-              label={l("المعاملات", "Transactions")}
-              hint={l("إجمالي الحركات في محافظ المشترك", "Ledger entries across the subscriber’s wallets")}
-              value={form.transactionLimit}
-              min={0}
-              unlimitedValue={0}
-              unlimitedLabel={l("غير محدود", "Unlimited")}
-              onChange={(transactionLimit) => setForm({ ...form, transactionLimit })}
-            />
-            <QuotaField
-              label={l("السجلات", "Records")}
-              hint={l("المستندات والإيصالات والكشوف", "Documents, receipts, and statements")}
-              value={form.recordLimit}
-              min={0}
-              unlimitedValue={0}
-              unlimitedLabel={l("غير محدود", "Unlimited")}
-              onChange={(recordLimit) => setForm({ ...form, recordLimit })}
-            />
-          </fieldset>
-
-          <fieldset>
-            <legend>{l("الخصائص الممنوحة عند الاشتراك", "Features granted on subscribe")}</legend>
-            {PLAN_FEATURE_GROUPS.map((group) => (
-              <div key={group.id} className="plan-feature-group">
-                <h3>{locale === "ar" ? group.ar : group.en}</h3>
-                <div>
-                  {PLAN_FEATURE_CATALOG.filter((feature) => feature.group === group.id).map((feature) => (
-                    <label key={feature.id}>
-                      <input
-                        type="checkbox"
-                        checked={form.features.includes(feature.id)}
-                        onChange={(event) => setForm({
-                          ...form,
-                          features: event.target.checked
-                            ? [...form.features, feature.id]
-                            : form.features.filter((item) => item !== feature.id),
-                        })}
-                      />
-                      {locale === "ar" ? feature.ar : feature.en}
-                    </label>
-                  ))}
-                </div>
-              </div>
+                    </ControlRow>
+                  );
+                })}
+              </Fragment>
             ))}
-          </fieldset>
 
-          <fieldset>
-            <legend>{l("بوابات الدفع", "Payment gateways")}</legend>
-            <div className="plan-gateway-grid">
-              {gateways.map((gateway) => {
-                const id = String(gateway.id);
-                return (
-                  <label key={id}>
-                    <input
-                      type="checkbox"
-                      checked={form.gatewayIds.includes(id)}
-                      onChange={(event) => setForm({
-                        ...form,
-                        gatewayIds: event.target.checked
-                          ? [...form.gatewayIds, id]
-                          : form.gatewayIds.filter((item) => item !== id),
-                      })}
-                    />
-                    {locale === "ar" ? String(gateway.name_ar) : String(gateway.name_en)}
-                    <small>{String(gateway.scope)}</small>
-                  </label>
-                );
-              })}
-            </div>
-          </fieldset>
+            <SectionRow label={l("بوابات الدفع", "Payment gateways")} span={colSpan} />
+            {gateways.map((gateway) => {
+              const id = String(gateway.id);
+              const label = locale === "ar" ? String(gateway.name_ar) : String(gateway.name_en);
+              return (
+                <ControlRow key={id} label={label} hint={String(gateway.scope)}>
+                  {drafts.map((draft) => {
+                    const on = draft.gatewayIds.includes(id);
+                    return (
+                      <td key={draft.key} className="plan-matrix-switch">
+                        <Switch
+                          on={on}
+                          label={label}
+                          onToggle={() => patchDraft(draft.key, {
+                            gatewayIds: on ? draft.gatewayIds.filter((item) => item !== id) : [...draft.gatewayIds, id],
+                          })}
+                        />
+                      </td>
+                    );
+                  })}
+                </ControlRow>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
-          <div className="plan-editor-actions">
-            <button disabled={working} type="submit"><Plus />{editing ? l("حفظ التعديل", "Save changes") : l("إنشاء باقة", "Create plan")}</button>
-            {editing ? <button type="button" onClick={() => setForm(emptyPlan)}>{l("باقة جديدة", "New plan")}</button> : null}
-          </div>
-        </form>
-      </section>
-    </>
+function isDirty(draft: PlanForm, originals: Record<string, string>) {
+  if (draft.key.startsWith("new-")) return true;
+  return snapshot(draft) !== originals[draft.id];
+}
+
+function SectionRow({ label, span }: { label: string; span: number }) {
+  return (
+    <tr className="plan-matrix-section">
+      <th colSpan={span}>{label}</th>
+    </tr>
+  );
+}
+
+function ControlRow({ label, hint, icon, children }: { label: string; hint?: string; icon?: ReactNode; children: ReactNode }) {
+  return (
+    <tr>
+      <th className="plan-matrix-label" scope="row">
+        <div>
+          {icon ? <i>{icon}</i> : null}
+          <span>
+            <b>{label}</b>
+            {hint ? <small>{hint}</small> : null}
+          </span>
+        </div>
+      </th>
+      {children}
+    </tr>
+  );
+}
+
+function QuotaCell({
+  value,
+  min,
+  unlimitedValue,
+  restore,
+  unlimitedLabel,
+  onChange,
+}: {
+  value: number;
+  min: number;
+  unlimitedValue: number;
+  restore: number;
+  unlimitedLabel: string;
+  onChange: (next: number) => void;
+}) {
+  const unlimited = quotaIsUnlimited(value);
+  return (
+    <div className={`plan-quota-cell${unlimited ? " is-unlimited" : ""}`}>
+      <input
+        type="number"
+        min={min}
+        disabled={unlimited}
+        value={unlimited ? "" : value}
+        placeholder="∞"
+        onChange={(event) => onChange(Math.max(min, Number(event.target.value) || min))}
+      />
+      <button type="button" className={unlimited ? "is-on" : ""} onClick={() => onChange(unlimited ? restore : unlimitedValue)}>
+        {unlimitedLabel}
+      </button>
+    </div>
   );
 }
