@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, ArrowUpRight, BadgePercent, BarChart3, Building2, CheckCircle2, CreditCard, Download, FileText, Plus, Printer, Search, ShieldCheck, TrendingUp, UserCog, Users, WalletCards } from "lucide-react";
+import { Activity, AlertTriangle, ArrowUpRight, BadgePercent, BarChart3, Bell, Building2, CheckCircle2, CreditCard, Download, FileText, Plus, Printer, Search, ShieldCheck, TrendingUp, UserCog, Users, WalletCards } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -11,7 +11,8 @@ import { AdminConsole, AdminSwitch, EmptyRow } from "./admin-ui";
 import { actionLabel, countryLabel, csvHeaderLabel, entityLabel, formatAdminDate, methodLabel, roleLabel, statusLabel } from "../../lib/admin-labels";
 
 type Row = Record<string, unknown>;
-type CustomerRow = Row & { id: string; email: string; display_name: string; created_at: string; status: string | null; country: string | null; last_seen_at: string | null; subscription_status: string | null; plan_name: string | null };
+type CustomerRow = Row & { id: string; email: string; display_name: string; created_at: string; status: string | null; country: string | null; last_seen_at: string | null; subscription_status: string | null; plan_name: string | null; current_period_start: string | null; current_period_end: string | null };
+type AlertRow = { id: string; severity: "info" | "warning" | "danger"; href?: string; ar: string; en: string; count?: number };
 type SubscriptionRow = Row & { id: string; status: string; plan_id: string };
 type InvoiceRow = Row & { id: string; status: string; total_minor: number };
 type PaymentRow = Row & { id: string; status: string; amount_minor: number; currency: string; reference: string; display_name: string | null; email: string | null; method: string; settlement_status: string };
@@ -30,6 +31,7 @@ type AdminData = {
   plans: PlanRow[];
   roles: RoleRow[];
   logs: LogRow[];
+  alerts?: AlertRow[];
   platform?: { spaces: number; members: number; transactions: number; countries: number; monthlyRevenue?: Array<{ month: string; total: number }> };
 };
 
@@ -124,6 +126,42 @@ function downloadCsv(filename: string, rows: Row[], locale: "ar" | "en") {
   URL.revokeObjectURL(url);
 }
 
+function isInactiveUser(user: CustomerRow) {
+  if (user.status === "suspended" || user.status === "closed") return true;
+  const sub = user.subscription_status;
+  if (!sub || sub === "cancelled" || sub === "suspended") return true;
+  return false;
+}
+
+function AdminAlerts({ alerts, locale, l }: { alerts: AlertRow[]; locale: "ar" | "en"; l: (ar: string, en: string) => string }) {
+  if (!alerts.length) return null;
+  return (
+    <section className="admin-panel admin-alerts">
+      <div className="admin-panel-head">
+        <div>
+          <h2>{l("تنبيهات الإدارة", "Admin alerts")}</h2>
+          <p>{l("باقات، مدفوعات، حسابات، ومراسلات تحتاج متابعة", "Plans, payments, accounts, and mail needing attention")}</p>
+        </div>
+        <Bell />
+      </div>
+      <div className="admin-alert-list">
+        {alerts.map((alert) => {
+          const body = (
+            <>
+              <AlertTriangle />
+              <span>{locale === "ar" ? alert.ar : alert.en}</span>
+              {alert.count ? <b>{alert.count}</b> : null}
+            </>
+          );
+          return alert.href
+            ? <Link key={alert.id} href={alert.href} className={`admin-alert is-${alert.severity}`}>{body}</Link>
+            : <div key={alert.id} className={`admin-alert is-${alert.severity}`}>{body}</div>;
+        })}
+      </div>
+    </section>
+  );
+}
+
 export function AdminOverview() {
   const { locale, l } = useCommerceLocale();
   const { data, setData, error, load } = useAdminData();
@@ -168,6 +206,7 @@ export function AdminOverview() {
         title={l("نظرة عامة", "Overview")}
         text={l("مؤشرات المنصة ومفاصل التحكم في أعمدة واضحة: حسابات، محافظ، تحصيل، ثم الكوبونات والتدقيق.", "Platform metrics and controls in clear columns: accounts, wallets, collections, then coupons and audit.")}
       />
+      {data.alerts?.length ? <AdminAlerts alerts={data.alerts} locale={locale} l={l} /> : null}
       <div className="admin-kpis">
         <Kpi icon={<Users />} label={l("الحسابات", "Accounts")} value={String(data.users.length)} note={`${active} ${l("اشتراك نشط", "active plans")}`} />
         <Kpi icon={<WalletCards />} label={l("المحافظ", "Wallets")} value={String(plat.spaces)} note={`${plat.members} ${l("عضو نشط", "active members")}`} />
@@ -331,7 +370,9 @@ export function AdminUsers() {
               <th className="plan-matrix-titles" scope="col">{l("العناوين", "Titles")}</th>
               <th scope="col">{l("الدولة", "Country")}</th>
               <th scope="col">{l("الباقة", "Plan")}</th>
-              <th scope="col">{l("الاشتراك", "Subscription")}</th>
+              <th scope="col">{l("حالة الباقة", "Plan status")}</th>
+              <th scope="col">{l("بداية الباقة", "Plan start")}</th>
+              <th scope="col">{l("نهاية الباقة", "Plan end")}</th>
               <th scope="col">{l("آخر نشاط", "Last seen")}</th>
               <th scope="col">{l("الحالة", "Status")}</th>
               <th scope="col">{l("الوصول", "Access")}</th>
@@ -340,8 +381,9 @@ export function AdminUsers() {
           <tbody>
             {rows.map((user) => {
               const active = user.status !== "suspended";
+              const inactive = isInactiveUser(user);
               return (
-                <tr key={user.id}>
+                <tr key={user.id} className={inactive ? "is-inactive" : undefined}>
                   <th className="plan-matrix-label" scope="row">
                     <div>
                       <span>
@@ -353,6 +395,8 @@ export function AdminUsers() {
                   <td>{user.country ? countryLabel(String(user.country), locale) : "—"}</td>
                   <td>{user.plan_name ?? "—"}</td>
                   <td><Status value={user.subscription_status ?? "pending"} locale={locale} /></td>
+                  <td>{formatAdminDate(user.current_period_start, locale)}</td>
+                  <td>{formatAdminDate(user.current_period_end, locale)}</td>
                   <td>{formatAdminDate(user.last_seen_at, locale)}</td>
                   <td><Status value={user.status ?? "active"} locale={locale} /></td>
                   <td className="plan-matrix-switch">
@@ -366,7 +410,7 @@ export function AdminUsers() {
                 </tr>
               );
             })}
-            {!rows.length ? <EmptyRow cols={7} message={l("لا عملاء مطابقون.", "No matching customers.")} /> : null}
+            {!rows.length ? <EmptyRow cols={9} message={l("لا عملاء مطابقون.", "No matching customers.")} /> : null}
           </tbody>
         </table>
       </div>
