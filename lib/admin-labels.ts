@@ -265,6 +265,8 @@ const ERRORS: Record<string, Pair> = {
   INVOICE_NOT_FOUND: ["الفاتورة غير موجودة", "Invoice not found"],
   INVOICE_NOT_PAYABLE: ["لا يمكن دفع هذه الفاتورة الآن", "This invoice cannot be paid now"],
   INTERNAL_ERROR: ["تعذر إكمال الطلب. حاول مرة أخرى", "Could not complete the request. Try again"],
+  INVALID_CREDENTIALS: ["كلمة المرور الحالية غير صحيحة", "The current password is incorrect"],
+  PASSWORD_MUST_CHANGE: ["كلمة المرور الجديدة يجب أن تختلف عن الحالية", "The new password must be different"],
 };
 
 export function errorLabel(value: string, locale: UiLocale) {

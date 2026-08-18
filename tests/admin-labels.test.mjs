@@ -28,6 +28,7 @@ test("admin labels stay bilingual and never leak raw codes for known keys", () =
   assert.equal(errorLabel("SAVE_FAILED", "en"), "Could not save");
   assert.equal(errorLabel("PLAN_PRINT_LIMIT", "ar"), "وصلت إلى حد المطبوعات في باقتك هذا الشهر");
   assert.equal(errorLabel("PLAN_DAILY_TRANSACTION_LIMIT", "en"), "You reached the daily transaction limit on your plan");
+  assert.equal(errorLabel("INVALID_CREDENTIALS", "ar"), "كلمة المرور الحالية غير صحيحة");
   assert.equal(actionLabel("plan.upserted", "ar"), "حفظ الباقة");
   assert.equal(actionLabel("plan.upserted", "en"), "Plan saved");
 });
