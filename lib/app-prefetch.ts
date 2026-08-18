@@ -1,7 +1,7 @@
 "use client";
 
 import { fetchAdminConsole } from "./admin-session";
-import { fetchDashboardSession, readDashboardCache } from "./dashboard-session";
+import { readDashboardCache } from "./dashboard-session";
 import { fetchPageCache } from "./page-cache";
 import { canOpenPlatformConsole } from "./platform-console";
 
@@ -15,6 +15,7 @@ export const APP_PREFETCH_PATHS = [
 ] as const;
 
 let warmed = false;
+let warmTimer: ReturnType<typeof setTimeout> | null = null;
 
 type PrefetchRouter = { prefetch: (href: string) => void };
 
@@ -23,34 +24,46 @@ function roleOf() {
   return cached?.user?.role;
 }
 
-/** Prefetch route JS and warm API caches so the next click paints immediately. */
-export function prefetchApp(router: PrefetchRouter, role = roleOf()) {
+/** Prefetch route JS only — never compete with the page's own data fetch. */
+export function prefetchAppRoutes(router: PrefetchRouter, role = roleOf()) {
   for (const href of APP_PREFETCH_PATHS) {
     if (href === "/admin" && role && !canOpenPlatformConsole(role)) continue;
     void router.prefetch(href);
   }
+}
+
+/** Warm billing/documents after the current page has loaded. */
+export function warmAppCaches(role = roleOf()) {
   if (warmed && readDashboardCache()) return;
   warmed = true;
-  void fetchDashboardSession().catch(() => { warmed = false; });
-  void fetchPageCache("billing", "/api/platform?view=billing").catch(() => {});
-  void fetchPageCache("documents", "/api/platform?view=documents").catch(() => {});
-  void fetchPageCache("pricing", "/api/platform?view=pricing").catch(() => {});
-  if (canOpenPlatformConsole(role)) {
-    void fetchAdminConsole().catch(() => {});
-  }
+  if (warmTimer) clearTimeout(warmTimer);
+  warmTimer = setTimeout(() => {
+    warmTimer = null;
+    void fetchPageCache("billing", "/api/platform?view=billing").catch(() => {});
+    void fetchPageCache("documents", "/api/platform?view=documents").catch(() => {});
+    void fetchPageCache("pricing", "/api/platform?view=pricing").catch(() => {});
+    if (canOpenPlatformConsole(role)) void fetchAdminConsole().catch(() => {});
+  }, 1500);
+}
+
+export function prefetchApp(router: PrefetchRouter, role = roleOf()) {
+  prefetchAppRoutes(router, role);
 }
 
 export function resetAppPrefetch() {
   warmed = false;
+  if (warmTimer) {
+    clearTimeout(warmTimer);
+    warmTimer = null;
+  }
 }
 
-/** After a successful sign-in: start warming caches and open the destination immediately. */
 export function enterSignedInApp(
   router: PrefetchRouter & { push: (href: string) => void },
   dest: string,
   role?: string,
 ) {
   resetAppPrefetch();
-  prefetchApp(router, role);
+  prefetchAppRoutes(router, role);
   router.push(dest);
 }

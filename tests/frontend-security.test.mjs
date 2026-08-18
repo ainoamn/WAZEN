@@ -170,27 +170,36 @@ test("auth form redirects when a browser session is already active", () => {
   assert.match(sync, /subscribeBrowserSessionChange/);
 });
 
-test("in-app account routes keep client cache and do not paint the logo splash", () => {
+test("in-app account routes keep client cache; first load still uses the brand splash", () => {
   const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
   const home = fs.readFileSync(path.join(root, "app/home/home-client.tsx"), "utf8");
   const auth = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
   const billing = fs.readFileSync(path.join(root, "app/billing/billing-client.tsx"), "utf8");
   const documents = fs.readFileSync(path.join(root, "app/documents/documents-client.tsx"), "utf8");
   const prefetch = fs.readFileSync(path.join(root, "lib/app-prefetch.ts"), "utf8");
+  const session = fs.readFileSync(path.join(root, "lib/dashboard-session.ts"), "utf8");
   const gate = fs.readFileSync(path.join(root, "app/admin/admin-gate.tsx"), "utf8");
   const layout = fs.readFileSync(path.join(root, "app/layout.tsx"), "utf8");
   assert.match(dashboard, /<Link href="\/billing"/);
   assert.match(dashboard, /"\/documents"/);
   assert.match(dashboard, /<Link href="\/admin"/);
-  assert.doesNotMatch(dashboard, /WazenPageLoader/);
-  assert.doesNotMatch(home, /WazenPageLoader/);
-  assert.match(home, /prefetchApp/);
+  assert.match(dashboard, /WazenPageLoader/);
+  assert.match(home, /WazenPageLoader/);
+  assert.doesNotMatch(home, /ContentBusy/);
+  assert.match(home, /prefetchAppRoutes/);
+  assert.match(home, /warmAppCaches/);
   assert.match(auth, /enterSignedInApp/);
   assert.doesNotMatch(auth, /PageLoader/);
   assert.match(billing, /readPageCache/);
   assert.match(documents, /readPageCache/);
-  assert.match(prefetch, /fetchPageCache\("documents"/);
-  assert.match(gate, /initialAdminGate/);
-  assert.doesNotMatch(gate, /PageLoader/);
+  assert.match(prefetch, /warmAppCaches/);
+  assert.match(prefetch, /prefetchAppRoutes/);
+  assert.doesNotMatch(prefetch, /fetchDashboardSession/);
+  assert.match(session, /AbortController/);
+  assert.match(session, /FETCH_MS = 25_000/);
+  assert.match(gate, /PageLoader/);
+  assert.doesNotMatch(gate, /ContentBusy/);
+  assert.match(gate, /setGate\("failed"\)/);
+  assert.match(gate, /AbortController/);
   assert.doesNotMatch(layout, /from "next\/headers"/);
 });

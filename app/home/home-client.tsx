@@ -16,15 +16,15 @@ import {
 } from "lucide-react";
 import OmrSymbol from "../../components/brand/OmrSymbol";
 import WazenLogo from "../../components/brand/WazenLogo";
+import WazenPageLoader from "../../components/brand/WazenPageLoader";
 import { apiFetch } from "../../lib/client-api";
-import { prefetchApp } from "../../lib/app-prefetch";
+import { prefetchAppRoutes, warmAppCaches } from "../../lib/app-prefetch";
 import { notifyBrowserSessionChange } from "../../lib/browser-session-client";
 import { clearDashboardCache, fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../../lib/dashboard-session";
 import { useLiveDashboard } from "../../lib/live-sync";
 import { formatMoneyMinor, currencyScale } from "../../lib/money";
 import { memberDisplayCreditMinor, pendingSettlementsWithCredit } from "../../lib/finance";
 import { memberAccruedDueMinor } from "../../components/members/association-members";
-import { ContentBusy } from "../commercial-kit";
 
 type Locale = "ar" | "en";
 
@@ -130,7 +130,11 @@ export function HomeClient() {
 
   useEffect(() => { void load(); }, [load]);
   useLiveDashboard(() => { void load(true); }, !loading);
-  useEffect(() => { prefetchApp(router); }, [router]);
+  useEffect(() => {
+    if (!data) return;
+    prefetchAppRoutes(router);
+    warmAppCaches();
+  }, [router, data]);
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("wazen-locale");
@@ -177,14 +181,7 @@ export function HomeClient() {
   };
 
   if (loading && !data) {
-    return (
-      <div className="home-shell">
-        <header className="home-top">
-          <WazenLogo showText iconClassName="home-logo-img" />
-        </header>
-        <ContentBusy />
-      </div>
-    );
+    return <WazenPageLoader label={locale === "ar" ? "جاري التحميل…" : "Loading…"} />;
   }
   if (error || !data) {
     return (
