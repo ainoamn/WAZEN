@@ -12,7 +12,7 @@ import { encryptSecret, loadKeyring } from "../../../lib/encryption";
 import { configuredAllowedHosts, validateOutboundHttpsUrl } from "../../../lib/outbound";
 import { listAdminUsers, getAdminUserDetail, adminVerifyUserEmail, adminUpdateUserProfile } from "../../../services/admin/users-service";
 import { computeAdminAlerts } from "../../../services/admin/alerts-service";
-import { blockIpByHash, unblockIpByHash, trustIpByHash } from "../../../lib/ip-security";
+import { blockIpByHash, unblockIpByHash, trustIpByHash, IP_BLOCK_HOURS } from "../../../lib/ip-security";
 import { listAdminTenants, getAdminTenantDetail } from "../../../services/admin/tenants-service";
 import {
   adminUpdateSubscription,
@@ -801,7 +801,7 @@ export async function POST(request: Request) {
       const reason = String(payload.reason ?? "admin_blocked").trim().slice(0, 300);
       const targetUserId = String(payload.userId ?? "");
       if (!ipHashValue || reason.length < 3) throw new ApiError(400, "INVALID_IP_BLOCK");
-      await blockIpByHash(db, { ipHash: ipHashValue, ipMasked, reason, blockedBy: user.id, expiresInHours: payload.permanent ? null : Number(payload.expiresInHours ?? 24) });
+      await blockIpByHash(db, { ipHash: ipHashValue, ipMasked, reason, blockedBy: user.id, expiresInHours: IP_BLOCK_HOURS });
       if (targetUserId) await db.prepare("DELETE FROM auth_sessions WHERE user_id=? AND ip_hash=?").bind(targetUserId, ipHashValue).run();
       await writeAudit(db, { userId: user.id, action: "admin.ip_blocked", entityType: "user", entityId: targetUserId || ipHashValue, metadata: { ipHash: ipHashValue, ipMasked, reason } });
       const detail = targetUserId ? await getAdminUserDetail(db, targetUserId) : null;

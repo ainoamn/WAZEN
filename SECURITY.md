@@ -12,7 +12,7 @@ Do not include customer records, passwords, session cookies, invite tokens, data
 - No shared Vercel demo identity. Demo data is local/explicit only.
 - Durable D1 or Turso/libSQL storage; Vercel `/tmp` SQLite is rejected.
 - Central server-side tenant isolation, active-account enforcement, module permissions, and role-specific capabilities.
-- Same-origin checks, body limits, persistent rate limits, and mutation idempotency.
+- Same-origin checks, body limits, persistent rate limits, mutation idempotency, and temporary IP blocks (`IP_BLOCK_HOURS = 2`) that expire automatically and can be lifted by admin.
 - Double-entry journals for new financial movements and insufficient-funds checks.
 - Invite tokens are hashed, expire after seven days, and are never returned by the API.
 - Payment webhooks require HMAC-SHA-256 signatures, payload-bound event idempotency, and database-enforced transitions.

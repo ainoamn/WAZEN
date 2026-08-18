@@ -1,5 +1,16 @@
 import { sha256 } from "./auth";
 
+/** Temporary IP blocks only — never permanent. Admin can lift early. */
+export const IP_BLOCK_HOURS = 2;
+
+function blockExpiresAt(hours?: number | null) {
+  const duration = Number(hours);
+  const safeHours = Number.isFinite(duration) && duration > 0
+    ? Math.min(IP_BLOCK_HOURS, duration)
+    : IP_BLOCK_HOURS;
+  return new Date(Date.now() + safeHours * 3_600_000).toISOString();
+}
+
 export function clientIp(request: Request) {
   const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   const real = request.headers.get("x-real-ip")?.trim();
@@ -61,7 +72,7 @@ export async function isIpBlocked(db: D1Database, ip: string) {
   const hash = await ipHash(ip);
   const now = new Date().toISOString();
   const row = await db.prepare(`SELECT ip_hash FROM blocked_ips
-    WHERE ip_hash=? AND status='blocked' AND (expires_at IS NULL OR expires_at>?) LIMIT 1`)
+    WHERE ip_hash=? AND status='blocked' AND expires_at IS NOT NULL AND expires_at>? LIMIT 1`)
     .bind(hash, now).first();
   return Boolean(row);
 }
@@ -71,9 +82,7 @@ export async function blockIpByHash(
   input: { ipHash: string; ipMasked: string; reason: string; blockedBy: string; expiresInHours?: number | null },
 ) {
   const now = new Date().toISOString();
-  const expiresAt = input.expiresInHours
-    ? new Date(Date.now() + input.expiresInHours * 3_600_000).toISOString()
-    : null;
+  const expiresAt = blockExpiresAt(input.expiresInHours);
   await db.prepare(`INSERT INTO blocked_ips (ip_hash,ip_masked,reason,status,blocked_by,blocked_at,expires_at)
     VALUES (?,?,?,'blocked',?,?,?)
     ON CONFLICT(ip_hash) DO UPDATE SET
@@ -116,9 +125,7 @@ export async function blockIp(
   const now = new Date().toISOString();
   const hash = await ipHash(input.ip);
   const masked = maskIp(input.ip);
-  const expiresAt = input.expiresInHours
-    ? new Date(Date.now() + input.expiresInHours * 3_600_000).toISOString()
-    : null;
+  const expiresAt = blockExpiresAt(input.expiresInHours);
   await db.prepare(`INSERT INTO blocked_ips (ip_hash,ip_masked,reason,status,blocked_by,blocked_at,expires_at)
     VALUES (?,?,?,'blocked',?,?,?)
     ON CONFLICT(ip_hash) DO UPDATE SET
@@ -181,7 +188,7 @@ export async function maybeAutoBlockIp(
       ip,
       reason: `auto:${scope}:strikes=${strikes}`,
       blockedBy: "system",
-      expiresInHours: strikes >= 5 ? 24 * 7 : 24,
+      expiresInHours: IP_BLOCK_HOURS,
     });
     return true;
   }
@@ -196,6 +203,7 @@ export type IpAccessRow = {
   last_seen_at: string;
   hit_count: number;
   blocked: boolean;
+  blocked_until: string | null;
   user_agent: string | null;
 };
 
@@ -208,10 +216,11 @@ export async function listUserIpAccess(db: D1Database, userId: string): Promise<
     db.prepare(`SELECT ip_hash, ip_masked, country_code, user_agent, created_at
       FROM security_events WHERE user_id=? ORDER BY created_at DESC LIMIT 200`)
       .bind(userId).all<{ ip_hash: string; ip_masked: string; country_code: string | null; user_agent: string | null; created_at: string }>(),
-    db.prepare(`SELECT ip_hash, status FROM blocked_ips WHERE status='blocked' AND (expires_at IS NULL OR expires_at>?)`)
-      .bind(now).all<{ ip_hash: string; status: string }>(),
+    db.prepare(`SELECT ip_hash, status, expires_at FROM blocked_ips WHERE status='blocked' AND expires_at IS NOT NULL AND expires_at>?`)
+      .bind(now).all<{ ip_hash: string; status: string; expires_at: string }>(),
   ]);
   const blockedSet = new Set(blocks.results.map((row) => row.ip_hash));
+  const blockedUntil = new Map(blocks.results.map((row) => [row.ip_hash, row.expires_at]));
   const merged = new Map<string, IpAccessRow>();
 
   for (const row of [...sessions.results, ...events.results]) {
@@ -228,6 +237,7 @@ export async function listUserIpAccess(db: D1Database, userId: string): Promise<
         last_seen_at: seenAt,
         hit_count: 1,
         blocked: blockedSet.has(row.ip_hash),
+        blocked_until: blockedUntil.get(row.ip_hash) ?? null,
         user_agent: row.user_agent,
       });
     } else {
@@ -239,6 +249,7 @@ export async function listUserIpAccess(db: D1Database, userId: string): Promise<
         if (row.country_code) existing.country_code = row.country_code;
       }
       existing.blocked = existing.blocked || blockedSet.has(row.ip_hash);
+      if (!existing.blocked_until) existing.blocked_until = blockedUntil.get(row.ip_hash) ?? null;
     }
   }
 

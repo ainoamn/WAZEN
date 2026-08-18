@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { CreditCard, Globe, Search, ShieldCheck, ShieldOff, Users, WalletCards } from "lucide-react";
+import { CreditCard, Globe, Search, ShieldCheck, Users, WalletCards } from "lucide-react";
 import { ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import { DateField } from "../../components/ui/date-field";
@@ -41,6 +41,7 @@ type UserDetail = {
     last_seen_at: string;
     hit_count: number;
     blocked: boolean;
+    blocked_until?: string | null;
     user_agent: string | null;
   }>;
 };
@@ -565,7 +566,7 @@ export function AdminUserDetail() {
         <div className="admin-panel-head">
           <div>
             <h2>{l("سجل عناوين IP", "IP access log")}</h2>
-            <p>{l("جميع عناوين الدخول، الدولة، ووقت آخر ظهور — للمتابعة أو الحظر", "All sign-in addresses, country, and last seen — monitor or block")}</p>
+            <p>{l("جميع عناوين الدخول، الدولة، ووقت آخر ظهور. الحظر مؤقت ساعتين ويمكن رفعه فوراً.", "All sign-in addresses, country, and last seen. Blocks last two hours and can be lifted immediately.")}</p>
           </div>
           <Globe />
         </div>
@@ -590,12 +591,12 @@ export function AdminUserDetail() {
                   <td>{formatAdminDate(row.first_seen_at, locale, true)}</td>
                   <td>{formatAdminDate(row.last_seen_at, locale, true)}</td>
                   <td>{row.hit_count}</td>
-                  <td>{row.blocked ? <span className="commerce-status suspended">{l("محظور", "Blocked")}</span> : <span className="commerce-status active">{l("مسموح", "Allowed")}</span>}</td>
+                  <td>{row.blocked ? <span className="commerce-status suspended">{l("محظور ساعتين", "Blocked 2h")}{row.blocked_until ? <small> {formatAdminDate(row.blocked_until, locale, true)}</small> : null}</span> : <span className="commerce-status active">{l("مسموح", "Allowed")}</span>}</td>
                   <td className="admin-ip-actions">
                     {row.blocked ? (
                       <button type="button" disabled={working} onClick={() => void ipAction("adminUnblockIp", row)}>{l("رفع الحظر", "Unblock")}</button>
                     ) : (
-                      <button type="button" disabled={working} onClick={() => void ipAction("adminBlockIp", row, { reason: l("حظر يدوي من الإدارة", "Manual admin block"), expiresInHours: 168 })}>{l("حظر", "Block")}</button>
+                      <button type="button" disabled={working} onClick={() => void ipAction("adminBlockIp", row, { reason: l("حظر مؤقت ساعتين", "Temporary 2-hour block") })}>{l("حظر ساعتين", "Block 2h")}</button>
                     )}
                     <button type="button" disabled={working} onClick={() => void ipAction("revokeSessionsByIp", row, { reason: l("إلغاء جلسات هذا العنوان", "Revoke sessions for this IP") })}>{l("إلغاء الجلسات", "Revoke")}</button>
                     <button type="button" disabled={working} onClick={() => void ipAction("adminTrustIp", row)}>{l("تفعيل", "Trust")}</button>

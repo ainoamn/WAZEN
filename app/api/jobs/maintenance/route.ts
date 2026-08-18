@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     await db.batch([
       db.prepare("DELETE FROM auth_sessions WHERE expires_at<=? OR last_seen_at<=?").bind(now, idleCutoffIso()),
       db.prepare("DELETE FROM rate_limits WHERE expires_at<=?").bind(now),
-      db.prepare("DELETE FROM blocked_ips WHERE status='blocked' AND expires_at IS NOT NULL AND expires_at<=?").bind(now),
+      db.prepare("UPDATE blocked_ips SET status='allowed' WHERE status='blocked' AND (expires_at IS NULL OR expires_at<=?)").bind(now),
       db.prepare("DELETE FROM security_events WHERE created_at<=?").bind(new Date(Date.now() - 90 * 86_400_000).toISOString()),
       db.prepare("DELETE FROM idempotency_keys WHERE expires_at<=?").bind(now),
       db.prepare("DELETE FROM email_verification_tokens WHERE expires_at<=?").bind(now),
