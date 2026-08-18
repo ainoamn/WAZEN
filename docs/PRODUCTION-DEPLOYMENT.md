@@ -35,6 +35,19 @@ WAZEN_TRUST_OAI_HEADERS=0
 
 أنشئ حساب المالك بالبريد الموجود في `WAZEN_ADMIN_EMAILS`. لا يحصل أول مستخدم تلقائياً على الإدارة.
 
+## النطاق المخصص و`ERR_TIMED_OUT` من عُمان
+
+التطبيق على Vercel يعمل. إذا ظهر في Chrome «لا يمكن الوصول» / `ERR_TIMED_OUT` على `https://wazen.bhd-om.com` بينما `https://wazen-roan.vercel.app` يفتح، فالمشكلة **ليست الكود**. نطاق Vercel المخصص يُحل إلى العناوين `216.198.79.1` و`64.29.17.1`، وبعض شبكات عُمان (مثل Omantel) لا تصل إليها. عنوان `*.vercel.app` يستخدم `.195` فيصل.
+
+في Hostinger → DNS لسجل `wazen` (CNAME):
+
+- القيمة الحالية الشائعة: `5adf9afd8bf28722.vercel-dns-017.com`
+- غيّرها إلى: `cname.vercel-dns.com`
+
+احفظ، انتظر حتى دقيقة TTL (غالباً 5 دقائق)، ثم من Windows: `ipconfig /flushdns` وأعد فتح الصفحة. لا تحذف النطاق من لوحة Vercel.
+
+للتأكد فوراً بدون تغيير DNS: افتح `https://wazen-roan.vercel.app`. تسجيل جوجل يبقى مربوطاً بالنطاق المخصص بعد إصلاح الـ CNAME.
+
 ## تسجيل الدخول عبر جوجل
 
 وازن يرسل جوجل إلى عنوان إرجاع خادم، وليس أصل JavaScript. في شاشة العميل الحقل المطلوب هو **Authorised redirect URIs** (للطلبات من web server). إذا بقي فارغاً يرفض جوجل تسجيل الدخول حتى لو وُجد `https://wazen.bhd-om.com` في JavaScript origins.
