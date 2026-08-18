@@ -11,6 +11,7 @@ export type AdminConsolePayload = {
   plans: Record<string, unknown>[];
   roles: Record<string, unknown>[];
   logs: Record<string, unknown>[];
+  alerts?: Array<{ id: string; severity: string; href?: string; ar: string; en: string; count?: number }>;
   platform?: {
     spaces: number;
     members: number;

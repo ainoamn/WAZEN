@@ -3,6 +3,7 @@ import { ensureSchema, getRawDb } from "../../../db/runtime";
 import { authenticateRequest, clearCsrfCookie, clearSessionCookie, createSession, createSessionToken, csrfCookie, hashPassword, issueCsrfToken, normalizeEmail, revokeSession, sessionHeaders, sha256, verifyPassword } from "../../../lib/auth";
 import { ensureDefaultTenant, platformRoleOf } from "../../../lib/authorization";
 import { ApiError, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit } from "../../../lib/security";
+import { clientCountry, clientIp, recordSecurityEvent } from "../../../lib/ip-security";
 import { appOrigin } from "../../../lib/app-origin";
 import { writeAudit } from "../../../lib/audit";
 import { decryptSecret, encryptSecret, loadKeyring } from "../../../lib/encryption";
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
       ]);
       await ensureDefaultTenant(db, { id: userId, displayName });
       await writeAudit(db, { userId, action: "admin.bootstrap_completed", entityType: "user", entityId: userId, metadata: { email: invite.email }, createdAt });
-      const session = await createSession(db, userId);
+      const session = await createSession(db, userId, request);
       return Response.json({ ok: true, user: { id: userId, email: invite.email, displayName }, next: "/account/security" }, { status: 201, headers: sessionHeaders(session) });
     }
     if (action === "logout") {
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
           db.prepare("DELETE FROM auth_sessions WHERE user_id=?").bind(user.id),
         ]);
         await writeAudit(db, { userId: user.id, action: "auth.password_changed", entityType: "user", entityId: user.id, createdAt: changedAt });
-        const session = await createSession(db, user.id); return Response.json({ ok: true }, { headers: sessionHeaders(session) });
+        const session = await createSession(db, user.id, request); return Response.json({ ok: true }, { headers: sessionHeaders(session) });
       }
       const credential = await db.prepare("SELECT password_hash,password_salt,password_iterations FROM auth_credentials WHERE user_id=?").bind(user.id).first<{ password_hash: string; password_salt: string; password_iterations: number }>();
       if (action === "beginTotp" || action === "disableTotp") {
@@ -127,7 +128,7 @@ export async function POST(request: Request) {
         await writeAudit(db, { userId: user.id, action: "auth.totp_enabled", entityType: "user", entityId: user.id }); return Response.json({ ok: true });
       }
       await db.prepare("DELETE FROM totp_credentials WHERE user_id=?").bind(user.id).run(); await db.prepare("DELETE FROM auth_sessions WHERE user_id=?").bind(user.id).run();
-      await writeAudit(db, { userId: user.id, action: "auth.totp_disabled", entityType: "user", entityId: user.id }); const session = await createSession(db, user.id);
+      await writeAudit(db, { userId: user.id, action: "auth.totp_disabled", entityType: "user", entityId: user.id }); const session = await createSession(db, user.id, request);
       return Response.json({ ok: true }, { headers: sessionHeaders(session) });
     }
     if (action === "verifyEmail") {
@@ -143,7 +144,7 @@ export async function POST(request: Request) {
         db.prepare("UPDATE email_verification_tokens SET used_at=? WHERE id=?").bind(verifiedAt, verification.id),
       ]);
       await writeAudit(db, { userId: verification.user_id, action: "auth.email_verified", entityType: "user", entityId: verification.user_id, createdAt: verifiedAt });
-      const session = await createSession(db, verification.user_id);
+      const session = await createSession(db, verification.user_id, request);
       return Response.json({ ok: true }, { headers: sessionHeaders(session) });
     }
     if (action === "forgotPassword") {
@@ -171,7 +172,7 @@ export async function POST(request: Request) {
         db.prepare("DELETE FROM auth_sessions WHERE user_id=?").bind(reset.user_id),
       ]);
       await writeAudit(db, { userId: reset.user_id, action: "auth.password_reset", entityType: "user", entityId: reset.user_id, createdAt: resetAt });
-      const session = await createSession(db, reset.user_id);
+      const session = await createSession(db, reset.user_id, request);
       return Response.json({ ok: true }, { headers: sessionHeaders(session) });
     }
     const email = normalizeEmail(parsed.data.email ?? ""); const password = parsed.data.password ?? "";
@@ -209,7 +210,17 @@ export async function POST(request: Request) {
       LEFT JOIN totp_credentials t ON t.user_id=u.id
       WHERE u.email=? COLLATE NOCASE LIMIT 1`).bind(email).first<{ id: string; email: string; display_name: string; password_hash: string; password_salt: string; password_iterations: number; email_verified_at: string | null; status: string }>();
     const valid = row && await verifyPassword(password, row.password_hash, row.password_salt, Number(row.password_iterations));
-    if (!row || !valid) throw new ApiError(401, "INVALID_CREDENTIALS");
+    if (!row || !valid) {
+      await recordSecurityEvent(db, {
+        ip: clientIp(request),
+        userId: row?.id ?? null,
+        eventType: "auth.login_failed",
+        countryCode: clientCountry(request),
+        userAgent: request.headers.get("user-agent"),
+        metadata: { email },
+      });
+      throw new ApiError(401, "INVALID_CREDENTIALS");
+    }
     if (row.status === "suspended" || row.status === "closed") throw new ApiError(403, "ACCOUNT_UNAVAILABLE");
     if (!row.email_verified_at) throw new ApiError(403, "EMAIL_NOT_VERIFIED");
     const totp = row as typeof row & { encrypted_secret?: string | null; last_used_step?: number | null; enabled_at?: string | null };
@@ -220,7 +231,14 @@ export async function POST(request: Request) {
       const update = await db.prepare("UPDATE totp_credentials SET last_used_step=?,updated_at=? WHERE user_id=? AND (last_used_step IS NULL OR last_used_step<?)").bind(result.step, new Date().toISOString(), row.id, result.step).run();
       if (Number(update.meta.changes) !== 1) throw new ApiError(401, "TOTP_REPLAYED");
     }
-    const session = await createSession(db, row.id);
+    const session = await createSession(db, row.id, request);
+    await recordSecurityEvent(db, {
+      ip: clientIp(request),
+      userId: row.id,
+      eventType: "auth.login_success",
+      countryCode: clientCountry(request),
+      userAgent: request.headers.get("user-agent"),
+    });
     const role = await platformRoleOf(db, row.id);
     return Response.json({ ok: true, user: { id: row.id, email: row.email, displayName: row.display_name, isDemo: false }, role }, { headers: sessionHeaders(session) });
   } catch (error) { return errorResponse(error); }

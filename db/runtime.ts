@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -116,10 +116,41 @@ async function ensureSchemaPatches(db: D1Database) {
     }
   }
   const sessionColumns = await db.prepare("PRAGMA table_info(auth_sessions)").all<{ name: string }>();
-  if (!sessionColumns.results.some((column) => column.name === "csrf_token_hash")) {
+  const sessionNames = new Set(sessionColumns.results.map((column) => column.name));
+  if (!sessionNames.has("csrf_token_hash")) {
     try { await db.prepare("ALTER TABLE auth_sessions ADD COLUMN csrf_token_hash TEXT").run(); }
     catch (error) { const refreshed = await db.prepare("PRAGMA table_info(auth_sessions)").all<{ name: string }>(); if (!refreshed.results.some((column) => column.name === "csrf_token_hash")) throw error; }
   }
+  for (const column of ["ip_hash", "ip_masked", "user_agent", "country_code"] as const) {
+    if (!sessionNames.has(column)) {
+      try { await db.prepare(`ALTER TABLE auth_sessions ADD COLUMN ${column} TEXT`).run(); } catch { /* exists */ }
+    }
+  }
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS security_events (
+      id TEXT PRIMARY KEY,
+      ip_hash TEXT NOT NULL,
+      ip_masked TEXT NOT NULL,
+      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      event_type TEXT NOT NULL,
+      country_code TEXT,
+      user_agent TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_security_events_ip ON security_events(ip_hash, created_at DESC)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_id, created_at DESC)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS blocked_ips (
+      ip_hash TEXT PRIMARY KEY,
+      ip_masked TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'blocked' CHECK(status IN ('blocked','allowed')),
+      blocked_by TEXT NOT NULL,
+      blocked_at TEXT NOT NULL,
+      expires_at TEXT
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_blocked_ips_status ON blocked_ips(status, expires_at)"),
+  ]);
   const tripExpenseColumns = await db.prepare("PRAGMA table_info(trip_expenses)").all<{ name: string }>();
   const tripExpenseNames = new Set(tripExpenseColumns.results.map((column) => column.name));
   if (!tripExpenseNames.has("transaction_id")) {
@@ -451,6 +482,11 @@ async function initializeSchema(db: D1Database) {
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       token_hash TEXT NOT NULL UNIQUE,
+      csrf_token_hash TEXT,
+      ip_hash TEXT,
+      ip_masked TEXT,
+      user_agent TEXT,
+      country_code TEXT,
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL,
       last_seen_at TEXT NOT NULL
@@ -487,6 +523,29 @@ async function initializeSchema(db: D1Database) {
       window_started_at TEXT NOT NULL,
       expires_at TEXT NOT NULL
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS security_events (
+      id TEXT PRIMARY KEY,
+      ip_hash TEXT NOT NULL,
+      ip_masked TEXT NOT NULL,
+      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      event_type TEXT NOT NULL,
+      country_code TEXT,
+      user_agent TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_security_events_ip ON security_events(ip_hash, created_at DESC)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_id, created_at DESC)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS blocked_ips (
+      ip_hash TEXT PRIMARY KEY,
+      ip_masked TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'blocked' CHECK(status IN ('blocked','allowed')),
+      blocked_by TEXT NOT NULL,
+      blocked_at TEXT NOT NULL,
+      expires_at TEXT
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_blocked_ips_status ON blocked_ips(status, expires_at)"),
     db.prepare(`CREATE TABLE IF NOT EXISTS idempotency_keys (
       key TEXT NOT NULL,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

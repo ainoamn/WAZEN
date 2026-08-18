@@ -1,5 +1,6 @@
 import { getRequestUser, type RequestUser } from "../db/runtime";
 import { browserCsrfCookie, browserSessionCookie, csrfCookieName, idleCutoffIso, isSessionIdle, SESSION_MAX_MS, sessionCookieName } from "./session-policy";
+import { clientCountry, clientIp, ipHash, maskIp } from "./ip-security";
 
 const SESSION_COOKIE = sessionCookieName();
 const CSRF_COOKIE = csrfCookieName();
@@ -77,13 +78,19 @@ function cookieValue(request: Request, name: string) {
   return null;
 }
 
-export async function createSession(db: D1Database, userId: string) {
+export async function createSession(db: D1Database, userId: string, request?: Request) {
   const token = createSessionToken();
   const csrfToken = createSessionToken(); const tokenHash = await sha256(token); const csrfTokenHash = await sha256(csrfToken);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_MAX_MS);
-  await db.prepare("INSERT INTO auth_sessions (id,user_id,token_hash,csrf_token_hash,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?,?,?)")
-    .bind(crypto.randomUUID(), userId, tokenHash, csrfTokenHash, expiresAt.toISOString(), now.toISOString(), now.toISOString()).run();
+  const ip = request ? clientIp(request) : null;
+  const hash = ip ? await ipHash(ip) : null;
+  const masked = ip ? maskIp(ip) : null;
+  const country = request ? clientCountry(request) : null;
+  const userAgent = request?.headers.get("user-agent")?.slice(0, 512) ?? null;
+  await db.prepare(`INSERT INTO auth_sessions (id,user_id,token_hash,csrf_token_hash,ip_hash,ip_masked,user_agent,country_code,expires_at,created_at,last_seen_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(crypto.randomUUID(), userId, tokenHash, csrfTokenHash, hash, masked, userAgent, country, expiresAt.toISOString(), now.toISOString(), now.toISOString()).run();
   return { token, csrfToken, expiresAt };
 }
 

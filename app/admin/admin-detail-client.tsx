@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { CreditCard, Search, ShieldCheck, Users, WalletCards } from "lucide-react";
+import { CreditCard, Globe, Search, ShieldCheck, Users, WalletCards } from "lucide-react";
 import { ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import { DateField } from "../../components/ui/date-field";
@@ -33,6 +33,17 @@ type UserDetail = {
     adminNote: string;
     archives: Array<Row & { restorable?: boolean }>;
   };
+  ipAccess?: Array<{
+    ip_hash: string;
+    ip_masked: string;
+    country_code: string | null;
+    first_seen_at: string;
+    last_seen_at: string;
+    hit_count: number;
+    blocked: boolean;
+    blocked_until?: string | null;
+    user_agent: string | null;
+  }>;
 };
 
 function applyProfileToForm(
@@ -154,6 +165,37 @@ export function AdminUserDetail() {
       void load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "REVOKE_FAILED");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const ipAction = async (action: string, ipRow: NonNullable<UserDetail["ipAccess"]>[number], extra: Record<string, unknown> = {}) => {
+    setWorking(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await apiFetch("/api/platform", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action,
+          idempotencyKey: crypto.randomUUID(),
+          userId,
+          ipHash: ipRow.ip_hash,
+          ipMasked: ipRow.ip_masked,
+          ...extra,
+        }),
+      });
+      const result = await response.json() as { error?: string; detail?: UserDetail };
+      if (!response.ok) throw new Error(result.error ?? "IP_ACTION_FAILED");
+      if (result.detail) {
+        setDetail(result.detail);
+        syncForm(result.detail.profile);
+      } else void load();
+      setNotice(l("تم تحديث سياسة عنوان IP.", "IP policy updated."));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "IP_ACTION_FAILED");
     } finally {
       setWorking(false);
     }
@@ -520,14 +562,67 @@ export function AdminUserDetail() {
         </form>
       </section>
 
+      <section className="admin-panel">
+        <div className="admin-panel-head">
+          <div>
+            <h2>{l("سجل عناوين IP", "IP access log")}</h2>
+            <p>{l("جميع عناوين الدخول، الدولة، ووقت آخر ظهور. الحظر مؤقت ساعتين ويمكن رفعه فوراً.", "All sign-in addresses, country, and last seen. Blocks last two hours and can be lifted immediately.")}</p>
+          </div>
+          <Globe />
+        </div>
+        <div className="plan-matrix-shell">
+          <table className="plan-matrix admin-data-table admin-ip-table">
+            <thead>
+              <tr>
+                <th scope="col">{l("عنوان IP", "IP address")}</th>
+                <th scope="col">{l("الدولة", "Country")}</th>
+                <th scope="col">{l("أول دخول", "First seen")}</th>
+                <th scope="col">{l("آخر دخول", "Last seen")}</th>
+                <th scope="col">{l("المرات", "Hits")}</th>
+                <th scope="col">{l("الحالة", "Status")}</th>
+                <th scope="col">{l("إجراء", "Action")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(detail.ipAccess ?? []).map((row) => (
+                <tr key={row.ip_hash} className={row.blocked ? "is-inactive" : undefined}>
+                  <th scope="row"><code>{row.ip_masked}</code>{row.user_agent ? <small>{row.user_agent.slice(0, 60)}</small> : null}</th>
+                  <td>{row.country_code ? countryLabel(row.country_code, locale) : "—"}</td>
+                  <td>{formatAdminDate(row.first_seen_at, locale, true)}</td>
+                  <td>{formatAdminDate(row.last_seen_at, locale, true)}</td>
+                  <td>{row.hit_count}</td>
+                  <td>{row.blocked ? <span className="commerce-status suspended">{l("محظور ساعتين", "Blocked 2h")}{row.blocked_until ? <small> {formatAdminDate(row.blocked_until, locale, true)}</small> : null}</span> : <span className="commerce-status active">{l("مسموح", "Allowed")}</span>}</td>
+                  <td className="admin-ip-actions">
+                    {row.blocked ? (
+                      <button type="button" disabled={working} onClick={() => void ipAction("adminUnblockIp", row)}>{l("رفع الحظر", "Unblock")}</button>
+                    ) : (
+                      <button type="button" disabled={working} onClick={() => void ipAction("adminBlockIp", row, { reason: l("حظر مؤقت ساعتين", "Temporary 2-hour block") })}>{l("حظر ساعتين", "Block 2h")}</button>
+                    )}
+                    <button type="button" disabled={working} onClick={() => void ipAction("revokeSessionsByIp", row, { reason: l("إلغاء جلسات هذا العنوان", "Revoke sessions for this IP") })}>{l("إلغاء الجلسات", "Revoke")}</button>
+                    <button type="button" disabled={working} onClick={() => void ipAction("adminTrustIp", row)}>{l("تفعيل", "Trust")}</button>
+                  </td>
+                </tr>
+              ))}
+              {!(detail.ipAccess ?? []).length ? <EmptyRow cols={7} message={l("لا سجلات IP بعد — تُسجَّل عند تسجيل الدخول.", "No IP records yet — logged on sign-in.")} /> : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <div className="admin-overview-grid">
         <section className="admin-panel">
           <div className="admin-panel-head"><h2>{l("الجلسات", "Sessions")}</h2></div>
           <div className="audit-list">
             {detail.sessions.map((session) => (
-              <div key={String(session.id)}>
+              <div key={String(session.id)} className={session.ip_hash ? "" : undefined}>
                 <ShieldCheck />
-                <span><b>{String(session.id).slice(0, 8)}…</b><small>{l("آخر ظهور", "Last seen")}: {formatAdminDate(session.last_seen_at, locale, true)}</small></span>
+                <span>
+                  <b>{String(session.ip_masked ?? session.id).slice(0, 20)}</b>
+                  <small>
+                    {session.country_code ? `${countryLabel(String(session.country_code), locale)} · ` : ""}
+                    {l("آخر ظهور", "Last seen")}: {formatAdminDate(session.last_seen_at, locale, true)}
+                  </small>
+                </span>
               </div>
             ))}
             {!detail.sessions.length && <p>{l("لا جلسات.", "No sessions.")}</p>}

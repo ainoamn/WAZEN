@@ -1,7 +1,7 @@
 /**
  * Admin users query helpers — pagination/filter whitelist for platform admin APIs.
- * Keep route handlers thin; move list/detail logic here gradually.
  */
+import { listUserIpAccess } from "../../lib/ip-security";
 
 export type AdminUserListQuery = {
   q?: string;
@@ -165,7 +165,8 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
   const { getUserBillingHistory } = await import("./billing-service");
   const { listRetentionArchivesForUser, ADMIN_ARCHIVE_DAYS, USER_GRACE_DAYS } = await import("../../lib/plan-retention");
   const [sessions, apiKeys, spaces, memberships, recentAudit, billing, retentionArchives] = await Promise.all([
-    db.prepare(`SELECT id, created_at, last_seen_at, expires_at FROM auth_sessions WHERE user_id=? ORDER BY last_seen_at DESC LIMIT 50`)
+    db.prepare(`SELECT id, created_at, last_seen_at, expires_at, ip_hash, ip_masked, country_code, user_agent
+      FROM auth_sessions WHERE user_id=? ORDER BY last_seen_at DESC LIMIT 50`)
       .bind(userId).all(),
     db.prepare(`SELECT id, name, key_prefix, scopes_json, expires_at, last_used_at, revoked_at, created_at
       FROM api_keys WHERE user_id=? ORDER BY created_at DESC LIMIT 50`).bind(userId).all<Record<string, unknown>>(),
@@ -203,6 +204,8 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
     status: String(profile.subscription_status ?? "none"),
   });
 
+  const ipAccess = await listUserIpAccess(db, userId);
+
   return {
     profile: {
       ...profile,
@@ -234,5 +237,6 @@ export async function getAdminUserDetail(db: D1Database, userId: string) {
       archives: retentionArchives,
       adminNote: "paid_restore_within_60_days_admin_only",
     },
+    ipAccess,
   };
 }

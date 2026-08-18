@@ -11,6 +11,8 @@ import { nextReference } from "../../../lib/reference";
 import { encryptSecret, loadKeyring } from "../../../lib/encryption";
 import { configuredAllowedHosts, validateOutboundHttpsUrl } from "../../../lib/outbound";
 import { listAdminUsers, getAdminUserDetail, adminVerifyUserEmail, adminUpdateUserProfile } from "../../../services/admin/users-service";
+import { computeAdminAlerts } from "../../../services/admin/alerts-service";
+import { blockIpByHash, unblockIpByHash, trustIpByHash, IP_BLOCK_HOURS } from "../../../lib/ip-security";
 import { listAdminTenants, getAdminTenantDetail } from "../../../services/admin/tenants-service";
 import {
   adminUpdateSubscription,
@@ -181,9 +183,10 @@ async function publicPlans(db: D1Database) {
 }
 
 async function adminData(db: D1Database) {
-  const [users, subscriptions, invoices, payments, coupons, plans, roles, logs, spaceCount, memberCount, txnCount, countryCount, monthly] = await Promise.all([
+  const [users, subscriptions, invoices, payments, coupons, plans, roles, logs, spaceCount, memberCount, txnCount, countryCount, monthly, alerts] = await Promise.all([
     db.prepare(`SELECT u.id,u.email,u.display_name,u.created_at,p.status,p.country,p.last_seen_at,
-      s.id AS subscription_id,s.status AS subscription_status,s.billing_cycle,s.current_period_end,pl.name_ar AS plan_name,pl.id AS plan_id
+      s.id AS subscription_id,s.status AS subscription_status,s.billing_cycle,
+      s.current_period_start,s.current_period_end,pl.name_ar AS plan_name,pl.id AS plan_id
       FROM users u LEFT JOIN customer_profiles p ON p.user_id=u.id
       LEFT JOIN subscriptions s ON s.user_id=u.id LEFT JOIN plans pl ON pl.id=s.plan_id ORDER BY u.created_at DESC`).all(),
     db.prepare("SELECT * FROM subscriptions ORDER BY created_at DESC").all(),
@@ -199,11 +202,13 @@ async function adminData(db: D1Database) {
     db.prepare("SELECT COUNT(DISTINCT COALESCE(country,'UN')) AS count FROM customer_profiles").first<{ count: number }>(),
     db.prepare(`SELECT substr(occurred_at,1,7) AS month, SUM(amount_minor) AS total
       FROM payments WHERE status='succeeded' GROUP BY substr(occurred_at,1,7) ORDER BY month DESC LIMIT 12`).all<{ month: string; total: number }>(),
+    computeAdminAlerts(db),
   ]);
   return {
     users: users.results, subscriptions: subscriptions.results, invoices: invoices.results,
     payments: payments.results, coupons: coupons.results,
     plans: plans.results.map(parseFeatures), roles: roles.results, logs: logs.results,
+    alerts,
     platform: {
       spaces: Number(spaceCount?.count ?? 0),
       members: Number(memberCount?.count ?? 0),
@@ -609,7 +614,7 @@ export async function POST(request: Request) {
     }
 
     const actorRole = await roleOf(db, user.id);
-    if (["setUserStatus", "setRole", "setPaymentStatus", "createCoupon", "revokeUserSessions", "updateGateway", "upsertPlan", "adminUpdateSubscription", "adminVerifyEmail", "adminUpdateUser", "restoreRetentionArchive"].includes(action) && user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
+    if (["setUserStatus", "setRole", "setPaymentStatus", "createCoupon", "revokeUserSessions", "updateGateway", "upsertPlan", "adminUpdateSubscription", "adminVerifyEmail", "adminUpdateUser", "restoreRetentionArchive", "adminBlockIp", "adminUnblockIp", "adminTrustIp", "revokeSessionsByIp"].includes(action) && user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
     if (action === "setUserStatus") {
       assertPlatformPermission(actorRole, "users:status");
       const targetUserId = String(payload.userId ?? "");
@@ -789,6 +794,47 @@ export async function POST(request: Request) {
       });
       const detail = await getAdminUserDetail(db, parsed.data.userId);
       return respond({ ok: true, detail, restored });
+    } else if (action === "adminBlockIp") {
+      assertPlatformPermission(actorRole, "users:status");
+      const ipHashValue = String(payload.ipHash ?? "");
+      const ipMasked = String(payload.ipMasked ?? "***");
+      const reason = String(payload.reason ?? "admin_blocked").trim().slice(0, 300);
+      const targetUserId = String(payload.userId ?? "");
+      if (!ipHashValue || reason.length < 3) throw new ApiError(400, "INVALID_IP_BLOCK");
+      await blockIpByHash(db, { ipHash: ipHashValue, ipMasked, reason, blockedBy: user.id, expiresInHours: IP_BLOCK_HOURS });
+      if (targetUserId) await db.prepare("DELETE FROM auth_sessions WHERE user_id=? AND ip_hash=?").bind(targetUserId, ipHashValue).run();
+      await writeAudit(db, { userId: user.id, action: "admin.ip_blocked", entityType: "user", entityId: targetUserId || ipHashValue, metadata: { ipHash: ipHashValue, ipMasked, reason } });
+      const detail = targetUserId ? await getAdminUserDetail(db, targetUserId) : null;
+      return respond({ ok: true, detail });
+    } else if (action === "adminUnblockIp") {
+      assertPlatformPermission(actorRole, "users:status");
+      const ipHashValue = String(payload.ipHash ?? "");
+      const targetUserId = String(payload.userId ?? "");
+      if (!ipHashValue) throw new ApiError(400, "INVALID_IP_BLOCK");
+      await unblockIpByHash(db, ipHashValue, user.id);
+      await writeAudit(db, { userId: user.id, action: "admin.ip_unblocked", entityType: "user", entityId: targetUserId || ipHashValue, metadata: { ipHash: ipHashValue } });
+      const detail = targetUserId ? await getAdminUserDetail(db, targetUserId) : null;
+      return respond({ ok: true, detail });
+    } else if (action === "adminTrustIp") {
+      assertPlatformPermission(actorRole, "users:status");
+      const ipHashValue = String(payload.ipHash ?? "");
+      const ipMasked = String(payload.ipMasked ?? "***");
+      const targetUserId = String(payload.userId ?? "");
+      if (!ipHashValue) throw new ApiError(400, "INVALID_IP_BLOCK");
+      await trustIpByHash(db, ipHashValue, ipMasked, user.id);
+      await writeAudit(db, { userId: user.id, action: "admin.ip_trusted", entityType: "user", entityId: targetUserId || ipHashValue, metadata: { ipHash: ipHashValue } });
+      const detail = targetUserId ? await getAdminUserDetail(db, targetUserId) : null;
+      return respond({ ok: true, detail });
+    } else if (action === "revokeSessionsByIp") {
+      assertPlatformPermission(actorRole, "users:status");
+      const targetUserId = String(payload.userId ?? "");
+      const ipHashValue = String(payload.ipHash ?? "");
+      const reason = String(payload.reason ?? "").trim().slice(0, 300);
+      if (!targetUserId || !ipHashValue || reason.length < 3) throw new ApiError(400, "INVALID_SESSION_REVOKE");
+      const result = await db.prepare("DELETE FROM auth_sessions WHERE user_id=? AND ip_hash=?").bind(targetUserId, ipHashValue).run();
+      await writeAudit(db, { userId: user.id, action: "admin.sessions_revoked_by_ip", entityType: "user", entityId: targetUserId, metadata: { ipHash: ipHashValue, reason, deleted: Number(result.meta.changes ?? 0) } });
+      const detail = await getAdminUserDetail(db, targetUserId);
+      return respond({ ok: true, detail });
     } else if (action === "requestDataExport" || action === "requestDeletion") {
       const type = action === "requestDataExport" ? "export" : "deletion";
       const requestId = id(); await db.prepare("INSERT INTO data_requests (id,user_id,type,status,requested_at) VALUES (?,?,?,'pending',?)").bind(requestId, user.id, type, isoNow()).run();
@@ -798,7 +844,7 @@ export async function POST(request: Request) {
       throw new ApiError(400, "UNSUPPORTED_ACTION");
     }
     const scope = action === "setPaymentStatus" ? "payments"
-      : ["setUserStatus", "revokeUserSessions", "adminUpdateSubscription", "adminVerifyEmail", "adminUpdateUser", "restoreRetentionArchive"].includes(action) ? "users"
+      : ["setUserStatus", "revokeUserSessions", "adminUpdateSubscription", "adminVerifyEmail", "adminUpdateUser", "restoreRetentionArchive", "adminBlockIp", "adminUnblockIp", "adminTrustIp", "revokeSessionsByIp"].includes(action) ? "users"
       : ["updateGateway"].includes(action) ? "gateways"
       : ["upsertPlan"].includes(action) ? "plans"
       : "overview";

@@ -1,6 +1,7 @@
 import { sha256, verifyCsrfToken } from "./auth";
 import { ApiError } from "./api-error";
 import { appOrigin } from "./app-origin";
+import { clientIp, isIpBlocked, maybeAutoBlockIp } from "./ip-security";
 export { ApiError };
 
 export function enforceWriteRequest(request: Request, maxBytes = 65_536) {
@@ -15,7 +16,8 @@ export function enforceWriteRequest(request: Request, maxBytes = 65_536) {
 }
 
 export async function rateLimit(db: D1Database, request: Request, scope: string, limit: number, windowSeconds: number) {
-  const address = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const address = clientIp(request);
+  if (await isIpBlocked(db, address)) throw new ApiError(403, "IP_BLOCKED");
   const key = await sha256(`${scope}:${address}`);
   const now = new Date();
   const nowIso = now.toISOString(); const expiresAt = new Date(now.getTime() + windowSeconds * 1000).toISOString();
@@ -25,7 +27,11 @@ export async function rateLimit(db: D1Database, request: Request, scope: string,
       window_started_at=CASE WHEN rate_limits.expires_at<=excluded.window_started_at THEN excluded.window_started_at ELSE rate_limits.window_started_at END,
       expires_at=CASE WHEN rate_limits.expires_at<=excluded.window_started_at THEN excluded.expires_at ELSE rate_limits.expires_at END
     RETURNING hits`).bind(key, nowIso, expiresAt).first<{ hits: number }>();
-  if (Number(row?.hits ?? 1) > limit) throw new ApiError(429, "RATE_LIMITED");
+  const hits = Number(row?.hits ?? 1);
+  if (hits > limit) {
+    await maybeAutoBlockIp(db, address, scope, hits, limit);
+    throw new ApiError(429, "RATE_LIMITED");
+  }
 }
 
 export async function claimIdempotency(db: D1Database, userId: string, action: string, key: string) {

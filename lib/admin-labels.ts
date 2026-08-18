@@ -162,6 +162,8 @@ const CSV_HEADERS: Record<string, Pair> = {
   subscription_status: ["حالة الاشتراك", "Subscription"],
   plan_name: ["الباقة", "Plan"],
   plan_id: ["معرّف الباقة", "Plan ID"],
+  current_period_start: ["بداية الباقة", "Plan start"],
+  current_period_end: ["نهاية الباقة", "Plan end"],
   amount_minor: ["المبلغ (بيسة)", "Amount (baisa)"],
   total_minor: ["الإجمالي (بيسة)", "Total (baisa)"],
   currency: ["العملة", "Currency"],
