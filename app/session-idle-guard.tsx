@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { clearAdminConsole } from "../lib/admin-session";
+import { notifyBrowserSessionChange } from "../lib/browser-session-client";
 import { apiFetch } from "../lib/client-api";
 import { clearDashboardCache } from "../lib/dashboard-session";
 import { SESSION_IDLE_MS } from "../lib/session-policy";
@@ -34,6 +35,7 @@ export default function SessionIdleGuard() {
       }
       clearAdminConsole();
       clearDashboardCache();
+      notifyBrowserSessionChange(null);
       router.replace("/login");
       router.refresh();
     };

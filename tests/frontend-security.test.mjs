@@ -109,10 +109,15 @@ test("proxy redirects anonymous /admin visitors to login", () => {
 test("auth form redirects when a browser session is already active", () => {
   const auth = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
   const libAuth = fs.readFileSync(path.join(root, "lib/auth.ts"), "utf8");
+  const sync = fs.readFileSync(path.join(root, "app/browser-session-sync.tsx"), "utf8");
+  const browser = fs.readFileSync(path.join(root, "lib/browser-session.ts"), "utf8");
   assert.match(auth, /fetch\("\/api\/auth"/);
   assert.match(auth, /credentials: "same-origin"/);
   assert.match(auth, /result\.authenticated/);
   assert.match(auth, /router\.replace\(authRedirectTarget/);
+  assert.match(auth, /notifyBrowserSessionChange/);
   assert.match(auth, /checkingSession/);
-  assert.match(libAuth, /if \(request\) await revokeSession\(db, request\)/);
+  assert.match(libAuth, /DELETE FROM auth_sessions WHERE browser_id=\?/);
+  assert.match(browser, /browserIdCookieName/);
+  assert.match(sync, /subscribeBrowserSessionChange/);
 });

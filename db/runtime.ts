@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -125,6 +125,10 @@ async function ensureSchemaPatches(db: D1Database) {
     if (!sessionNames.has(column)) {
       try { await db.prepare(`ALTER TABLE auth_sessions ADD COLUMN ${column} TEXT`).run(); } catch { /* exists */ }
     }
+  }
+  if (!sessionNames.has("browser_id")) {
+    try { await db.prepare("ALTER TABLE auth_sessions ADD COLUMN browser_id TEXT").run(); } catch { /* exists */ }
+    try { await db.prepare("CREATE INDEX IF NOT EXISTS idx_auth_sessions_browser ON auth_sessions(browser_id)").run(); } catch { /* exists */ }
   }
   await db.batch([
     db.prepare(`CREATE TABLE IF NOT EXISTS security_events (
@@ -483,6 +487,7 @@ async function initializeSchema(db: D1Database) {
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       token_hash TEXT NOT NULL UNIQUE,
       csrf_token_hash TEXT,
+      browser_id TEXT,
       ip_hash TEXT,
       ip_masked TEXT,
       user_agent TEXT,
@@ -720,6 +725,7 @@ async function initializeSchema(db: D1Database) {
       WHEN NEW.extra_minor < 0 OR NEW.paid_minor < 0 OR NEW.paid_minor > NEW.due_minor BEGIN SELECT RAISE(ABORT, 'MEMBER_FINANCIAL_BOUNDS'); END`),
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email COLLATE NOCASE)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_expiry ON auth_sessions(user_id,expires_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_auth_sessions_browser ON auth_sessions(browser_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_journal_entries_space_date ON journal_entries(space_id,occurred_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON journal_lines(entry_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_trip_expenses_space ON trip_expenses(space_id,occurred_at)"),

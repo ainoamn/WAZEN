@@ -76,6 +76,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { apiFetch } from "../lib/client-api";
+import { notifyBrowserSessionChange } from "../lib/browser-session-client";
 import { clearDashboardCache, fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../lib/dashboard-session";
 import { notifyLiveRefresh, useLiveDashboard } from "../lib/live-sync";
 
@@ -965,6 +966,7 @@ export function WazenDashboard() {
   const logout = async () => {
     await apiFetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
     clearDashboardCache();
+    notifyBrowserSessionChange(null);
     router.push("/login");
     router.refresh();
   };
