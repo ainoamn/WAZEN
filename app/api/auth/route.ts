@@ -231,6 +231,14 @@ export async function POST(request: Request) {
       const update = await db.prepare("UPDATE totp_credentials SET last_used_step=?,updated_at=? WHERE user_id=? AND (last_used_step IS NULL OR last_used_step<?)").bind(result.step, new Date().toISOString(), row.id, result.step).run();
       if (Number(update.meta.changes) !== 1) throw new ApiError(401, "TOTP_REPLAYED");
     }
+    const existing = await authenticateRequest(db, request);
+    if (existing?.authType === "session" && existing.id === row.id) {
+      const role = await platformRoleOf(db, row.id);
+      const issued = await issueCsrfToken(db, request);
+      const headers = new Headers({ "Cache-Control": "no-store" });
+      if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
+      return Response.json({ ok: true, user: { id: row.id, email: row.email, displayName: row.display_name, isDemo: false }, role }, { headers });
+    }
     const session = await createSession(db, row.id, request);
     await recordSecurityEvent(db, {
       ip: clientIp(request),

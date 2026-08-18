@@ -105,3 +105,14 @@ test("proxy redirects anonymous /admin visitors to login", () => {
   assert.match(source, /\/login/);
   assert.match(source, /pathname.startsWith\("\/admin"\)/);
 });
+
+test("auth form redirects when a browser session is already active", () => {
+  const auth = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
+  const libAuth = fs.readFileSync(path.join(root, "lib/auth.ts"), "utf8");
+  assert.match(auth, /fetch\("\/api\/auth"/);
+  assert.match(auth, /credentials: "same-origin"/);
+  assert.match(auth, /result\.authenticated/);
+  assert.match(auth, /router\.replace\(authRedirectTarget/);
+  assert.match(auth, /checkingSession/);
+  assert.match(libAuth, /if \(request\) await revokeSession\(db, request\)/);
+});

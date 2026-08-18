@@ -79,6 +79,7 @@ function cookieValue(request: Request, name: string) {
 }
 
 export async function createSession(db: D1Database, userId: string, request?: Request) {
+  if (request) await revokeSession(db, request);
   const token = createSessionToken();
   const csrfToken = createSessionToken(); const tokenHash = await sha256(token); const csrfTokenHash = await sha256(csrfToken);
   const now = new Date();
