@@ -135,6 +135,12 @@ test("Wazen BHD routes follow the product card in the identity spec", () => {
   assert.match(callback, /upsertBhdUser/);
   assert.match(runtime, /SCHEMA_VERSION = 13/);
   assert.match(runtime, /bhd_sub/);
+  assert.match(runtime, /await ensureBhdSubColumn\(db\)/);
+  const currentPath = runtime.slice(
+    runtime.indexOf("if (row && Number(row.version) >= SCHEMA_VERSION)"),
+    runtime.indexOf("schema_meta missing"),
+  );
+  assert.doesNotMatch(currentPath, /ensureBhdSubColumn/);
   assert.match(account, /bhd_sub/);
   assert.doesNotMatch(account, /super_admin/);
   assert.match(auth, /endSessionUrl/);

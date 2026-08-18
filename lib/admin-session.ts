@@ -69,22 +69,41 @@ export async function fetchAdminConsole(force = false): Promise<AdminConsolePayl
   if (inflight) return inflight;
 
   inflight = (async () => {
-    const response = await fetch("/api/platform?view=admin&scope=console", {
-      cache: "no-store",
-      credentials: "same-origin",
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    let raceTimer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutGuard = new Promise<never>((_, reject) => {
+      raceTimer = setTimeout(() => reject(new Error("LOAD")), 15_000);
     });
-    if (response.status === 401) {
-      clearAdminConsole();
-      const error = new Error("AUTH");
-      throw error;
+    try {
+      const response = await Promise.race([
+        fetch("/api/platform?view=admin&scope=console", {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal: controller.signal,
+        }),
+        timeoutGuard,
+      ]);
+      if (response.status === 401) {
+        clearAdminConsole();
+        const error = new Error("AUTH");
+        throw error;
+      }
+      const result = await response.json() as AdminConsolePayload & { error?: string };
+      if (!response.ok) {
+        clearAdminConsole();
+        throw new Error(result.error === "FORBIDDEN" ? "FORBIDDEN" : "LOAD");
+      }
+      writeAdminConsole(result);
+      return result;
+    } catch (caught) {
+      if (caught instanceof Error && caught.message === "AUTH") throw caught;
+      if (controller.signal.aborted) throw new Error("LOAD");
+      throw caught instanceof Error ? caught : new Error("LOAD");
+    } finally {
+      clearTimeout(timer);
+      if (raceTimer !== undefined) clearTimeout(raceTimer);
     }
-    const result = await response.json() as AdminConsolePayload & { error?: string };
-    if (!response.ok) {
-      clearAdminConsole();
-      throw new Error(result.error === "FORBIDDEN" ? "FORBIDDEN" : "LOAD");
-    }
-    writeAdminConsole(result);
-    return result;
   })();
 
   try {

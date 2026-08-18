@@ -32,8 +32,15 @@ export function AdminConsoleGate({ children }: { children: ReactNode }) {
     let cancelled = false;
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 20_000);
+    let raceTimer = 0;
     void (async () => {
-      const response = await fetch("/api/auth", { cache: "no-store", credentials: "same-origin", signal: controller.signal });
+      const timeoutGuard = new Promise<never>((_, reject) => {
+        raceTimer = window.setTimeout(() => reject(new DOMException("Timeout", "AbortError")), 20_000);
+      });
+      const response = await Promise.race([
+        fetch("/api/auth", { cache: "no-store", credentials: "same-origin", signal: controller.signal }),
+        timeoutGuard,
+      ]);
       if (cancelled) return;
       if (response.status === 401) {
         clearAdminConsole();
@@ -55,11 +62,13 @@ export function AdminConsoleGate({ children }: { children: ReactNode }) {
       if (!cancelled) setGate("failed");
     }).finally(() => {
       window.clearTimeout(timer);
+      window.clearTimeout(raceTimer);
     });
     return () => {
       cancelled = true;
       controller.abort();
       window.clearTimeout(timer);
+      window.clearTimeout(raceTimer);
     };
   }, [pathname, router, attempt]);
 

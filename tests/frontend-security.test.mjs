@@ -208,10 +208,38 @@ test("in-app account routes keep client cache; first load still uses the brand s
   assert.match(prefetch, /prefetchAppRoutes/);
   assert.doesNotMatch(prefetch, /fetchDashboardSession/);
   assert.match(session, /AbortController/);
-  assert.match(session, /FETCH_MS = 25_000/);
+  assert.match(session, /Promise\.race/);
+  assert.match(session, /FETCH_MS = 12_000/);
   assert.match(gate, /PageLoader/);
   assert.doesNotMatch(gate, /ContentBusy/);
   assert.match(gate, /setGate\("failed"\)/);
   assert.match(gate, /AbortController/);
+  assert.match(gate, /Promise\.race/);
   assert.doesNotMatch(layout, /from "next\/headers"/);
+});
+
+test("dashboard GET skips ledger rebuild; current schema skips oauth/bhd patches", () => {
+  const dashboard = fs.readFileSync(path.join(root, "app/api/dashboard/route.ts"), "utf8");
+  const runtime = fs.readFileSync(path.join(root, "db/runtime.ts"), "utf8");
+  const adminSession = fs.readFileSync(path.join(root, "lib/admin-session.ts"), "utf8");
+  const loadStart = dashboard.indexOf("async function loadDashboard");
+  const getStart = dashboard.indexOf("export async function GET");
+  const postStart = dashboard.indexOf("export async function POST");
+  const loadFn = dashboard.slice(loadStart, getStart);
+  const getFn = dashboard.slice(getStart, postStart);
+  const postTail = dashboard.slice(dashboard.lastIndexOf("const freshUser"));
+  assert.match(loadFn, /if \(options\?\.refreshDerived !== false\)/);
+  assert.match(loadFn, /await reconcileMemberLedgers\(db, ids\)/);
+  assert.match(getFn, /refreshDerived: false/);
+  assert.match(postTail, /refreshDerived: true/);
+  const currentPath = runtime.slice(
+    runtime.indexOf("if (row && Number(row.version) >= SCHEMA_VERSION)"),
+    runtime.indexOf("schema_meta missing"),
+  );
+  assert.match(currentPath, /markSchemaReady\(\)/);
+  assert.doesNotMatch(currentPath, /oauth_identities/);
+  assert.doesNotMatch(currentPath, /ensureBhdSubColumn/);
+  assert.match(runtime, /await ensureBhdSubColumn\(db\)/);
+  assert.match(adminSession, /AbortController/);
+  assert.match(adminSession, /Promise\.race/);
 });
