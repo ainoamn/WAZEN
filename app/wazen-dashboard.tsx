@@ -841,15 +841,20 @@ export function WazenDashboard() {
   };
 
   const load = useCallback(async (force = false) => {
+    let redirecting = false;
     try {
       setError(false);
       const result = await fetchDashboardSession<DashboardData>(force);
       if (result.data) setDataState(result.data);
     } catch (caught) {
-      if ((caught as { status?: number }).status === 401) { router.push("/login?next=/home"); return; }
+      if ((caught as { status?: number }).status === 401) {
+        redirecting = true;
+        router.replace("/login?next=/dashboard");
+        return;
+      }
       if (!readDashboardCache()) setError(true);
     } finally {
-      setLoading(false);
+      if (!redirecting) setLoading(false);
     }
   }, [router]);
 

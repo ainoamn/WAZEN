@@ -105,6 +105,8 @@ test("proxy redirects anonymous /admin visitors to login", () => {
   assert.match(source, /\/login/);
   assert.match(source, /pathname.startsWith\("\/admin"\)/);
   assert.match(source, /pathname === "\/login"/);
+  assert.match(source, /pathname === "\/home"/);
+  assert.match(source, /pathname === "\/dashboard"/);
 });
 
 test("login page redirects when a session cookie is already present", () => {
@@ -112,13 +114,37 @@ test("login page redirects when a session cookie is already present", () => {
   const authRoute = fs.readFileSync(path.join(root, "app/api/auth/route.ts"), "utf8");
   const form = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
   assert.match(login, /redirect\(/);
-  assert.match(login, /sessionCookieName/);
+  assert.match(login, /sessionCookieFromStore/);
   assert.match(authRoute, /SESSION_ALREADY_ACTIVE/);
   assert.match(form, /GoogleSignInButton/);
   assert.match(form, /أو المتابعة عبر/);
   const gsi = fs.readFileSync(path.join(root, "app/google-sign-in.tsx"), "utf8");
   assert.match(gsi, /\/api\/auth\/google/);
   assert.match(gsi, /idToken/);
+});
+
+test("logged-out sign-in does not paint the home load-error screen", () => {
+  const kit = fs.readFileSync(path.join(root, "app/commercial-kit.tsx"), "utf8");
+  const landing = fs.readFileSync(path.join(root, "app/page.tsx"), "utf8");
+  const homePage = fs.readFileSync(path.join(root, "app/home/page.tsx"), "utf8");
+  const dashboardPage = fs.readFileSync(path.join(root, "app/dashboard/page.tsx"), "utf8");
+  const home = fs.readFileSync(path.join(root, "app/home/home-client.tsx"), "utf8");
+  const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
+  const dashboardRoute = fs.readFileSync(path.join(root, "app/api/dashboard/route.ts"), "utf8");
+  const publicHeader = kit.slice(kit.indexOf("export function PublicHeader"), kit.indexOf("export function AccountHeader"));
+  assert.match(publicHeader, /href="\/login"/);
+  assert.doesNotMatch(publicHeader, /href="\/home"/);
+  assert.match(landing, /href="\/register"/);
+  assert.doesNotMatch(landing, /href="\/home"/);
+  assert.match(homePage, /redirect\("\/login\?next=\/home"\)/);
+  assert.match(dashboardPage, /redirect\("\/login\?next=\/dashboard"\)/);
+  assert.match(home, /let redirecting = false/);
+  assert.match(home, /router\.replace\("\/login\?next=\/home"\)/);
+  assert.match(home, /if \(!redirecting\) setLoading\(false\)/);
+  assert.match(dashboard, /let redirecting = false/);
+  assert.match(dashboard, /router\.replace\("\/login\?next=\/dashboard"\)/);
+  assert.match(dashboardRoute, /unauthenticatedResponse/);
+  assert.match(dashboardRoute, /clearSessionCookie/);
 });
 
 test("auth form redirects when a browser session is already active", () => {

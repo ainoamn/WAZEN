@@ -7,6 +7,13 @@ export function sessionCookieName() {
   return process.env.NODE_ENV === "production" ? "__Host-wazen_session" : "wazen_session";
 }
 
+export function sessionCookieFromStore(store: { get(name: string): { value: string } | undefined }) {
+  return store.get(sessionCookieName())?.value
+    || store.get("wazen_session")?.value
+    || store.get("__Host-wazen_session")?.value
+    || "";
+}
+
 export function csrfCookieName() {
   return process.env.NODE_ENV === "production" ? "__Host-wazen_csrf" : "wazen_csrf";
 }

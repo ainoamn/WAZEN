@@ -15,7 +15,7 @@ export default function LandingPage() {
         <span className="commerce-pill"><Sparkles size={15} />{l("منصة مالية واحدة لحياتك كلها", "One financial platform for your whole life")}</span>
         <h1>{l("أموالك الشخصية والمشتركة،", "Personal and shared money,")}<br/><em>{l("متوازنة بوضوح.", "balanced with clarity.")}</em></h1>
         <p>{l("أدر دخلك ومصاريف المنزل والجمعيات والرحلات من نظام واحد يفصل حقوق كل شخص ويوثّق كل عملية.", "Manage income, household spending, savings circles and trips in one system that protects every member’s balance and records every movement.")}</p>
-        <div className="commerce-hero-actions"><a href="/home">{l("ابدأ مجاناً", "Start free")}<Arrow size={18} /></a><a className="secondary" href="/pricing">{l("استعرض الباقات", "View pricing")}</a></div>
+        <div className="commerce-hero-actions"><a href="/register">{l("ابدأ مجاناً", "Start free")}<Arrow size={18} /></a><a className="secondary" href="/pricing">{l("استعرض الباقات", "View pricing")}</a></div>
         <small><Check size={14} />{l("لا تحتاج بطاقة للبدء", "No card required")}<Check size={14} />{l("بياناتك خاصة ومشفرة", "Private, protected data")}</small>
       </div>
       <div className="commerce-hero-visual">

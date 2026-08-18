@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
-import { authenticateRequest, csrfCookie, issueCsrfToken } from "../../../lib/auth";
+import { authenticateRequest, clearCsrfCookie, clearSessionCookie, csrfCookie, issueCsrfToken } from "../../../lib/auth";
 import { buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
 import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf } from "../../../lib/authorization";
@@ -1061,12 +1061,19 @@ async function readDashboardRevision(db: D1Database, userId: string) {
   return [row?.space_at ?? "", row?.txn_at ?? "", row?.sub_at ?? "", row?.plan_stamp ?? ""].join("|");
 }
 
+function unauthenticatedResponse() {
+  const headers = new Headers({ "Cache-Control": "no-store" });
+  headers.append("Set-Cookie", clearSessionCookie());
+  headers.append("Set-Cookie", clearCsrfCookie());
+  return Response.json({ error: "AUTHENTICATION_REQUIRED" }, { status: 401, headers });
+}
+
 export async function GET(request: Request) {
   try {
     const db = getRawDb();
     await ensureSchema(db);
     const user = await authenticateRequest(db, request);
-    if (!user) return Response.json({ error: "AUTHENTICATION_REQUIRED" }, { status: 401 });
+    if (!user) return unauthenticatedResponse();
     assertApiScope(user, "wallets:read");
     const url = new URL(request.url);
     if (url.searchParams.get("view") === "revision") {
@@ -1126,7 +1133,7 @@ export async function POST(request: Request) {
     await ensureSchema(db);
     await rateLimit(db, request, "dashboard-write", 120, 60);
     const user = await authenticateRequest(db, request);
-    if (!user) return Response.json({ error: "AUTHENTICATION_REQUIRED" }, { status: 401 });
+    if (!user) return unauthenticatedResponse();
     if (user.authType === "session") await enforceCsrf(db, request);
     await ensureUser(db, user);
     const payload = (await request.json()) as Record<string, unknown>;
