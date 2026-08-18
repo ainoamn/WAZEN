@@ -4,10 +4,13 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import {
+  BHD_IDENTITY_VERCEL_ORIGIN,
   BHD_OAUTH_CLIENT_ID,
   DEFAULT_BHD_IDENTITY_ISSUER,
   decodeBhdOauthState,
   encodeBhdOauthState,
+  identityAuthorizeProbeAllows,
+  identityEndpointBase,
   identityIssuer,
   isBhdIdentityConfigured,
   pkceChallenge,
@@ -32,6 +35,7 @@ function signHs256(payload, secret) {
 test("BHD identity helpers keep the frozen Wazen client and reject unsafe returnTo", async () => {
   assert.equal(BHD_OAUTH_CLIENT_ID, "bhd-wazen");
   assert.equal(DEFAULT_BHD_IDENTITY_ISSUER, "https://id.bhd-om.com");
+  assert.equal(BHD_IDENTITY_VERCEL_ORIGIN, "https://one-bhd.vercel.app");
   assert.equal(safeReturnTo("/dashboard"), "/dashboard");
   assert.equal(safeReturnTo("/home"), "/home");
   assert.equal(safeReturnTo("https://evil.example/"), "/home");
@@ -45,23 +49,43 @@ test("BHD identity helpers keep the frozen Wazen client and reject unsafe return
   assert.deepEqual(decodeBhdOauthState(packed), { state: "s", nonce: "n", verifier, returnTo: "/billing" });
 });
 
-test("BHD identity is off until the client secret is set", () => {
+test("BHD identity is on with frozen client id; secret is optional for first-party PKCE", () => {
   const previous = {
     issuer: process.env.BHD_IDENTITY_ISSUER,
+    endpoint: process.env.BHD_IDENTITY_ENDPOINT,
     id: process.env.BHD_OAUTH_CLIENT_ID,
     secret: process.env.BHD_OAUTH_CLIENT_SECRET,
+    disabled: process.env.BHD_OAUTH_DISABLED,
   };
   delete process.env.BHD_OAUTH_CLIENT_SECRET;
-  process.env.BHD_IDENTITY_ISSUER = DEFAULT_BHD_IDENTITY_ISSUER;
+  delete process.env.BHD_OAUTH_DISABLED;
+  delete process.env.BHD_IDENTITY_ISSUER;
+  delete process.env.BHD_IDENTITY_ENDPOINT;
   process.env.BHD_OAUTH_CLIENT_ID = BHD_OAUTH_CLIENT_ID;
-  assert.equal(isBhdIdentityConfigured(), false);
+  assert.equal(isBhdIdentityConfigured(), true);
   assert.equal(identityIssuer(), DEFAULT_BHD_IDENTITY_ISSUER);
+  assert.equal(identityEndpointBase(), BHD_IDENTITY_VERCEL_ORIGIN);
+  process.env.BHD_IDENTITY_ISSUER = DEFAULT_BHD_IDENTITY_ISSUER;
+  assert.equal(identityEndpointBase(), BHD_IDENTITY_VERCEL_ORIGIN);
+  process.env.BHD_IDENTITY_ENDPOINT = BHD_IDENTITY_VERCEL_ORIGIN;
+  process.env.BHD_IDENTITY_ISSUER = "https://id.example.invalid";
+  assert.equal(identityEndpointBase(), BHD_IDENTITY_VERCEL_ORIGIN);
+  assert.equal(identityAuthorizeProbeAllows(307), true);
+  assert.equal(identityAuthorizeProbeAllows(302), true);
+  assert.equal(identityAuthorizeProbeAllows(400), false);
+  assert.equal(identityAuthorizeProbeAllows(401), false);
+  process.env.BHD_OAUTH_DISABLED = "1";
+  assert.equal(isBhdIdentityConfigured(), false);
   process.env.BHD_OAUTH_CLIENT_SECRET = previous.secret;
   process.env.BHD_IDENTITY_ISSUER = previous.issuer;
+  process.env.BHD_IDENTITY_ENDPOINT = previous.endpoint;
   process.env.BHD_OAUTH_CLIENT_ID = previous.id;
+  process.env.BHD_OAUTH_DISABLED = previous.disabled;
   if (!previous.secret) delete process.env.BHD_OAUTH_CLIENT_SECRET;
   if (!previous.issuer) delete process.env.BHD_IDENTITY_ISSUER;
+  if (!previous.endpoint) delete process.env.BHD_IDENTITY_ENDPOINT;
   if (!previous.id) delete process.env.BHD_OAUTH_CLIENT_ID;
+  if (!previous.disabled) delete process.env.BHD_OAUTH_DISABLED;
 });
 
 test("ID token HS256 verification checks iss, aud, nonce, and expiry", async () => {
@@ -129,6 +153,7 @@ test("Wazen BHD routes follow the product card in the identity spec", () => {
   assert.match(spec, /bhd-wazen/);
   assert.match(spec, /https:\/\/id\.bhd-om\.com/);
   assert.match(start, /createBhdAuthRequest/);
+  assert.match(start, /identityAcceptsAuthorizeUrl/);
   assert.match(identity, /oauth\/authorize/);
   assert.match(identity, /code_challenge_method/);
   assert.match(callback, /exchangeBhdCode/);
@@ -143,5 +168,6 @@ test("Wazen BHD routes follow the product card in the identity spec", () => {
   assert.doesNotMatch(currentPath, /ensureBhdSubColumn/);
   assert.match(account, /bhd_sub/);
   assert.doesNotMatch(account, /super_admin/);
+  assert.match(account, /claims\.emailVerified/);
   assert.match(auth, /endSessionUrl/);
 });

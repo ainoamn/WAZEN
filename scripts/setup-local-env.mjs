@@ -26,6 +26,7 @@ WAZEN_DEMO_MODE=0
 WAZEN_TRUST_OAI_HEADERS=0
 WAZEN_APP_ORIGIN=http://localhost:3000
 # BHD_IDENTITY_ISSUER=https://id.bhd-om.com
+# BHD_IDENTITY_ENDPOINT=https://one-bhd.vercel.app
 # BHD_OAUTH_CLIENT_ID=bhd-wazen
 # BHD_OAUTH_CLIENT_SECRET=
 # BHD_OAUTH_REDIRECT_URI=http://localhost:3000/api/auth/bhd/callback

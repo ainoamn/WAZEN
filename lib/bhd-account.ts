@@ -32,7 +32,8 @@ export async function upsertBhdUser(db: D1Database, claims: BhdIdClaims) {
     if (existing.status === "suspended" || existing.status === "closed") throw new ApiError(403, "ACCOUNT_UNAVAILABLE");
     const googleLink = await db.prepare("SELECT id FROM oauth_identities WHERE user_id=? AND provider='google' LIMIT 1")
       .bind(existing.id).first<{ id: string }>();
-    const verified = Boolean(existing.email_verified_at || googleLink);
+    // Identity already required email_verified; that is the email proof for linking.
+    const verified = Boolean(existing.email_verified_at || googleLink || claims.emailVerified);
     if (!verified) throw new ApiError(409, "BHD_EMAIL_IN_USE");
     if (existing.bhd_sub && existing.bhd_sub !== claims.sub) throw new ApiError(409, "BHD_ACCOUNT_MISMATCH");
     await db.prepare("UPDATE users SET bhd_sub=?,display_name=?,avatar_url=COALESCE(?,avatar_url) WHERE id=?")

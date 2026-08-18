@@ -68,24 +68,39 @@ WAZEN_TRUST_OAI_HEADERS=0
 
 المواصفة: [BHD-IDENTITY-SSO.md](./BHD-IDENTITY-SSO.md) (نسخة من ONE-BHD بلا تعديل القيم المجمّدة).
 
-بعد ضبط الأسرار على Vercel يتحوّل `/login` إلى `https://id.bhd-om.com/oauth/authorize`. جلسة وازن تبقى `__Host-wazen_session`. لا تُشارك قاعدة وازن مع الهوية. الأدوار الإدارية تبقى محلية على `bhd_sub`.
+`/login` وزر **تسجيل الدخول** يحوّلان إلى `GET /api/auth/bhd/start`. إن قبلت الهوية `redirect_uri` يفتح المتصفح بوابة المجموعة (`one-bhd.vercel.app`) بنفس شاشة الدخول: بريد أو جوجل هناك، ثم يعود وازن بجلسة `__Host-wazen_session`. جوجل لا يظهر على وازن بعد الربط.
 
-على مشروع وازن:
+إن رفضت الهوية النطاق (حالياً `wazen-roan.vercel.app` غير مسجّل على `bhd-wazen`) يبقى النموذج المحلي `/login?local=1` بدل صفحة 400. بعد نجاح النموذج المحلي تُفتح الوجهة بتحميل كامل (`location.assign`).
+
+العملاء من الطرف الأول (`bhd-wazen`) يُكملون PKCE **بدون** `client_secret` (تحديث الهوية: «Allow first-party PKCE token exchange without a client secret»). حتى لو ضُبط `BHD_IDENTITY_ISSUER=https://id.bhd-om.com` تبقى نقاط authorize/token على `https://one-bhd.vercel.app` ما لم يُضبط `BHD_IDENTITY_ENDPOINT`.
+
+**إلزامي على مشروع الهوية `one-bhd`** في `BHD-Complete-Brand-and-Portal-v1.1.0/app/lib/identity/clients.ts` (ومثله في v1.1.1) لعميل `bhd-wazen`:
+
+```ts
+"https://wazen-roan.vercel.app/api/auth/bhd/callback",
+```
+
+وفي `postLogoutRedirectUris`:
+
+```ts
+"https://wazen-roan.vercel.app/",
+```
+
+بدون هذين السطرين الهوية ترفض `redirect_uri` من نطاق Vercel بـ `unauthorized_client`. أعد نشر `one-bhd` بعد الدمج.
+
+على مشروع وازن (اختياري):
 
 ```text
 BHD_IDENTITY_ISSUER=https://id.bhd-om.com
+# BHD_IDENTITY_ENDPOINT=https://one-bhd.vercel.app
 BHD_OAUTH_CLIENT_ID=bhd-wazen
-BHD_OAUTH_CLIENT_SECRET=<نفس BHD_OAUTH_CLIENT_SECRET_WAZEN على one-bhd>
-BHD_OAUTH_REDIRECT_URI=https://wazen.bhd-om.com/api/auth/bhd/callback
-BHD_IDENTITY_TOKEN_SECRET=<نفس IDENTITY_TOKEN_SECRET على one-bhd حتى يظهر JWKS RS256>
+# اختياري إن وُجد السر على الهوية:
+# BHD_OAUTH_CLIENT_SECRET=
+# لا تضبط BHD_OAUTH_REDIRECT_URI على نطاق مختلف عن صفحة المستخدم
+# BHD_IDENTITY_TOKEN_SECRET=  # إن وُجد يتحقق HS256 محلياً؛ وإلا يُستخدم /oauth/userinfo
 ```
 
-على مشروع الهوية `one-bhd` سجّل أيضاً إن كان الدخول من نطاق Vercel:
-
-- `https://wazen-roan.vercel.app/api/auth/bhd/callback`
-- `https://wazen-roan.vercel.app/` في `post_logout_redirect_uris`
-
-بدون `BHD_OAUTH_CLIENT_SECRET` يبقى الدخول المحلي وجوجل كما هما. لا ترفع الأسرار إلى Git.
+لا ترفع الأسرار إلى Git. لا تشارك `DATABASE_URL` مع الهوية.
 
 ## البريد والدعوات
 

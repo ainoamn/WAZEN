@@ -5,6 +5,8 @@ import { validateOutboundHttpsUrl } from "./outbound.ts";
 export const BHD_IDENTITY_SPEC = "bhd-identity.v1";
 export const BHD_OAUTH_CLIENT_ID = "bhd-wazen";
 export const DEFAULT_BHD_IDENTITY_ISSUER = "https://id.bhd-om.com";
+/** Browser-reachable identity host while id.bhd-om.com times out from some Oman networks. */
+export const BHD_IDENTITY_VERCEL_ORIGIN = "https://one-bhd.vercel.app";
 export const BHD_OAUTH_STATE_COOKIE = "bhd_oauth_state";
 const JWKS_CACHE_MS = 10 * 60 * 1000;
 
@@ -84,6 +86,35 @@ export function identityIssuer() {
   return (configured || DEFAULT_BHD_IDENTITY_ISSUER).replace(/\/$/, "");
 }
 
+/** Host used for authorize/token/jwks. Prefer the Vercel identity origin so Oman can reach it. */
+export function identityEndpointBase() {
+  const endpoint = process.env.BHD_IDENTITY_ENDPOINT?.trim();
+  if (endpoint) return endpoint.replace(/\/$/, "");
+  const configured = process.env.BHD_IDENTITY_ISSUER?.trim().replace(/\/$/, "") || "";
+  if (!configured || configured === DEFAULT_BHD_IDENTITY_ISSUER) return BHD_IDENTITY_VERCEL_ORIGIN;
+  return configured;
+}
+
+/** Identity returns 400 for unknown redirect_uri; 307/302 when the client is allowed. */
+export function identityAuthorizeProbeAllows(status: number) {
+  return status === 200 || (status >= 300 && status < 400);
+}
+
+export async function identityAcceptsAuthorizeUrl(authorizeUrl: string) {
+  try {
+    const url = validateOutboundHttpsUrl(authorizeUrl, identityAllowedHosts());
+    const response = await fetch(url, {
+      method: "GET",
+      redirect: "manual",
+      cache: "no-store",
+      signal: AbortSignal.timeout(4500),
+    });
+    return identityAuthorizeProbeAllows(response.status);
+  } catch {
+    return false;
+  }
+}
+
 export function bhdClientId() {
   return process.env.BHD_OAUTH_CLIENT_ID?.trim() || BHD_OAUTH_CLIENT_ID;
 }
@@ -93,7 +124,8 @@ export function bhdClientSecret() {
 }
 
 export function isBhdIdentityConfigured() {
-  return Boolean(identityIssuer() && bhdClientId() && bhdClientSecret());
+  if (process.env.BHD_OAUTH_DISABLED === "1") return false;
+  return Boolean(identityIssuer() && bhdClientId());
 }
 
 export function identityAllowedHosts() {
@@ -103,7 +135,19 @@ export function identityAllowedHosts() {
   } catch {
     /* ignore invalid issuer */
   }
+  try {
+    hosts.add(new URL(identityEndpointBase()).hostname.toLowerCase());
+  } catch {
+    /* ignore */
+  }
   return [...hosts];
+}
+
+function issuerAllowed(iss: string | undefined) {
+  if (!iss) return false;
+  const allowed = new Set([identityIssuer(), DEFAULT_BHD_IDENTITY_ISSUER, BHD_IDENTITY_VERCEL_ORIGIN]);
+  try { allowed.add(identityEndpointBase()); } catch { /* ignore */ }
+  return allowed.has(iss);
 }
 
 export function safeReturnTo(value: string | null | undefined) {
@@ -128,13 +172,20 @@ export function publicRequestOrigin(request: Request) {
 }
 
 export function bhdRedirectUri(request: Request) {
+  const origin = publicRequestOrigin(request);
   const configured = process.env.BHD_OAUTH_REDIRECT_URI?.trim();
-  if (configured) return configured;
-  return `${publicRequestOrigin(request)}/api/auth/bhd/callback`;
+  if (configured) {
+    try {
+      if (new URL(configured).origin === origin) return configured;
+    } catch {
+      /* ignore invalid configured URI */
+    }
+  }
+  return `${origin}/api/auth/bhd/callback`;
 }
 
 export function bhdEndSessionUrl(request: Request) {
-  const issuer = identityIssuer();
+  const issuer = identityEndpointBase();
   const url = new URL(`${issuer}/oauth/end-session`);
   url.searchParams.set("post_logout_redirect_uri", `${publicRequestOrigin(request)}/`);
   url.searchParams.set("client_id", bhdClientId());
@@ -186,7 +237,7 @@ export async function createBhdAuthRequest(request: Request, returnTo: string) {
   if (verifier.length < 43) throw new ApiError(500, "BHD_PKCE_FAILED");
   const challenge = await pkceChallenge(verifier);
   const payload: BhdOauthState = { state, nonce, verifier, returnTo: safeReturnTo(returnTo) };
-  const issuer = identityIssuer();
+  const issuer = identityEndpointBase();
   const url = new URL(`${issuer}/oauth/authorize`);
   url.searchParams.set("client_id", bhdClientId());
   url.searchParams.set("redirect_uri", bhdRedirectUri(request));
@@ -222,7 +273,7 @@ function claimsFromPayload(payload: JwtPayload): BhdIdClaims {
 }
 
 async function identityJwks() {
-  const uri = `${identityIssuer()}/oauth/jwks.json`;
+  const uri = `${identityEndpointBase()}/oauth/jwks.json`;
   if (jwkCache && jwkCache.uri === uri && jwkCache.expiresAt > Date.now()) return jwkCache.keys;
   const url = validateOutboundHttpsUrl(uri, identityAllowedHosts());
   const response = await fetch(url, { cache: "no-store" });
@@ -274,7 +325,7 @@ export async function verifyHs256Jwt(idToken: string, secret: string) {
 }
 
 async function fetchUserinfo(accessToken: string) {
-  const url = validateOutboundHttpsUrl(`${identityIssuer()}/oauth/userinfo`, identityAllowedHosts());
+  const url = validateOutboundHttpsUrl(`${identityEndpointBase()}/oauth/userinfo`, identityAllowedHosts());
   const response = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` }, cache: "no-store" });
   if (!response.ok) throw new ApiError(401, "BHD_TOKEN_INVALID");
   return await response.json() as { sub?: string; email?: string; email_verified?: boolean };
@@ -307,7 +358,7 @@ export async function verifyBhdIdToken(idToken: string, nonce: string, accessTok
       throw new ApiError(401, "BHD_TOKEN_INVALID");
     }
   }
-  if (payload.iss !== identityIssuer()) throw new ApiError(401, "BHD_TOKEN_INVALID");
+  if (!issuerAllowed(payload.iss)) throw new ApiError(401, "BHD_TOKEN_INVALID");
   if (!audienceMatches(payload.aud, bhdClientId())) throw new ApiError(401, "BHD_TOKEN_INVALID");
   if (!payload.exp || payload.exp * 1000 < Date.now() - 60_000) throw new ApiError(401, "BHD_TOKEN_INVALID");
   if (!payload.nonce || payload.nonce !== nonce) throw new ApiError(401, "BHD_NONCE_MISMATCH");
@@ -319,15 +370,16 @@ export async function verifyBhdIdToken(idToken: string, nonce: string, accessTok
 export async function exchangeBhdCode(request: Request, code: string, verifier: string, nonce: string): Promise<BhdIdClaims> {
   if (!isBhdIdentityConfigured()) throw new ApiError(503, "BHD_NOT_CONFIGURED");
   if (!code || !verifier) throw new ApiError(401, "BHD_AUTH_FAILED");
-  const tokenUrl = validateOutboundHttpsUrl(`${identityIssuer()}/oauth/token`, identityAllowedHosts());
+  const tokenUrl = validateOutboundHttpsUrl(`${identityEndpointBase()}/oauth/token`, identityAllowedHosts());
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
     redirect_uri: bhdRedirectUri(request),
     client_id: bhdClientId(),
-    client_secret: bhdClientSecret(),
     code_verifier: verifier,
   });
+  const secret = bhdClientSecret();
+  if (secret) body.set("client_secret", secret);
   const response = await fetch(tokenUrl, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },

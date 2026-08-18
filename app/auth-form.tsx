@@ -6,7 +6,6 @@ import { GoogleSignInButton } from "./google-sign-in";
 import { WazenIcon } from "../components/brand/WazenLogo";
 import { Brand, useCommerceLocale } from "./commercial-kit";
 import { clearAdminConsole } from "../lib/admin-session";
-import { enterSignedInApp } from "../lib/app-prefetch";
 import { ensureBrowserId, notifyBrowserSessionChange } from "../lib/browser-session-client";
 import { clearDashboardCache } from "../lib/dashboard-session";
 import { canOpenPlatformConsole } from "../lib/platform-console";
@@ -22,6 +21,7 @@ function googleErrorMessage(code: string, l: (ar: string, en: string) => string)
   if (code === "BHD_NOT_CONFIGURED") return l("حساب BHD غير مهيأ بعد.", "BHD identity is not configured yet.");
   if (code === "BHD_ACCESS_DENIED") return l("أُلغي الدخول من حساب BHD.", "BHD sign-in was cancelled.");
   if (code === "BHD_EMAIL_UNVERIFIED") return l("بريد حساب BHD غير مؤكد.", "The BHD account email is not verified.");
+  if (code === "BHD_REDIRECT_DENIED") return l("بوابة BHD لم تسجّل نطاق هذا الموقع بعد. استخدم النموذج أدناه أو أضف عنوان الإرجاع على الهوية.", "The BHD portal has not allowlisted this site yet. Use the form below, or register the callback on identity.");
   if (code === "BHD_EMAIL_IN_USE") return l("هذا البريد مرتبط بحساب وازن غير مؤكد. أكّد البريد أو ادخل محلياً ثم اربط الحساب.", "This email belongs to an unverified Wazen account. Verify it, or sign in locally first.");
   if (code === "BHD_STATE_MISMATCH" || code === "BHD_NONCE_MISMATCH" || code === "BHD_STATE_MISSING") return l("انتهت صلاحية جلسة الدخول. حاول مرة أخرى.", "The sign-in session expired. Try again.");
   if (code.startsWith("BHD_")) return l("تعذر الدخول بحساب BHD. حاول مرة أخرى.", "Could not sign in with BHD. Try again.");
@@ -66,8 +66,10 @@ export function AuthForm({ mode, googleClientId = "", identityEnabled = false }:
   async function submit(event: FormEvent) {
     event.preventDefault(); setError(""); setSaving(true);
     ensureBrowserId();
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 20_000);
     try {
-      const response = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ action: mode, displayName: mode === "register" ? displayName : undefined, email, password, totpCode: totpCode || undefined }) });
+      const response = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, credentials: "same-origin", signal: controller.signal, body: JSON.stringify({ action: mode, displayName: mode === "register" ? displayName : undefined, email, password, totpCode: totpCode || undefined }) });
       const result = await response.json() as {
         error?: string;
         verificationRequired?: boolean;
@@ -88,14 +90,21 @@ export function AuthForm({ mode, googleClientId = "", identityEnabled = false }:
       clearDashboardCache();
       clearAdminConsole();
       notifyBrowserSessionChange(result.user?.id ?? null);
-      await enterSignedInApp(router, authRedirectTarget(result.role), result.role);
+      window.location.assign(authRedirectTarget(result.role));
+      return;
     } catch (caught) {
-      const code = caught instanceof Error ? caught.message : "AUTH_FAILED"; if (code === "TOTP_REQUIRED") setTotpRequired(true);
+      const aborted = caught instanceof DOMException && caught.name === "AbortError";
+      const code = aborted ? "AUTH_TIMEOUT" : caught instanceof Error ? caught.message : "AUTH_FAILED";
+      if (code === "TOTP_REQUIRED") setTotpRequired(true);
       setError(
-        code === "EMAIL_ALREADY_USED"
+        code === "AUTH_TIMEOUT"
+          ? l("انتهت مهلة التحقق. حاول مرة أخرى.", "The sign-in request timed out. Try again.")
+          : code === "INVALID_CREDENTIALS"
+          ? l("البريد أو كلمة المرور غير صحيحة.", "Email or password is incorrect.")
+          : code === "EMAIL_ALREADY_USED"
           ? l("البريد مستخدم بالفعل", "Email is already in use")
           : code === "EMAIL_NOT_VERIFIED"
-            ? l("يجب تأكيد البريد أولاً.", "Verify your email first.")
+            ? l("يجب تأكيد البريد أولاً من رابط الرسالة.", "Verify your email from the message link first.")
             : code === "SESSION_ALREADY_ACTIVE"
               ? l("يوجد حساب مسجّل في هذا المتصفح. سجّل الخروج أولاً لتبديل الحساب.", "A session is already active in this browser. Sign out first to switch accounts.")
               : code === "DATABASE_NOT_CONFIGURED"
@@ -106,7 +115,10 @@ export function AuthForm({ mode, googleClientId = "", identityEnabled = false }:
                   ? l("تعذر إنشاء الحساب. تحقق من البيانات وحاول مرة أخرى.", "Could not create the account. Check your details and try again.")
                   : l("تعذر تسجيل الدخول. تحقق من البيانات.", "Unable to sign in. Check your details."),
       );
-    } finally { setSaving(false); }
+    } finally {
+      window.clearTimeout(timer);
+      setSaving(false);
+    }
   }
   return <main className="auth-page"><section className="auth-panel">
     <header><Brand showArabic /><button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button></header>
@@ -144,12 +156,12 @@ export function AuthForm({ mode, googleClientId = "", identityEnabled = false }:
             clearDashboardCache();
             clearAdminConsole();
             notifyBrowserSessionChange(result.user?.id ?? null);
-            void enterSignedInApp(router, authRedirectTarget(result.role), result.role);
+            window.location.assign(authRedirectTarget(result.role));
           }}
         />
       ) : (
         <p className="auth-error" role="status">{l("تسجيل جوجل غير مهيأ بعد.", "Google sign-in is not configured yet.")}</p>
       )}
-    <footer>{mode === "login" ? <>{l("ليس لديك حساب؟", "No account?")} <Link href="/register">{l("أنشئ حساباً", "Create one")}</Link></> : <>{l("لديك حساب؟", "Already registered?")} <Link href="/login">{l("سجّل الدخول", "Sign in")}</Link></>}</footer>
+    <footer>{mode === "login" ? <>{l("ليس لديك حساب؟", "No account?")} <Link href={identityEnabled ? "/register?local=1" : "/register"}>{l("أنشئ حساباً", "Create one")}</Link></> : <>{l("لديك حساب؟", "Already registered?")} <Link href={identityEnabled ? "/login?local=1" : "/login"}>{l("سجّل الدخول", "Sign in")}</Link></>}</footer>
   </section><aside><span className="brand-glyph"><WazenIcon className="h-10 w-auto" /></span><h2>{l("وضوح مالي، من أول ريال.", "Financial clarity from day one.")}</h2><p>{l("المحافظ الشخصية والمنزلية والجمعيات والرحلات في نظام واحد.", "Personal, household, circle and trip wallets in one system.")}</p></aside></main>;
 }
