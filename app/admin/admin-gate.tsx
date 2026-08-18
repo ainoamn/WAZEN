@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
-import { AdminShell, Brand, ContentBusy, useCommerceLocale } from "../commercial-kit";
+import { AdminShell, Brand, PageLoader, useCommerceLocale } from "../commercial-kit";
 import { ADMIN_PREFETCH_PATHS, clearAdminConsole, fetchAdminConsole, readAdminConsole } from "../../lib/admin-session";
-import { prefetchApp } from "../../lib/app-prefetch";
+import { prefetchAppRoutes } from "../../lib/app-prefetch";
 import { clearDashboardCache, readDashboardCache } from "../../lib/dashboard-session";
 import { canOpenPlatformConsole } from "../../lib/platform-console";
 
-type Gate = "pending" | "forbidden" | "ok";
+type Gate = "pending" | "forbidden" | "ok" | "failed";
 
 function initialAdminGate(): Gate {
   const admin = readAdminConsole();
@@ -25,12 +25,15 @@ export function AdminConsoleGate({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { locale, setLocale, l } = useCommerceLocale();
   const [gate, setGate] = useState<Gate>(initialAdminGate);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (pathname.startsWith("/admin/setup")) return;
     let cancelled = false;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 20_000);
     void (async () => {
-      const response = await fetch("/api/auth", { cache: "no-store", credentials: "same-origin" });
+      const response = await fetch("/api/auth", { cache: "no-store", credentials: "same-origin", signal: controller.signal });
       if (cancelled) return;
       if (response.status === 401) {
         clearAdminConsole();
@@ -46,18 +49,19 @@ export function AdminConsoleGate({ children }: { children: ReactNode }) {
       }
       setGate("ok");
       void fetchAdminConsole();
-      prefetchApp(router, result.role);
+      prefetchAppRoutes(router, result.role);
       for (const href of ADMIN_PREFETCH_PATHS) router.prefetch(href);
     })().catch(() => {
-      if (!cancelled) {
-        clearAdminConsole();
-        router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-      }
+      if (!cancelled) setGate("failed");
+    }).finally(() => {
+      window.clearTimeout(timer);
     });
     return () => {
       cancelled = true;
+      controller.abort();
+      window.clearTimeout(timer);
     };
-  }, [pathname, router]);
+  }, [pathname, router, attempt]);
 
   if (pathname.startsWith("/admin/setup")) return children;
 
@@ -75,7 +79,21 @@ export function AdminConsoleGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (gate !== "ok") return <ContentBusy label={l("جاري التحقق…", "Checking access…")} />;
+  if (gate === "failed") {
+    return (
+      <main className="admin-access-denied">
+        <Brand compact />
+        <b>{l("تعذر التحقق من صلاحية الإدارة", "Could not verify admin access")}</b>
+        <p>{l("تحقق من الاتصال ثم أعد المحاولة.", "Check your connection, then try again.")}</p>
+        <div>
+          <button type="button" className="primary-button" onClick={() => { setGate("pending"); setAttempt((current) => current + 1); }}>{l("إعادة المحاولة", "Try again")}</button>
+          <Link href="/home">{l("العودة للرئيسية", "Back to home")}</Link>
+        </div>
+      </main>
+    );
+  }
+
+  if (gate !== "ok") return <PageLoader label={l("جاري التحقق…", "Checking access…")} />;
 
   return (
     <AdminShell locale={locale} setLocale={setLocale}>

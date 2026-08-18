@@ -2,6 +2,7 @@
 
 import OmrSymbol from "../components/brand/OmrSymbol";
 import { WazenIcon } from "../components/brand/WazenLogo";
+import WazenPageLoader from "../components/brand/WazenPageLoader";
 import { ReportsPanel } from "../components/reports/ReportsPanel";
 import { MemberDetailModal, MemberPersonProfile, ReceiptChannelModal, RemainingInvoiceGrid, SmartAccountantModal, memberAccruedDueMinor, memberInstallments, personIdentityKey } from "../components/members/association-members";
 import { PersonalRulesSetup, PersonalWalletPanel, confirmResetWalletData } from "../components/personal/personal-wallet";
@@ -75,11 +76,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { apiFetch } from "../lib/client-api";
-import { prefetchApp } from "../lib/app-prefetch";
+import { prefetchAppRoutes, warmAppCaches } from "../lib/app-prefetch";
 import { notifyBrowserSessionChange } from "../lib/browser-session-client";
 import { clearDashboardCache, fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../lib/dashboard-session";
 import { notifyLiveRefresh, useLiveDashboard } from "../lib/live-sync";
-import { ContentBusy } from "./commercial-kit";
 
 type Locale = "ar" | "en";
 type ThemeMode = "light" | "dark";
@@ -870,7 +870,11 @@ export function WazenDashboard() {
   useLiveDashboard(() => { void load(true); }, !loading);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { prefetchApp(router, data?.user?.role ?? undefined); }, [router, data?.user?.role]);
+  useEffect(() => {
+    if (!data) return;
+    prefetchAppRoutes(router, data.user.role ?? undefined);
+    warmAppCaches(data.user.role ?? undefined);
+  }, [router, data]);
   useEffect(() => {
     if (!data) return;
     if (dashboardNavLocked(planFeaturesOf(data), activeView, graceSpaceTypesOf(data))) {
@@ -1009,7 +1013,7 @@ export function WazenDashboard() {
     persistPlace(view, spaceId ?? pickedSpaceId[view]);
   };
 
-  if (loading && !data) return <LoadingScreen />;
+  if (loading && !data) return <LoadingScreen locale={locale} />;
   if (error || !data) return <ErrorScreen message={t.error} retry={load} />;
 
   const activeSpace = spacesForView.find((space) => space.id === pickedSpaceId[activeView]) ?? spacesForView[0];
@@ -2656,13 +2660,7 @@ function Modal({ title, onClose, children, wide = false, xl = false, className =
 }
 
 function Empty({ locale }: { locale: Locale }) { return <div className="empty-state"><ReceiptText size={24} /><span>{copy[locale].empty}</span></div>; }
-function LoadingScreen() {
-  return (
-    <div className="app-shell">
-      <main className="main-shell">
-        <ContentBusy />
-      </main>
-    </div>
-  );
+function LoadingScreen({ locale }: { locale: Locale }) {
+  return <WazenPageLoader label={locale === "ar" ? "جاري تحميل لوحة وازن…" : "Loading Wazen…"} />;
 }
 function ErrorScreen({ message, retry }: { message: string; retry: () => void }) { return <div className="error-screen"><CircleDollarSign size={40} /><h1>وازن</h1><p>{message}</p><button className="primary-button" onClick={retry}>Try again</button></div>; }
