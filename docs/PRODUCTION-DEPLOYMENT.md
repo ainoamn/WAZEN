@@ -44,8 +44,7 @@ WAZEN_TRUST_OAI_HEADERS=0
    `162957418455-43a02mk5li1adbju9m9niuf02b57ht90.apps.googleusercontent.com`
    يمكن تجاوزه بـ `GOOGLE_CLIENT_ID` إن لزم.
 5. `WAZEN_APP_ORIGIN` يجب أن يكون **عنواناً واحداً**: `https://wazen.bhd-om.com` (ليس عنوانين في نفس المتغير).
-6. في Google Cloud أضف أيضاً إن استُخدم نطاق Vercel:
-   `https://wazen-roan.vercel.app` و`https://wazen-roan.vercel.app/api/auth/google/callback`.
+في شاشة موافقة OAuth (Branding / Audience) يجب أن يكون النطاق المصرّح **`bhd-om.com`**. عميل مرتبط بـ `hisaby.pro` يرفض دخول وازن بخطأ 400.
 7. بعد حفظ المتغيرات اضغط **Redeploy**.
 5. تأكد أن `WAZEN_APP_ORIGIN=https://wazen.bhd-om.com` و`WAZEN_JOB_SECRET` موجودان، ثم أعد النشر.
 

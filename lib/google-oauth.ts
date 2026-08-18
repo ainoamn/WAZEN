@@ -1,4 +1,5 @@
 import { ApiError } from "./api-error";
+import { appOrigin } from "./app-origin";
 import { createSessionToken } from "./auth";
 import { validateOutboundHttpsUrl } from "./outbound";
 
@@ -56,7 +57,7 @@ function oauthHmacSecret() {
 }
 
 export function googleCallbackUrl(request: Request) {
-  return `${new URL(request.url).origin}/api/auth/google/callback`;
+  return `${appOrigin(request)}/api/auth/google/callback`;
 }
 
 export function safeAuthNext(value: string | null) {
