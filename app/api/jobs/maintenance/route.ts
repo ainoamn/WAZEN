@@ -42,6 +42,8 @@ export async function POST(request: Request) {
     }
     if (auditStatements.length) await db.batch(auditStatements); auditRowsSanitized = auditStatements.length;
 
+    const { ensurePendingPlanColumns } = await import("../../../../lib/plan-change");
+    await ensurePendingPlanColumns(db);
     const expired = await expireLapsedPaidSubscriptions(db);
     const archived = await archiveExpiredGraceSpaces(db);
     const purged = await purgeExpiredRetentionArchives(db);

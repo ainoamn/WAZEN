@@ -9,7 +9,6 @@ import {
   archivePurgeAt,
   graceEndsAt,
   spaceInUserGrace,
-  userGraceWarningCopy,
 } from "./plan-retention-rules";
 
 export {
@@ -209,8 +208,6 @@ export async function syncRetentionForUser(
 
 /** Paid plans past period end (and not awaiting a due pending change) fall back to starter + grace. */
 export async function expireLapsedPaidSubscriptions(db: D1Database, userId?: string) {
-  const { ensurePendingPlanColumns } = await import("./plan-change");
-  await ensurePendingPlanColumns(db);
   await ensurePlanRetentionSchema(db);
   const now = new Date().toISOString();
   const query = userId
