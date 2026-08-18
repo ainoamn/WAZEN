@@ -2,6 +2,7 @@
  * D1-compatible wrapper around Node's built-in SQLite (node:sqlite).
  * Used on Vercel / local Next so /api routes run without Cloudflare D1.
  */
+import "server-only";
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";

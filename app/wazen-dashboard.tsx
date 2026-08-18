@@ -20,7 +20,7 @@ import { formatMoneyMinor, currencyScale } from "../lib/money";
 import { escapeHtml } from "../lib/html";
 import { memberDisplayCreditMinor, netMemberClaim, pendingSettlementsWithCredit } from "../lib/finance";
 import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, quotaRemaining, quotaWarningCopy, upgradeNoticeFor } from "../lib/plan-features";
-import { userGraceWarningCopy } from "../lib/plan-retention";
+import { userGraceWarningCopy } from "../lib/plan-retention-rules";
 import { canOpenPlatformConsole } from "../lib/platform-console";
 import { consumePlanQuota } from "../lib/plan-quota-client";
 import { TRANSACTION_PAGE_SIZES, pageTransactions } from "../lib/transaction-page";

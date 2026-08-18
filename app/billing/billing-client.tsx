@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ErrorCard, money, PageLoader, AccountHeader, Status, useCommerceLocale } from "../commercial-kit";
 import { PLAN_FEATURE_CATALOG, formatQuota, planHasFeature } from "../../lib/plan-features";
-import { userGraceWarningCopy } from "../../lib/plan-retention";
+import { userGraceWarningCopy } from "../../lib/plan-retention-rules";
 import { apiFetch } from "../../lib/client-api";
 import { errorLabel } from "../../lib/admin-labels";
 import { clearDashboardCache } from "../../lib/dashboard-session";
