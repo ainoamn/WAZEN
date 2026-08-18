@@ -165,6 +165,7 @@ fe6db47  fix: support Vercel Next.js build path   ← آخر نقطة في أر�
 - صفحة الفوترة: إصلاح تجاوز الجداول/الحصص لحدود الصفحة؛ رأس حساب العميل يفتح `/pricing` و`/billing` وليس `/admin/plans`.
 - طباعة الإيصالات والتقارير: خطوط أكبر وأوضح على الورق (`lib/print-document.ts`).
 - `/home` ولوحة التحكم: إصلاح تحميل البيانات بعد تحديثات الاحتفاظ/الباقة (لا تُسقط الصفحة إذا فشل استعلام فرعي)، ومهلة السكون **10 دقائق**. مدمج: [#24](https://github.com/ainoamn/WAZEN/pull/24).
+- بناء Vercel: صفحات العميل لا تستورد وحدة القاعدة `lib/plan-retention` حتى لا تُضمَّن `node:sqlite` في المتصفح. مدمج: [#25](https://github.com/ainoamn/WAZEN/pull/25).
 
 ---
 
