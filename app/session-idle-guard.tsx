@@ -1,11 +1,8 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect } from "react";
-import { clearAdminConsole } from "../lib/admin-session";
-import { notifyBrowserSessionChange } from "../lib/browser-session-client";
-import { apiFetch } from "../lib/client-api";
-import { clearDashboardCache } from "../lib/dashboard-session";
+import { completeClientLogout } from "../lib/client-logout";
 import { SESSION_IDLE_MS } from "../lib/session-policy";
 
 const GUARDED = ["/home", "/dashboard", "/billing", "/documents", "/admin", "/account"];
@@ -17,7 +14,6 @@ function isGuarded(pathname: string) {
 
 export default function SessionIdleGuard() {
   const pathname = usePathname();
-  const router = useRouter();
 
   useEffect(() => {
     if (!isGuarded(pathname)) return;
@@ -28,16 +24,7 @@ export default function SessionIdleGuard() {
     const expire = async () => {
       if (expired) return;
       expired = true;
-      try {
-        await apiFetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
-      } catch {
-        /* cookie clear still attempted below via navigation */
-      }
-      clearAdminConsole();
-      clearDashboardCache();
-      notifyBrowserSessionChange(null);
-      router.replace("/login");
-      router.refresh();
+      await completeClientLogout();
     };
 
     const check = () => {
@@ -56,7 +43,7 @@ export default function SessionIdleGuard() {
       document.removeEventListener("visibilitychange", check);
       window.clearInterval(timer);
     };
-  }, [pathname, router]);
+  }, [pathname]);
 
   return null;
 }

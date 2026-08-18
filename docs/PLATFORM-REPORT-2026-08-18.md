@@ -94,7 +94,7 @@ DNS للنطاق المخصص: سجل CNAME في Hostinger لـ `wazen.bhd-om.co
 
 محوّل SQL: `db/sql-translate.ts` يحوّل أوامر SQLite (`?`، `COLLATE NOCASE`، `IS ?`) إلى Postgres عند استخدام Neon.
 
-المخطط التشغيلي: `SCHEMA_VERSION = 12` في `db/runtime.ts` (يُنشأ/يُرقَّى عند أول طلب). ملفات `drizzle/*.sql` توثّق الهجرات من النواة حتى `oauth_identities`.
+المخطط التشغيلي: `SCHEMA_VERSION = 13` في `db/runtime.ts` (يُنشأ/يُرقَّى عند أول طلب). ملفات `drizzle/*.sql` توثّق الهجرات من النواة حتى `bhd_sub`.
 
 ### 4.3 الاختبارات والأدوات
 
@@ -184,7 +184,9 @@ Neon (أو Turso / SQLite محلي)
 | المسار | الوظيفة |
 |--------|----------|
 | `GET /api/health` | جاهزية القاعدة والإصدار. تفاصيل التشغيل تتطلب `WAZEN_JOB_SECRET` |
-| `GET/POST /api/auth` | الجلسة، تسجيل الدخول/الخروج، التسجيل، TOTP، استعادة البريد |
+| `GET /api/auth` | الجلسة، تسجيل الدخول/الخروج، التسجيل، TOTP، استعادة البريد |
+| `GET /api/auth/bhd/start` | بدء OIDC لحساب BHD (`bhd-wazen`) |
+| `GET /api/auth/bhd/callback` | استبدال الرمز، ربط `bhd_sub`، جلسة وازن |
 | `GET /api/auth/google` | بدء OAuth (صفحة HTML قصيرة ثم تحويل إلى Google) |
 | `GET /api/auth/google/callback` | استبدال الرمز، إنشاء/ربط المستخدم، ضبط الجلسة |
 | `GET/POST /api/dashboard` | المحافظ، الأعضاء، الحركات، الطباعة، الحصص |

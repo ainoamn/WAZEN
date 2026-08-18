@@ -7,6 +7,7 @@ export const users = sqliteTable("users", {
   avatarUrl: text("avatar_url"),
   locale: text("locale").notNull().default("ar"),
   currency: text("currency").notNull().default("OMR"),
+  bhdSub: text("bhd_sub"),
   createdAt: text("created_at").notNull(),
 });
 

@@ -9,6 +9,7 @@ import { writeAudit } from "../../../lib/audit";
 import { decryptSecret, encryptSecret, loadKeyring } from "../../../lib/encryption";
 import { createTotpSecret, verifyTotp } from "../../../lib/totp";
 import { isEmailProviderConfigured } from "../../../lib/email-provider";
+import { isBhdIdentityConfigured, bhdEndSessionUrl } from "../../../lib/bhd-identity";
 import { isGoogleOAuthConfigured } from "../../../lib/google-oauth";
 import { isProductionLikeRuntime } from "../../../lib/production-setup";
 
@@ -29,12 +30,12 @@ export async function GET(request: Request) {
       const headers = new Headers({ "Cache-Control": "no-store" });
       headers.append("Set-Cookie", clearSessionCookie());
       headers.append("Set-Cookie", clearCsrfCookie());
-      return Response.json({ authenticated: false, googleEnabled: isGoogleOAuthConfigured() }, { status: 401, headers });
+      return Response.json({ authenticated: false, googleEnabled: isGoogleOAuthConfigured(), identityEnabled: isBhdIdentityConfigured() }, { status: 401, headers });
     }
     const role = await platformRoleOf(db, user.id);
     const issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
     const headers = new Headers({ "Cache-Control": "no-store" }); if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
-    return Response.json({ authenticated: true, user, role, googleEnabled: isGoogleOAuthConfigured() }, { headers });
+    return Response.json({ authenticated: true, user, role, googleEnabled: isGoogleOAuthConfigured(), identityEnabled: isBhdIdentityConfigured() }, { headers });
   } catch (error) { return errorResponse(error); }
 }
 
@@ -77,7 +78,9 @@ export async function POST(request: Request) {
       const user = await authenticateRequest(db, request); if (user?.authType === "session") await enforceCsrf(db, request);
       await revokeSession(db, request);
       const headers = new Headers(); headers.append("Set-Cookie", clearSessionCookie()); headers.append("Set-Cookie", clearCsrfCookie());
-      return Response.json({ ok: true }, { headers });
+      const body: { ok: true; endSessionUrl?: string } = { ok: true };
+      if (isBhdIdentityConfigured()) body.endSessionUrl = bhdEndSessionUrl(request);
+      return Response.json(body, { headers });
     }
     if (["changePassword", "beginTotp", "confirmTotp", "disableTotp"].includes(action)) {
       const user = await authenticateRequest(db, request); if (!user || user.authType !== "session") throw new ApiError(401, "AUTHENTICATION_REQUIRED");

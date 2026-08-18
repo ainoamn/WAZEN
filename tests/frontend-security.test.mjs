@@ -133,6 +133,18 @@ test("login page redirects when a session cookie is already present", () => {
   assert.match(gsi, /idToken/);
 });
 
+test("BHD SSO start/callback exist and login can wrap identity", () => {
+  const login = fs.readFileSync(path.join(root, "app/login/page.tsx"), "utf8");
+  const form = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
+  const logout = fs.readFileSync(path.join(root, "lib/client-logout.ts"), "utf8");
+  const home = fs.readFileSync(path.join(root, "app/home/home-client.tsx"), "utf8");
+  assert.match(login, /api\/auth\/bhd\/start/);
+  assert.match(login, /isBhdIdentityConfigured/);
+  assert.match(form, /الدخول بحساب BHD/);
+  assert.match(logout, /endSessionUrl/);
+  assert.match(home, /completeClientLogout/);
+});
+
 test("logged-out sign-in does not paint the home load-error screen", () => {
   const kit = fs.readFileSync(path.join(root, "app/commercial-kit.tsx"), "utf8");
   const landing = fs.readFileSync(path.join(root, "app/page.tsx"), "utf8");

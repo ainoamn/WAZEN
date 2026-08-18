@@ -19,8 +19,8 @@ import WazenLogo from "../../components/brand/WazenLogo";
 import WazenPageLoader from "../../components/brand/WazenPageLoader";
 import { apiFetch } from "../../lib/client-api";
 import { prefetchAppRoutes, warmAppCaches } from "../../lib/app-prefetch";
-import { notifyBrowserSessionChange } from "../../lib/browser-session-client";
-import { clearDashboardCache, fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../../lib/dashboard-session";
+import { completeClientLogout } from "../../lib/client-logout";
+import { fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../../lib/dashboard-session";
 import { useLiveDashboard } from "../../lib/live-sync";
 import { formatMoneyMinor, currencyScale } from "../../lib/money";
 import { memberDisplayCreditMinor, pendingSettlementsWithCredit } from "../../lib/finance";
@@ -168,11 +168,7 @@ export function HomeClient() {
   }, [data]);
 
   const logout = async () => {
-    await apiFetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
-    clearDashboardCache();
-    notifyBrowserSessionChange(null);
-    router.push("/login");
-    router.refresh();
+    await completeClientLogout();
   };
 
   const flash = (message: string) => {

@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -94,6 +94,18 @@ $fn$ LANGUAGE plpgsql`).run();
     BEFORE UPDATE OF status ON payments
     FOR EACH ROW
     EXECUTE FUNCTION wazen_payment_status_guard()`).run();
+}
+
+async function ensureBhdSubColumn(db: D1Database) {
+  const userCols = await db.prepare("PRAGMA table_info(users)").all<{ name: string }>();
+  if (!userCols.results.some((column) => column.name === "bhd_sub")) {
+    try { await db.prepare("ALTER TABLE users ADD COLUMN bhd_sub TEXT").run(); }
+    catch (error) {
+      const refreshed = await db.prepare("PRAGMA table_info(users)").all<{ name: string }>();
+      if (!refreshed.results.some((column) => column.name === "bhd_sub")) throw error;
+    }
+  }
+  try { await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS users_bhd_sub_idx ON users(bhd_sub)").run(); } catch { /* exists */ }
 }
 
 async function ensureSchemaPatches(db: D1Database) {
@@ -219,6 +231,7 @@ async function ensureSchemaPatches(db: D1Database) {
   if (!userCols.results.some((column) => column.name === "avatar_url")) {
     try { await db.prepare("ALTER TABLE users ADD COLUMN avatar_url TEXT").run(); } catch { /* exists */ }
   }
+  await ensureBhdSubColumn(db);
   const totpCols = await db.prepare("PRAGMA table_info(totp_credentials)").all<{ name: string }>();
   const totpNames = new Set(totpCols.results.map((column) => column.name));
   if (!totpNames.has("pending_encrypted_secret")) {
@@ -269,6 +282,7 @@ async function initializeSchema(db: D1Database) {
           db.prepare("CREATE INDEX IF NOT EXISTS idx_oauth_identities_user ON oauth_identities(user_id)"),
         ]);
       } catch { /* table already exists */ }
+      try { await ensureBhdSubColumn(db); } catch { /* column already exists */ }
       await markSchemaReady();
       return;
     }
@@ -300,6 +314,7 @@ async function initializeSchema(db: D1Database) {
       avatar_url TEXT,
       locale TEXT NOT NULL DEFAULT 'ar',
       currency TEXT NOT NULL DEFAULT 'OMR',
+      bhd_sub TEXT,
       created_at TEXT NOT NULL
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS spaces (

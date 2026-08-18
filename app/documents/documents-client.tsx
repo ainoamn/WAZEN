@@ -7,15 +7,13 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Brand, ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import { prefetchApp } from "../../lib/app-prefetch";
-import { notifyBrowserSessionChange } from "../../lib/browser-session-client";
+import { completeClientLogout } from "../../lib/client-logout";
 import { wrapPrintDocument, printWazenHtml, downloadReportHtml, resolvePrintLogoUrl } from "../../lib/print-document";
 import { escapeHtml, safeDownloadFilename } from "../../lib/html";
 import { planHasFeature } from "../../lib/plan-features";
 import { canOpenPlatformConsole } from "../../lib/platform-console";
 import { consumePlanQuota } from "../../lib/plan-quota-client";
 import { errorLabel, methodLabel } from "../../lib/admin-labels";
-import { clearAdminConsole } from "../../lib/admin-session";
-import { clearDashboardCache } from "../../lib/dashboard-session";
 import { fetchPageCache, readPageCache } from "../../lib/page-cache";
 
 type DocumentRow = { id: string; owner_user_id: string; space_id: string | null; type: string; reference: string; person_name: string; description: string; amount_minor: number; currency: string; status: string; payment_method: string; approved_by: string | null; issued_at: string };
@@ -63,12 +61,7 @@ export function DocumentsClient() {
     });
   };
   const logout = async () => {
-    await apiFetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
-    clearAdminConsole();
-    clearDashboardCache();
-    notifyBrowserSessionChange(null);
-    router.push("/login");
-    router.refresh();
+    await completeClientLogout();
   };
   return <main className="documents-page admin-console"><header className="documents-header"><Brand/><nav><Link href="/dashboard">{l("لوحة المستخدم","Dashboard")}</Link><Link href="/billing">{l("الفوترة","Billing")}</Link>{canOpenPlatformConsole(data.role)&&<Link href="/admin">{l("الإدارة","Admin")}</Link>}</nav><button type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button><button type="button" className="admin-logout" onClick={() => void logout()}><LogOut size={16} />{l("تسجيل الخروج","Sign out")}</button></header>
     <div className="documents-layout"><aside><h2>{l("المستندات المالية","Financial documents")}</h2><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}><FileText/> {l("جميع المستندات","All documents")}<b>{data.documents.length}</b></button>{Object.entries(types).map(([key,value]) => <button className={filter === key ? "active" : ""} onClick={() => setFilter(key)} key={key}><ReceiptText/> {locale === "ar" ? value[0] : value[1]}<b>{counts[key]}</b></button>)}</aside>
