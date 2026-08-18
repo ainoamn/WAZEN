@@ -114,17 +114,24 @@ test("proxy redirects anonymous /admin visitors to login", () => {
   assert.match(source, /sessionToken/);
   assert.match(source, /\/login/);
   assert.match(source, /pathname.startsWith\("\/admin"\)/);
-  assert.match(source, /pathname === "\/login"/);
   assert.match(source, /pathname === "\/home"/);
   assert.match(source, /pathname === "\/dashboard"/);
+  assert.doesNotMatch(source, /pathname === "\/login"/);
+  assert.doesNotMatch(source, /pathname === "\/register"/);
 });
 
-test("login page redirects when a session cookie is already present", () => {
+test("login and register pages always paint the auth form", () => {
   const login = fs.readFileSync(path.join(root, "app/login/page.tsx"), "utf8");
+  const register = fs.readFileSync(path.join(root, "app/register/page.tsx"), "utf8");
   const authRoute = fs.readFileSync(path.join(root, "app/api/auth/route.ts"), "utf8");
   const form = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
-  assert.match(login, /redirect\(/);
-  assert.match(login, /sessionCookieFromStore/);
+  assert.match(login, /<AuthForm/);
+  assert.doesNotMatch(login, /redirect\(/);
+  assert.doesNotMatch(login, /sessionCookieFromStore/);
+  assert.doesNotMatch(login, /cookies\(/);
+  assert.match(register, /<AuthForm/);
+  assert.doesNotMatch(register, /redirect\(/);
+  assert.doesNotMatch(register, /sessionCookieFromStore/);
   assert.match(authRoute, /SESSION_ALREADY_ACTIVE/);
   assert.match(form, /GoogleSignInButton/);
   assert.match(form, /أو المتابعة عبر/);
@@ -138,8 +145,8 @@ test("BHD SSO start/callback exist and login can wrap identity", () => {
   const form = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
   const logout = fs.readFileSync(path.join(root, "lib/client-logout.ts"), "utf8");
   const home = fs.readFileSync(path.join(root, "app/home/home-client.tsx"), "utf8");
-  assert.match(login, /api\/auth\/bhd\/start/);
   assert.match(login, /isBhdIdentityConfigured/);
+  assert.match(form, /api\/auth\/bhd\/start/);
   assert.match(form, /الدخول بحساب BHD/);
   assert.match(logout, /endSessionUrl/);
   assert.match(home, /completeClientLogout/);
@@ -157,15 +164,15 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   assert.match(landing, /href="\/register"/);
   assert.doesNotMatch(landing, /href="\/home"/);
   assert.match(home, /let redirecting = false/);
-  assert.match(home, /router\.replace\("\/login\?next=\/home"\)/);
+  assert.match(home, /window\.location\.replace\("\/login\?next=\/home"\)/);
   assert.match(home, /if \(!redirecting\) setLoading\(false\)/);
   assert.match(dashboard, /let redirecting = false/);
-  assert.match(dashboard, /router\.replace\("\/login\?next=\/dashboard"\)/);
+  assert.match(dashboard, /window\.location\.replace\("\/login\?next=\/dashboard"\)/);
   assert.match(dashboardRoute, /unauthenticatedResponse/);
   assert.match(dashboardRoute, /clearSessionCookie/);
 });
 
-test("auth form redirects when a browser session is already active", () => {
+test("auth form stays visible when a browser session is already active", () => {
   const auth = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
   const libAuth = fs.readFileSync(path.join(root, "lib/auth.ts"), "utf8");
   const sync = fs.readFileSync(path.join(root, "app/browser-session-sync.tsx"), "utf8");
@@ -173,10 +180,12 @@ test("auth form redirects when a browser session is already active", () => {
   assert.match(auth, /fetch\("\/api\/auth"/);
   assert.match(auth, /credentials: "same-origin"/);
   assert.match(auth, /result\.authenticated/);
-  assert.match(auth, /router\.replace\(authRedirectTarget/);
+  assert.match(auth, /setActiveSession/);
+  assert.doesNotMatch(auth, /router\.replace\(authRedirectTarget/);
   assert.match(auth, /notifyBrowserSessionChange/);
   assert.match(auth, /enterSignedInApp/);
   assert.doesNotMatch(auth, /PageLoader/);
+  assert.doesNotMatch(auth, /WazenPageLoader/);
   assert.match(libAuth, /DELETE FROM auth_sessions WHERE browser_id=\?/);
   assert.match(browser, /browserIdCookieName/);
   assert.match(sync, /subscribeBrowserSessionChange/);

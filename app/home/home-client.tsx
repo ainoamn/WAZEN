@@ -119,7 +119,7 @@ export function HomeClient() {
       if ((caught as { status?: number }).status === 401) {
         redirecting = true;
         setData(null);
-        router.replace("/login?next=/home");
+        window.location.replace("/login?next=/home");
         return;
       }
       if (!readDashboardCache()) setError(true);

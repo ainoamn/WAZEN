@@ -858,7 +858,7 @@ export function WazenDashboard() {
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) {
         redirecting = true;
-        router.replace("/login?next=/dashboard");
+        window.location.replace("/login?next=/dashboard");
         return;
       }
       if (!readDashboardCache()) setError(true);
