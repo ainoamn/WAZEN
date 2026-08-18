@@ -12,7 +12,7 @@ test("google oauth start and callback routes exist with PKCE", () => {
   const account = fs.readFileSync(path.join(root, "lib/google-account.ts"), "utf8");
   const form = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
   assert.match(oauth, /code_challenge_method/);
-  assert.match(oauth, /openid email profile/);
+  assert.match(oauth, /162957418455-43a02mk5li1adbju9m9niuf02b57ht90\.apps\.googleusercontent\.com/);
   assert.match(oauth, /wazen_oauth=/);
   assert.match(oauth, /value\?\.startsWith\("\/"\) && !value\.startsWith\("\/\/"\)/);
   assert.match(start, /createGoogleOAuthRequest/);
