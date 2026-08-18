@@ -15,9 +15,12 @@ export function writeDashboardCache(data: unknown) {
   cache = { data, at: Date.now() };
 }
 
+import { clearPageCache } from "./page-cache";
+
 export function clearDashboardCache() {
   cache = null;
   inflight = null;
+  clearPageCache();
 }
 
 export async function fetchDashboardSession<T>(force = false): Promise<{ status: number; data: T | null }> {

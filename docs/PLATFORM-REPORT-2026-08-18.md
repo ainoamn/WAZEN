@@ -115,6 +115,7 @@ Node المطلوب: `22.x`.
     ├─ صفحات تسويقية/قانونية: React Server Components
     ├─ /login /register: إن وُجدت جلسة → تحويل من الخادم إلى /home
     ├─ /home و /dashboard بلا جلسة → تحويل فوري إلى /login (لا شاشة خطأ)
+    ├─ تنقّل الحساب: Link + كاش صفحة (لا إعادة تحميل ولا شعار كامل)
     ├─ /home و /dashboard بعد الدخول: عميل يحمل GET /api/dashboard
     ├─ /admin/*: بوابة صلاحيات ثم GET/POST /api/platform
     │

@@ -3,18 +3,28 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
-import { AdminShell, Brand, PageLoader, useCommerceLocale } from "../commercial-kit";
-import { ADMIN_PREFETCH_PATHS, clearAdminConsole, fetchAdminConsole } from "../../lib/admin-session";
-import { clearDashboardCache } from "../../lib/dashboard-session";
+import { AdminShell, Brand, ContentBusy, useCommerceLocale } from "../commercial-kit";
+import { ADMIN_PREFETCH_PATHS, clearAdminConsole, fetchAdminConsole, readAdminConsole } from "../../lib/admin-session";
+import { prefetchApp } from "../../lib/app-prefetch";
+import { clearDashboardCache, readDashboardCache } from "../../lib/dashboard-session";
 import { canOpenPlatformConsole } from "../../lib/platform-console";
 
 type Gate = "pending" | "forbidden" | "ok";
+
+function initialAdminGate(): Gate {
+  const admin = readAdminConsole();
+  if (admin && canOpenPlatformConsole(admin.role)) return "ok";
+  const dash = readDashboardCache<{ user?: { role?: string } }>();
+  if (dash?.user?.role && canOpenPlatformConsole(dash.user.role)) return "ok";
+  if (dash?.user?.role && !canOpenPlatformConsole(dash.user.role)) return "forbidden";
+  return "pending";
+}
 
 export function AdminConsoleGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { locale, setLocale, l } = useCommerceLocale();
-  const [gate, setGate] = useState<Gate>("pending");
+  const [gate, setGate] = useState<Gate>(initialAdminGate);
 
   useEffect(() => {
     if (pathname.startsWith("/admin/setup")) return;
@@ -36,6 +46,7 @@ export function AdminConsoleGate({ children }: { children: ReactNode }) {
       }
       setGate("ok");
       void fetchAdminConsole();
+      prefetchApp(router, result.role);
       for (const href of ADMIN_PREFETCH_PATHS) router.prefetch(href);
     })().catch(() => {
       if (!cancelled) {
@@ -64,7 +75,7 @@ export function AdminConsoleGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (gate !== "ok") return <PageLoader label={l("جاري التحقق…", "Checking access…")} />;
+  if (gate !== "ok") return <ContentBusy label={l("جاري التحقق…", "Checking access…")} />;
 
   return (
     <AdminShell locale={locale} setLocale={setLocale}>

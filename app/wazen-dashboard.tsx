@@ -2,7 +2,6 @@
 
 import OmrSymbol from "../components/brand/OmrSymbol";
 import { WazenIcon } from "../components/brand/WazenLogo";
-import WazenPageLoader from "../components/brand/WazenPageLoader";
 import { ReportsPanel } from "../components/reports/ReportsPanel";
 import { MemberDetailModal, MemberPersonProfile, ReceiptChannelModal, RemainingInvoiceGrid, SmartAccountantModal, memberAccruedDueMinor, memberInstallments, personIdentityKey } from "../components/members/association-members";
 import { PersonalRulesSetup, PersonalWalletPanel, confirmResetWalletData } from "../components/personal/personal-wallet";
@@ -76,9 +75,11 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { apiFetch } from "../lib/client-api";
+import { prefetchApp } from "../lib/app-prefetch";
 import { notifyBrowserSessionChange } from "../lib/browser-session-client";
 import { clearDashboardCache, fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../lib/dashboard-session";
 import { notifyLiveRefresh, useLiveDashboard } from "../lib/live-sync";
+import { ContentBusy } from "./commercial-kit";
 
 type Locale = "ar" | "en";
 type ThemeMode = "light" | "dark";
@@ -861,6 +862,7 @@ export function WazenDashboard() {
   useLiveDashboard(() => { void load(true); }, !loading);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { prefetchApp(router, data?.user?.role ?? undefined); }, [router, data?.user?.role]);
   useEffect(() => {
     if (!data) return;
     if (dashboardNavLocked(planFeaturesOf(data), activeView, graceSpaceTypesOf(data))) {
@@ -868,7 +870,6 @@ export function WazenDashboard() {
       persistPlace("overview");
     }
   }, [data, activeView]);
-  useEffect(() => { router.prefetch("/home"); }, [router]);
   useEffect(() => {
     document.documentElement.classList.toggle("nav-open", sidebarOpen);
     return () => document.documentElement.classList.remove("nav-open");
@@ -1000,7 +1001,7 @@ export function WazenDashboard() {
     persistPlace(view, spaceId ?? pickedSpaceId[view]);
   };
 
-  if (loading) return <LoadingScreen locale={locale} />;
+  if (loading && !data) return <LoadingScreen />;
   if (error || !data) return <ErrorScreen message={t.error} retry={load} />;
 
   const activeSpace = spacesForView.find((space) => space.id === pickedSpaceId[activeView]) ?? spacesForView[0];
@@ -1385,9 +1386,10 @@ function Sidebar({ locale, active, open, entitlements, role, onNavigate, onLocke
         </nav>
         <div className="sidebar-external">
           <small>{locale === "ar" ? "إدارة الحساب" : "Account management"}</small>
-          <Link href="/home"><House size={18} /><span>{locale === "ar" ? "الرئيسية" : "Home"}</span></Link>
-          <a
+          <Link href="/home" prefetch><House size={18} /><span>{locale === "ar" ? "الرئيسية" : "Home"}</span></Link>
+          <Link
             href={documentsLocked ? "/pricing" : "/documents"}
+            prefetch
             className={documentsLocked ? "is-plan-locked" : ""}
             onClick={(event) => {
               if (!documentsLocked) return;
@@ -1397,9 +1399,9 @@ function Sidebar({ locale, active, open, entitlements, role, onNavigate, onLocke
           >
             <ReceiptText size={18} /><span>{locale === "ar" ? "الإيصالات والكشوفات" : "Documents & statements"}</span>
             {documentsLocked && <PlanLockBadge locale={locale} />}
-          </a>
-          <a href="/billing"><CircleDollarSign size={18} /><span>{locale === "ar" ? "الباقة والفوترة" : "Plan & billing"}</span></a>
-          {canOpenPlatformConsole(role) ? <a href="/admin"><ShieldCheck size={18} /><span>{locale === "ar" ? "إدارة المنصة" : "Platform admin"}</span></a> : null}
+          </Link>
+          <Link href="/billing" prefetch><CircleDollarSign size={18} /><span>{locale === "ar" ? "الباقة والفوترة" : "Plan & billing"}</span></Link>
+          {canOpenPlatformConsole(role) ? <Link href="/admin" prefetch><ShieldCheck size={18} /><span>{locale === "ar" ? "إدارة المنصة" : "Platform admin"}</span></Link> : null}
         </div>
         <div className="sidebar-spacer" />
         <button className={`sidebar-setting ${active === "settings" ? "active" : ""}`} onClick={() => onNavigate("settings")}><Settings size={19} /><span>{t.settings}</span></button>
@@ -2579,11 +2581,13 @@ function Modal({ title, onClose, children, wide = false, xl = false, className =
 }
 
 function Empty({ locale }: { locale: Locale }) { return <div className="empty-state"><ReceiptText size={24} /><span>{copy[locale].empty}</span></div>; }
-function LoadingScreen({ locale }: { locale: Locale }) {
+function LoadingScreen() {
   return (
-    <WazenPageLoader
-      label={locale === "ar" ? "جاري تحميل لوحة وازن…" : "Loading Wazen…"}
-    />
+    <div className="app-shell">
+      <main className="main-shell">
+        <ContentBusy />
+      </main>
+    </div>
   );
 }
 function ErrorScreen({ message, retry }: { message: string; retry: () => void }) { return <div className="error-screen"><CircleDollarSign size={40} /><h1>وازن</h1><p>{message}</p><button className="primary-button" onClick={retry}>Try again</button></div>; }

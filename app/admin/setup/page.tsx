@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import AdminSetupClient from "./setup-client";
 
-export const dynamic = "force-dynamic";
 
 export default function AdminSetupPage() {
   return (
