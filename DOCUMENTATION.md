@@ -185,7 +185,7 @@ fe6db47  fix: support Vercel Next.js build path   ← آخر نقطة في أر�
 - فلاش الرئيسية قبل الدخول، تنقّل `Link`، شعار التحميل الأول، كلمة المرور في الإعدادات، وSSO: [#47](https://github.com/ainoamn/WAZEN/pull/47)–[#54](https://github.com/ainoamn/WAZEN/pull/54).
 - بعد [#53](https://github.com/ainoamn/WAZEN/pull/53) بقيت `/home` و`/dashboard` (ورأس `/admin`) على الشعار والقلب لأن `initializeSchema` عند `schema_meta.version >= 13` كان ما زال ينفّذ `CREATE TABLE oauth_identities` و`ensureBhdSubColumn`، و`loadDashboard` كان يستدعي `reconcileMemberLedgers` حتى مع `refreshDerived: false`.
 - الإصلاح: مسار المخطط الحالي يعيد فوراً؛ إعادة بناء الدفاتر و`generatePersonalOccurrences` عند الكتابة (`refreshDerived: true` بعد POST)؛ مهلة 12 ث مع `Promise.race` حتى لا يبقى الشعار إلى ما لا نهاية. مدمج: [#55](https://github.com/ainoamn/WAZEN/pull/55).
-- زر **تسجيل الدخول** في الرأس كان يحوّل إلى `/home` عند وجود كعكة جلسة فتظهر شاشة الشعار بدل النموذج. `/login` يرسم النموذج فوراً دون هذا التحويل.
+- زر **تسجيل الدخول** في الرأس كان يحوّل إلى `/home` عند وجود كعكة جلسة فتظهر شاشة الشعار بدل النموذج. `/login` يرسم النموذج فوراً دون هذا التحويل. مدمج: [#57](https://github.com/ainoamn/WAZEN/pull/57).
 
 ---
 
