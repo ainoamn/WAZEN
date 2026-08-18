@@ -802,11 +802,10 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
   const ids = allowed.map((space) => space.id);
   if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results ?? [], periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [] };
 
-  try {
-    await reconcileMemberLedgers(db, ids);
-  } catch { /* keep serving dashboard if ledger rebuild fails */ }
-
   if (options?.refreshDerived !== false) {
+    try {
+      await reconcileMemberLedgers(db, ids);
+    } catch { /* keep serving dashboard if ledger rebuild fails */ }
     try { await generatePersonalOccurrences(db, ids); } catch { /* keep serving dashboard */ }
   }
   const placeholders = ids.map(() => "?").join(",");
@@ -2654,7 +2653,7 @@ export async function POST(request: Request) {
     const entitlements = await getActivePlanEntitlements(db, user.id);
     let dashboard: Awaited<ReturnType<typeof loadDashboard>>;
     try {
-      dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features });
+      dashboard = await loadDashboard(db, user.id, { refreshDerived: true, features: entitlements.features });
     } catch (error) {
       console.error(JSON.stringify({
         level: "error",

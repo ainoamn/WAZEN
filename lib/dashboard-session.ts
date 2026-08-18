@@ -8,7 +8,7 @@ let cache: CacheEntry | null = null;
 let inflight: Promise<unknown> | null = null;
 
 const FRESH_MS = 20_000;
-const FETCH_MS = 25_000;
+const FETCH_MS = 12_000;
 
 export function readDashboardCache<T>(): T | null {
   return (cache?.data as T | undefined) ?? null;
@@ -41,8 +41,18 @@ export async function fetchDashboardSession<T>(force = false): Promise<{ status:
   const request = (async () => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_MS);
+    let raceTimer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutGuard = new Promise<never>((_, reject) => {
+      raceTimer = setTimeout(() => {
+        controller.abort();
+        reject(loadFailed(504));
+      }, FETCH_MS);
+    });
     try {
-      const response = await fetch("/api/dashboard", { cache: "no-store", credentials: "same-origin", signal: controller.signal });
+      const response = await Promise.race([
+        fetch("/api/dashboard", { cache: "no-store", credentials: "same-origin", signal: controller.signal }),
+        timeoutGuard,
+      ]);
       if (response.status === 401) {
         cache = null;
         clearPageCache();
@@ -57,10 +67,11 @@ export async function fetchDashboardSession<T>(force = false): Promise<{ status:
       return data;
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) throw caught;
-      if (controller.signal.aborted) throw loadFailed(504);
+      if (controller.signal.aborted || (caught as { status?: number }).status === 504) throw loadFailed(504);
       throw caught instanceof Error && "status" in caught ? caught : loadFailed(502);
     } finally {
       clearTimeout(timer);
+      if (raceTimer !== undefined) clearTimeout(raceTimer);
     }
   })();
   inflight = request;
