@@ -121,6 +121,7 @@ Node المطلوب: `22.x`.
     ▼
 proxy.ts (Next.js 16)
     • تحويل /login إن وُجدت كعكة جلسة
+    • تحويل /home و /dashboard للزائر بلا جلسة
     • حماية /admin للزائر بلا جلسة
     • CSP مع nonce لكل طلب
     │
