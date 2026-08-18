@@ -41,24 +41,26 @@ export function AuthForm({ mode, googleClientId = "", identityEnabled = false }:
   const [displayName, setDisplayName] = useState(""); const [email, setEmail] = useState("");
   const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [saving, setSaving] = useState(false);
   const [totpCode, setTotpCode] = useState(""); const [totpRequired, setTotpRequired] = useState(false);
+  const [activeSession, setActiveSession] = useState<{ dest: string } | null>(null);
 
   useEffect(() => {
     const oauthError = new URLSearchParams(window.location.search).get("error");
     if (oauthError) setError(googleErrorMessage(oauthError, l));
-    let cancelled = false;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 8_000);
     void (async () => {
       ensureBrowserId();
       try {
-        const response = await fetch("/api/auth", { cache: "no-store", credentials: "same-origin" });
-        if (cancelled) return;
+        const response = await fetch("/api/auth", { cache: "no-store", credentials: "same-origin", signal: controller.signal });
         const result = await response.json() as { authenticated?: boolean; role?: string };
         if (response.ok && result.authenticated) {
-          router.replace(authRedirectTarget(result.role));
+          setActiveSession({ dest: authRedirectTarget(result.role) });
         }
-      } catch { /* show auth form */ }
+      } catch { /* keep showing the auth form */ }
     })();
     return () => {
-      cancelled = true;
+      controller.abort();
+      window.clearTimeout(timer);
     };
   }, [router]);
   async function submit(event: FormEvent) {
@@ -109,6 +111,12 @@ export function AuthForm({ mode, googleClientId = "", identityEnabled = false }:
   return <main className="auth-page"><section className="auth-panel">
     <header><Brand showArabic /><button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button></header>
     <div className="auth-copy"><small>{l("وصول آمن إلى وازن", "Secure access to Wazen")}</small><h1>{mode === "login" ? l("مرحباً بعودتك", "Welcome back") : l("أنشئ حسابك", "Create your account")}</h1><p>{identityEnabled ? l("ادخل بحساب BHD الموحّد. بيانات المحافظ تبقى في وازن فقط.", "Sign in with your unified BHD account. Wallet data stays in Wazen.") : l("بياناتك المالية تخصك. جلسة مشفرة وصلاحيات منفصلة لكل حساب.", "Your financial data stays yours, with secure sessions and isolated access.")}</p></div>
+    {activeSession && (
+      <p className="auth-error" role="status">
+        {l("لديك جلسة نشطة في هذا المتصفح.", "A session is already active in this browser.")}{" "}
+        <Link href={activeSession.dest}>{l("فتح الرئيسية", "Open home")}</Link>
+      </p>
+    )}
     {identityEnabled && (
       <>
         <a className="auth-submit" href={`/api/auth/bhd/start?next=${encodeURIComponent(authRedirectTarget())}`}>
