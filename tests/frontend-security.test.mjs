@@ -114,8 +114,11 @@ test("login page redirects when a session cookie is already present", () => {
   assert.match(login, /redirect\(/);
   assert.match(login, /sessionCookieName/);
   assert.match(authRoute, /SESSION_ALREADY_ACTIVE/);
-  assert.match(form, /\/api\/auth\/google/);
+  assert.match(form, /GoogleSignInButton/);
   assert.match(form, /أو المتابعة عبر/);
+  const gsi = fs.readFileSync(path.join(root, "app/google-sign-in.tsx"), "utf8");
+  assert.match(gsi, /\/api\/auth\/google/);
+  assert.match(gsi, /idToken/);
 });
 
 test("auth form redirects when a browser session is already active", () => {

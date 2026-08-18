@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
+import { GoogleSignInButton } from "./google-sign-in";
 import { WazenIcon } from "../components/brand/WazenLogo";
 import { Brand, PageLoader, useCommerceLocale } from "./commercial-kit";
 import { clearAdminConsole } from "../lib/admin-session";
@@ -9,13 +10,24 @@ import { ensureBrowserId, notifyBrowserSessionChange } from "../lib/browser-sess
 import { clearDashboardCache } from "../lib/dashboard-session";
 import { canOpenPlatformConsole } from "../lib/platform-console";
 
+function googleErrorMessage(code: string, l: (ar: string, en: string) => string) {
+  if (code === "GOOGLE_NOT_CONFIGURED") return l("تسجيل جوجل غير مهيأ بعد.", "Google sign-in is not configured yet.");
+  if (code === "GOOGLE_EMAIL_UNVERIFIED") return l("بريد جوجل غير مؤكد.", "The Google email is not verified.");
+  if (code === "ACCOUNT_UNAVAILABLE") return l("الحساب غير متاح.", "This account is unavailable.");
+  if (code === "GOOGLE_ACCESS_DENIED") return l("جوجل رفض الحساب. إن كان التطبيق في وضع الاختبار فأضف البريد كمستخدم تجريبي من Audience.", "Google denied this account. If the app is in testing, add the email as a test user on the Audience page.");
+  if (code === "GOOGLE_CLIENT_INVALID") return l("معرّف عميل جوجل لا يطابق هذا الموقع. أضف https://wazen.bhd-om.com في Authorized JavaScript origins.", "The Google client ID does not match this site. Add https://wazen.bhd-om.com to Authorized JavaScript origins.");
+  if (code === "GOOGLE_REDIRECT_MISMATCH") return l("عنوان الإرجاع غير مطابق.", "Redirect URI mismatch.");
+  if (code === "SESSION_ALREADY_ACTIVE") return l("يوجد حساب مسجّل في هذا المتصفح. سجّل الخروج أولاً لتبديل الحساب.", "A session is already active in this browser. Sign out first to switch accounts.");
+  return l("تعذر الدخول عبر جوجل. حاول مرة أخرى.", "Google sign-in failed. Try again.");
+}
+
 function authRedirectTarget(role?: string) {
   const requested = new URLSearchParams(window.location.search).get("next");
   const safeNext = requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/home";
   return safeNext.startsWith("/admin") && !canOpenPlatformConsole(role) ? "/home" : safeNext;
 }
 
-export function AuthForm({ mode }: { mode: "login" | "register" }) {
+export function AuthForm({ mode, googleClientId = "" }: { mode: "login" | "register"; googleClientId?: string }) {
   const router = useRouter();
   const { locale, setLocale, l } = useCommerceLocale();
   const [displayName, setDisplayName] = useState(""); const [email, setEmail] = useState("");
@@ -25,14 +37,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 
   useEffect(() => {
     const oauthError = new URLSearchParams(window.location.search).get("error");
-    if (oauthError === "GOOGLE_NOT_CONFIGURED") setError(l("تسجيل جوجل غير مهيأ بعد.", "Google sign-in is not configured yet."));
-    else if (oauthError === "GOOGLE_EMAIL_UNVERIFIED") setError(l("بريد جوجل غير مؤكد.", "The Google email is not verified."));
-    else if (oauthError === "ACCOUNT_UNAVAILABLE") setError(l("الحساب غير متاح.", "This account is unavailable."));
-    else if (oauthError === "GOOGLE_ACCESS_DENIED") setError(l("جوجل رفض الحساب. إن كان التطبيق في وضع الاختبار فأضف البريد كمستخدم تجريبي من Audience.", "Google denied this account. If the app is in testing, add the email as a test user on the Audience page."));
-    else if (oauthError === "GOOGLE_CLIENT_INVALID") setError(l("سر عميل جوجل غير صحيح في Vercel. أنشئ سراً جديداً من Clients ثم أعد النشر.", "The Google client secret in Vercel is invalid. Add a new secret in Clients, then redeploy."));
-    else if (oauthError === "GOOGLE_REDIRECT_MISMATCH") setError(l("عنوان الإرجاع غير مطابق. أضف https://wazen.bhd-om.com/api/auth/google/callback في Authorised redirect URIs.", "Redirect URI mismatch. Add https://wazen.bhd-om.com/api/auth/google/callback under Authorised redirect URIs."));
-    else if (oauthError === "GOOGLE_TOKEN_FAILED" || oauthError === "GOOGLE_AUTH_FAILED") setError(l("تعذر الدخول عبر جوجل. حاول مرة أخرى.", "Google sign-in failed. Try again."));
-    else if (oauthError) setError(l("تعذر الدخول عبر جوجل. حاول مرة أخرى.", "Google sign-in failed. Try again."));
+    if (oauthError) setError(googleErrorMessage(oauthError, l));
     let cancelled = false;
     void (async () => {
       ensureBrowserId();
@@ -109,15 +114,22 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       {error && <p className="auth-error" role="alert">{error}</p>}<button className="auth-submit" disabled={saving}>{saving ? l("جارٍ التحقق…", "Checking…") : mode === "login" ? l("تسجيل الدخول", "Sign in") : l("إنشاء الحساب", "Create account")}</button>
     </form>
     <div className="auth-divider"><span>{l("أو المتابعة عبر", "Or continue with")}</span></div>
-      <a className="auth-google" href={`/api/auth/google?next=${encodeURIComponent(authRedirectTarget())}`}>
-        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-          <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.2-2.27H12v4.3h6.46c-.28 1.5-1.12 2.77-2.39 3.63v3.02h3.86c2.26-2.08 3.56-5.14 3.56-8.68z" />
-          <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.91l-3.86-3.02c-1.07.72-2.44 1.15-4.08 1.15-3.14 0-5.8-2.12-6.76-4.97H1.27v3.11C3.24 21.53 7.31 24 12 24z" />
-          <path fill="#FBBC05" d="M5.24 14.25A7.2 7.2 0 0 1 4.86 12c0-.78.14-1.53.38-2.25V6.64H1.27A11.98 11.98 0 0 0 0 12c0 1.94.46 3.77 1.27 5.36l3.97-3.11z" />
-          <path fill="#EA4335" d="M12 4.75c1.76 0 3.33.6 4.58 1.79l3.43-3.43C17.95 1.19 15.24 0 12 0 7.31 0 3.24 2.47 1.27 6.64l3.97 3.11C6.2 6.87 8.86 4.75 12 4.75z" />
-        </svg>
-        {l("المتابعة عبر جوجل", "Continue with Google")}
-      </a>
+      {googleClientId ? (
+        <GoogleSignInButton
+          clientId={googleClientId}
+          label={l("المتابعة عبر جوجل", "Continue with Google")}
+          disabled={saving}
+          onError={(code) => setError(googleErrorMessage(code, l))}
+          onSignedIn={(result) => {
+            clearDashboardCache();
+            clearAdminConsole();
+            notifyBrowserSessionChange(result.user?.id ?? null);
+            router.push(authRedirectTarget(result.role));
+          }}
+        />
+      ) : (
+        <p className="auth-error" role="status">{l("تسجيل جوجل غير مهيأ بعد.", "Google sign-in is not configured yet.")}</p>
+      )}
     <footer>{mode === "login" ? <>{l("ليس لديك حساب؟", "No account?")} <Link href="/register">{l("أنشئ حساباً", "Create one")}</Link></> : <>{l("لديك حساب؟", "Already registered?")} <Link href="/login">{l("سجّل الدخول", "Sign in")}</Link></>}</footer>
   </section><aside><span className="brand-glyph"><WazenIcon className="h-10 w-auto" /></span><h2>{l("وضوح مالي، من أول ريال.", "Financial clarity from day one.")}</h2><p>{l("المحافظ الشخصية والمنزلية والجمعيات والرحلات في نظام واحد.", "Personal, household, circle and trip wallets in one system.")}</p></aside></main>;
 }
