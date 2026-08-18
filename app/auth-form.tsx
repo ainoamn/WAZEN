@@ -26,6 +26,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      ensureBrowserId();
       try {
         const response = await fetch("/api/auth", { cache: "no-store", credentials: "same-origin" });
         if (cancelled) return;
@@ -76,7 +77,9 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           ? l("البريد مستخدم بالفعل", "Email is already in use")
           : code === "EMAIL_NOT_VERIFIED"
             ? l("يجب تأكيد البريد أولاً.", "Verify your email first.")
-            : code === "DATABASE_NOT_CONFIGURED"
+            : code === "SESSION_ALREADY_ACTIVE"
+              ? l("يوجد حساب مسجّل في هذا المتصفح. سجّل الخروج أولاً لتبديل الحساب.", "A session is already active in this browser. Sign out first to switch accounts.")
+              : code === "DATABASE_NOT_CONFIGURED"
               ? l("قاعدة البيانات الإنتاجية غير مهيأة", "Production database is not configured")
               : code === "APP_ORIGIN_INVALID"
                 ? l("إعداد عنوان الموقع غير صالح. راجع WAZEN_APP_ORIGIN.", "App origin is misconfigured. Check WAZEN_APP_ORIGIN.")

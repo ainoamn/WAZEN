@@ -8,9 +8,17 @@ function sessionToken(request: NextRequest) {
     || "";
 }
 
+function loginRedirectTarget(request: NextRequest) {
+  const next = request.nextUrl.searchParams.get("next");
+  return next?.startsWith("/") && !next.startsWith("//") ? next : "/home";
+}
+
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const token = sessionToken(request);
+  if ((pathname === "/login" || pathname === "/register") && token) {
+    return NextResponse.redirect(new URL(loginRedirectTarget(request), request.url));
+  }
   if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/setup") && !token) {
     const login = request.nextUrl.clone();
     login.pathname = "/login";

@@ -81,11 +81,10 @@ function cookieValue(request: Request, name: string) {
 }
 
 export async function createSession(db: D1Database, userId: string, request?: Request) {
-  let browserId = request ? browserIdFromRequest(request) : null;
+  const browserId = request ? browserIdFromRequest(request) : null;
   if (request) {
     await revokeSession(db, request);
-    if (!browserId) browserId = createSessionToken();
-    await db.prepare("DELETE FROM auth_sessions WHERE browser_id=?").bind(browserId).run();
+    if (browserId) await db.prepare("DELETE FROM auth_sessions WHERE browser_id=?").bind(browserId).run();
   }
   const token = createSessionToken();
   const csrfToken = createSessionToken(); const tokenHash = await sha256(token); const csrfTokenHash = await sha256(csrfToken);
@@ -135,6 +134,9 @@ export async function authenticateRequest(db: D1Database, request: Request): Pro
   if (row.browser_id && requestBrowserId && row.browser_id !== requestBrowserId) {
     await db.prepare("DELETE FROM auth_sessions WHERE id=?").bind(row.session_id).run();
     return null;
+  }
+  if (!row.browser_id && requestBrowserId) {
+    await db.prepare("UPDATE auth_sessions SET browser_id=? WHERE id=?").bind(requestBrowserId, row.session_id).run();
   }
   if (isSessionIdle(row.last_seen_at)) {
     await db.prepare("DELETE FROM auth_sessions WHERE id=?").bind(row.session_id).run();

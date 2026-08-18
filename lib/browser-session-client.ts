@@ -8,13 +8,26 @@ function secureSuffix() {
   return typeof window !== "undefined" && window.location.protocol === "https:" ? "; Secure" : "";
 }
 
+function readBrowserIdCookie() {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/(?:^|;\s*)wazen_browser=([^;]+)/);
+  if (!match?.[1]) return null;
+  try {
+    const value = decodeURIComponent(match[1]);
+    return value.length >= 16 && value.length <= 128 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 export function ensureBrowserId() {
   try {
-    let id = window.localStorage.getItem(STORAGE_KEY);
+    const fromCookie = readBrowserIdCookie();
+    let id = fromCookie || window.localStorage.getItem(STORAGE_KEY);
     if (!id) {
       id = crypto.randomUUID();
-      window.localStorage.setItem(STORAGE_KEY, id);
     }
+    window.localStorage.setItem(STORAGE_KEY, id);
     document.cookie = `wazen_browser=${encodeURIComponent(id)}; Path=/; SameSite=Lax; Max-Age=31536000${secureSuffix()}`;
     return id;
   } catch {
