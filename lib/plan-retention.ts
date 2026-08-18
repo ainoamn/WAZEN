@@ -45,15 +45,18 @@ export async function ensurePlanRetentionSchema(db: D1Database) {
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_plan_retention_owner ON plan_retention_archives(owner_user_id, archived_at)").run();
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_plan_retention_purge ON plan_retention_archives(purge_after, purged_at)").run();
   const columns = await db.prepare("PRAGMA table_info(spaces)").all<{ name: string }>();
-  const names = new Set(columns.results.map((column) => column.name));
-  if (!names.has("grace_until")) {
+  const names = new Set((columns.results ?? []).map((column) => column.name));
+  const addColumn = async (name: string, ddl: string) => {
+    if (names.has(name)) return;
     try {
-      await db.prepare("ALTER TABLE spaces ADD COLUMN grace_until TEXT").run();
+      await db.prepare(`ALTER TABLE spaces ADD COLUMN ${name} ${ddl}`).run();
     } catch (error) {
       const refreshed = await db.prepare("PRAGMA table_info(spaces)").all<{ name: string }>();
-      if (!refreshed.results.some((column) => column.name === "grace_until")) throw error;
+      if (!(refreshed.results ?? []).some((column) => column.name === name)) throw error;
     }
-  }
+  };
+  await addColumn("status", "TEXT NOT NULL DEFAULT 'active'");
+  await addColumn("grace_until", "TEXT");
   try {
     await db.prepare("CREATE INDEX IF NOT EXISTS idx_spaces_grace_until ON spaces(grace_until)").run();
   } catch { /* optional */ }
@@ -61,11 +64,11 @@ export async function ensurePlanRetentionSchema(db: D1Database) {
 }
 
 export function filterSpacesForPlanAccess<T extends { type: string; grace_until?: string | null; status?: string | null }>(
-  spaces: T[],
+  spaces: T[] | null | undefined,
   features: string[],
   now = Date.now(),
 ) {
-  return spaces.filter((space) => {
+  return (spaces ?? []).filter((space) => {
     if ((space.status ?? "active") === "retention_held") return false;
     if (planAllowsSpaceType(features, space.type)) return true;
     return spaceInUserGrace(space, now);
@@ -73,13 +76,22 @@ export function filterSpacesForPlanAccess<T extends { type: string; grace_until?
 }
 
 export async function readUserGraceSummary(db: D1Database, userId: string) {
-  await ensurePlanRetentionSchema(db);
+  try {
+    await ensurePlanRetentionSchema(db);
+  } catch {
+    return null;
+  }
   const now = new Date().toISOString();
-  const rows = await db.prepare(
-    `SELECT id, type, grace_until FROM spaces
-     WHERE owner_user_id=? AND grace_until IS NOT NULL AND grace_until>? AND COALESCE(status,'active') NOT IN ('retention_held')
-     ORDER BY grace_until ASC`,
-  ).bind(userId, now).all<{ id: string; type: string; grace_until: string }>();
+  let rows: { results: Array<{ id: string; type: string; grace_until: string }> };
+  try {
+    rows = await db.prepare(
+      `SELECT id, type, grace_until FROM spaces
+       WHERE owner_user_id=? AND grace_until IS NOT NULL AND grace_until>? AND COALESCE(status,'active') NOT IN ('retention_held')
+       ORDER BY grace_until ASC`,
+    ).bind(userId, now).all<{ id: string; type: string; grace_until: string }>();
+  } catch {
+    return null;
+  }
   if (!rows.results.length) return null;
   const earliest = rows.results[0].grace_until;
   return {
@@ -197,6 +209,9 @@ export async function syncRetentionForUser(
 
 /** Paid plans past period end (and not awaiting a due pending change) fall back to starter + grace. */
 export async function expireLapsedPaidSubscriptions(db: D1Database, userId?: string) {
+  const { ensurePendingPlanColumns } = await import("./plan-change");
+  await ensurePendingPlanColumns(db);
+  await ensurePlanRetentionSchema(db);
   const now = new Date().toISOString();
   const query = userId
     ? db.prepare(

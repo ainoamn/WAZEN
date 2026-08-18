@@ -132,7 +132,7 @@ export async function issueCsrfToken(db: D1Database, request: Request) {
   const existingToken = cookieValue(request, CSRF_COOKIE);
   if (existingToken && row.csrf_token_hash && constantTimeEqual(await sha256(existingToken), row.csrf_token_hash)) return { csrfToken: existingToken, expiresAt: new Date(row.expires_at) };
   const csrfToken = createSessionToken(); const nextHash = await sha256(csrfToken);
-  const result = await db.prepare("UPDATE auth_sessions SET csrf_token_hash=? WHERE token_hash=? AND csrf_token_hash IS ? AND expires_at>?")
+  const result = await db.prepare("UPDATE auth_sessions SET csrf_token_hash=? WHERE token_hash=? AND csrf_token_hash IS NOT DISTINCT FROM ? AND expires_at>?")
     .bind(nextHash, sessionHash, row.csrf_token_hash, now).run();
   return Number(result.meta.changes) > 0 ? { csrfToken, expiresAt: new Date(row.expires_at) } : null;
 }

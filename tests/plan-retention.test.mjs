@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -53,4 +55,9 @@ test("dashboard nav unlocks grace wallet types without unlocking reports", () =>
   assert.equal(dashboardNavLocked(features, "household"), true);
   assert.equal(dashboardNavLocked(features, "household", ["household"]), false);
   assert.equal(dashboardNavLocked(features, "reports", ["household"]), true);
+});
+
+test("plan access filter treats missing space lists as empty", () => {
+  const source = fs.readFileSync(path.join(process.cwd(), "lib/plan-retention.ts"), "utf8");
+  assert.match(source, /filterSpacesForPlanAccess[\s\S]*spaces \?\? \[\]/);
 });
