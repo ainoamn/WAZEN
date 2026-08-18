@@ -3,16 +3,9 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AuthForm } from "../auth-form";
 import { googleClientId } from "../../lib/google-oauth";
-import { sessionCookieName } from "../../lib/session-policy";
+import { sessionCookieFromStore } from "../../lib/session-policy";
 
 export const metadata: Metadata = { title: "تسجيل الدخول" };
-
-function sessionCookieValue(jar: Awaited<ReturnType<typeof cookies>>) {
-  return jar.get(sessionCookieName())?.value
-    || jar.get("wazen_session")?.value
-    || jar.get("__Host-wazen_session")?.value
-    || "";
-}
 
 export default async function LoginPage({
   searchParams,
@@ -21,7 +14,7 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   const jar = await cookies();
-  if (sessionCookieValue(jar)) {
+  if (sessionCookieFromStore(jar)) {
     const next = params.next;
     redirect(next?.startsWith("/") && !next.startsWith("//") ? next : "/home");
   }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { browserCsrfCookie, browserSessionCookie, idleCutoffIso, isSessionIdle, SESSION_IDLE_MS } from "../lib/session-policy.ts";
+import { browserCsrfCookie, browserSessionCookie, idleCutoffIso, isSessionIdle, SESSION_IDLE_MS, sessionCookieFromStore, sessionCookieName } from "../lib/session-policy.ts";
 
 test("session cookies are browser-session cookies without Expires or Max-Age", () => {
   const session = browserSessionCookie("token-value");
@@ -12,6 +12,13 @@ test("session cookies are browser-session cookies without Expires or Max-Age", (
   assert.doesNotMatch(csrf, /Expires=/i);
   assert.doesNotMatch(csrf, /Max-Age=/i);
   assert.match(csrf, /SameSite=Strict/);
+});
+
+test("sessionCookieFromStore reads current and legacy cookie names", () => {
+  const name = sessionCookieName();
+  assert.equal(sessionCookieFromStore({ get: (key) => key === name ? { value: "live" } : undefined }), "live");
+  assert.equal(sessionCookieFromStore({ get: (key) => key === "wazen_session" ? { value: "legacy" } : undefined }), "legacy");
+  assert.equal(sessionCookieFromStore({ get: () => undefined }), "");
 });
 
 test("idle cut-off is ten minutes and fails closed on missing timestamps", () => {

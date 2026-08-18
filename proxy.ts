@@ -19,6 +19,13 @@ export function proxy(request: NextRequest) {
   if ((pathname === "/login" || pathname === "/register") && token) {
     return NextResponse.redirect(new URL(loginRedirectTarget(request), request.url));
   }
+  if ((pathname === "/home" || pathname === "/dashboard") && !token) {
+    const login = request.nextUrl.clone();
+    login.pathname = "/login";
+    login.search = "";
+    login.searchParams.set("next", pathname);
+    return NextResponse.redirect(login);
+  }
   if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/setup") && !token) {
     const login = request.nextUrl.clone();
     login.pathname = "/login";

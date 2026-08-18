@@ -88,7 +88,7 @@ export function PublicHeader({ locale, setLocale }: { locale: CommerceLocale; se
     </nav>
     <div className="commerce-header-actions">
       <button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}><Globe2 size={16} />{locale === "ar" ? "EN" : "عربي"}</button>
-      <Link href="/home">{l("تسجيل الدخول", "Sign in")}</Link>
+      <Link href="/login">{l("تسجيل الدخول", "Sign in")}</Link>
       <Link className="filled" href="/register">{l("ابدأ مجاناً", "Start free")}</Link>
     </div>
   </header>;

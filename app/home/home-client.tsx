@@ -106,6 +106,7 @@ export function HomeClient() {
   const [toast, setToast] = useState("");
 
   const load = useCallback(async (force = false) => {
+    let redirecting = false;
     try {
       setError(false);
       const result = await fetchDashboardSession<HomeData>(force);
@@ -115,12 +116,14 @@ export function HomeClient() {
       }
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) {
-        router.push("/login?next=/home");
+        redirecting = true;
+        setData(null);
+        router.replace("/login?next=/home");
         return;
       }
       if (!readDashboardCache()) setError(true);
     } finally {
-      setLoading(false);
+      if (!redirecting) setLoading(false);
     }
   }, [router]);
 
