@@ -2,7 +2,18 @@ import { escapeHtml } from "./html.ts";
 
 const OFFICIAL_LOCKUP = "/brand/wazen-lockup.png";
 /** A4 width at 96dpi — html2canvas capture width so tables scale to a real page, not a cropped browser tab. */
-const A4_CSS_PX = 794;
+const A4_PORTRAIT_CSS_PX = 794;
+const A4_LANDSCAPE_CSS_PX = 1123;
+
+export type PrintOrientation = "portrait" | "landscape";
+
+export function printOrientationFromHtml(html: string): PrintOrientation {
+  return /data-orientation=["']landscape["']/i.test(html) ? "landscape" : "portrait";
+}
+
+export function printPageCssPx(orientation: PrintOrientation) {
+  return orientation === "landscape" ? A4_LANDSCAPE_CSS_PX : A4_PORTRAIT_CSS_PX;
+}
 
 let logoDataUrl: string | null = null;
 let logoPromise: Promise<string> | null = null;
@@ -42,7 +53,8 @@ export async function resolvePrintLogoUrl() {
 export const PRINT_DOCUMENT_CSS = `
 :root { color-scheme: light; }
 * { box-sizing: border-box; }
-@page { size: A4; margin: 12mm; }
+@page { size: A4 portrait; margin: 12mm; }
+html[data-orientation="landscape"] { }
 body {
   margin: 0;
   font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif;
@@ -52,30 +64,46 @@ body {
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
+body.page-landscape { font-size: 12px; line-height: 1.4; }
 .print-actions { position: sticky; top: 0; z-index: 5; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px; background: #fff; border-bottom: 1px solid #e5ebe7; }
 .print-actions button { border: 0; border-radius: 10px; padding: 10px 16px; background: #0d7a65; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
 .sheet { max-width: 960px; margin: 20px auto 40px; background: white; border: 1px solid #d7e0db; border-radius: 18px; overflow: visible; }
+body.page-landscape .sheet { max-width: 1123px; margin: 12px auto 28px; }
 .brand-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 28px; background: #fff; border-bottom: 3px solid #0d7a65; }
+body.page-landscape .brand-bar { padding: 12px 18px; }
 .brand-bar img { height: 56px; width: auto; }
+body.page-landscape .brand-bar img { height: 42px; }
 .brand-bar small { display: block; color: #3f4f49; font-size: 14px; font-weight: 700; }
 .brand-bar strong { font-size: 18px; color: #12231f; }
 .head { padding: 26px 28px 10px; }
+body.page-landscape .head { padding: 14px 18px 6px; }
 .head h1 { margin: 0 0 8px; font-size: 30px; line-height: 1.25; color: #0d7a65; }
+body.page-landscape .head h1 { font-size: 22px; margin-bottom: 4px; }
 .head p { margin: 0; color: #3f4f49; font-size: 16px; font-weight: 600; }
+body.page-landscape .head p { font-size: 13px; }
 .meta { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px 20px; margin: 16px 28px; padding: 14px 16px; border: 1px solid #d7e0db; border-radius: 12px; background: #fbfcfb; }
+body.page-landscape .meta { margin: 10px 18px; padding: 10px 12px; gap: 8px 16px; }
 .meta span { color: #3f4f49; font-size: 14px; display: block; font-weight: 700; }
 .meta b { font-size: 17px; color: #12231f; font-weight: 800; }
+body.page-landscape .meta span { font-size: 11px; }
+body.page-landscape .meta b { font-size: 13px; }
 .kpis { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; padding: 0 28px 18px; }
+body.page-landscape .kpis { gap: 8px; padding: 0 18px 12px; }
 .kpi { border: 1px solid #d7e0db; border-radius: 12px; padding: 12px 14px; }
+body.page-landscape .kpi { padding: 8px 10px; border-radius: 10px; }
 .kpi span { display: block; color: #3f4f49; font-size: 14px; margin-bottom: 6px; font-weight: 700; }
 .kpi strong { font-size: 18px; color: #12231f; }
+body.page-landscape .kpi span { font-size: 11px; margin-bottom: 4px; }
+body.page-landscape .kpi strong { font-size: 14px; }
 section { padding: 10px 28px 24px; }
+body.page-landscape section { padding: 6px 18px 16px; }
 section h2 { margin: 0 0 14px; font-size: 20px; color: #1a3d36; }
+body.page-landscape section h2 { margin: 0 0 8px; font-size: 15px; }
 table { width: 100%; border-collapse: collapse; font-size: 16px; }
 th, td { padding: 12px 10px; border-bottom: 1px solid #d7e0db; text-align: start; vertical-align: top; }
 th { color: #3f4f49; font-size: 14px; background: #f3f7f5; font-weight: 800; }
 td { color: #12231f; font-size: 16px; font-weight: 600; }
-td:first-child { color: #3f4f49; font-weight: 700; width: 34%; }
+body.page-portrait td:first-child { color: #3f4f49; font-weight: 700; width: 34%; }
 .num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 16px; font-weight: 800; }
 .in { color: #0d7a65; font-weight: 800; }
 .out { color: #a84d58; font-weight: 800; }
@@ -90,8 +118,18 @@ footer.sheet-foot {
   border-top: 1px solid #d7e0db;
   line-height: 1.6;
 }
+body.page-landscape footer.sheet-foot { padding: 12px 18px 18px; font-size: 11px; }
 thead { display: table-header-group; }
 tr { break-inside: avoid; page-break-inside: avoid; }
+body.page-landscape table { font-size: 11px; table-layout: auto; }
+body.page-landscape th, body.page-landscape td { padding: 5px 6px; font-size: 11px; line-height: 1.35; vertical-align: middle; }
+body.page-landscape th { font-size: 10px; }
+body.page-landscape td:first-child { width: auto; color: #12231f; font-weight: 600; }
+body.page-landscape .num { font-size: 11px; white-space: nowrap; }
+body.page-landscape td.col-date, body.page-landscape td.col-ref, body.page-landscape td.col-user, body.page-landscape td.col-status {
+  white-space: nowrap; font-size: 10px; font-weight: 600;
+}
+body.page-landscape td.col-desc { min-width: 160px; white-space: normal; overflow-wrap: anywhere; }
 @media print {
   body {
     background: white;
@@ -100,13 +138,17 @@ tr { break-inside: avoid; page-break-inside: avoid; }
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
+  body.page-landscape { font-size: 11px; }
   .print-actions { display: none !important; }
   .sheet { margin: 0; border: 0; border-radius: 0; max-width: none; overflow: visible; }
   .brand-bar, th, .meta, .kpi { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-  .brand-bar small, .meta span, .kpi span, th, td:first-child, footer.sheet-foot { color: #222 !important; }
+  .brand-bar small, .meta span, .kpi span, th, body.page-portrait td:first-child, footer.sheet-foot { color: #222 !important; }
   .brand-bar strong, .meta b, .kpi strong, td, .head p { color: #000 !important; }
   .head h1 { font-size: 32px; color: #0a5c4c !important; }
+  body.page-landscape .head h1 { font-size: 20px !important; }
   table, td, .num { font-size: 16px; }
+  body.page-landscape table, body.page-landscape td, body.page-landscape .num { font-size: 11px; }
+  body.page-landscape th, body.page-landscape td.col-date, body.page-landscape td.col-ref { font-size: 10px; }
   th { font-size: 14px; }
   footer.sheet-foot { font-size: 13px; }
 }
@@ -123,8 +165,10 @@ export function wrapPrintDocument(options: {
   kpis?: Array<{ label: string; value: string }>;
   bodyHtml: string;
   footer?: string;
+  orientation?: PrintOrientation;
 }) {
   const dir = options.locale === "ar" ? "rtl" : "ltr";
+  const orientation = options.orientation ?? "portrait";
   const printLabel = options.locale === "ar" ? "طباعة المستند" : "Print document";
   const metaHtml = (options.meta ?? [])
     .map((item) => `<div><span>${escapeHtml(item.label)}</span><b>${escapeHtml(item.value)}</b></div>`)
@@ -132,14 +176,17 @@ export function wrapPrintDocument(options: {
   const kpiHtml = (options.kpis ?? [])
     .map((item) => `<div class="kpi"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`)
     .join("");
+  const pageRule = orientation === "landscape"
+    ? "@page { size: A4 landscape; margin: 8mm; }"
+    : "@page { size: A4 portrait; margin: 12mm; }";
   return `<!doctype html>
-<html lang="${options.locale}" dir="${dir}">
+<html lang="${options.locale}" dir="${dir}" data-orientation="${orientation}">
 <head>
   <meta charset="utf-8" />
   <title>${escapeHtml(options.title)} · ${escapeHtml(options.entityName)}</title>
-  <style>${PRINT_DOCUMENT_CSS}</style>
+  <style>${PRINT_DOCUMENT_CSS}\n${pageRule}</style>
 </head>
-<body>
+<body class="page-${orientation}">
   <div class="print-actions"><button type="button" onclick="window.print()">${escapeHtml(printLabel)}</button></div>
   <article class="sheet">
     <div class="brand-bar">
@@ -217,11 +264,13 @@ async function htmlDocumentToPdfBlob(html: string): Promise<Blob> {
     import("html2canvas"),
     import("jspdf"),
   ]);
+  const orientation = printOrientationFromHtml(html);
+  const pageCssPx = printPageCssPx(orientation);
   const host = document.createElement("iframe");
   host.setAttribute("aria-hidden", "true");
-  host.style.cssText = `position:fixed;left:-12000px;top:0;width:${A4_CSS_PX}px;height:0;border:0;opacity:0;pointer-events:none;`;
+  host.style.cssText = `position:fixed;left:-12000px;top:0;width:${pageCssPx}px;height:0;border:0;opacity:0;pointer-events:none;`;
   const captureCss = `<style>
-    html, body { width: ${A4_CSS_PX}px !important; min-width: ${A4_CSS_PX}px !important; background: #fff !important; }
+    html, body { width: ${pageCssPx}px !important; min-width: ${pageCssPx}px !important; background: #fff !important; }
     .print-actions { display: none !important; }
     .sheet { margin: 0 !important; max-width: none !important; border-radius: 0 !important; overflow: visible !important; }
   </style>`;
@@ -250,13 +299,13 @@ async function htmlDocumentToPdfBlob(html: string): Promise<Blob> {
       scale: 2,
       useCORS: true,
       backgroundColor: "#ffffff",
-      width: A4_CSS_PX,
-      windowWidth: A4_CSS_PX,
+      width: pageCssPx,
+      windowWidth: pageCssPx,
       windowHeight: height,
       scrollX: 0,
       scrollY: 0,
     });
-    const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "p", compress: true });
+    const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: orientation === "landscape" ? "l" : "p", compress: true });
     const pageW = pdf.internal.pageSize.getWidth();
     const pageH = pdf.internal.pageSize.getHeight();
     const imgW = pageW;
@@ -310,7 +359,8 @@ export function openReportPreview(html: string, autoPrint = false) {
   if (typeof window === "undefined") return false;
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob);
-  const popup = window.open(url, "_blank", "width=960,height=900");
+  const orientation = printOrientationFromHtml(html);
+  const popup = window.open(url, "_blank", orientation === "landscape" ? "width=1280,height=900" : "width=960,height=900");
   if (popup) {
     const onReady = () => {
       void waitForPrintReady(popup).then(() => {

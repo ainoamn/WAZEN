@@ -529,6 +529,7 @@ export function buildReportHtml(input: ReportInput) {
     entityName,
     logoUrl: input.logoUrl || "/brand/wazen-lockup.png",
     subtitle: built.subtitle,
+    orientation: "landscape",
     meta: [
       { label: t(locale, "الجهة / المحفظة", "Entity / wallet"), value: entityName },
       { label: t(locale, "تاريخ الإصدار", "Issued at"), value: new Date(issuedAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB") },
