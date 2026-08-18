@@ -1,7 +1,16 @@
 import { getRawDb, ensureSchema } from "../../../../../db/runtime";
 import { authenticateRequest, createSession, sessionHeaders } from "../../../../../lib/auth";
+import { browserIdFromRequest } from "../../../../../lib/browser-session";
 import { upsertGoogleUser } from "../../../../../lib/google-account";
-import { clearOAuthStateCookie, exchangeGoogleCode, isGoogleOAuthConfigured, readGoogleOAuthState, safeAuthNext } from "../../../../../lib/google-oauth";
+import {
+  clearOAuthStateCookie,
+  exchangeGoogleCode,
+  isGoogleOAuthConfigured,
+  mapGoogleCallbackError,
+  oauthCsrfOk,
+  readGoogleOAuthState,
+  safeAuthNext,
+} from "../../../../../lib/google-oauth";
 import { appOrigin } from "../../../../../lib/app-origin";
 import { clientCountry, clientIp, recordSecurityEvent } from "../../../../../lib/ip-security";
 import { ApiError, errorResponse, rateLimit } from "../../../../../lib/security";
@@ -31,19 +40,23 @@ export async function GET(request: Request) {
     await rateLimit(db, request, "auth-google", 12, 900);
     if (!isGoogleOAuthConfigured()) return failRedirect(request, "GOOGLE_NOT_CONFIGURED");
     const url = new URL(request.url);
-    if (url.searchParams.get("error")) return failRedirect(request, "GOOGLE_AUTH_FAILED");
+    const googleError = mapGoogleCallbackError(url.searchParams.get("error"));
+    if (googleError) return failRedirect(request, googleError);
     const code = url.searchParams.get("code") ?? "";
     const state = url.searchParams.get("state") ?? "";
-    const cookieState = cookieValue(request, "wazen_oauth");
-    if (!code || !state || !cookieState || cookieState !== state) return failRedirect(request, "GOOGLE_AUTH_FAILED");
+    if (!code || !state) return failRedirect(request, "GOOGLE_AUTH_FAILED");
     const parsed = await readGoogleOAuthState(state);
+    const cookieNonce = cookieValue(request, "wazen_oauth");
+    if (!oauthCsrfOk(cookieNonce, parsed, browserIdFromRequest(request))) {
+      return failRedirect(request, "GOOGLE_AUTH_FAILED");
+    }
     const existing = await authenticateRequest(db, request);
     if (existing?.authType === "session") {
       const headers = new Headers({ Location: `${appOrigin(request)}${safeAuthNext(parsed.next)}`, "Cache-Control": "no-store" });
       headers.append("Set-Cookie", clearOAuthStateCookie());
       return new Response(null, { status: 302, headers });
     }
-    const profile = await exchangeGoogleCode(request, code, parsed.v);
+    const profile = await exchangeGoogleCode(request, code, parsed.v, parsed.ru);
     const user = await upsertGoogleUser(db, profile);
     const session = await createSession(db, user.id, request);
     await recordSecurityEvent(db, {
@@ -59,6 +72,12 @@ export async function GET(request: Request) {
     return new Response(null, { status: 302, headers });
   } catch (error) {
     if (error instanceof ApiError) return failRedirect(request, error.code);
-    return errorResponse(error);
+    console.error(JSON.stringify({
+      level: "error",
+      code: "GOOGLE_CALLBACK_INTERNAL",
+      message: error instanceof Error ? error.message : String(error),
+      at: new Date().toISOString(),
+    }));
+    return failRedirect(request, "GOOGLE_AUTH_FAILED");
   }
 }

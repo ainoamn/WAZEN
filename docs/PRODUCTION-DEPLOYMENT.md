@@ -54,6 +54,12 @@ WAZEN_TRUST_OAI_HEADERS=0
    - `WAZEN_APP_ORIGIN=https://wazen.bhd-om.com` (عنوان واحد فقط)
 7. **Redeploy** ثم اختبر فقط على `https://wazen.bhd-om.com/login`.
 
+إذا ظهر اختيار الحساب ثم عاد إلى `/login` برسالة خطأ، اقرأ الرمز في العنوان:
+
+- `GOOGLE_CLIENT_INVALID`: سر Vercel لا يطابق العميل. **Add secret** في Google والصقه في Vercel ثم Redeploy.
+- `GOOGLE_REDIRECT_MISMATCH`: عنوان الإرجاع ناقص أو مختلف حرفياً.
+- `GOOGLE_ACCESS_DENIED`: التطبيق Testing والبريد ليس test user.
+
 لا تستخدم العميل المحذوف السابق. لا تضع السر في Git.
 
 ## البريد والدعوات

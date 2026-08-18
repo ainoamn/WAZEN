@@ -28,7 +28,11 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     if (oauthError === "GOOGLE_NOT_CONFIGURED") setError(l("تسجيل جوجل غير مهيأ بعد.", "Google sign-in is not configured yet."));
     else if (oauthError === "GOOGLE_EMAIL_UNVERIFIED") setError(l("بريد جوجل غير مؤكد.", "The Google email is not verified."));
     else if (oauthError === "ACCOUNT_UNAVAILABLE") setError(l("الحساب غير متاح.", "This account is unavailable."));
-    else if (oauthError === "GOOGLE_AUTH_FAILED") setError(l("تعذر الدخول عبر جوجل. حاول مرة أخرى.", "Google sign-in failed. Try again."));
+    else if (oauthError === "GOOGLE_ACCESS_DENIED") setError(l("جوجل رفض الحساب. إن كان التطبيق في وضع الاختبار فأضف البريد كمستخدم تجريبي من Audience.", "Google denied this account. If the app is in testing, add the email as a test user on the Audience page."));
+    else if (oauthError === "GOOGLE_CLIENT_INVALID") setError(l("سر عميل جوجل غير صحيح في Vercel. أنشئ سراً جديداً من Clients ثم أعد النشر.", "The Google client secret in Vercel is invalid. Add a new secret in Clients, then redeploy."));
+    else if (oauthError === "GOOGLE_REDIRECT_MISMATCH") setError(l("عنوان الإرجاع غير مطابق. أضف https://wazen.bhd-om.com/api/auth/google/callback في Authorised redirect URIs.", "Redirect URI mismatch. Add https://wazen.bhd-om.com/api/auth/google/callback under Authorised redirect URIs."));
+    else if (oauthError === "GOOGLE_TOKEN_FAILED" || oauthError === "GOOGLE_AUTH_FAILED") setError(l("تعذر الدخول عبر جوجل. حاول مرة أخرى.", "Google sign-in failed. Try again."));
+    else if (oauthError) setError(l("تعذر الدخول عبر جوجل. حاول مرة أخرى.", "Google sign-in failed. Try again."));
     let cancelled = false;
     void (async () => {
       ensureBrowserId();
