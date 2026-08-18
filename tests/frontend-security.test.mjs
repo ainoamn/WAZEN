@@ -87,8 +87,8 @@ test("customer billing uses account header and never links to admin plans", () =
   assert.doesNotMatch(billing, /\/admin\/plans/);
   assert.match(billing, /href="\/pricing"/);
   assert.match(dashboard, /href="\/billing"/);
-  assert.doesNotMatch(billing, /from ["']\.\.\/lib\/plan-retention["']/);
-  assert.doesNotMatch(dashboard, /from ["']\.\.\/lib\/plan-retention["']/);
+  assert.doesNotMatch(billing, /from ["'][^"']*lib\/plan-retention["']/);
+  assert.doesNotMatch(dashboard, /from ["'][^"']*lib\/plan-retention["']/);
   assert.doesNotMatch(dashboard, /href="\/admin\/plans"/);
   assert.match(kit, /Signed-in header for customer commerce pages/);
   assert.match(kit, /never links to \/admin\/plans/);
