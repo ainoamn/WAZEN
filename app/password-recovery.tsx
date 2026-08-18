@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { WazenIcon } from "../components/brand/WazenLogo";
@@ -60,7 +59,7 @@ export function PasswordRecovery({ mode, token = "" }: { mode: "forgot" | "reset
           </form>
         )}
         <footer>
-          <Link href="/login">{l("العودة لتسجيل الدخول", "Back to sign in")}</Link>
+          <a href="/api/auth/bhd/start?next=%2Fhome">{l("العودة لتسجيل الدخول", "Back to sign in")}</a>
         </footer>
       </section>
       <aside>

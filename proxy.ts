@@ -12,18 +12,18 @@ export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const token = sessionToken(request);
   if ((pathname === "/home" || pathname === "/dashboard") && !token) {
-    const login = request.nextUrl.clone();
-    login.pathname = "/login";
-    login.search = "";
-    login.searchParams.set("next", pathname);
-    return NextResponse.redirect(login);
+    const start = request.nextUrl.clone();
+    start.pathname = "/api/auth/bhd/start";
+    start.search = "";
+    start.searchParams.set("next", pathname);
+    return NextResponse.redirect(start);
   }
   if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/setup") && !token) {
-    const login = request.nextUrl.clone();
-    login.pathname = "/login";
-    login.search = "";
-    login.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
-    return NextResponse.redirect(login);
+    const start = request.nextUrl.clone();
+    start.pathname = "/api/auth/bhd/start";
+    start.search = "";
+    start.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+    return NextResponse.redirect(start);
   }
 
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");

@@ -109,10 +109,10 @@ test("customer billing uses account header and never links to admin plans", () =
   assert.doesNotMatch(accountHeader, /\/admin\/plans/);
 });
 
-test("proxy redirects anonymous /admin visitors to login", () => {
+test("proxy redirects anonymous /admin visitors to BHD identity", () => {
   const source = fs.readFileSync(path.join(root, "proxy.ts"), "utf8");
   assert.match(source, /sessionToken/);
-  assert.match(source, /\/login/);
+  assert.match(source, /\/api\/auth\/bhd\/start/);
   assert.match(source, /pathname.startsWith\("\/admin"\)/);
   assert.match(source, /pathname === "\/home"/);
   assert.match(source, /pathname === "\/dashboard"/);
@@ -120,21 +120,21 @@ test("proxy redirects anonymous /admin visitors to login", () => {
   assert.doesNotMatch(source, /pathname === "\/register"/);
 });
 
-test("login and register pages always paint the auth form", () => {
+test("login and register wrap the unified BHD portal", () => {
   const login = fs.readFileSync(path.join(root, "app/login/page.tsx"), "utf8");
   const register = fs.readFileSync(path.join(root, "app/register/page.tsx"), "utf8");
   const authRoute = fs.readFileSync(path.join(root, "app/api/auth/route.ts"), "utf8");
   const form = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
   assert.match(login, /<AuthForm/);
-  assert.doesNotMatch(login, /redirect\(/);
+  assert.match(login, /redirect\(`\/api\/auth\/bhd\/start/);
+  assert.match(login, /params.local !== "1"/);
   assert.doesNotMatch(login, /sessionCookieFromStore/);
   assert.doesNotMatch(login, /cookies\(/);
   assert.match(register, /<AuthForm/);
-  assert.doesNotMatch(register, /redirect\(/);
+  assert.match(register, /\/api\/auth\/bhd\/start/);
   assert.doesNotMatch(register, /sessionCookieFromStore/);
   assert.match(authRoute, /SESSION_ALREADY_ACTIVE/);
   assert.match(form, /GoogleSignInButton/);
-  assert.match(form, /أو المتابعة عبر/);
   const gsi = fs.readFileSync(path.join(root, "app/google-sign-in.tsx"), "utf8");
   assert.match(gsi, /\/api\/auth\/google/);
   assert.match(gsi, /idToken/);
@@ -146,6 +146,7 @@ test("BHD SSO start/callback exist and login can wrap identity", () => {
   const logout = fs.readFileSync(path.join(root, "lib/client-logout.ts"), "utf8");
   const home = fs.readFileSync(path.join(root, "app/home/home-client.tsx"), "utf8");
   assert.match(login, /isBhdIdentityConfigured/);
+  assert.match(login, /api\/auth\/bhd\/start/);
   assert.match(form, /api\/auth\/bhd\/start/);
   assert.match(form, /الدخول بحساب BHD/);
   assert.match(logout, /endSessionUrl/);
@@ -159,9 +160,9 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
   const dashboardRoute = fs.readFileSync(path.join(root, "app/api/dashboard/route.ts"), "utf8");
   const publicHeader = kit.slice(kit.indexOf("export function PublicHeader"), kit.indexOf("export function AccountHeader"));
-  assert.match(publicHeader, /href="\/login"/);
+  assert.match(publicHeader, /href="\/api\/auth\/bhd\/start/);
   assert.doesNotMatch(publicHeader, /href="\/home"/);
-  assert.match(landing, /href="\/register"/);
+  assert.match(landing, /href="\/api\/auth\/bhd\/start/);
   assert.doesNotMatch(landing, /href="\/home"/);
   assert.match(home, /let redirecting = false/);
   assert.match(home, /window\.location\.replace\("\/login\?next=\/home"\)/);
@@ -183,7 +184,9 @@ test("auth form stays visible when a browser session is already active", () => {
   assert.match(auth, /setActiveSession/);
   assert.doesNotMatch(auth, /router\.replace\(authRedirectTarget/);
   assert.match(auth, /notifyBrowserSessionChange/);
-  assert.match(auth, /enterSignedInApp/);
+  assert.match(auth, /window\.location\.assign\(authRedirectTarget/);
+  assert.match(auth, /INVALID_CREDENTIALS/);
+  assert.doesNotMatch(auth, /enterSignedInApp/);
   assert.doesNotMatch(auth, /PageLoader/);
   assert.doesNotMatch(auth, /WazenPageLoader/);
   assert.match(libAuth, /DELETE FROM auth_sessions WHERE browser_id=\?/);
@@ -209,7 +212,7 @@ test("in-app account routes keep client cache; first load still uses the brand s
   assert.doesNotMatch(home, /ContentBusy/);
   assert.match(home, /prefetchAppRoutes/);
   assert.match(home, /warmAppCaches/);
-  assert.match(auth, /enterSignedInApp/);
+  assert.match(auth, /window\.location\.assign/);
   assert.doesNotMatch(auth, /PageLoader/);
   assert.match(billing, /readPageCache/);
   assert.match(documents, /readPageCache/);
