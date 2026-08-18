@@ -187,7 +187,7 @@ fe6db47  fix: support Vercel Next.js build path   ← آخر نقطة في أر�
 - الإصلاح: مسار المخطط الحالي يعيد فوراً؛ إعادة بناء الدفاتر و`generatePersonalOccurrences` عند الكتابة (`refreshDerived: true` بعد POST)؛ مهلة 12 ث مع `Promise.race` حتى لا يبقى الشعار إلى ما لا نهاية. مدمج: [#55](https://github.com/ainoamn/WAZEN/pull/55).
 - زر **تسجيل الدخول** في الرأس كان يحوّل إلى `/home` عند وجود كعكة جلسة فتظهر شاشة الشعار بدل النموذج. `/login` يرسم النموذج فوراً دون هذا التحويل. مدمج: [#57](https://github.com/ainoamn/WAZEN/pull/57).
 - بوابة الدخول الموحّدة: `/login` وزر الرأس يمرّان بـ `/api/auth/bhd/start` → شاشة `one-bhd.vercel.app` (نفس أسلوب المجموعة). جوجل على الهوية فقط. إن لم تكن `https://wazen-roan.vercel.app/api/auth/bhd/callback` مسجّلة على عميل `bhd-wazen` يبقى النموذج المحلي بدل 400. بعد نجاح النموذج المحلي: `location.assign`. يجب إضافة عنوان Vercel في [ainoamn/ONE-BHD](https://github.com/ainoamn/ONE-BHD) `clients.ts` ثم إعادة نشر الهوية. مدمج: [#59](https://github.com/ainoamn/WAZEN/pull/59).
-- إنتاج Vercel بقي على `8069b87` بعد [#59](https://github.com/ainoamn/WAZEN/pull/59) بسبب حد النشر (Hobby). زر الدخول كان يعيد `/login?` لأن CSP `strict-dynamic` حجب سكربتات Next. أُزيل `strict-dynamic`، والنموذج يدعم POST بدون JavaScript.
+- إنتاج Vercel بقي على `8069b87` بعد [#59](https://github.com/ainoamn/WAZEN/pull/59) بسبب حد النشر (Hobby). زر الدخول كان يعيد `/login?` لأن CSP `strict-dynamic` حجب سكربتات Next. أُزيلت السياسة المعطِّلة، والنموذج يدعم POST بدون JavaScript. مدمج: [#61](https://github.com/ainoamn/WAZEN/pull/61). لم يُنشر بعد بسبب حد Vercel.
 
 ---
 
