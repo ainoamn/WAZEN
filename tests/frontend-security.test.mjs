@@ -44,6 +44,16 @@ test("dashboard hides platform admin unless canOpenPlatformConsole is true", () 
   assert.match(source, /canOpenPlatformConsole\(role\) \? <Link href="\/admin"/);
 });
 
+test("dashboard settings includes a password-change form", () => {
+  const source = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
+  const auth = fs.readFileSync(path.join(root, "app/api/auth/route.ts"), "utf8");
+  assert.match(source, /function PasswordChangeCard/);
+  assert.match(source, /action: "changePassword"/);
+  assert.match(source, /<PasswordChangeCard locale/);
+  assert.match(source, /تغيير كلمة المرور/);
+  assert.match(auth, /action === "changePassword"/);
+});
+
 test("dashboard and home keep a live revision poll without restarting it every render", () => {
   const live = fs.readFileSync(path.join(root, "lib/live-sync.ts"), "utf8");
   const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");

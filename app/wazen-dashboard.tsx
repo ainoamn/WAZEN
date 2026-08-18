@@ -584,6 +584,10 @@ function dashboardError(code: string, locale: Locale) {
       INVALID_PROFILE: "تحقق من الاسم (حرفان على الأقل).",
       INVALID_PHOTO: "الصورة غير مدعومة. استخدم JPEG أو PNG أو WebP.",
       PHOTO_TOO_LARGE: "الصورة كبيرة. اختر صورة أوضح وأصغر.",
+      INVALID_CREDENTIALS: "كلمة المرور الحالية غير صحيحة.",
+      PASSWORD_MUST_CHANGE: "كلمة المرور الجديدة يجب أن تختلف عن الحالية.",
+      PASSWORD_MISMATCH: "كلمتا المرور الجديدتان غير متطابقتين.",
+      AUTHENTICATION_REQUIRED: "سجّل الدخول مرة أخرى ثم حاول.",
       PLAN_TRANSACTION_LIMIT: "وصلت إلى حد المعاملات في باقتك.",
       PLAN_DAILY_TRANSACTION_LIMIT: "وصلت إلى حد المعاملات اليومية في باقتك.",
       PLAN_MONTHLY_TRANSACTION_LIMIT: "وصلت إلى حد المعاملات الشهرية في باقتك.",
@@ -609,6 +613,10 @@ function dashboardError(code: string, locale: Locale) {
       INVALID_PROFILE: "Check the name (at least 2 characters).",
       INVALID_PHOTO: "Unsupported photo. Use JPEG, PNG, or WebP.",
       PHOTO_TOO_LARGE: "Photo is too large. Choose a smaller image.",
+      INVALID_CREDENTIALS: "The current password is incorrect.",
+      PASSWORD_MUST_CHANGE: "The new password must be different from the current one.",
+      PASSWORD_MISMATCH: "The new passwords do not match.",
+      AUTHENTICATION_REQUIRED: "Sign in again, then try.",
       PLAN_TRANSACTION_LIMIT: "You reached the transaction limit on your plan.",
       PLAN_DAILY_TRANSACTION_LIMIT: "You reached the daily transaction limit on your plan.",
       PLAN_MONTHLY_TRANSACTION_LIMIT: "You reached the monthly transaction limit on your plan.",
@@ -1337,7 +1345,7 @@ function UserMenu({ locale, name, email, avatarUrl, onSettings, onLogout }: { lo
             <strong>{name}</strong>
             <small>{email}</small>
           </div>
-          <a href="/account/security" role="menuitem" onClick={() => setOpen(false)}><ShieldCheck size={16} />{locale === "ar" ? "صفحة الحساب" : "Account page"}</a>
+          <Link href="/account/security" prefetch role="menuitem" onClick={() => setOpen(false)}><ShieldCheck size={16} />{locale === "ar" ? "أمان الحساب" : "Account security"}</Link>
           <button type="button" role="menuitem" onClick={() => { setOpen(false); onSettings(); }}><Settings size={16} />{t.settings}</button>
           <button type="button" role="menuitem" className="user-menu-logout" onClick={() => { setOpen(false); onLogout(); }}><LogOut size={16} />{t.logout}</button>
         </div>
@@ -1878,6 +1886,72 @@ function compressAvatar(file: File) {
   });
 }
 
+function PasswordChangeCard({ locale }: { locale: Locale }) {
+  const t = copy[locale];
+  const [currentPassword, setCurrent] = useState("");
+  const [newPassword, setNext] = useState("");
+  const [confirmPassword, setConfirm] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError("");
+    setOk("");
+    if (newPassword !== confirmPassword) {
+      setError(dashboardError("PASSWORD_MISMATCH", locale));
+      return;
+    }
+    setSaving(true);
+    try {
+      const response = await apiFetch("/api/auth", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "changePassword", currentPassword, newPassword }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "INVALID_CREDENTIALS");
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+      setOk(locale === "ar" ? "تم تغيير كلمة المرور. الجلسات الأخرى أُلغيت." : "Password changed. Other sessions were signed out.");
+    } catch (caught) {
+      setError(dashboardError(caught instanceof Error ? caught.message : "INVALID_CREDENTIALS", locale));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form className="panel profile-card" onSubmit={(event) => void submit(event)}>
+      <div className="profile-photo">
+        <div>
+          <strong>{locale === "ar" ? "تغيير كلمة المرور" : "Change password"}</strong>
+          <small>{locale === "ar" ? "12 حرفاً على الأقل. التغيير يلغي الجلسات على الأجهزة الأخرى." : "At least 12 characters. This signs out other devices."}</small>
+        </div>
+      </div>
+      <label>
+        <span>{locale === "ar" ? "كلمة المرور الحالية" : "Current password"}</span>
+        <input type="password" autoComplete="current-password" minLength={12} maxLength={128} required value={currentPassword} onChange={(event) => setCurrent(event.target.value)} />
+      </label>
+      <label>
+        <span>{locale === "ar" ? "كلمة المرور الجديدة" : "New password"}</span>
+        <input type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={newPassword} onChange={(event) => setNext(event.target.value)} />
+      </label>
+      <label>
+        <span>{locale === "ar" ? "تأكيد كلمة المرور الجديدة" : "Confirm new password"}</span>
+        <input type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={confirmPassword} onChange={(event) => setConfirm(event.target.value)} />
+      </label>
+      {error ? <p className="modal-error">{error}</p> : null}
+      {ok ? <p className="modal-note" role="status">{ok}</p> : null}
+      <div className="modal-actions">
+        <button className="primary-button" disabled={saving}>{saving ? t.saving : (locale === "ar" ? "تغيير كلمة المرور" : "Change password")}</button>
+      </div>
+    </form>
+  );
+}
+
 function SettingsView({ user, locale, entitlements, onLogout, onSaved }: { user: User; locale: Locale; entitlements?: DashboardData["entitlements"]; onLogout: () => void; onSaved: (next: Partial<DashboardData>) => void }) {
   const router = useRouter();
   const t = copy[locale];
@@ -1934,7 +2008,7 @@ function SettingsView({ user, locale, entitlements, onLogout, onSaved }: { user:
     }
   };
   return <div className="dashboard-stack">
-    <div className="section-title"><div><h2>{t.settings}</h2><p>{locale === "ar" ? "عدّل اسمك وصورتك، ثم الخصوصية والصلاحيات" : "Edit your name and photo, then privacy and permissions"}</p></div><button className="secondary-button" onClick={onLogout}><LogOut size={16} />{t.logout}</button></div>
+    <div className="section-title"><div><h2>{t.settings}</h2><p>{locale === "ar" ? "عدّل اسمك وصورتك وكلمة المرور، ثم الخصوصية والصلاحيات" : "Edit your name, photo and password, then privacy and permissions"}</p></div><button className="secondary-button" onClick={onLogout}><LogOut size={16} />{t.logout}</button></div>
     <form className="panel profile-card" onSubmit={saveProfile}>
       <div className="profile-photo">
         <button type="button" className="user-avatar profile-avatar" onClick={() => fileRef.current?.click()} title={locale === "ar" ? "تغيير الصورة" : "Change photo"}>
@@ -1953,6 +2027,7 @@ function SettingsView({ user, locale, entitlements, onLogout, onSaved }: { user:
       {error && <p className="modal-error">{error}</p>}
       <div className="modal-actions"><button className="primary-button" disabled={saving}>{saving ? t.saving : (locale === "ar" ? "حفظ البيانات" : "Save profile")}</button></div>
     </form>
+    <PasswordChangeCard locale={locale} />
     <PlanFeaturesPanel locale={locale} entitlements={entitlements} />
     <section className="settings-grid"><InfoPanel locale={locale} icon={<Download />} title={locale === "ar" ? "تنزيل بياناتي" : "Export my data"} text={canExport ? (locale === "ar" ? "نسخة JSON كاملة من محافظك وحركاتك ومستنداتك." : "A complete JSON copy of your wallets, entries and documents.") : (locale === "ar" ? "التصدير يحتاج ترقية الباقة." : "Data export needs a plan upgrade.")} onClick={() => void exportData()} locked={!canExport} /><InfoPanel locale={locale} icon={<ShieldCheck />} title={locale === "ar" ? "أمان الحساب" : "Account security"} text={locale === "ar" ? "كلمة المرور والمصادقة الثنائية ومفاتيح API." : "Password, two-factor authentication and API keys."} onClick={() => router.push("/account/security")} /><InfoPanel locale={locale} icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} onClick={() => router.push("/privacy")} /><InfoPanel locale={locale} icon={<Users />} title={t.access} text={t.accessText} /><InfoPanel locale={locale} icon={<Globe2 />} title={locale === "ar" ? "اللغة والمنطقة" : "Language & region"} text={locale === "ar" ? "العربية، الريال العماني، والمنطقة الزمنية لمسقط." : "English, Omani rial and Muscat time zone."} /><InfoPanel locale={locale} icon={<Bell />} title={locale === "ar" ? "التنبيهات" : "Notifications"} text={locale === "ar" ? "تذكير قبل الاستحقاق، إشعارات الدفع وطلبات الاسترداد." : "Due reminders, payment updates and withdrawal requests."} /></section>
   </div>;

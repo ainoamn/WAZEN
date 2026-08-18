@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { Brand, useCommerceLocale } from "../../commercial-kit";
 import { apiFetch } from "../../../lib/client-api";
+import { errorLabel } from "../../../lib/admin-labels";
 
 type ApiKeyRow = { id: string; name: string; key_prefix: string; scopes: string[]; expires_at: string; revoked_at: string | null };
 
@@ -17,7 +18,7 @@ export function SecurityClient() {
   const send = async (body: Record<string, unknown>) => {
     setMessage(""); const response = await apiFetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const data = await response.json() as { error?: string; secret?: string; otpauthUri?: string };
-    if (!response.ok) { setMessage(data.error ?? "ERROR"); return data; }
+    if (!response.ok) { setMessage(errorLabel(data.error ?? "INTERNAL_ERROR", locale)); return data; }
     setMessage(l("تم الحفظ بنجاح", "Saved successfully")); return data;
   };
   const changePassword = async (event: FormEvent) => { event.preventDefault(); const result = await send({ action: "changePassword", currentPassword, newPassword }); if (!result.error) { setCurrent(""); setNext(""); } };
