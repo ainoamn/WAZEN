@@ -40,7 +40,9 @@ WAZEN_TRUST_OAI_HEADERS=0
 1. في [Google Cloud Console](https://console.cloud.google.com/apis/credentials) أنشئ **OAuth client ID** من نوع **Web application**.
 2. Authorized JavaScript origins: `https://wazen.bhd-om.com`
 3. Authorized redirect URIs: `https://wazen.bhd-om.com/api/auth/google/callback`
-4. أضف في Vercel: `GOOGLE_CLIENT_ID` و`GOOGLE_CLIENT_SECRET`.
+4. أضف في Vercel **فقط** `GOOGLE_CLIENT_SECRET` (السر). معرّف العميل الإنتاجي مضبوط في الكود:
+   `162957418455-43a02mk5li1adbju9m9niuf02b57ht90.apps.googleusercontent.com`
+   يمكن تجاوزه بـ `GOOGLE_CLIENT_ID` إن لزم.
 5. تأكد أن `WAZEN_APP_ORIGIN=https://wazen.bhd-om.com` و`WAZEN_JOB_SECRET` موجودان، ثم أعد النشر.
 
 يمكن إعادة استخدام نفس عميل جوجل المستخدم في حسابي (`bhd-pro`) بإضافة عنوان الإرجاع أعلاه إلى نفس العميل.
