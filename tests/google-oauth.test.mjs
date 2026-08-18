@@ -24,4 +24,6 @@ test("google oauth start and callback routes exist with PKCE", () => {
   assert.match(account, /GOOGLE_EMAIL_UNVERIFIED/);
   assert.match(form, /\/api\/auth\/google/);
   assert.match(form, /أو المتابعة عبر/);
+  const origin = fs.readFileSync(path.join(root, "lib/app-origin.ts"), "utf8");
+  assert.match(origin, /split\(\/\[\\s,;\]\+\/\)/);
 });
