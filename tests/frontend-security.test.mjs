@@ -109,6 +109,14 @@ test("customer billing uses account header and never links to admin plans", () =
   assert.doesNotMatch(accountHeader, /\/admin\/plans/);
 });
 
+test("proxy CSP allows Next.js scripts without a nonce-only script policy", () => {
+  const source = fs.readFileSync(path.join(root, "proxy.ts"), "utf8");
+  const policyLine = source.split("\n").find((line) => line.includes("script-src")) ?? "";
+  assert.match(policyLine, /script-src 'self' https:\/\/accounts\.google\.com/);
+  assert.doesNotMatch(policyLine, /strict-dynamic/);
+  assert.doesNotMatch(source, /x-nonce/);
+});
+
 test("proxy redirects anonymous /admin visitors to BHD identity", () => {
   const source = fs.readFileSync(path.join(root, "proxy.ts"), "utf8");
   assert.match(source, /sessionToken/);
@@ -134,7 +142,13 @@ test("login and register wrap the unified BHD portal", () => {
   assert.match(register, /\/api\/auth\/bhd\/start/);
   assert.doesNotMatch(register, /sessionCookieFromStore/);
   assert.match(authRoute, /SESSION_ALREADY_ACTIVE/);
-  assert.match(form, /GoogleSignInButton/);
+  assert.match(authRoute, /isHtmlAuthForm/);
+  assert.match(authRoute, /htmlForm/);
+  assert.match(form, /method="post"/);
+  assert.match(form, /action="\/api\/auth"/);
+  assert.match(form, /name="email"/);
+  assert.match(form, /name="password"/);
+  assert.match(form, /name="action"/);
   const gsi = fs.readFileSync(path.join(root, "app/google-sign-in.tsx"), "utf8");
   assert.match(gsi, /\/api\/auth\/google/);
   assert.match(gsi, /idToken/);

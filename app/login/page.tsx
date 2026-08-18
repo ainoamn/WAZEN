@@ -5,6 +5,7 @@ import { isBhdIdentityConfigured } from "../../lib/bhd-identity";
 import { googleClientId } from "../../lib/google-oauth";
 
 export const metadata: Metadata = { title: "تسجيل الدخول" };
+export const dynamic = "force-dynamic";
 
 export default async function LoginPage({
   searchParams,
@@ -20,6 +21,7 @@ export default async function LoginPage({
   return (
     <AuthForm
       mode="login"
+      next={next}
       googleClientId={identityEnabled ? "" : googleClientId()}
       identityEnabled={identityEnabled}
     />

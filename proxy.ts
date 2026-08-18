@@ -26,11 +26,12 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(start);
   }
 
-  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const development = process.env.NODE_ENV !== "production";
   const policy = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://accounts.google.com${development ? " 'unsafe-eval'" : ""}`,
+    // Prerendered Next chunks have no CSP nonce. A nonce-only script policy
+    // blocks the login client, and the form GETs /login? instead of signing in.
+    `script-src 'self' https://accounts.google.com${development ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline' https://accounts.google.com",
     "img-src 'self' data: blob: https://*.googleusercontent.com https://accounts.google.com",
     "font-src 'self' data:",
@@ -43,7 +44,6 @@ export function proxy(request: NextRequest) {
     development ? "" : "upgrade-insecure-requests",
   ].filter(Boolean).join("; ");
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", policy);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", policy);

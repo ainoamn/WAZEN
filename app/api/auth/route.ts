@@ -22,6 +22,32 @@ const credentialsSchema = z.object({
   totpCode: z.string().regex(/^\d{6}$/).optional(),
 });
 
+function isHtmlAuthForm(request: Request) {
+  const contentType = (request.headers.get("content-type") ?? "").toLowerCase();
+  return contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data");
+}
+
+function safeFormNext(value: string | null | undefined) {
+  return value?.startsWith("/") && !value.startsWith("//") ? value : "/home";
+}
+
+async function readAuthPayload(request: Request) {
+  if (!isHtmlAuthForm(request)) return { html: false as const, next: "/home", body: await request.json() };
+  const form = await request.formData();
+  const totp = String(form.get("totpCode") ?? "").replace(/\D/g, "");
+  return {
+    html: true as const,
+    next: safeFormNext(String(form.get("next") ?? "")),
+    body: {
+      action: String(form.get("action") || "login"),
+      email: String(form.get("email") || ""),
+      password: String(form.get("password") || ""),
+      displayName: String(form.get("displayName") || "") || undefined,
+      totpCode: totp.length === 6 ? totp : undefined,
+    },
+  };
+}
+
 export async function GET(request: Request) {
   try {
     const db = getRawDb(); await ensureSchema(db);
@@ -40,11 +66,16 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const htmlForm = isHtmlAuthForm(request);
+  const requestOrigin = new URL(request.url).origin;
+  const htmlFail = (code: string) => Response.redirect(`${requestOrigin}/login?local=1&error=${encodeURIComponent(code)}`, 303);
   try {
-    enforceWriteRequest(request, 16_384);
+    if (!htmlForm) enforceWriteRequest(request, 16_384);
     const db = getRawDb(); await ensureSchema(db); await rateLimit(db, request, "auth", 10, 900);
-    const parsed = credentialsSchema.safeParse(await request.json());
+    const payload = await readAuthPayload(request);
+    const parsed = credentialsSchema.safeParse(payload.body);
     if (!parsed.success) throw new ApiError(400, "INVALID_CREDENTIALS");
+    const formNext = payload.next;
     const { action } = parsed.data;
     if (action === "completeAdminBootstrap") {
       const token = parsed.data.token ?? "";
@@ -202,6 +233,12 @@ export async function POST(request: Request) {
       await ensureDefaultTenant(db, { id: userId, displayName });
       await writeAudit(db, { userId, action: "auth.registered", entityType: "user", entityId: userId, createdAt });
       const emailReady = isEmailProviderConfigured();
+      if (htmlForm) {
+        const verifyPath = !emailReady && !isProductionLikeRuntime()
+          ? `/verify-email?token=${encodeURIComponent(verificationToken)}`
+          : `/verify-email?sent=1&email=${encodeURIComponent(email)}&delivery=${emailReady ? "queued" : "deferred"}`;
+        return Response.redirect(`${requestOrigin}${verifyPath}`, 303);
+      }
       return Response.json({
         ok: true,
         verificationRequired: true,
@@ -245,6 +282,10 @@ export async function POST(request: Request) {
       const issued = await issueCsrfToken(db, request);
       const headers = new Headers({ "Cache-Control": "no-store" });
       if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
+      if (htmlForm) {
+        headers.set("Location", `${requestOrigin}${formNext}`);
+        return new Response(null, { status: 303, headers });
+      }
       return Response.json({ ok: true, user: { id: row.id, email: row.email, displayName: row.display_name, isDemo: false }, role }, { headers });
     }
     const session = await createSession(db, row.id, request);
@@ -256,6 +297,17 @@ export async function POST(request: Request) {
       userAgent: request.headers.get("user-agent"),
     });
     const role = await platformRoleOf(db, row.id);
+    if (htmlForm) {
+      const headers = sessionHeaders(session);
+      headers.set("Location", `${requestOrigin}${formNext}`);
+      return new Response(null, { status: 303, headers });
+    }
     return Response.json({ ok: true, user: { id: row.id, email: row.email, displayName: row.display_name, isDemo: false }, role }, { headers: sessionHeaders(session) });
-  } catch (error) { return errorResponse(error); }
+  } catch (error) {
+    if (htmlForm) {
+      const code = error instanceof ApiError ? error.code : "AUTH_FAILED";
+      return htmlFail(code);
+    }
+    return errorResponse(error);
+  }
 }

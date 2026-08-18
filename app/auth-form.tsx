@@ -35,7 +35,7 @@ function authRedirectTarget(role?: string) {
   return safeNext.startsWith("/admin") && !canOpenPlatformConsole(role) ? "/home" : safeNext;
 }
 
-export function AuthForm({ mode, googleClientId = "", identityEnabled = false }: { mode: "login" | "register"; googleClientId?: string; identityEnabled?: boolean }) {
+export function AuthForm({ mode, next = "/home", googleClientId = "", identityEnabled = false }: { mode: "login" | "register"; next?: string; googleClientId?: string; identityEnabled?: boolean }) {
   const router = useRouter();
   const { locale, setLocale, l } = useCommerceLocale();
   const [displayName, setDisplayName] = useState(""); const [email, setEmail] = useState("");
@@ -137,13 +137,15 @@ export function AuthForm({ mode, googleClientId = "", identityEnabled = false }:
         <div className="auth-divider"><span>{l("أو الدخول المحلي", "Or local sign-in")}</span></div>
       </>
     )}
-    <form onSubmit={submit}>
-      {mode === "register" && <label><span>{l("الاسم", "Name")}</span><input autoComplete="name" minLength={2} maxLength={80} required value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>}
-      <label><span>{l("البريد الإلكتروني", "Email")}</span><input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-      <label><span>{l("كلمة المرور", "Password")}</span><input type="password" autoComplete={mode === "register" ? "new-password" : "current-password"} minLength={12} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} /><small>{l("12 حرفاً على الأقل", "At least 12 characters")}</small></label>
-      {mode === "login" && totpRequired && <label><span>{l("رمز المصادقة", "Authenticator code")}</span><input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" minLength={6} maxLength={6} required value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ""))} /></label>}
+    <form method="post" action="/api/auth" onSubmit={submit}>
+      <input type="hidden" name="action" value={mode} />
+      <input type="hidden" name="next" value={next.startsWith("/") && !next.startsWith("//") ? next : "/home"} />
+      {mode === "register" && <label><span>{l("الاسم", "Name")}</span><input name="displayName" autoComplete="name" minLength={2} maxLength={80} required value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>}
+      <label><span>{l("البريد الإلكتروني", "Email")}</span><input name="email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+      <label><span>{l("كلمة المرور", "Password")}</span><input name="password" type="password" autoComplete={mode === "register" ? "new-password" : "current-password"} minLength={12} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} /><small>{l("12 حرفاً على الأقل", "At least 12 characters")}</small></label>
+      {mode === "login" && totpRequired && <label><span>{l("رمز المصادقة", "Authenticator code")}</span><input name="totpCode" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" minLength={6} maxLength={6} required value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ""))} /></label>}
       {mode === "login" && <Link href="/forgot-password">{l("نسيت كلمة المرور؟", "Forgot password?")}</Link>}
-      {error && <p className="auth-error" role="alert">{error}</p>}<button className="auth-submit" disabled={saving}>{saving ? l("جارٍ التحقق…", "Checking…") : mode === "login" ? l("تسجيل الدخول", "Sign in") : l("إنشاء الحساب", "Create account")}</button>
+      {error && <p className="auth-error" role="alert">{error}</p>}<button className="auth-submit" type="submit" disabled={saving}>{saving ? l("جارٍ التحقق…", "Checking…") : mode === "login" ? l("تسجيل الدخول", "Sign in") : l("إنشاء الحساب", "Create account")}</button>
     </form>
     {!identityEnabled && <div className="auth-divider"><span>{l("أو المتابعة عبر", "Or continue with")}</span></div>}
       {identityEnabled ? null : googleClientId ? (
