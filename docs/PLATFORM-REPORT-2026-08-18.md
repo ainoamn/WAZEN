@@ -7,7 +7,7 @@
 **النطاق الإنتاجي:** https://wazen.bhd-om.com  
 **نشر Vercel:** https://wazen-roan.vercel.app  
 
-هذه الوثيقة تصف **ما هو الموقع**، **بماذا بُني**، **كيف يعمل**، **ما الذي يرتبط به**، و**علاقته ببقية برامج المجموعة**. هي مرجع الحالة الحالية بعد دمج الطلبات حتى [#42](https://github.com/ainoamn/WAZEN/pull/42).
+هذه الوثيقة تصف **ما هو الموقع**، **بماذا بُني**، **كيف يعمل**، **ما الذي يرتبط به**، و**علاقته ببقية برامج المجموعة**. هي مرجع الحالة الحالية بعد دمج الطلبات حتى [#43](https://github.com/ainoamn/WAZEN/pull/43).
 
 الفكرة المحاسبية للمنتج (فصل الصندوق المشترك عن فائض العضو) تبقى في [PRODUCT-FOUNDATION.md](./PRODUCT-FOUNDATION.md). تشغيل الإنتاج في [PRODUCTION-DEPLOYMENT.md](./PRODUCTION-DEPLOYMENT.md). الأمان في [SECURITY.md](../SECURITY.md).
 
@@ -324,7 +324,7 @@ Neon (أو Turso / SQLite محلي)
 
 ## 15. طلبات الدمج ذات الصلة (حتى 18 أغسطس 2026)
 
-[#10](https://github.com/ainoamn/WAZEN/pull/10)–[#16](https://github.com/ainoamn/WAZEN/pull/16) الباقات والحصص والإدارة · [#17](https://github.com/ainoamn/WAZEN/pull/17)–[#23](https://github.com/ainoamn/WAZEN/pull/23) الجلسة والطباعة والسكون · [#24](https://github.com/ainoamn/WAZEN/pull/24)–[#29](https://github.com/ainoamn/WAZEN/pull/29) تحميل الرئيسية والبناء والتنبيهات والطباعة · [#30](https://github.com/ainoamn/WAZEN/pull/30)–[#32](https://github.com/ainoamn/WAZEN/pull/32) جلسة المتصفح · [#33](https://github.com/ainoamn/WAZEN/pull/33)–[#42](https://github.com/ainoamn/WAZEN/pull/42) جوجل وإرجاعه وتوثيقه.
+[#10](https://github.com/ainoamn/WAZEN/pull/10)–[#16](https://github.com/ainoamn/WAZEN/pull/16) الباقات والحصص والإدارة · [#17](https://github.com/ainoamn/WAZEN/pull/17)–[#23](https://github.com/ainoamn/WAZEN/pull/23) الجلسة والطباعة والسكون · [#24](https://github.com/ainoamn/WAZEN/pull/24)–[#29](https://github.com/ainoamn/WAZEN/pull/29) تحميل الرئيسية والبناء والتنبيهات والطباعة · [#30](https://github.com/ainoamn/WAZEN/pull/30)–[#32](https://github.com/ainoamn/WAZEN/pull/32) جلسة المتصفح · [#33](https://github.com/ainoamn/WAZEN/pull/33)–[#42](https://github.com/ainoamn/WAZEN/pull/42) جوجل وإرجاعه وتوثيقه · [#43](https://github.com/ainoamn/WAZEN/pull/43) تقرير المنصة.
 
 ---
 
