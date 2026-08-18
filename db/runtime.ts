@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -130,6 +130,18 @@ async function ensureSchemaPatches(db: D1Database) {
     try { await db.prepare("ALTER TABLE auth_sessions ADD COLUMN browser_id TEXT").run(); } catch { /* exists */ }
     try { await db.prepare("CREATE INDEX IF NOT EXISTS idx_auth_sessions_browser ON auth_sessions(browser_id)").run(); } catch { /* exists */ }
   }
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS oauth_identities (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      provider_user_id TEXT NOT NULL,
+      email TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE(provider, provider_user_id)
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_oauth_identities_user ON oauth_identities(user_id)"),
+  ]);
   await db.batch([
     db.prepare(`CREATE TABLE IF NOT EXISTS security_events (
       id TEXT PRIMARY KEY,
@@ -726,6 +738,16 @@ async function initializeSchema(db: D1Database) {
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email COLLATE NOCASE)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_expiry ON auth_sessions(user_id,expires_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_auth_sessions_browser ON auth_sessions(browser_id)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS oauth_identities (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      provider_user_id TEXT NOT NULL,
+      email TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE(provider, provider_user_id)
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_oauth_identities_user ON oauth_identities(user_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_journal_entries_space_date ON journal_entries(space_id,occurred_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON journal_lines(entry_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_trip_expenses_space ON trip_expenses(space_id,occurred_at)"),

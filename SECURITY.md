@@ -7,7 +7,7 @@ Do not include customer records, passwords, session cookies, invite tokens, data
 ## Implemented controls (v0.2.0)
 
 - PBKDF2-SHA-256 password derivation with a unique salt and 600,000 iterations.
-- Random 256-bit sessions stored as SHA-256 hashes; cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` in production. One active session per browser profile via `browser_id` (persisted in `localStorage` and the `wazen_browser` cookie): a new sign-in deletes every prior session row for that browser id; tabs broadcast session changes and reload when the signed-in user changes.
+- Random 256-bit sessions stored as SHA-256 hashes; cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` in production. One active session per browser profile via `browser_id` (persisted in `localStorage` and the `wazen_browser` cookie): a new sign-in deletes every prior session row for that browser id; tabs broadcast session changes and reload when the signed-in user changes. Optional Google OAuth uses PKCE, a signed state cookie, and verified emails only.
 - Session-bound CSRF tokens, `__Host-` production cookies, TOTP replay prevention, and scoped/hashed/expiring API keys.
 - No shared Vercel demo identity. Demo data is local/explicit only.
 - Durable D1 or Turso/libSQL storage; Vercel `/tmp` SQLite is rejected.

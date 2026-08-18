@@ -9,6 +9,7 @@ import { writeAudit } from "../../../lib/audit";
 import { decryptSecret, encryptSecret, loadKeyring } from "../../../lib/encryption";
 import { createTotpSecret, verifyTotp } from "../../../lib/totp";
 import { isEmailProviderConfigured } from "../../../lib/email-provider";
+import { isGoogleOAuthConfigured } from "../../../lib/google-oauth";
 import { isProductionLikeRuntime } from "../../../lib/production-setup";
 
 const credentialsSchema = z.object({
@@ -28,12 +29,12 @@ export async function GET(request: Request) {
       const headers = new Headers({ "Cache-Control": "no-store" });
       headers.append("Set-Cookie", clearSessionCookie());
       headers.append("Set-Cookie", clearCsrfCookie());
-      return Response.json({ authenticated: false }, { status: 401, headers });
+      return Response.json({ authenticated: false, googleEnabled: isGoogleOAuthConfigured() }, { status: 401, headers });
     }
     const role = await platformRoleOf(db, user.id);
     const issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
     const headers = new Headers({ "Cache-Control": "no-store" }); if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
-    return Response.json({ authenticated: true, user, role }, { headers });
+    return Response.json({ authenticated: true, user, role, googleEnabled: isGoogleOAuthConfigured() }, { headers });
   } catch (error) { return errorResponse(error); }
 }
 
