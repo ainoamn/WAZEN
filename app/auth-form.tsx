@@ -22,7 +22,6 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [saving, setSaving] = useState(false);
   const [totpCode, setTotpCode] = useState(""); const [totpRequired, setTotpRequired] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
-  const [googleEnabled, setGoogleEnabled] = useState(true);
 
   useEffect(() => {
     const oauthError = new URLSearchParams(window.location.search).get("error");
@@ -36,8 +35,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       try {
         const response = await fetch("/api/auth", { cache: "no-store", credentials: "same-origin" });
         if (cancelled) return;
-        const result = await response.json() as { authenticated?: boolean; role?: string; googleEnabled?: boolean };
-        if (result.googleEnabled === false) setGoogleEnabled(false);
+        const result = await response.json() as { authenticated?: boolean; role?: string };
         if (response.ok && result.authenticated) {
           router.replace(authRedirectTarget(result.role));
           return;
@@ -106,8 +104,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       {mode === "login" && <Link href="/forgot-password">{l("نسيت كلمة المرور؟", "Forgot password?")}</Link>}
       {error && <p className="auth-error" role="alert">{error}</p>}<button className="auth-submit" disabled={saving}>{saving ? l("جارٍ التحقق…", "Checking…") : mode === "login" ? l("تسجيل الدخول", "Sign in") : l("إنشاء الحساب", "Create account")}</button>
     </form>
-    {googleEnabled && <>
-      <div className="auth-divider"><span>{l("أو المتابعة عبر", "Or continue with")}</span></div>
+    <div className="auth-divider"><span>{l("أو المتابعة عبر", "Or continue with")}</span></div>
       <a className="auth-google" href={`/api/auth/google?next=${encodeURIComponent(authRedirectTarget())}`}>
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
           <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.2-2.27H12v4.3h6.46c-.28 1.5-1.12 2.77-2.39 3.63v3.02h3.86c2.26-2.08 3.56-5.14 3.56-8.68z" />
@@ -117,7 +114,6 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         </svg>
         {l("المتابعة عبر جوجل", "Continue with Google")}
       </a>
-    </>}
     <footer>{mode === "login" ? <>{l("ليس لديك حساب؟", "No account?")} <Link href="/register">{l("أنشئ حساباً", "Create one")}</Link></> : <>{l("لديك حساب؟", "Already registered?")} <Link href="/login">{l("سجّل الدخول", "Sign in")}</Link></>}</footer>
   </section><aside><span className="brand-glyph"><WazenIcon className="h-10 w-auto" /></span><h2>{l("وضوح مالي، من أول ريال.", "Financial clarity from day one.")}</h2><p>{l("المحافظ الشخصية والمنزلية والجمعيات والرحلات في نظام واحد.", "Personal, household, circle and trip wallets in one system.")}</p></aside></main>;
 }
