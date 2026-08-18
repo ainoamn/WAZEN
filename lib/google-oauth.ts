@@ -7,8 +7,6 @@ const GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO = "https://openidconnect.googleapis.com/v1/userinfo";
 const STATE_MAX_MS = 10 * 60 * 1000;
-/** Public OAuth client ID for wazen.bhd-om.com. Secret stays in Vercel only. */
-const PRODUCTION_GOOGLE_CLIENT_ID = "162957418455-43a02mk5li1adbju9m9niuf02b57ht90.apps.googleusercontent.com";
 
 export type GoogleProfile = {
   sub: string;
@@ -38,7 +36,7 @@ function bytesToBase64Url(bytes: Uint8Array) {
 }
 
 function googleCredentials() {
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim() || PRODUCTION_GOOGLE_CLIENT_ID;
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim() ?? "";
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim() ?? "";
   return { clientId, clientSecret };
 }

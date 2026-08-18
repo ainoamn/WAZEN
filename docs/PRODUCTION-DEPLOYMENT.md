@@ -37,18 +37,16 @@ WAZEN_TRUST_OAI_HEADERS=0
 
 ## تسجيل الدخول عبر جوجل
 
-1. في [Google Cloud Console](https://console.cloud.google.com/apis/credentials) أنشئ **OAuth client ID** من نوع **Web application**.
-2. Authorized JavaScript origins: `https://wazen.bhd-om.com`
-3. Authorized redirect URIs: `https://wazen.bhd-om.com/api/auth/google/callback`
-4. أضف في Vercel **فقط** `GOOGLE_CLIENT_SECRET` (السر). معرّف العميل الإنتاجي مضبوط في الكود:
-   `162957418455-43a02mk5li1adbju9m9niuf02b57ht90.apps.googleusercontent.com`
-   يمكن تجاوزه بـ `GOOGLE_CLIENT_ID` إن لزم.
-5. `WAZEN_APP_ORIGIN` يجب أن يكون **عنواناً واحداً**: `https://wazen.bhd-om.com` (ليس عنوانين في نفس المتغير).
-في شاشة موافقة OAuth (Branding / Audience) يجب أن يكون النطاق المصرّح **`bhd-om.com`**. عميل مرتبط بـ `hisaby.pro` يرفض دخول وازن بخطأ 400.
-7. بعد حفظ المتغيرات اضغط **Redeploy**.
-5. تأكد أن `WAZEN_APP_ORIGIN=https://wazen.bhd-om.com` و`WAZEN_JOB_SECRET` موجودان، ثم أعد النشر.
+أنشئ **عميل OAuth جديداً لوازن** (لا تستخدم عميل حسابي/hisaby.pro):
 
-يمكن إعادة استخدام نفس عميل جوجل المستخدم في حسابي (`bhd-pro`) بإضافة عنوان الإرجاع أعلاه إلى نفس العميل.
+1. [Google Auth Platform → Branding](https://console.cloud.google.com/auth/branding): النطاق المصرّح `bhd-om.com`، الصفحة الرئيسية `https://wazen.bhd-om.com`.
+2. [Credentials](https://console.cloud.google.com/apis/credentials) → Create OAuth client → **Web application**.
+3. JavaScript origin: `https://wazen.bhd-om.com`
+4. Redirect URI: `https://wazen.bhd-om.com/api/auth/google/callback`
+5. في Vercel ضع `GOOGLE_CLIENT_ID` و`GOOGLE_CLIENT_SECRET` ثم **Redeploy**.
+6. `WAZEN_APP_ORIGIN=https://wazen.bhd-om.com` (عنوان واحد فقط).
+
+لا تعتمد على عميل محذوف أو عميل تطبيق آخر.
 
 ## البريد والدعوات
 
