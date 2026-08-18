@@ -69,12 +69,16 @@ export async function recordSecurityEvent(db: D1Database, input: SecurityEventIn
 
 export async function isIpBlocked(db: D1Database, ip: string) {
   if (!ip || ip === "unknown") return false;
-  const hash = await ipHash(ip);
-  const now = new Date().toISOString();
-  const row = await db.prepare(`SELECT ip_hash FROM blocked_ips
-    WHERE ip_hash=? AND status='blocked' AND expires_at IS NOT NULL AND expires_at>? LIMIT 1`)
-    .bind(hash, now).first();
-  return Boolean(row);
+  try {
+    const hash = await ipHash(ip);
+    const now = new Date().toISOString();
+    const row = await db.prepare(`SELECT ip_hash FROM blocked_ips
+      WHERE ip_hash=? AND status='blocked' AND expires_at IS NOT NULL AND expires_at>? LIMIT 1`)
+      .bind(hash, now).first();
+    return Boolean(row);
+  } catch {
+    return false;
+  }
 }
 
 export async function blockIpByHash(

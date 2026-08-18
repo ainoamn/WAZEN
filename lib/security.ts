@@ -17,7 +17,11 @@ export function enforceWriteRequest(request: Request, maxBytes = 65_536) {
 
 export async function rateLimit(db: D1Database, request: Request, scope: string, limit: number, windowSeconds: number) {
   const address = clientIp(request);
-  if (await isIpBlocked(db, address)) throw new ApiError(403, "IP_BLOCKED");
+  try {
+    if (await isIpBlocked(db, address)) throw new ApiError(403, "IP_BLOCKED");
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+  }
   const key = await sha256(`${scope}:${address}`);
   const now = new Date();
   const nowIso = now.toISOString(); const expiresAt = new Date(now.getTime() + windowSeconds * 1000).toISOString();
@@ -29,7 +33,7 @@ export async function rateLimit(db: D1Database, request: Request, scope: string,
     RETURNING hits`).bind(key, nowIso, expiresAt).first<{ hits: number }>();
   const hits = Number(row?.hits ?? 1);
   if (hits > limit) {
-    await maybeAutoBlockIp(db, address, scope, hits, limit);
+    try { await maybeAutoBlockIp(db, address, scope, hits, limit); } catch { /* still rate-limit even if auto-block ledger fails */ }
     throw new ApiError(429, "RATE_LIMITED");
   }
 }

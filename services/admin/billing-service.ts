@@ -842,6 +842,7 @@ export async function consumeQuotaEvent(
   kind: "print" | "download",
   actorUserId = ownerUserId,
 ) {
+  await ensureQuotaEventsTable(db);
   if (await isPlatformAdminUser(db, actorUserId)) return getActivePlanEntitlements(db, ownerUserId);
   const entitlements = await getActivePlanEntitlements(db, ownerUserId);
   if (kind === "download" && !planHasFeature(entitlements.features, "downloads")) {
@@ -852,8 +853,17 @@ export async function consumeQuotaEvent(
       throw new ApiError(403, "PLAN_PRINT_LIMIT");
     }
   }
-  await db.prepare("INSERT INTO quota_events (id, user_id, kind, created_at) VALUES (?,?,?,?)")
-    .bind(crypto.randomUUID(), ownerUserId, kind, new Date().toISOString())
-    .run();
+  try {
+    await db.prepare("INSERT INTO quota_events (id, user_id, kind, created_at) VALUES (?,?,?,?)")
+      .bind(crypto.randomUUID(), ownerUserId, kind, new Date().toISOString())
+      .run();
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: "error",
+      code: "QUOTA_EVENT_INSERT_FAILED",
+      message: error instanceof Error ? error.message : String(error),
+      at: new Date().toISOString(),
+    }));
+  }
   return getActivePlanEntitlements(db, ownerUserId);
 }

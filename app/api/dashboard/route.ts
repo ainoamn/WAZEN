@@ -2570,8 +2570,23 @@ export async function POST(request: Request) {
         const space = await authorizeSpace(db, user, parsed.data.spaceId, "read");
         ownerUserId = space.owner_user_id;
       }
-      const { consumeQuotaEvent } = await import("../../../services/admin/billing-service");
-      await consumeQuotaEvent(db, ownerUserId, parsed.data.kind, user.id);
+      const { consumeQuotaEvent, getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
+      let entitlements;
+      try {
+        entitlements = await consumeQuotaEvent(db, ownerUserId, parsed.data.kind, user.id);
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
+        console.error(JSON.stringify({
+          level: "error",
+          code: "QUOTA_CONSUME_FAILED",
+          message: error instanceof Error ? error.message : String(error),
+          at: new Date().toISOString(),
+        }));
+        entitlements = await getActivePlanEntitlements(db, user.id);
+      }
+      await completeIdempotency(db, user.id, idempotencyKey, { ok: true });
+      claimed = null;
+      return Response.json({ ok: true, entitlements }, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "sendReceipt") {
       const parsed = z.object({
         memberId: z.string().min(1).max(120),
@@ -2630,7 +2645,22 @@ export async function POST(request: Request) {
     const freshUser = await db.prepare("SELECT display_name, avatar_url FROM users WHERE id=?").bind(user.id).first<{ display_name: string; avatar_url: string | null }>();
     const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
     const entitlements = await getActivePlanEntitlements(db, user.id);
-    const dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features });
+    let dashboard: Awaited<ReturnType<typeof loadDashboard>>;
+    try {
+      dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features });
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: "error",
+        code: "DASHBOARD_LOAD_FAILED",
+        message: error instanceof Error ? error.message : String(error),
+        at: new Date().toISOString(),
+      }));
+      dashboard = {
+        spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [],
+        settlements: [], installments: [], contacts: [], periods: [], periodEvents: [], personalAccounts: [], personalRules: [],
+        personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [],
+      };
+    }
     const role = await platformRoleOf(db, user.id);
     const response = {
       ok: true,

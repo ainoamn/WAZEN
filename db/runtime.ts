@@ -138,8 +138,8 @@ async function ensureSchemaPatches(db: D1Database) {
       metadata_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL
     )`),
-    db.prepare("CREATE INDEX IF NOT EXISTS idx_security_events_ip ON security_events(ip_hash, created_at DESC)"),
-    db.prepare("CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_id, created_at DESC)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_security_events_ip ON security_events(ip_hash, created_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_id, created_at)"),
     db.prepare(`CREATE TABLE IF NOT EXISTS blocked_ips (
       ip_hash TEXT PRIMARY KEY,
       ip_masked TEXT NOT NULL,
@@ -534,8 +534,8 @@ async function initializeSchema(db: D1Database) {
       metadata_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL
     )`),
-    db.prepare("CREATE INDEX IF NOT EXISTS idx_security_events_ip ON security_events(ip_hash, created_at DESC)"),
-    db.prepare("CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_id, created_at DESC)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_security_events_ip ON security_events(ip_hash, created_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_id, created_at)"),
     db.prepare(`CREATE TABLE IF NOT EXISTS blocked_ips (
       ip_hash TEXT PRIMARY KEY,
       ip_masked TEXT NOT NULL,
