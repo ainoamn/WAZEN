@@ -1,14 +1,17 @@
 "use client";
 import { ArrowRight, CreditCard, Download, ReceiptText, WalletCards } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ErrorCard, money, PageLoader, AccountHeader, Status, useCommerceLocale } from "../commercial-kit";
+import { ErrorCard, money, AccountHeader, Status, useCommerceLocale, ContentBusy } from "../commercial-kit";
 import { PLAN_FEATURE_CATALOG, formatQuota, planHasFeature } from "../../lib/plan-features";
 import { userGraceWarningCopy } from "../../lib/plan-retention-rules";
 import { apiFetch } from "../../lib/client-api";
+import { prefetchApp } from "../../lib/app-prefetch";
 import { errorLabel } from "../../lib/admin-labels";
 import { clearDashboardCache } from "../../lib/dashboard-session";
 import { notifyLiveRefresh } from "../../lib/live-sync";
+import { fetchPageCache, readPageCache } from "../../lib/page-cache";
 
 type SubscriptionRow = {
   name_ar: string;
@@ -53,19 +56,20 @@ type BillingData = {
 export function BillingClient() {
   const router = useRouter();
   const { locale, setLocale, l } = useCommerceLocale();
-  const [data, setData] = useState<BillingData | null>(null);
+  const [data, setData] = useState<BillingData | null>(() => readPageCache<BillingData>("billing"));
   const [error, setError] = useState("");
   const [payingId, setPayingId] = useState("");
 
   const load = () => {
-    fetch("/api/platform?view=billing", { cache: "no-store" }).then(async (r) => {
-      if (r.status === 401) { router.push("/login?next=/billing"); throw new Error(); }
-      if (!r.ok) throw new Error();
-      return await r.json() as BillingData;
-    }).then(setData).catch(() => setError(locale === "ar" ? "تعذر تحميل الفوترة" : "Could not load billing"));
+    fetchPageCache<BillingData>("billing", "/api/platform?view=billing", true)
+      .then(setData)
+      .catch((caught: Error & { status?: number }) => {
+        if (caught.status === 401) { router.replace("/login?next=/billing"); return; }
+        if (!readPageCache("billing")) setError(locale === "ar" ? "تعذر تحميل الفوترة" : "Could not load billing");
+      });
   };
 
-  useEffect(() => { load(); }, [locale, router]);
+  useEffect(() => { load(); prefetchApp(router); }, [locale, router]);
 
   const payInvoice = async (invoiceId: string) => {
     setPayingId(invoiceId);
@@ -92,7 +96,14 @@ export function BillingClient() {
   };
 
   if (error && !data) return <ErrorCard message={error} />;
-  if (!data) return <PageLoader />;
+  if (!data) {
+    return (
+      <main className="billing-page">
+        <AccountHeader locale={locale} setLocale={setLocale} active="billing" />
+        <ContentBusy />
+      </main>
+    );
+  }
   const sub = data.subscription;
   const features = data.entitlements?.features?.length ? data.entitlements.features : ["personal"];
   const canExport = planHasFeature(features, "exports");
@@ -106,7 +117,7 @@ export function BillingClient() {
             <h1>{l("الاشتراك والفوترة", "Subscription & billing")}</h1>
             <p>{l("تابع باقتك وفواتيرك ومدفوعاتك من مكان واحد.", "Manage your plan, invoices and payments in one place.")}</p>
           </div>
-          <a className="primary-link" href="/pricing">{l("تغيير الباقة", "Change plan")}<ArrowRight size={17} /></a>
+          <Link className="primary-link" href="/pricing">{l("تغيير الباقة", "Change plan")}<ArrowRight size={17} /></Link>
         </div>
         {error ? <p className="admin-inline-alert is-error">{error}</p> : null}
         {data.entitlements?.retention ? (() => {
@@ -117,7 +128,7 @@ export function BillingClient() {
                 <strong>{notice.title}</strong>
                 <p>{notice.text}</p>
               </div>
-              <a href="/pricing">{l("ترقية الباقة", "Upgrade plan")}</a>
+              <Link href="/pricing">{l("ترقية الباقة", "Upgrade plan")}</Link>
             </div>
           );
         })() : null}

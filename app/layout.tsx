@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans_Arabic, Inter } from "next/font/google";
-import { headers } from "next/headers";
 import NavigationProgress from "../components/brand/NavigationProgress";
 import AppProviders from "./providers";
 import "./globals.css";
@@ -27,11 +26,14 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export async function generateMetadata(): Promise<Metadata> {
-  const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:5173";
-  const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  const origin = `${protocol}://${host}`;
+export function generateMetadata(): Metadata {
+  const configured = process.env.WAZEN_APP_ORIGIN ?? "https://wazen.bhd-om.com";
+  let origin = "https://wazen.bhd-om.com";
+  try {
+    origin = new URL(configured.split(/[\s,;]+/)[0] ?? configured).origin;
+  } catch {
+    origin = "https://wazen.bhd-om.com";
+  }
   return {
     metadataBase: new URL(origin),
     title: {

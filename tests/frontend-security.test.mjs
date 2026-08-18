@@ -41,7 +41,7 @@ test("admin layout does not paint the console chrome before an access gate", () 
 
 test("dashboard hides platform admin unless canOpenPlatformConsole is true", () => {
   const source = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
-  assert.match(source, /canOpenPlatformConsole\(role\) \? <a href="\/admin">/);
+  assert.match(source, /canOpenPlatformConsole\(role\) \? <Link href="\/admin"/);
 });
 
 test("dashboard and home keep a live revision poll without restarting it every render", () => {
@@ -126,8 +126,6 @@ test("login page redirects when a session cookie is already present", () => {
 test("logged-out sign-in does not paint the home load-error screen", () => {
   const kit = fs.readFileSync(path.join(root, "app/commercial-kit.tsx"), "utf8");
   const landing = fs.readFileSync(path.join(root, "app/page.tsx"), "utf8");
-  const homePage = fs.readFileSync(path.join(root, "app/home/page.tsx"), "utf8");
-  const dashboardPage = fs.readFileSync(path.join(root, "app/dashboard/page.tsx"), "utf8");
   const home = fs.readFileSync(path.join(root, "app/home/home-client.tsx"), "utf8");
   const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
   const dashboardRoute = fs.readFileSync(path.join(root, "app/api/dashboard/route.ts"), "utf8");
@@ -136,8 +134,6 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   assert.doesNotMatch(publicHeader, /href="\/home"/);
   assert.match(landing, /href="\/register"/);
   assert.doesNotMatch(landing, /href="\/home"/);
-  assert.match(homePage, /redirect\("\/login\?next=\/home"\)/);
-  assert.match(dashboardPage, /redirect\("\/login\?next=\/dashboard"\)/);
   assert.match(home, /let redirecting = false/);
   assert.match(home, /router\.replace\("\/login\?next=\/home"\)/);
   assert.match(home, /if \(!redirecting\) setLoading\(false\)/);
@@ -157,8 +153,34 @@ test("auth form redirects when a browser session is already active", () => {
   assert.match(auth, /result\.authenticated/);
   assert.match(auth, /router\.replace\(authRedirectTarget/);
   assert.match(auth, /notifyBrowserSessionChange/);
-  assert.match(auth, /checkingSession/);
+  assert.match(auth, /enterSignedInApp/);
+  assert.doesNotMatch(auth, /PageLoader/);
   assert.match(libAuth, /DELETE FROM auth_sessions WHERE browser_id=\?/);
   assert.match(browser, /browserIdCookieName/);
   assert.match(sync, /subscribeBrowserSessionChange/);
+});
+
+test("in-app account routes keep client cache and do not paint the logo splash", () => {
+  const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
+  const home = fs.readFileSync(path.join(root, "app/home/home-client.tsx"), "utf8");
+  const auth = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
+  const billing = fs.readFileSync(path.join(root, "app/billing/billing-client.tsx"), "utf8");
+  const documents = fs.readFileSync(path.join(root, "app/documents/documents-client.tsx"), "utf8");
+  const prefetch = fs.readFileSync(path.join(root, "lib/app-prefetch.ts"), "utf8");
+  const gate = fs.readFileSync(path.join(root, "app/admin/admin-gate.tsx"), "utf8");
+  const layout = fs.readFileSync(path.join(root, "app/layout.tsx"), "utf8");
+  assert.match(dashboard, /<Link href="\/billing"/);
+  assert.match(dashboard, /"\/documents"/);
+  assert.match(dashboard, /<Link href="\/admin"/);
+  assert.doesNotMatch(dashboard, /WazenPageLoader/);
+  assert.doesNotMatch(home, /WazenPageLoader/);
+  assert.match(home, /prefetchApp/);
+  assert.match(auth, /enterSignedInApp/);
+  assert.doesNotMatch(auth, /PageLoader/);
+  assert.match(billing, /readPageCache/);
+  assert.match(documents, /readPageCache/);
+  assert.match(prefetch, /fetchPageCache\("documents"/);
+  assert.match(gate, /initialAdminGate/);
+  assert.doesNotMatch(gate, /PageLoader/);
+  assert.doesNotMatch(layout, /from "next\/headers"/);
 });

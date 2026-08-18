@@ -1,14 +1,16 @@
 "use client";
 
 import { Check, ChevronDown, ShieldCheck, Sparkles, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { ErrorCard, money, PageLoader, AccountHeader, PublicHeader, useCommerceLocale } from "../commercial-kit";
+import { ErrorCard, money, AccountHeader, PublicHeader, useCommerceLocale, ContentBusy } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
 import { errorLabel } from "../../lib/admin-labels";
 import { formatQuota } from "../../lib/plan-features";
 import { clearDashboardCache } from "../../lib/dashboard-session";
 import { notifyLiveRefresh } from "../../lib/live-sync";
+import { fetchPageCache, readPageCache } from "../../lib/page-cache";
 
 type Plan = { id: string; name_ar: string; name_en: string; description_ar: string; description_en: string; monthly_minor: number; annual_minor: number; wallet_limit: number; member_limit: number; transaction_limit?: number; record_limit?: number; user_limit?: number; daily_transaction_limit?: number; monthly_transaction_limit?: number; print_limit?: number; features: string[] };
 const featureCopy: Record<string, [string, string]> = {
@@ -44,25 +46,25 @@ type SelectResult = {
 export function PricingClient() {
   const router = useRouter();
   const { locale, setLocale, l } = useCommerceLocale();
-  const [plans, setPlans] = useState<Plan[]>([]);
+  const [plans, setPlans] = useState<Plan[]>(() => readPageCache<{ plans: Plan[] }>("pricing")?.plans ?? []);
   const [annual, setAnnual] = useState(true);
   const [coupon, setCoupon] = useState("");
   const [discount, setDiscount] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !readPageCache("pricing"));
   const [error, setError] = useState("");
   const [working, setWorking] = useState("");
   const [result, setResult] = useState<SelectResult | null>(null);
   const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
-    fetch("/api/platform?view=pricing", { cache: "no-store", credentials: "same-origin" }).then(async (response) => {
-      if (!response.ok) throw new Error();
-      return response.json();
-    }).then((payload: unknown) => setPlans((payload as { plans: Plan[] }).plans)).catch(() => setError(locale === "ar" ? "تعذر تحميل الباقات" : "Could not load plans")).finally(() => setLoading(false));
+    fetchPageCache<{ plans: Plan[] }>("pricing", "/api/platform?view=pricing")
+      .then((payload) => setPlans(payload.plans))
+      .catch(() => { if (!readPageCache("pricing")) setError(locale === "ar" ? "تعذر تحميل الباقات" : "Could not load plans"); })
+      .finally(() => setLoading(false));
     fetch("/api/platform?view=billing", { cache: "no-store", credentials: "same-origin" })
       .then((response) => setSignedIn(response.ok))
       .catch(() => setSignedIn(false));
-  }, [locale]);
+  }, [locale, router]);
 
   const validateCoupon = async (event: FormEvent) => {
     event.preventDefault(); setWorking("coupon");
@@ -120,7 +122,16 @@ export function PricingClient() {
     }
   };
 
-  if (loading) return <PageLoader />;
+  if (loading && !plans.length) {
+    return (
+      <main className="pricing-page">
+        {signedIn
+          ? <AccountHeader locale={locale} setLocale={setLocale} active="pricing" />
+          : <PublicHeader locale={locale} setLocale={setLocale} />}
+        <ContentBusy />
+      </main>
+    );
+  }
   return <main className="pricing-page">{signedIn
     ? <AccountHeader locale={locale} setLocale={setLocale} active="pricing" />
     : <PublicHeader locale={locale} setLocale={setLocale} />}
@@ -169,7 +180,7 @@ export function PricingClient() {
               ) : null}
             </>
           )}
-          <a href="/billing">{l("فتح الفوترة", "Open billing")}</a>
+          <Link href="/billing">{l("فتح الفوترة", "Open billing")}</Link>
           <a href="/dashboard">{l("لوحة المستخدم", "Dashboard")}</a>
         </section>
       </div>

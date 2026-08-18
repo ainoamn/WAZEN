@@ -16,14 +16,15 @@ import {
 } from "lucide-react";
 import OmrSymbol from "../../components/brand/OmrSymbol";
 import WazenLogo from "../../components/brand/WazenLogo";
-import WazenPageLoader from "../../components/brand/WazenPageLoader";
 import { apiFetch } from "../../lib/client-api";
+import { prefetchApp } from "../../lib/app-prefetch";
 import { notifyBrowserSessionChange } from "../../lib/browser-session-client";
 import { clearDashboardCache, fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../../lib/dashboard-session";
 import { useLiveDashboard } from "../../lib/live-sync";
 import { formatMoneyMinor, currencyScale } from "../../lib/money";
 import { memberDisplayCreditMinor, pendingSettlementsWithCredit } from "../../lib/finance";
 import { memberAccruedDueMinor } from "../../components/members/association-members";
+import { ContentBusy } from "../commercial-kit";
 
 type Locale = "ar" | "en";
 
@@ -129,7 +130,7 @@ export function HomeClient() {
 
   useEffect(() => { void load(); }, [load]);
   useLiveDashboard(() => { void load(true); }, !loading);
-  useEffect(() => { router.prefetch("/dashboard"); }, [router]);
+  useEffect(() => { prefetchApp(router); }, [router]);
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("wazen-locale");
@@ -175,7 +176,16 @@ export function HomeClient() {
     window.setTimeout(() => setToast(""), 2600);
   };
 
-  if (loading) return <WazenPageLoader label={locale === "ar" ? "جاري التحميل…" : "Loading…"} />;
+  if (loading && !data) {
+    return (
+      <div className="home-shell">
+        <header className="home-top">
+          <WazenLogo showText iconClassName="home-logo-img" />
+        </header>
+        <ContentBusy />
+      </div>
+    );
+  }
   if (error || !data) {
     return (
       <div className="home-shell">

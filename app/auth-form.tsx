@@ -4,8 +4,9 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { GoogleSignInButton } from "./google-sign-in";
 import { WazenIcon } from "../components/brand/WazenLogo";
-import { Brand, PageLoader, useCommerceLocale } from "./commercial-kit";
+import { Brand, useCommerceLocale } from "./commercial-kit";
 import { clearAdminConsole } from "../lib/admin-session";
+import { enterSignedInApp } from "../lib/app-prefetch";
 import { ensureBrowserId, notifyBrowserSessionChange } from "../lib/browser-session-client";
 import { clearDashboardCache } from "../lib/dashboard-session";
 import { canOpenPlatformConsole } from "../lib/platform-console";
@@ -33,7 +34,6 @@ export function AuthForm({ mode, googleClientId = "" }: { mode: "login" | "regis
   const [displayName, setDisplayName] = useState(""); const [email, setEmail] = useState("");
   const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [saving, setSaving] = useState(false);
   const [totpCode, setTotpCode] = useState(""); const [totpRequired, setTotpRequired] = useState(false);
-  const [checkingSession, setCheckingSession] = useState(true);
 
   useEffect(() => {
     const oauthError = new URLSearchParams(window.location.search).get("error");
@@ -47,10 +47,8 @@ export function AuthForm({ mode, googleClientId = "" }: { mode: "login" | "regis
         const result = await response.json() as { authenticated?: boolean; role?: string };
         if (response.ok && result.authenticated) {
           router.replace(authRedirectTarget(result.role));
-          return;
         }
       } catch { /* show auth form */ }
-      if (!cancelled) setCheckingSession(false);
     })();
     return () => {
       cancelled = true;
@@ -81,7 +79,7 @@ export function AuthForm({ mode, googleClientId = "" }: { mode: "login" | "regis
       clearDashboardCache();
       clearAdminConsole();
       notifyBrowserSessionChange(result.user?.id ?? null);
-      router.push(authRedirectTarget(result.role));
+      await enterSignedInApp(router, authRedirectTarget(result.role), result.role);
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : "AUTH_FAILED"; if (code === "TOTP_REQUIRED") setTotpRequired(true);
       setError(
@@ -101,7 +99,6 @@ export function AuthForm({ mode, googleClientId = "" }: { mode: "login" | "regis
       );
     } finally { setSaving(false); }
   }
-  if (checkingSession) return <PageLoader label={l("جاري التحقق…", "Checking…")} />;
   return <main className="auth-page"><section className="auth-panel">
     <header><Brand showArabic /><button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button></header>
     <div className="auth-copy"><small>{l("وصول آمن إلى وازن", "Secure access to Wazen")}</small><h1>{mode === "login" ? l("مرحباً بعودتك", "Welcome back") : l("أنشئ حسابك", "Create your account")}</h1><p>{l("بياناتك المالية تخصك. جلسة مشفرة وصلاحيات منفصلة لكل حساب.", "Your financial data stays yours, with secure sessions and isolated access.")}</p></div>
@@ -124,7 +121,7 @@ export function AuthForm({ mode, googleClientId = "" }: { mode: "login" | "regis
             clearDashboardCache();
             clearAdminConsole();
             notifyBrowserSessionChange(result.user?.id ?? null);
-            router.push(authRedirectTarget(result.role));
+            void enterSignedInApp(router, authRedirectTarget(result.role), result.role);
           }}
         />
       ) : (
