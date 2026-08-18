@@ -7,7 +7,7 @@ Do not include customer records, passwords, session cookies, invite tokens, data
 ## Implemented controls (v0.2.0)
 
 - PBKDF2-SHA-256 password derivation with a unique salt and 600,000 iterations.
-- Random 256-bit sessions stored as SHA-256 hashes; cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
+- Random 256-bit sessions stored as SHA-256 hashes; cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` in production. One active browser session per cookie: a new sign-in revokes the previous session row before issuing a new token; `/login` and `/register` redirect immediately when a session is already valid.
 - Session-bound CSRF tokens, `__Host-` production cookies, TOTP replay prevention, and scoped/hashed/expiring API keys.
 - No shared Vercel demo identity. Demo data is local/explicit only.
 - Durable D1 or Turso/libSQL storage; Vercel `/tmp` SQLite is rejected.
