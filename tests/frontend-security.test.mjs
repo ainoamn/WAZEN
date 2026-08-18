@@ -110,9 +110,12 @@ test("proxy redirects anonymous /admin visitors to login", () => {
 test("login page redirects when a session cookie is already present", () => {
   const login = fs.readFileSync(path.join(root, "app/login/page.tsx"), "utf8");
   const authRoute = fs.readFileSync(path.join(root, "app/api/auth/route.ts"), "utf8");
+  const form = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
   assert.match(login, /redirect\(/);
   assert.match(login, /sessionCookieName/);
   assert.match(authRoute, /SESSION_ALREADY_ACTIVE/);
+  assert.match(form, /\/api\/auth\/google/);
+  assert.match(form, /أو المتابعة عبر/);
 });
 
 test("auth form redirects when a browser session is already active", () => {

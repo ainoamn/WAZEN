@@ -1410,3 +1410,8 @@
 @media (max-width: 760px) {
   .admin-console .admin-kpis { grid-template-columns: 1fr; }
 }
+
+.auth-divider{display:flex;align-items:center;gap:12px;margin:18px 0 14px;color:#80918b;font-size:12px;font-weight:700}
+.auth-divider:before,.auth-divider:after{content:"";flex:1;height:1px;background:#dfe6e1}
+.auth-google{height:50px;border:1px solid #dfe6e1;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:10px;background:white;color:#12231f;text-decoration:none;font-size:14px;font-weight:750}
+.auth-google:hover{border-color:#c5d0cb;background:#fbfcfa}

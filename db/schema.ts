@@ -209,6 +209,15 @@ export const authCredentials = sqliteTable("auth_credentials", {
   emailVerifiedAt: text("email_verified_at"), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
 });
 
+export const oauthIdentities = sqliteTable("oauth_identities", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  provider: text("provider").notNull(),
+  providerUserId: text("provider_user_id").notNull(),
+  email: text("email"),
+  createdAt: text("created_at").notNull(),
+});
+
 export const authSessions = sqliteTable("auth_sessions", {
   id: text("id").primaryKey(), userId: text("user_id").notNull(), tokenHash: text("token_hash").notNull().unique(),
   csrfTokenHash: text("csrf_token_hash"), expiresAt: text("expires_at").notNull(), createdAt: text("created_at").notNull(), lastSeenAt: text("last_seen_at").notNull(),

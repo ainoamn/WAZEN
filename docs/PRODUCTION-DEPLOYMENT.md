@@ -18,6 +18,8 @@ TURSO_AUTH_TOKEN=...
 ```text
 WAZEN_ADMIN_EMAILS=owner@your-domain.com
 WAZEN_APP_ORIGIN=https://your-domain.com
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
 WAZEN_PAYMENT_WEBHOOK_SECRET=...
 WAZEN_JOB_SECRET=...
 WAZEN_ENCRYPTION_KEYRING={"active":"v1","keys":{"v1":"<32-byte-base64>"}}
@@ -32,6 +34,16 @@ WAZEN_TRUST_OAI_HEADERS=0
 ```
 
 أنشئ حساب المالك بالبريد الموجود في `WAZEN_ADMIN_EMAILS`. لا يحصل أول مستخدم تلقائياً على الإدارة.
+
+## تسجيل الدخول عبر جوجل
+
+1. في [Google Cloud Console](https://console.cloud.google.com/apis/credentials) أنشئ **OAuth client ID** من نوع **Web application**.
+2. Authorized JavaScript origins: `https://wazen.bhd-om.com`
+3. Authorized redirect URIs: `https://wazen.bhd-om.com/api/auth/google/callback`
+4. أضف في Vercel: `GOOGLE_CLIENT_ID` و`GOOGLE_CLIENT_SECRET`.
+5. تأكد أن `WAZEN_APP_ORIGIN=https://wazen.bhd-om.com` و`WAZEN_JOB_SECRET` موجودان، ثم أعد النشر.
+
+يمكن إعادة استخدام نفس عميل جوجل المستخدم في حسابي (`bhd-pro`) بإضافة عنوان الإرجاع أعلاه إلى نفس العميل.
 
 ## البريد والدعوات
 
