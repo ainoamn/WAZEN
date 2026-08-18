@@ -1,5 +1,4 @@
 import { ApiError } from "./api-error";
-import { appOrigin } from "./app-origin";
 import { createSessionToken } from "./auth";
 import { validateOutboundHttpsUrl } from "./outbound";
 
@@ -49,11 +48,15 @@ export function isGoogleOAuthConfigured() {
 }
 
 function oauthHmacSecret() {
-  return process.env.WAZEN_JOB_SECRET?.trim() || process.env.WAZEN_OAUTH_STATE_SECRET?.trim() || "";
+  return process.env.WAZEN_JOB_SECRET?.trim()
+    || process.env.WAZEN_OAUTH_STATE_SECRET?.trim()
+    || process.env.WAZEN_ENCRYPTION_KEYRING?.trim()
+    || process.env.GOOGLE_CLIENT_SECRET?.trim()
+    || "";
 }
 
 export function googleCallbackUrl(request: Request) {
-  return `${appOrigin(request)}/api/auth/google/callback`;
+  return `${new URL(request.url).origin}/api/auth/google/callback`;
 }
 
 export function safeAuthNext(value: string | null) {
