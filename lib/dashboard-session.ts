@@ -41,7 +41,12 @@ export async function fetchDashboardSession<T>(force = false): Promise<{ status:
       error.status = response.status;
       throw error;
     }
-    const data = await response.json();
+    const data = await response.json() as { user?: { displayName?: string }; error?: string };
+    if (!data || typeof data !== "object" || !data.user) {
+      const error = new Error("LOAD_FAILED") as Error & { status: number };
+      error.status = 502;
+      throw error;
+    }
     writeDashboardCache(data);
     return data;
   })();

@@ -142,9 +142,11 @@ export function HomeClient() {
     if (!data) {
       return { available: 0, spend: 0, income: 0, wallets: 0, associations: 0, currency: "OMR", pending: 0 };
     }
-    const active = data.spaces.filter((space) => (space.status ?? "active") !== "archived");
+    const spaces = data.spaces ?? [];
+    const transactions = data.transactions ?? [];
+    const active = spaces.filter((space) => (space.status ?? "active") !== "archived");
     const monthKey = new Date().toISOString().slice(0, 7);
-    const posted = data.transactions.filter((row) => (row.status ?? "approved") !== "voided" && row.occurred_at.slice(0, 7) === monthKey);
+    const posted = transactions.filter((row) => (row.status ?? "approved") !== "voided" && String(row.occurred_at ?? "").slice(0, 7) === monthKey);
     const spend = posted.filter((row) => ["expense", "reimbursement"].includes(row.kind)).reduce((sum, row) => sum + row.amount_minor, 0);
     const income = posted.filter((row) => ["income", "contribution"].includes(row.kind)).reduce((sum, row) => sum + row.amount_minor, 0);
     const available = active.reduce((sum, space) => sum + space.balance_minor, 0);
@@ -180,7 +182,7 @@ export function HomeClient() {
     );
   }
 
-  const firstName = data.user.displayName.split(" ")[0] || data.user.displayName;
+  const firstName = (data.user?.displayName ?? "").split(" ")[0] || data.user?.displayName || "";
 
   return (
     <div className="home-shell">
@@ -455,7 +457,7 @@ function QuickAddModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const spaces = data.spaces.filter((space) => (space.status ?? "active") !== "archived");
+  const spaces = (data.spaces ?? []).filter((space) => (space.status ?? "active") !== "archived");
   const initial = spaces.find((space) => space.type === "personal")?.id ?? spaces[0]?.id ?? "";
   const [spaceId, setSpaceId] = useState(initial);
   const space = spaces.find((item) => item.id === spaceId);
@@ -466,7 +468,7 @@ function QuickAddModal({
   const [memberId, setMemberId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const members = data.members.filter((member) => member.space_id === spaceId);
+  const members = (data.members ?? []).filter((member) => member.space_id === spaceId);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();

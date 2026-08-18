@@ -798,36 +798,21 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
       .all<SpaceRow>(),
     db.prepare("SELECT * FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name").bind(userId).all(),
   ]);
-  const allowed = filterSpacesForPlanAccess(spaces.results, options?.features ?? []);
+  const allowed = filterSpacesForPlanAccess(spaces.results ?? [], options?.features ?? []);
   const ids = allowed.map((space) => space.id);
-  if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results, periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [] };
+  if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results ?? [], periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [] };
 
   try {
     await reconcileMemberLedgers(db, ids);
   } catch { /* keep serving dashboard if ledger rebuild fails */ }
 
   if (options?.refreshDerived !== false) {
-    await generatePersonalOccurrences(db, ids);
+    try { await generatePersonalOccurrences(db, ids); } catch { /* keep serving dashboard */ }
   }
   const placeholders = ids.map(() => "?").join(",");
-  const [
-    refreshedSpaces,
-    members,
-    transactions,
-    plans,
-    circleTurns,
-    tripExpenses,
-    expenseSplits,
-    settlements,
-    installments,
-    periods,
-    periodEvents,
-    personalAccountsRaw,
-    personalRules,
-    personalOccurrences,
-    payoutAccounts,
-    familyEventsRaw,
-  ] = await Promise.all([
+  let packed;
+  try {
+    packed = await Promise.all([
     db.prepare(`SELECT * FROM spaces WHERE id IN (${placeholders}) ORDER BY created_at ASC`).bind(...ids).all<SpaceRow>(),
     db.prepare(`SELECT * FROM members WHERE space_id IN (${placeholders}) ORDER BY joined_at ASC`).bind(...ids).all<MemberRow>(),
     db.prepare(`SELECT * FROM transactions WHERE space_id IN (${placeholders}) ORDER BY occurred_at DESC LIMIT 250`).bind(...ids).all<TransactionRow>(),
@@ -868,6 +853,53 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
       id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; notes: string | null; status: string;
     }>(),
   ]);
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: "error",
+      code: "DASHBOARD_ROWS_FAILED",
+      message: error instanceof Error ? error.message : String(error),
+      at: new Date().toISOString(),
+    }));
+    return redactDashboardForViewer(userId, {
+      spaces: allowed,
+      members: [],
+      transactions: [],
+      plans: [],
+      circleTurns: [],
+      tripExpenses: [],
+      expenseSplits: [],
+      settlements: [],
+      installments: [],
+      contacts: contacts.results ?? [],
+      periods: [],
+      periodEvents: [],
+      personalAccounts: [],
+      personalRules: [],
+      personalOccurrences: [],
+      payoutAccounts: [],
+      familyEvents: [],
+      spaceLinks: [],
+      spaceBankLinks: [],
+    });
+  }
+  const [
+    refreshedSpaces,
+    members,
+    transactions,
+    plans,
+    circleTurns,
+    tripExpenses,
+    expenseSplits,
+    settlements,
+    installments,
+    periods,
+    periodEvents,
+    personalAccountsRaw,
+    personalRules,
+    personalOccurrences,
+    payoutAccounts,
+    familyEventsRaw,
+  ] = packed;
   let spaceLinks = { results: [] as Array<{ id: string; hub_space_id: string; linked_space_id: string; status: string; created_at: string }> };
   let spaceBankLinks = { results: [] as Array<{ id: string; hub_space_id: string; linked_space_id: string; account_id: string; created_at: string }> };
   try {
@@ -1044,11 +1076,42 @@ export async function GET(request: Request) {
     await ensureUser(db, user);
     const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
     const entitlements = await getActivePlanEntitlements(db, user.id);
-    const dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features });
+    let dashboard: Awaited<ReturnType<typeof loadDashboard>>;
+    try {
+      dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features });
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: "error",
+        code: "DASHBOARD_LOAD_FAILED",
+        message: error instanceof Error ? error.message : String(error),
+        at: new Date().toISOString(),
+      }));
+      dashboard = {
+        spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [],
+        settlements: [], installments: [], contacts: [], periods: [], periodEvents: [], personalAccounts: [], personalRules: [],
+        personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [],
+      };
+    }
     const role = await platformRoleOf(db, user.id);
-    const issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
+    let issued: { csrfToken: string; expiresAt: Date } | null = null;
+    try {
+      issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: "error",
+        code: "CSRF_ISSUE_FAILED",
+        message: error instanceof Error ? error.message : String(error),
+        at: new Date().toISOString(),
+      }));
+    }
     const headers = new Headers({ "Cache-Control": "no-store" }); if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
-    return Response.json({ user: { ...user, role }, entitlements, revision: await readDashboardRevision(db, user.id), ...dashboard }, { headers });
+    let revision = "";
+    try {
+      revision = await readDashboardRevision(db, user.id);
+    } catch {
+      revision = "";
+    }
+    return Response.json({ user: { ...user, role }, entitlements, revision, ...dashboard }, { headers });
   } catch (error) {
     return errorResponse(error);
   }

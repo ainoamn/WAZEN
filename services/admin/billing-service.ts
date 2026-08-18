@@ -598,10 +598,30 @@ export async function getUserBillingHistory(db: D1Database, userId: string) {
 }
 
 export async function getActivePlanEntitlements(db: D1Database, userId: string) {
-  const { applyDuePlanChanges } = await import("../../lib/plan-change");
+  await ensureSubscriptionAdminColumns(db);
+  await ensurePlanQuotaColumns(db);
+  try {
+    const { applyDuePlanChanges } = await import("../../lib/plan-change");
+    await applyDuePlanChanges(db, userId);
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: "error",
+      code: "PLAN_CHANGE_APPLY_FAILED",
+      message: error instanceof Error ? error.message : String(error),
+      at: new Date().toISOString(),
+    }));
+  }
   const { expireLapsedPaidSubscriptions, readUserGraceSummary, USER_GRACE_DAYS } = await import("../../lib/plan-retention");
-  await applyDuePlanChanges(db, userId);
-  await expireLapsedPaidSubscriptions(db, userId);
+  try {
+    await expireLapsedPaidSubscriptions(db, userId);
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: "error",
+      code: "PLAN_EXPIRE_FAILED",
+      message: error instanceof Error ? error.message : String(error),
+      at: new Date().toISOString(),
+    }));
+  }
   const row = await db
     .prepare(
       `SELECT p.wallet_limit, p.member_limit, p.transaction_limit, p.record_limit, p.user_limit,
@@ -634,7 +654,15 @@ export async function getActivePlanEntitlements(db: D1Database, userId: string) 
       transaction_limit_override?: number | null;
       record_limit_override?: number | null;
       user_limit_override?: number | null;
-    }>();
+    }>().catch((error) => {
+      console.error(JSON.stringify({
+        level: "error",
+        code: "PLAN_ENTITLEMENTS_QUERY_FAILED",
+        message: error instanceof Error ? error.message : String(error),
+        at: new Date().toISOString(),
+      }));
+      return null;
+    });
   const resolved = row
     ? resolveEntitlements({
       planFeatures: parsePlanFeatures(row.features_json),
@@ -667,7 +695,15 @@ export async function getActivePlanEntitlements(db: D1Database, userId: string) 
       printLimit: 10,
       status: "none",
     });
-  const usage = await getOwnerQuotaUsage(db, userId);
+  const usage = await getOwnerQuotaUsage(db, userId).catch((error) => {
+    console.error(JSON.stringify({
+      level: "error",
+      code: "PLAN_USAGE_QUERY_FAILED",
+      message: error instanceof Error ? error.message : String(error),
+      at: new Date().toISOString(),
+    }));
+    return { transactionsTotal: 0, transactionsToday: 0, transactionsThisMonth: 0, printsThisMonth: 0 };
+  });
   const grace = await readUserGraceSummary(db, userId);
   return {
     ...resolved,

@@ -17,6 +17,16 @@ test("translates aliased COLLATE NOCASE comparisons", () => {
   assert.equal(sql, "SELECT u.id FROM users u WHERE LOWER(u.email)=LOWER($1) LIMIT 1");
 });
 
+test("translates SQLite IS ? to Postgres IS NOT DISTINCT FROM", () => {
+  const sql = translateSqliteToPostgres(
+    "UPDATE auth_sessions SET csrf_token_hash=? WHERE token_hash=? AND csrf_token_hash IS ? AND expires_at>?",
+  );
+  assert.equal(
+    sql,
+    "UPDATE auth_sessions SET csrf_token_hash=$1 WHERE token_hash=$2 AND csrf_token_hash IS NOT DISTINCT FROM $3 AND expires_at>$4",
+  );
+});
+
 test("translates PRAGMA table_info", () => {
   const sql = translateSqliteToPostgres("PRAGMA table_info(contribution_plans)");
   assert.match(sql, /information_schema\.columns/);

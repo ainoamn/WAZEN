@@ -25,6 +25,9 @@ export function translateSqliteToPostgres(sql: string): string {
 
   // SQLite scalar MAX(a,b) → Postgres GREATEST(a,b)
   out = out.replace(/\bMAX\s*\(\s*(-?\d+)\s*,/gi, "GREATEST($1,");
+  // SQLite `IS ?` is NULL-safe equality; Postgres only accepts IS NULL / IS TRUE / IS FALSE.
+  out = out.replace(/\bIS\s+NOT\s+\?/gi, "IS DISTINCT FROM ?");
+  out = out.replace(/\bIS\s+\?/gi, "IS NOT DISTINCT FROM ?");
   let index = 0;
   out = out.replace(/\?/g, () => `$${++index}`);
 

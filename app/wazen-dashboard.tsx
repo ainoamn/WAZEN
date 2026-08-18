@@ -946,12 +946,15 @@ export function WazenDashboard() {
 
   const totals = useMemo(() => {
     if (!data) return { net: 0, groups: 0, personal: 0, reserves: 0, spend: 0, income: 0, remaining: 0 };
-    const net = data.spaces.reduce((sum, item) => sum + item.balance_minor, 0);
-    const groups = data.spaces.filter((item) => ["trip", "society", "group", "household"].includes(item.type)).reduce((sum, item) => sum + item.balance_minor, 0);
-    const personal = data.spaces.filter((item) => item.type === "personal").reduce((sum, item) => sum + item.balance_minor, 0);
-    const reserves = data.members.reduce((sum, member) => sum + member.extra_minor, 0);
-    const spend = data.transactions.filter((item) => item.kind === "expense").reduce((sum, item) => sum + item.amount_minor, 0);
-    const income = data.transactions.filter((item) => ["income", "contribution"].includes(item.kind)).reduce((sum, item) => sum + item.amount_minor, 0);
+    const spaces = data.spaces ?? [];
+    const members = data.members ?? [];
+    const transactions = data.transactions ?? [];
+    const net = spaces.reduce((sum, item) => sum + item.balance_minor, 0);
+    const groups = spaces.filter((item) => ["trip", "society", "group", "household"].includes(item.type)).reduce((sum, item) => sum + item.balance_minor, 0);
+    const personal = spaces.filter((item) => item.type === "personal").reduce((sum, item) => sum + item.balance_minor, 0);
+    const reserves = members.reduce((sum, member) => sum + member.extra_minor, 0);
+    const spend = transactions.filter((item) => item.kind === "expense").reduce((sum, item) => sum + item.amount_minor, 0);
+    const income = transactions.filter((item) => ["income", "contribution"].includes(item.kind)).reduce((sum, item) => sum + item.amount_minor, 0);
     return { net, groups, personal, reserves, spend, income, remaining: income - spend };
   }, [data]);
 
