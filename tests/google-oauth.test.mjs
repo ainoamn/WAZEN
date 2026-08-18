@@ -14,6 +14,8 @@ test("google oauth start and callback routes exist with PKCE", () => {
   assert.match(oauth, /code_challenge_method/);
   assert.match(oauth, /162957418455-43a02mk5li1adbju9m9niuf02b57ht90\.apps\.googleusercontent\.com/);
   assert.match(oauth, /wazen_oauth=/);
+  assert.match(oauth, /GOOGLE_CLIENT_SECRET/);
+  assert.match(oauth, /new URL\(request\.url\)\.origin/);
   assert.match(oauth, /value\?\.startsWith\("\/"\) && !value\.startsWith\("\/\/"\)/);
   assert.match(start, /createGoogleOAuthRequest/);
   assert.match(callback, /exchangeGoogleCode/);
