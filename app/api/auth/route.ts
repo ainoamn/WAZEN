@@ -205,6 +205,10 @@ export async function POST(request: Request) {
         ...(!emailReady && !isProductionLikeRuntime() ? { verifyUrl: `/verify-email?token=${encodeURIComponent(verificationToken)}` } : {}),
       }, { status: 201, headers: { "Cache-Control": "no-store" } });
     }
+    const active = await authenticateRequest(db, request);
+    if (active?.authType === "session" && normalizeEmail(active.email) !== email) {
+      throw new ApiError(409, "SESSION_ALREADY_ACTIVE");
+    }
     const row = await db.prepare(`SELECT u.id,u.email,u.display_name,c.password_hash,c.password_salt,c.password_iterations,c.email_verified_at,p.status,t.encrypted_secret,t.last_used_step,t.enabled_at
       FROM users u JOIN auth_credentials c ON c.user_id=u.id LEFT JOIN customer_profiles p ON p.user_id=u.id
       LEFT JOIN totp_credentials t ON t.user_id=u.id
