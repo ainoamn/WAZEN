@@ -1,10 +1,18 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { WazenIcon } from "../components/brand/WazenLogo";
-import { Brand, useCommerceLocale } from "./commercial-kit";
+import { Brand, PageLoader, useCommerceLocale } from "./commercial-kit";
+import { clearAdminConsole } from "../lib/admin-session";
+import { clearDashboardCache } from "../lib/dashboard-session";
 import { canOpenPlatformConsole } from "../lib/platform-console";
+
+function authRedirectTarget(role?: string) {
+  const requested = new URLSearchParams(window.location.search).get("next");
+  const safeNext = requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/home";
+  return safeNext.startsWith("/admin") && !canOpenPlatformConsole(role) ? "/home" : safeNext;
+}
 
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
@@ -12,6 +20,28 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const [displayName, setDisplayName] = useState(""); const [email, setEmail] = useState("");
   const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [saving, setSaving] = useState(false);
   const [totpCode, setTotpCode] = useState(""); const [totpRequired, setTotpRequired] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/auth", { cache: "no-store", credentials: "same-origin" });
+        if (cancelled) return;
+        if (response.ok) {
+          const result = await response.json() as { authenticated?: boolean; role?: string };
+          if (result.authenticated) {
+            router.replace(authRedirectTarget(result.role));
+            return;
+          }
+        }
+      } catch { /* show auth form */ }
+      if (!cancelled) setCheckingSession(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
   async function submit(event: FormEvent) {
     event.preventDefault(); setError(""); setSaving(true);
     try {
@@ -32,9 +62,9 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         router.push(`/verify-email?sent=1&email=${encodeURIComponent(email)}&delivery=${result.emailDelivery === "queued" ? "queued" : "deferred"}`);
         return;
       }
-      const requested = new URLSearchParams(window.location.search).get("next");
-      const safeNext = requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/home";
-      router.push(safeNext.startsWith("/admin") && !canOpenPlatformConsole(result.role) ? "/home" : safeNext);
+      clearDashboardCache();
+      clearAdminConsole();
+      router.push(authRedirectTarget(result.role));
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : "AUTH_FAILED"; if (code === "TOTP_REQUIRED") setTotpRequired(true);
       setError(
@@ -52,6 +82,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       );
     } finally { setSaving(false); }
   }
+  if (checkingSession) return <PageLoader label={l("جاري التحقق…", "Checking…")} />;
   return <main className="auth-page"><section className="auth-panel">
     <header><Brand showArabic /><button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button></header>
     <div className="auth-copy"><small>{l("وصول آمن إلى وازن", "Secure access to Wazen")}</small><h1>{mode === "login" ? l("مرحباً بعودتك", "Welcome back") : l("أنشئ حسابك", "Create your account")}</h1><p>{l("بياناتك المالية تخصك. جلسة مشفرة وصلاحيات منفصلة لكل حساب.", "Your financial data stays yours, with secure sessions and isolated access.")}</p></div>
