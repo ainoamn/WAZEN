@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS security_events (
   metadata_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_security_events_ip ON security_events(ip_hash, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_events_ip ON security_events(ip_hash, created_at);
+CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_id, created_at);
 
 CREATE TABLE IF NOT EXISTS blocked_ips (
   ip_hash TEXT PRIMARY KEY,
