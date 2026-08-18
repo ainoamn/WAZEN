@@ -170,7 +170,7 @@ fe6db47  fix: support Vercel Next.js build path   ← آخر نقطة في أر�
 - الزائر غير المسجّل: زر **تسجيل الدخول** يفتح `/login` مباشرة (لا `/home`). `/home` و`/dashboard` يُحوَّلان من الخادم عند غياب الجلسة، و401 لا يعرض «تعذر تحميل البيانات» قبل التحويل. مدمج: [#47](https://github.com/ainoamn/WAZEN/pull/47).
 - التنقّل داخل الحساب (`/home`، `/dashboard`، `/billing`، `/documents`، `/admin`) يستخدم `Link` وذاكرة صفحة؛ لا شاشة شعار كاملة عند كل نقرة داخل الحساب. مدمج: [#48](https://github.com/ainoamn/WAZEN/pull/48).
 - التحميل الأول لـ `/home` و`/dashboard` و`/admin` يعيد شعار وازن والقلب (بدل نص «جاري التحميل» فقط). طلبات الفوترة والمستندات والتسعير لا تبدأ مع `/api/dashboard` حتى لا تتوقف الصفحة. مهلة **12 ث** للوحة و**15 ث** لوحدة الإدارة و**20 ث** للتحقق من الإدارة ثم زر إعادة المحاولة. مدمج: [#51](https://github.com/ainoamn/WAZEN/pull/51).
-- `/home` و`/dashboard` كانتا تتوقفان على الشعار بعد دمج SSO: مسار `ensureSchema` الحالي كان ينشئ جداول OAuth وعمود `bhd_sub` في كل طلب، و`GET /api/dashboard` كان يعيد بناء دفاتر الأعضاء لكل المحافظ. المسار الحالي للمخطط يعيد فوراً؛ إعادة البناء عند الكتابة فقط؛ `Promise.race` يضمن ظهور زر إعادة المحاولة إن بقي الطلب معلّقاً.
+- `/home` و`/dashboard` كانتا تتوقفان على الشعار بعد دمج SSO: مسار `ensureSchema` الحالي كان ينشئ جداول OAuth وعمود `bhd_sub` في كل طلب، و`GET /api/dashboard` كان يعيد بناء دفاتر الأعضاء لكل المحافظ. المسار الحالي للمخطط يعيد فوراً؛ إعادة البناء عند الكتابة فقط؛ `Promise.race` يضمن ظهور زر إعادة المحاولة إن بقي الطلب معلّقاً. مدمج: [#55](https://github.com/ainoamn/WAZEN/pull/55).
 - تسجيل موحّد BHD: `/api/auth/bhd/start` و`/callback` يربطان `users.bhd_sub` بحساب `id.bhd-om.com` دون مشاركة قاعدة البيانات. الدخول المحلي يبقى حتى ضبط `BHD_OAUTH_CLIENT_SECRET`. مدمج: [#53](https://github.com/ainoamn/WAZEN/pull/53).
 - صفحة **الإعدادات** في لوحة المستخدم تتضمن نموذج تغيير كلمة المرور (الحالية، الجديدة، التأكيد). `/account/security` يبقى لـ TOTP ومفاتيح API. [#50](https://github.com/ainoamn/WAZEN/pull/50).
 - بناء Vercel: صفحات العميل لا تستورد وحدة القاعدة `lib/plan-retention` حتى لا تُضمَّن `node:sqlite` في المتصفح. مدمج: [#25](https://github.com/ainoamn/WAZEN/pull/25).
@@ -184,7 +184,7 @@ fe6db47  fix: support Vercel Next.js build path   ← آخر نقطة في أر�
 
 - فلاش الرئيسية قبل الدخول، تنقّل `Link`، شعار التحميل الأول، كلمة المرور في الإعدادات، وSSO: [#47](https://github.com/ainoamn/WAZEN/pull/47)–[#54](https://github.com/ainoamn/WAZEN/pull/54).
 - بعد [#53](https://github.com/ainoamn/WAZEN/pull/53) بقيت `/home` و`/dashboard` (ورأس `/admin`) على الشعار والقلب لأن `initializeSchema` عند `schema_meta.version >= 13` كان ما زال ينفّذ `CREATE TABLE oauth_identities` و`ensureBhdSubColumn`، و`loadDashboard` كان يستدعي `reconcileMemberLedgers` حتى مع `refreshDerived: false`.
-- الإصلاح: مسار المخطط الحالي يعيد فوراً؛ إعادة بناء الدفاتر و`generatePersonalOccurrences` عند الكتابة (`refreshDerived: true` بعد POST)؛ مهلة 12 ث مع `Promise.race` حتى لا يبقى الشعار إلى ما لا نهاية.
+- الإصلاح: مسار المخطط الحالي يعيد فوراً؛ إعادة بناء الدفاتر و`generatePersonalOccurrences` عند الكتابة (`refreshDerived: true` بعد POST)؛ مهلة 12 ث مع `Promise.race` حتى لا يبقى الشعار إلى ما لا نهاية. مدمج: [#55](https://github.com/ainoamn/WAZEN/pull/55).
 
 ---
 
