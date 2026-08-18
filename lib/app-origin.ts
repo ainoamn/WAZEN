@@ -1,4 +1,4 @@
-import { ApiError } from "./api-error";
+import { ApiError } from "./api-error.ts";
 
 function firstPublicOrigin(raw: string) {
   const cleaned = raw

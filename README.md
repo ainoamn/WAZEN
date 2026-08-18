@@ -65,7 +65,7 @@ npm run build
 
 ## قاعدة البيانات
 
-Neon Postgres على الإنتاج عبر `DATABASE_URL`. Turso/libSQL اختياري قديم. SQLite للتطوير المحلي فقط. المخطط في `db/schema.ts` وتهيئة التشغيل `SCHEMA_VERSION = 12` في `db/runtime.ts`.
+Neon Postgres على الإنتاج عبر `DATABASE_URL`. Turso/libSQL اختياري قديم. SQLite للتطوير المحلي فقط. المخطط في `db/schema.ts` وتهيئة التشغيل `SCHEMA_VERSION = 13` في `db/runtime.ts`.
 
 ## أرشيف رِفد (النسخة السابقة)
 

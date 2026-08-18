@@ -64,6 +64,29 @@ WAZEN_TRUST_OAI_HEADERS=0
 
 مسار الإرجاع القديم (`/api/auth/google/callback`) يبقى احتياطياً ويتطلب سراً صحيحاً إن استُخدم. الزر في `/login` لم يعد يمر به.
 
+## حساب BHD الموحّد (SSO)
+
+المواصفة: [BHD-IDENTITY-SSO.md](./BHD-IDENTITY-SSO.md) (نسخة من ONE-BHD بلا تعديل القيم المجمّدة).
+
+بعد ضبط الأسرار على Vercel يتحوّل `/login` إلى `https://id.bhd-om.com/oauth/authorize`. جلسة وازن تبقى `__Host-wazen_session`. لا تُشارك قاعدة وازن مع الهوية. الأدوار الإدارية تبقى محلية على `bhd_sub`.
+
+على مشروع وازن:
+
+```text
+BHD_IDENTITY_ISSUER=https://id.bhd-om.com
+BHD_OAUTH_CLIENT_ID=bhd-wazen
+BHD_OAUTH_CLIENT_SECRET=<نفس BHD_OAUTH_CLIENT_SECRET_WAZEN على one-bhd>
+BHD_OAUTH_REDIRECT_URI=https://wazen.bhd-om.com/api/auth/bhd/callback
+BHD_IDENTITY_TOKEN_SECRET=<نفس IDENTITY_TOKEN_SECRET على one-bhd حتى يظهر JWKS RS256>
+```
+
+على مشروع الهوية `one-bhd` سجّل أيضاً إن كان الدخول من نطاق Vercel:
+
+- `https://wazen-roan.vercel.app/api/auth/bhd/callback`
+- `https://wazen-roan.vercel.app/` في `post_logout_redirect_uris`
+
+بدون `BHD_OAUTH_CLIENT_SECRET` يبقى الدخول المحلي وجوجل كما هما. لا ترفع الأسرار إلى Git.
+
 ## البريد والدعوات
 
 الدعوات تُكتب في طابور `email_outbox`. اربط مزود البريد عبر Webhook:

@@ -19,16 +19,23 @@ function googleErrorMessage(code: string, l: (ar: string, en: string) => string)
   if (code === "GOOGLE_CLIENT_INVALID") return l("معرّف عميل جوجل لا يطابق هذا الموقع. أضف https://wazen.bhd-om.com في Authorized JavaScript origins.", "The Google client ID does not match this site. Add https://wazen.bhd-om.com to Authorized JavaScript origins.");
   if (code === "GOOGLE_REDIRECT_MISMATCH") return l("عنوان الإرجاع غير مطابق.", "Redirect URI mismatch.");
   if (code === "SESSION_ALREADY_ACTIVE") return l("يوجد حساب مسجّل في هذا المتصفح. سجّل الخروج أولاً لتبديل الحساب.", "A session is already active in this browser. Sign out first to switch accounts.");
+  if (code === "BHD_NOT_CONFIGURED") return l("حساب BHD غير مهيأ بعد.", "BHD identity is not configured yet.");
+  if (code === "BHD_ACCESS_DENIED") return l("أُلغي الدخول من حساب BHD.", "BHD sign-in was cancelled.");
+  if (code === "BHD_EMAIL_UNVERIFIED") return l("بريد حساب BHD غير مؤكد.", "The BHD account email is not verified.");
+  if (code === "BHD_EMAIL_IN_USE") return l("هذا البريد مرتبط بحساب وازن غير مؤكد. أكّد البريد أو ادخل محلياً ثم اربط الحساب.", "This email belongs to an unverified Wazen account. Verify it, or sign in locally first.");
+  if (code === "BHD_STATE_MISMATCH" || code === "BHD_NONCE_MISMATCH" || code === "BHD_STATE_MISSING") return l("انتهت صلاحية جلسة الدخول. حاول مرة أخرى.", "The sign-in session expired. Try again.");
+  if (code.startsWith("BHD_")) return l("تعذر الدخول بحساب BHD. حاول مرة أخرى.", "Could not sign in with BHD. Try again.");
   return l("تعذر الدخول عبر جوجل. حاول مرة أخرى.", "Google sign-in failed. Try again.");
 }
 
 function authRedirectTarget(role?: string) {
+  if (typeof window === "undefined") return "/home";
   const requested = new URLSearchParams(window.location.search).get("next");
   const safeNext = requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/home";
   return safeNext.startsWith("/admin") && !canOpenPlatformConsole(role) ? "/home" : safeNext;
 }
 
-export function AuthForm({ mode, googleClientId = "" }: { mode: "login" | "register"; googleClientId?: string }) {
+export function AuthForm({ mode, googleClientId = "", identityEnabled = false }: { mode: "login" | "register"; googleClientId?: string; identityEnabled?: boolean }) {
   const router = useRouter();
   const { locale, setLocale, l } = useCommerceLocale();
   const [displayName, setDisplayName] = useState(""); const [email, setEmail] = useState("");
@@ -101,7 +108,15 @@ export function AuthForm({ mode, googleClientId = "" }: { mode: "login" | "regis
   }
   return <main className="auth-page"><section className="auth-panel">
     <header><Brand showArabic /><button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button></header>
-    <div className="auth-copy"><small>{l("وصول آمن إلى وازن", "Secure access to Wazen")}</small><h1>{mode === "login" ? l("مرحباً بعودتك", "Welcome back") : l("أنشئ حسابك", "Create your account")}</h1><p>{l("بياناتك المالية تخصك. جلسة مشفرة وصلاحيات منفصلة لكل حساب.", "Your financial data stays yours, with secure sessions and isolated access.")}</p></div>
+    <div className="auth-copy"><small>{l("وصول آمن إلى وازن", "Secure access to Wazen")}</small><h1>{mode === "login" ? l("مرحباً بعودتك", "Welcome back") : l("أنشئ حسابك", "Create your account")}</h1><p>{identityEnabled ? l("ادخل بحساب BHD الموحّد. بيانات المحافظ تبقى في وازن فقط.", "Sign in with your unified BHD account. Wallet data stays in Wazen.") : l("بياناتك المالية تخصك. جلسة مشفرة وصلاحيات منفصلة لكل حساب.", "Your financial data stays yours, with secure sessions and isolated access.")}</p></div>
+    {identityEnabled && (
+      <>
+        <a className="auth-submit" href={`/api/auth/bhd/start?next=${encodeURIComponent(authRedirectTarget())}`}>
+          {l("الدخول بحساب BHD", "Sign in with BHD")}
+        </a>
+        <div className="auth-divider"><span>{l("أو الدخول المحلي", "Or local sign-in")}</span></div>
+      </>
+    )}
     <form onSubmit={submit}>
       {mode === "register" && <label><span>{l("الاسم", "Name")}</span><input autoComplete="name" minLength={2} maxLength={80} required value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>}
       <label><span>{l("البريد الإلكتروني", "Email")}</span><input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
@@ -110,8 +125,8 @@ export function AuthForm({ mode, googleClientId = "" }: { mode: "login" | "regis
       {mode === "login" && <Link href="/forgot-password">{l("نسيت كلمة المرور؟", "Forgot password?")}</Link>}
       {error && <p className="auth-error" role="alert">{error}</p>}<button className="auth-submit" disabled={saving}>{saving ? l("جارٍ التحقق…", "Checking…") : mode === "login" ? l("تسجيل الدخول", "Sign in") : l("إنشاء الحساب", "Create account")}</button>
     </form>
-    <div className="auth-divider"><span>{l("أو المتابعة عبر", "Or continue with")}</span></div>
-      {googleClientId ? (
+    {!identityEnabled && <div className="auth-divider"><span>{l("أو المتابعة عبر", "Or continue with")}</span></div>}
+      {identityEnabled ? null : googleClientId ? (
         <GoogleSignInButton
           clientId={googleClientId}
           label={l("المتابعة عبر جوجل", "Continue with Google")}

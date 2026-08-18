@@ -2,16 +2,14 @@
 
 import { BarChart3, Building2, CreditCard, FileText, Globe2, House, LayoutDashboard, LogOut, Menu, ReceiptText, ShieldCheck, UserCog, Users, WalletCards, X } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import WazenLogo, { WazenIcon } from "../components/brand/WazenLogo";
 import WazenPageLoader from "../components/brand/WazenPageLoader";
 import { formatMoneyMinor } from "../lib/money";
 import { statusLabel } from "../lib/admin-labels";
-import { apiFetch } from "../lib/client-api";
-import { clearAdminConsole, fetchAdminConsole, readAdminConsole } from "../lib/admin-session";
-import { notifyBrowserSessionChange } from "../lib/browser-session-client";
-import { clearDashboardCache } from "../lib/dashboard-session";
+import { fetchAdminConsole, readAdminConsole } from "../lib/admin-session";
+import { completeClientLogout } from "../lib/client-logout";
 
 export type CommerceLocale = "ar" | "en";
 
@@ -104,25 +102,12 @@ export function AccountHeader({
   setLocale: (locale: CommerceLocale) => void;
   active?: "dashboard" | "pricing" | "billing" | "documents";
 }) {
-  const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
   const l = (ar: string, en: string) => (locale === "ar" ? ar : en);
   const logout = async () => {
     if (signingOut) return;
     setSigningOut(true);
-    try {
-      await apiFetch("/api/auth", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "logout" }),
-      });
-    } finally {
-      clearAdminConsole();
-      clearDashboardCache();
-      notifyBrowserSessionChange(null);
-      router.push("/login");
-      router.refresh();
-    }
+    await completeClientLogout();
   };
   const linkClass = (id: typeof active) => (active === id ? "is-active" : undefined);
   return (
@@ -234,7 +219,6 @@ function AdminAccountMenu({
 
 export function AdminShell({ active, locale, setLocale, children }: { active?: string; locale: CommerceLocale; setLocale: (locale: CommerceLocale) => void; children: ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const current = active ?? adminNavId(pathname);
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -242,15 +226,7 @@ export function AdminShell({ active, locale, setLocale, children }: { active?: s
   const logout = async () => {
     if (signingOut) return;
     setSigningOut(true);
-    try {
-      await apiFetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
-    } finally {
-      clearAdminConsole();
-      clearDashboardCache();
-      notifyBrowserSessionChange(null);
-      router.push("/login");
-      router.refresh();
-    }
+    await completeClientLogout();
   };
   const logoutLabel = signingOut ? l("جارٍ الخروج...", "Signing out...") : l("تسجيل الخروج", "Sign out");
   return <main className="admin-app">
