@@ -5,7 +5,7 @@ import { upsertGoogleUser } from "../../../../../lib/google-account";
 import {
   clearOAuthStateCookie,
   exchangeGoogleCode,
-  isGoogleOAuthConfigured,
+  isGoogleRedirectConfigured,
   mapGoogleCallbackError,
   oauthCsrfOk,
   readGoogleOAuthState,
@@ -38,7 +38,7 @@ export async function GET(request: Request) {
     const db = getRawDb();
     await ensureSchema(db);
     await rateLimit(db, request, "auth-google", 12, 900);
-    if (!isGoogleOAuthConfigured()) return failRedirect(request, "GOOGLE_NOT_CONFIGURED");
+    if (!isGoogleRedirectConfigured()) return failRedirect(request, "GOOGLE_NOT_CONFIGURED");
     const url = new URL(request.url);
     const googleError = mapGoogleCallbackError(url.searchParams.get("error"));
     if (googleError) return failRedirect(request, googleError);

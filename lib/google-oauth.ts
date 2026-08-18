@@ -37,13 +37,27 @@ function bytesToBase64Url(bytes: Uint8Array) {
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
 
+const HISABY_COMPAT_CLIENT_ID = "162957418455-d734efb8n4oe0ba5e664583a255ks50t.apps.googleusercontent.com";
+const DELETED_CLIENT_MARKERS = ["43a02mk5li1adbju9m9niuf02b57ht90"];
+
 function googleCredentials() {
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim() ?? "";
+  const configured = process.env.GOOGLE_CLIENT_ID?.trim() || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim() || "";
+  const clientId = configured && !DELETED_CLIENT_MARKERS.some((marker) => configured.includes(marker))
+    ? configured
+    : HISABY_COMPAT_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim() ?? "";
   return { clientId, clientSecret };
 }
 
+export function googleClientId() {
+  return googleCredentials().clientId;
+}
+
 export function isGoogleOAuthConfigured() {
+  return Boolean(googleClientId());
+}
+
+export function isGoogleRedirectConfigured() {
   const { clientId, clientSecret } = googleCredentials();
   return Boolean(clientId && clientSecret && oauthHmacSecret());
 }
@@ -74,7 +88,7 @@ async function hmacSign(payload: string) {
 
 export async function createGoogleOAuthRequest(request: Request, nextPath: string, browserId = "") {
   const { clientId } = googleCredentials();
-  if (!isGoogleOAuthConfigured()) throw new ApiError(503, "GOOGLE_NOT_CONFIGURED");
+  if (!isGoogleRedirectConfigured()) throw new ApiError(503, "GOOGLE_NOT_CONFIGURED");
   const verifier = createSessionToken();
   const challengeBytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
   const redirectUri = googleCallbackUrl(request);

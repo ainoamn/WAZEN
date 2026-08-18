@@ -31,11 +31,12 @@ export function proxy(request: NextRequest) {
   const development = process.env.NODE_ENV !== "production";
   const policy = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${development ? " 'unsafe-eval'" : ""}`,
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://accounts.google.com${development ? " 'unsafe-eval'" : ""}`,
+    "style-src 'self' 'unsafe-inline' https://accounts.google.com",
+    "img-src 'self' data: blob: https://*.googleusercontent.com https://accounts.google.com",
     "font-src 'self' data:",
-    "connect-src 'self'",
+    "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com",
+    "frame-src https://accounts.google.com",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

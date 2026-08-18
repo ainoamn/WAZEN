@@ -50,30 +50,19 @@ WAZEN_TRUST_OAI_HEADERS=0
 
 ## تسجيل الدخول عبر جوجل
 
-وازن يرسل جوجل إلى عنوان إرجاع خادم، وليس أصل JavaScript. في شاشة العميل الحقل المطلوب هو **Authorised redirect URIs** (للطلبات من web server). إذا بقي فارغاً يرفض جوجل تسجيل الدخول حتى لو وُجد `https://wazen.bhd-om.com` في JavaScript origins.
+وازن يستخدم نفس أسلوب **حسابي**: زر Google Identity Services يعطي `id_token`، والخادم يتحقق منه دون `GOOGLE_CLIENT_SECRET`. لهذا يعمل حسابي دون سر عميل.
 
-1. [Google Auth Platform → Branding](https://console.cloud.google.com/auth/branding):
-   - Application home page: `https://wazen.bhd-om.com`
-   - Authorised domains يجب أن تتضمن `bhd-om.com`
-2. [Clients](https://console.cloud.google.com/auth/clients) → افتح عميل Web (مثل One BHD) أو أنشئ عميلاً جديداً.
-3. **Authorised redirect URIs** → Add URI والصق **حرفياً**:
-   `https://wazen.bhd-om.com/api/auth/google/callback`
-   ثم **Save**. لا يكفي وجود النطاق في JavaScript origins.
-4. [Audience](https://console.cloud.google.com/auth/audience): إن كانت الحالة Testing فأضف بريدك كـ test user، أو انشر التطبيق.
-5. انسخ **Client ID**. إذا كان السر معروضاً `****` فقط ولا تملك النسخة الكاملة: **Add secret** واستخدم السر الجديد.
-6. في Vercel (Production) ضع:
-   - `GOOGLE_CLIENT_ID` = معرّف العميل الحالي
-   - `GOOGLE_CLIENT_SECRET` = السر الكامل
-   - `WAZEN_APP_ORIGIN=https://wazen.bhd-om.com` (عنوان واحد فقط)
-7. **Redeploy** ثم اختبر فقط على `https://wazen.bhd-om.com/login`.
+1. [Clients](https://console.cloud.google.com/auth/clients) → عميل Web (One BHD).
+2. **Authorized JavaScript origins** يجب أن تتضمن:
+   `https://wazen.bhd-om.com`
+3. لا حاجة لسر جديد للزر. المعرّف العام (نفس حسابي):
+   `162957418455-d734efb8n4oe0ba5e664583a255ks50t.apps.googleusercontent.com`
+4. اختياري في Vercel: `GOOGLE_CLIENT_ID` بنفس القيمة. إن تُرك فارغاً يستخدم وازن نفس معرّف حسابي.
+5. `WAZEN_APP_ORIGIN=https://wazen.bhd-om.com`
+6. إن كان التطبيق Testing: أضف البريد في Audience.
+7. **Redeploy** ثم اختبر على `https://wazen.bhd-om.com/login`.
 
-إذا ظهر اختيار الحساب ثم عاد إلى `/login` برسالة خطأ، اقرأ الرمز في العنوان:
-
-- `GOOGLE_CLIENT_INVALID`: سر Vercel لا يطابق العميل. **Add secret** في Google والصقه في Vercel ثم Redeploy.
-- `GOOGLE_REDIRECT_MISMATCH`: عنوان الإرجاع ناقص أو مختلف حرفياً.
-- `GOOGLE_ACCESS_DENIED`: التطبيق Testing والبريد ليس test user.
-
-لا تستخدم العميل المحذوف السابق. لا تضع السر في Git.
+مسار الإرجاع القديم (`/api/auth/google/callback`) يبقى احتياطياً ويتطلب سراً صحيحاً إن استُخدم. الزر في `/login` لم يعد يمر به.
 
 ## البريد والدعوات
 
