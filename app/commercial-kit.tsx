@@ -10,6 +10,7 @@ import { formatMoneyMinor } from "../lib/money";
 import { statusLabel } from "../lib/admin-labels";
 import { apiFetch } from "../lib/client-api";
 import { clearAdminConsole, fetchAdminConsole, readAdminConsole } from "../lib/admin-session";
+import { notifyBrowserSessionChange } from "../lib/browser-session-client";
 import { clearDashboardCache } from "../lib/dashboard-session";
 
 export type CommerceLocale = "ar" | "en";
@@ -118,6 +119,7 @@ export function AccountHeader({
     } finally {
       clearAdminConsole();
       clearDashboardCache();
+      notifyBrowserSessionChange(null);
       router.push("/login");
       router.refresh();
     }
@@ -245,6 +247,7 @@ export function AdminShell({ active, locale, setLocale, children }: { active?: s
     } finally {
       clearAdminConsole();
       clearDashboardCache();
+      notifyBrowserSessionChange(null);
       router.push("/login");
       router.refresh();
     }

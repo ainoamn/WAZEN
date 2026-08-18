@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { WazenIcon } from "../components/brand/WazenLogo";
 import { Brand, PageLoader, useCommerceLocale } from "./commercial-kit";
 import { clearAdminConsole } from "../lib/admin-session";
+import { ensureBrowserId, notifyBrowserSessionChange } from "../lib/browser-session-client";
 import { clearDashboardCache } from "../lib/dashboard-session";
 import { canOpenPlatformConsole } from "../lib/platform-console";
 
@@ -44,14 +45,16 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   }, [router]);
   async function submit(event: FormEvent) {
     event.preventDefault(); setError(""); setSaving(true);
+    ensureBrowserId();
     try {
-      const response = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: mode, displayName: mode === "register" ? displayName : undefined, email, password, totpCode: totpCode || undefined }) });
+      const response = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ action: mode, displayName: mode === "register" ? displayName : undefined, email, password, totpCode: totpCode || undefined }) });
       const result = await response.json() as {
         error?: string;
         verificationRequired?: boolean;
         emailDelivery?: "queued" | "not_configured";
         verifyUrl?: string;
         role?: string;
+        user?: { id?: string };
       };
       if (!response.ok) throw new Error(result.error ?? "AUTH_FAILED");
       if (result.verificationRequired) {
@@ -64,6 +67,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       }
       clearDashboardCache();
       clearAdminConsole();
+      notifyBrowserSessionChange(result.user?.id ?? null);
       router.push(authRedirectTarget(result.role));
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : "AUTH_FAILED"; if (code === "TOTP_REQUIRED") setTotpRequired(true);

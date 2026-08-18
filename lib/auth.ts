@@ -1,4 +1,5 @@
 import { getRequestUser, type RequestUser } from "../db/runtime";
+import { browserIdCookie, browserIdFromRequest } from "./browser-session";
 import { browserCsrfCookie, browserSessionCookie, csrfCookieName, idleCutoffIso, isSessionIdle, SESSION_MAX_MS, sessionCookieName } from "./session-policy";
 import { clientCountry, clientIp, ipHash, maskIp } from "./ip-security";
 
@@ -52,10 +53,11 @@ export function csrfCookie(token: string, _expiresAt?: Date) {
   return browserCsrfCookie(token);
 }
 
-export function sessionHeaders(session: { token: string; csrfToken: string; expiresAt: Date }) {
+export function sessionHeaders(session: { token: string; csrfToken: string; expiresAt: Date; browserId?: string | null }) {
   const headers = new Headers({ "Cache-Control": "no-store" });
   headers.append("Set-Cookie", sessionCookie(session.token));
   headers.append("Set-Cookie", csrfCookie(session.csrfToken));
+  if (session.browserId) headers.append("Set-Cookie", browserIdCookie(session.browserId));
   return headers;
 }
 
@@ -79,7 +81,12 @@ function cookieValue(request: Request, name: string) {
 }
 
 export async function createSession(db: D1Database, userId: string, request?: Request) {
-  if (request) await revokeSession(db, request);
+  let browserId = request ? browserIdFromRequest(request) : null;
+  if (request) {
+    await revokeSession(db, request);
+    if (!browserId) browserId = createSessionToken();
+    await db.prepare("DELETE FROM auth_sessions WHERE browser_id=?").bind(browserId).run();
+  }
   const token = createSessionToken();
   const csrfToken = createSessionToken(); const tokenHash = await sha256(token); const csrfTokenHash = await sha256(csrfToken);
   const now = new Date();
@@ -89,10 +96,10 @@ export async function createSession(db: D1Database, userId: string, request?: Re
   const masked = ip ? maskIp(ip) : null;
   const country = request ? clientCountry(request) : null;
   const userAgent = request?.headers.get("user-agent")?.slice(0, 512) ?? null;
-  await db.prepare(`INSERT INTO auth_sessions (id,user_id,token_hash,csrf_token_hash,ip_hash,ip_masked,user_agent,country_code,expires_at,created_at,last_seen_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(crypto.randomUUID(), userId, tokenHash, csrfTokenHash, hash, masked, userAgent, country, expiresAt.toISOString(), now.toISOString(), now.toISOString()).run();
-  return { token, csrfToken, expiresAt };
+  await db.prepare(`INSERT INTO auth_sessions (id,user_id,token_hash,csrf_token_hash,browser_id,ip_hash,ip_masked,user_agent,country_code,expires_at,created_at,last_seen_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(crypto.randomUUID(), userId, tokenHash, csrfTokenHash, browserId, hash, masked, userAgent, country, expiresAt.toISOString(), now.toISOString(), now.toISOString()).run();
+  return { token, csrfToken, expiresAt, browserId };
 }
 
 export async function revokeSession(db: D1Database, request: Request) {
@@ -117,13 +124,18 @@ export async function authenticateRequest(db: D1Database, request: Request): Pro
   }
   const token = cookieValue(request, SESSION_COOKIE);
   if (!token) return null;
-  const row = await db.prepare(`SELECT u.id,u.email,u.display_name,u.avatar_url,p.status,s.id AS session_id,s.last_seen_at
+  const requestBrowserId = browserIdFromRequest(request);
+  const row = await db.prepare(`SELECT u.id,u.email,u.display_name,u.avatar_url,p.status,s.id AS session_id,s.last_seen_at,s.browser_id
     FROM auth_sessions s JOIN users u ON u.id=s.user_id
     LEFT JOIN customer_profiles p ON p.user_id=u.id
     WHERE s.token_hash=? AND s.expires_at>? LIMIT 1`)
     .bind(await sha256(token), new Date().toISOString())
-    .first<{ id: string; email: string; display_name: string; avatar_url: string | null; status: string | null; session_id: string; last_seen_at: string }>();
+    .first<{ id: string; email: string; display_name: string; avatar_url: string | null; status: string | null; session_id: string; last_seen_at: string; browser_id: string | null }>();
   if (!row || row.status === "suspended" || row.status === "closed") return null;
+  if (row.browser_id && requestBrowserId && row.browser_id !== requestBrowserId) {
+    await db.prepare("DELETE FROM auth_sessions WHERE id=?").bind(row.session_id).run();
+    return null;
+  }
   if (isSessionIdle(row.last_seen_at)) {
     await db.prepare("DELETE FROM auth_sessions WHERE id=?").bind(row.session_id).run();
     return null;

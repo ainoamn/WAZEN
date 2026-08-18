@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Brand, ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
+import { notifyBrowserSessionChange } from "../../lib/browser-session-client";
 import { wrapPrintDocument, printWazenHtml, downloadReportHtml, resolvePrintLogoUrl } from "../../lib/print-document";
 import { escapeHtml, safeDownloadFilename } from "../../lib/html";
 import { planHasFeature } from "../../lib/plan-features";
@@ -62,6 +63,7 @@ export function DocumentsClient() {
     await apiFetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
     clearAdminConsole();
     clearDashboardCache();
+    notifyBrowserSessionChange(null);
     router.push("/login");
     router.refresh();
   };
