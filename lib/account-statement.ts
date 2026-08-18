@@ -78,6 +78,16 @@ function isLive(txn: StatementTransaction) {
   return status !== "voided" && status !== "superseded";
 }
 
+function formatStatementWhen(iso: string, locale: StatementLocale) {
+  return new Date(iso).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function buildAccountStatementHtml(input: {
   locale: StatementLocale;
   logoUrl: string;
@@ -156,19 +166,19 @@ export function buildAccountStatementHtml(input: {
     const deposit = signed > 0 ? money(signed) : "—";
     const withdraw = signed < 0 ? money(-signed) : (!live && ["expense", "reimbursement"].includes(txn.kind) ? money(Number(txn.amount_minor) || 0) : "—");
     const status = live ? t(locale, "مرحّلة", "Posted") : t(locale, "ملغاة", "Voided");
-    const when = new Date(txn.occurred_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB");
+    const when = formatStatementWhen(txn.occurred_at, locale);
     const desc = locale === "ar" ? txn.description_ar : txn.description_en;
     return { live, cells: [
-      when,
-      txn.id.slice(0, 8).toUpperCase(),
-      desc,
-      item,
-      `${place} → ${dest}`,
-      userName,
-      deposit,
-      withdraw,
-      live ? money(running) : "—",
-      status,
+      { text: when, cls: "col-date" },
+      { text: txn.id.slice(0, 8).toUpperCase(), cls: "col-ref" },
+      { text: desc, cls: "col-desc" },
+      { text: item, cls: "col-item" },
+      { text: `${place} → ${dest}`, cls: "col-flow" },
+      { text: userName, cls: "col-user" },
+      { text: deposit, cls: "num" },
+      { text: withdraw, cls: "num" },
+      { text: live ? money(running) : "—", cls: "num" },
+      { text: status, cls: "col-status" },
     ] };
   });
 
@@ -177,9 +187,8 @@ export function buildAccountStatementHtml(input: {
       <thead><tr>${head.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr></thead>
       <tbody>${body.length
         ? body.map((row) => `<tr class="${row.live ? "" : "voided"}">${row.cells.map((cell, index) => {
-          const cls = index >= 6 && index <= 8 ? "num" : "";
-          const tone = index === 6 && cell !== "—" ? " in" : index === 7 && cell !== "—" ? " out" : "";
-          return `<td class="${cls}${tone}">${escapeHtml(cell)}</td>`;
+          const tone = index === 6 && cell.text !== "—" ? " in" : index === 7 && cell.text !== "—" ? " out" : "";
+          return `<td class="${cell.cls}${tone}">${escapeHtml(cell.text)}</td>`;
         }).join("")}</tr>`).join("")
         : `<tr><td colspan="${head.length}">${escapeHtml(t(locale, "لا توجد حركات في هذا النطاق.", "No movements in this scope."))}</td></tr>`}
       </tbody>
@@ -193,6 +202,7 @@ export function buildAccountStatementHtml(input: {
     entityName,
     logoUrl: input.logoUrl,
     subtitle,
+    orientation: "landscape",
     meta: [
       { label: t(locale, "النطاق", "Scope"), value: entityName },
       { label: t(locale, "أُصدر بواسطة", "Issued by"), value: input.issuerName },

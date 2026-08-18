@@ -417,6 +417,7 @@ export function buildMemberLedgerHtml(input: {
     entityName: `${input.memberName} · ${input.spaceName}`,
     logoUrl: input.logoUrl,
     subtitle: text(locale, "كشف قابل للطباعة يوضح المدفوع والصرف وما عليه وما له مع السبب والتاريخ.", "Printable statement of paid, spent, owed and credit with dates and reasons."),
+    orientation: "landscape",
     meta: [
       { label: text(locale, "العضو", "Member"), value: input.memberName },
       { label: text(locale, "الجمعية", "Association"), value: input.spaceName },
