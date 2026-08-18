@@ -186,7 +186,7 @@ fe6db47  fix: support Vercel Next.js build path   ← آخر نقطة في أر�
 - بعد [#53](https://github.com/ainoamn/WAZEN/pull/53) بقيت `/home` و`/dashboard` (ورأس `/admin`) على الشعار والقلب لأن `initializeSchema` عند `schema_meta.version >= 13` كان ما زال ينفّذ `CREATE TABLE oauth_identities` و`ensureBhdSubColumn`، و`loadDashboard` كان يستدعي `reconcileMemberLedgers` حتى مع `refreshDerived: false`.
 - الإصلاح: مسار المخطط الحالي يعيد فوراً؛ إعادة بناء الدفاتر و`generatePersonalOccurrences` عند الكتابة (`refreshDerived: true` بعد POST)؛ مهلة 12 ث مع `Promise.race` حتى لا يبقى الشعار إلى ما لا نهاية. مدمج: [#55](https://github.com/ainoamn/WAZEN/pull/55).
 - زر **تسجيل الدخول** في الرأس كان يحوّل إلى `/home` عند وجود كعكة جلسة فتظهر شاشة الشعار بدل النموذج. `/login` يرسم النموذج فوراً دون هذا التحويل. مدمج: [#57](https://github.com/ainoamn/WAZEN/pull/57).
-- بوابة الدخول الموحّدة: `/login` وزر الرأس يمرّان بـ `/api/auth/bhd/start` → شاشة `one-bhd.vercel.app` (نفس أسلوب المجموعة). جوجل على الهوية فقط. إن لم تكن `https://wazen-roan.vercel.app/api/auth/bhd/callback` مسجّلة على عميل `bhd-wazen` يبقى النموذج المحلي بدل 400. بعد نجاح النموذج المحلي: `location.assign`. يجب إضافة عنوان Vercel في [ainoamn/ONE-BHD](https://github.com/ainoamn/ONE-BHD) `clients.ts` ثم إعادة نشر الهوية.
+- بوابة الدخول الموحّدة: `/login` وزر الرأس يمرّان بـ `/api/auth/bhd/start` → شاشة `one-bhd.vercel.app` (نفس أسلوب المجموعة). جوجل على الهوية فقط. إن لم تكن `https://wazen-roan.vercel.app/api/auth/bhd/callback` مسجّلة على عميل `bhd-wazen` يبقى النموذج المحلي بدل 400. بعد نجاح النموذج المحلي: `location.assign`. يجب إضافة عنوان Vercel في [ainoamn/ONE-BHD](https://github.com/ainoamn/ONE-BHD) `clients.ts` ثم إعادة نشر الهوية. مدمج: [#59](https://github.com/ainoamn/WAZEN/pull/59).
 
 ---
 
