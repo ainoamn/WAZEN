@@ -20,7 +20,6 @@ import { BhdAppSwitcher } from "../../components/bhd/BhdAppSwitcher";
 import { apiFetch } from "../../lib/client-api";
 import { prefetchAppRoutes, warmAppCaches } from "../../lib/app-prefetch";
 import { completeClientLogout } from "../../lib/client-logout";
-import { goToSignIn } from "../../lib/client-sign-in";
 import { fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../../lib/dashboard-session";
 import { useLiveDashboard } from "../../lib/live-sync";
 import { formatMoneyMinor, currencyScale } from "../../lib/money";
@@ -107,7 +106,6 @@ export function HomeClient() {
   const [toast, setToast] = useState("");
 
   const load = useCallback(async (force = false) => {
-    let redirecting = false;
     try {
       setError(false);
       const result = await fetchDashboardSession<HomeData>(force);
@@ -117,14 +115,13 @@ export function HomeClient() {
       }
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) {
-        redirecting = true;
         setData(null);
-        goToSignIn("/home");
+        setError(true);
         return;
       }
       if (!readDashboardCache()) setError(true);
     } finally {
-      if (!redirecting) setLoading(false);
+      setLoading(false);
     }
   }, [router]);
 
@@ -134,7 +131,7 @@ export function HomeClient() {
     const timer = window.setTimeout(() => {
       setLoading(false);
       setError(true);
-    }, 15_000);
+    }, 5_000);
     return () => window.clearTimeout(timer);
   }, [loading, data]);
   useLiveDashboard(() => { void load(true); }, !loading);
@@ -194,6 +191,9 @@ export function HomeClient() {
         <button type="button" className="primary-button" onClick={() => { setLoading(true); void load(); }}>
           {locale === "ar" ? "إعادة المحاولة" : "Try again"}
         </button>
+        <a className="secondary-button" href="/login?local=1&next=/home">
+          {locale === "ar" ? "تسجيل الدخول" : "Sign in"}
+        </a>
       </div>
     );
   }

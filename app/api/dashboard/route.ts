@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
-import { authenticateRequest, clearCsrfCookie, clearSessionCookie, csrfCookie, issueCsrfToken } from "../../../lib/auth";
+import { authenticateRequest, csrfCookie, issueCsrfToken } from "../../../lib/auth";
 import { buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
 import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf } from "../../../lib/authorization";
@@ -1061,10 +1061,7 @@ async function readDashboardRevision(db: D1Database, userId: string) {
 }
 
 function unauthenticatedResponse() {
-  const headers = new Headers({ "Cache-Control": "no-store" });
-  headers.append("Set-Cookie", clearSessionCookie());
-  headers.append("Set-Cookie", clearCsrfCookie());
-  return Response.json({ error: "AUTHENTICATION_REQUIRED" }, { status: 401, headers });
+  return Response.json({ error: "AUTHENTICATION_REQUIRED" }, { status: 401, headers: { "Cache-Control": "no-store" } });
 }
 
 export async function GET(request: Request) {

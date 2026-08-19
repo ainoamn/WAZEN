@@ -57,7 +57,7 @@ export function sessionHeaders(session: { token: string; csrfToken: string; expi
   const headers = new Headers({ "Cache-Control": "no-store" });
   headers.append("Set-Cookie", sessionCookie(session.token));
   headers.append("Set-Cookie", csrfCookie(session.csrfToken));
-  if (session.browserId) headers.append("Set-Cookie", browserIdCookie(session.browserId));
+  headers.append("Set-Cookie", browserIdCookie(session.browserId || createSessionToken()));
   return headers;
 }
 
@@ -81,10 +81,10 @@ function cookieValue(request: Request, name: string) {
 }
 
 export async function createSession(db: D1Database, userId: string, request?: Request) {
-  const browserId = request ? browserIdFromRequest(request) : null;
+  const browserId = (request ? browserIdFromRequest(request) : null) || createSessionToken();
   if (request) {
     await revokeSession(db, request);
-    if (browserId) await db.prepare("DELETE FROM auth_sessions WHERE browser_id=?").bind(browserId).run();
+    await db.prepare("DELETE FROM auth_sessions WHERE browser_id=?").bind(browserId).run();
   }
   const token = createSessionToken();
   const csrfToken = createSessionToken(); const tokenHash = await sha256(token); const csrfTokenHash = await sha256(csrfToken);
@@ -131,11 +131,7 @@ export async function authenticateRequest(db: D1Database, request: Request): Pro
     .bind(await sha256(token), new Date().toISOString())
     .first<{ id: string; email: string; display_name: string; avatar_url: string | null; status: string | null; session_id: string; last_seen_at: string; browser_id: string | null }>();
   if (!row || row.status === "suspended" || row.status === "closed") return null;
-  if (row.browser_id && requestBrowserId && row.browser_id !== requestBrowserId) {
-    await db.prepare("DELETE FROM auth_sessions WHERE id=?").bind(row.session_id).run();
-    return null;
-  }
-  if (!row.browser_id && requestBrowserId) {
+  if (requestBrowserId && row.browser_id !== requestBrowserId) {
     await db.prepare("UPDATE auth_sessions SET browser_id=? WHERE id=?").bind(requestBrowserId, row.session_id).run();
   }
   if (isSessionIdle(row.last_seen_at)) {

@@ -78,7 +78,6 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import { apiFetch } from "../lib/client-api";
 import { prefetchAppRoutes, warmAppCaches } from "../lib/app-prefetch";
 import { completeClientLogout } from "../lib/client-logout";
-import { goToSignIn } from "../lib/client-sign-in";
 import { BhdAppSwitcher } from "../components/bhd/BhdAppSwitcher";
 import { fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../lib/dashboard-session";
 import { notifyLiveRefresh, useLiveDashboard } from "../lib/live-sync";
@@ -852,26 +851,32 @@ export function WazenDashboard() {
   };
 
   const load = useCallback(async (force = false) => {
-    let redirecting = false;
     try {
       setError(false);
       const result = await fetchDashboardSession<DashboardData>(force);
       if (result.data) setDataState(result.data);
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) {
-        redirecting = true;
-        goToSignIn("/dashboard");
+        setError(true);
         return;
       }
       if (!readDashboardCache()) setError(true);
     } finally {
-      if (!redirecting) setLoading(false);
+      setLoading(false);
     }
   }, [router]);
 
   useLiveDashboard(() => { void load(true); }, !loading);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!loading || data) return;
+    const timer = window.setTimeout(() => {
+      setLoading(false);
+      setError(true);
+    }, 5_000);
+    return () => window.clearTimeout(timer);
+  }, [loading, data]);
   useEffect(() => {
     if (!data) return;
     prefetchAppRoutes(router, data.user.role ?? undefined);
@@ -2633,4 +2638,14 @@ function Empty({ locale }: { locale: Locale }) { return <div className="empty-st
 function LoadingScreen({ locale }: { locale: Locale }) {
   return <WazenPageLoader label={locale === "ar" ? "جاري تحميل لوحة وازن…" : "Loading Wazen…"} />;
 }
-function ErrorScreen({ message, retry }: { message: string; retry: () => void }) { return <div className="error-screen"><CircleDollarSign size={40} /><h1>وازن</h1><p>{message}</p><button className="primary-button" onClick={retry}>Try again</button></div>; }
+function ErrorScreen({ message, retry }: { message: string; retry: () => void }) {
+  return (
+    <div className="error-screen">
+      <CircleDollarSign size={40} />
+      <h1>وازن</h1>
+      <p>{message}</p>
+      <button className="primary-button" onClick={retry}>Try again</button>
+      <a className="secondary-button" href="/login?local=1&next=/dashboard">Sign in</a>
+    </div>
+  );
+}
