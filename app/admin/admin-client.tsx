@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
+import { goToSignIn } from "../../lib/client-sign-in";
 import { fetchAdminConsole, patchAdminConsole, readAdminConsole } from "../../lib/admin-session";
 import { AdminConsole, AdminSwitch, EmptyRow } from "./admin-ui";
 import { actionLabel, countryLabel, csvHeaderLabel, entityLabel, formatAdminDate, methodLabel, roleLabel, statusLabel } from "../../lib/admin-labels";
@@ -48,7 +49,7 @@ function useAdminData() {
       })
       .catch((caught: Error) => {
         if (caught.message === "AUTH") {
-          router.push(`/login?next=${encodeURIComponent(pathname)}`);
+          goToSignIn(pathname);
           return;
         }
         if (!readAdminConsole()) setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD");

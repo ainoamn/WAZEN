@@ -1,11 +1,12 @@
 "use client";
 
-import { BarChart3, Building2, CreditCard, FileText, Globe2, House, LayoutDashboard, LogOut, Menu, ReceiptText, ShieldCheck, UserCog, Users, WalletCards, X } from "lucide-react";
+import { BarChart3, Building2, CreditCard, FileText, Globe2, LayoutDashboard, Menu, ReceiptText, UserCog, Users, WalletCards, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import WazenLogo, { WazenIcon } from "../components/brand/WazenLogo";
 import WazenPageLoader from "../components/brand/WazenPageLoader";
+import { BhdAppSwitcher, type BhdSwitcherUser } from "../components/bhd/BhdAppSwitcher";
 import { formatMoneyMinor } from "../lib/money";
 import { statusLabel } from "../lib/admin-labels";
 import { fetchAdminConsole, readAdminConsole } from "../lib/admin-session";
@@ -97,18 +98,33 @@ export function AccountHeader({
   locale,
   setLocale,
   active,
+  user,
 }: {
   locale: CommerceLocale;
   setLocale: (locale: CommerceLocale) => void;
   active?: "dashboard" | "pricing" | "billing" | "documents";
+  user?: BhdSwitcherUser;
 }) {
-  const [signingOut, setSigningOut] = useState(false);
+  const [sessionUser, setSessionUser] = useState<BhdSwitcherUser | null>(user ?? null);
   const l = (ar: string, en: string) => (locale === "ar" ? ar : en);
-  const logout = async () => {
-    if (signingOut) return;
-    setSigningOut(true);
-    await completeClientLogout();
-  };
+  useEffect(() => {
+    if (user) {
+      setSessionUser(user);
+      return;
+    }
+    void fetch("/api/auth", { cache: "no-store", credentials: "same-origin" })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = await response.json() as { authenticated?: boolean; user?: { displayName?: string; email?: string; avatarUrl?: string | null } };
+        if (data.authenticated && data.user) {
+          setSessionUser({
+            name: data.user.displayName ?? "",
+            email: data.user.email ?? "",
+            picture: data.user.avatarUrl ?? null,
+          });
+        }
+      });
+  }, [user]);
   const linkClass = (id: typeof active) => (active === id ? "is-active" : undefined);
   return (
     <header className="documents-header account-header">
@@ -122,10 +138,9 @@ export function AccountHeader({
       <button type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>
         <Globe2 size={16} />{locale === "ar" ? "EN" : "عربي"}
       </button>
-      <button type="button" className="admin-logout" disabled={signingOut} onClick={() => void logout()}>
-        <LogOut size={16} />
-        {signingOut ? l("جارٍ الخروج...", "Signing out...") : l("تسجيل الخروج", "Sign out")}
-      </button>
+      {sessionUser ? (
+        <BhdAppSwitcher user={sessionUser} onSignOut={() => void completeClientLogout()} />
+      ) : null}
     </header>
   );
 }
@@ -154,81 +169,34 @@ export function adminNavId(pathname: string) {
   return "overview";
 }
 
-function AdminAccountMenu({
-  locale,
-  signingOut,
-  onLogout,
-}: {
-  locale: CommerceLocale;
-  signingOut: boolean;
-  onLogout: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [identity, setIdentity] = useState(() => readAdminConsole()?.user ?? null);
-  const root = useRef<HTMLDivElement>(null);
-  const l = (ar: string, en: string) => locale === "ar" ? ar : en;
+function AdminShellUserSwitcher({ locale }: { locale: CommerceLocale }) {
+  const [user, setUser] = useState<BhdSwitcherUser | null>(() => {
+    const identity = readAdminConsole()?.user;
+    if (!identity) return null;
+    return {
+      name: String(identity.displayName ?? identity.display_name ?? "").trim() || (locale === "ar" ? "حسابك" : "Your account"),
+      email: String(identity.email ?? ""),
+      picture: null,
+    };
+  });
   useEffect(() => {
-    void fetchAdminConsole().then((data) => setIdentity(data.user)).catch(() => {});
-  }, []);
-  useEffect(() => {
-    const close = (event: MouseEvent) => {
-      if (root.current && !root.current.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, []);
-  const name = String(identity?.displayName ?? identity?.display_name ?? "").trim() || l("حسابك", "Your account");
-  const email = String(identity?.email ?? "");
-  return (
-    <div className="admin-account-menu user-menu" ref={root}>
-      <button
-        type="button"
-        className="admin-account-mark"
-        title={email || name}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={l("قائمة الحساب", "Account menu")}
-        onClick={() => setOpen((current) => !current)}
-      >
-        {locale === "ar" ? "و" : "W"}
-      </button>
-      {open ? (
-        <div className="user-menu-panel" role="menu">
-          <div className="user-menu-identity">
-            <strong>{name}</strong>
-            {email ? <small>{email}</small> : null}
-          </div>
-          <Link href="/home" role="menuitem" onClick={() => setOpen(false)}><House size={16} />{l("الرئيسية", "Home")}</Link>
-          <Link href="/account/security" role="menuitem" onClick={() => setOpen(false)}><ShieldCheck size={16} />{l("أمان الحساب", "Account security")}</Link>
-          <button type="button" role="menuitem" className="user-menu-logout" disabled={signingOut} onClick={() => { setOpen(false); onLogout(); }}>
-            <LogOut size={16} />
-            {signingOut ? l("جارٍ الخروج...", "Signing out...") : l("تسجيل الخروج", "Sign out")}
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
+    void fetchAdminConsole().then((data) => {
+      setUser({
+        name: String(data.user.displayName ?? data.user.display_name ?? "").trim() || (locale === "ar" ? "حسابك" : "Your account"),
+        email: String(data.user.email ?? ""),
+        picture: null,
+      });
+    }).catch(() => {});
+  }, [locale]);
+  if (!user) return null;
+  return <BhdAppSwitcher user={user} onSignOut={() => void completeClientLogout()} />;
 }
 
 export function AdminShell({ active, locale, setLocale, children }: { active?: string; locale: CommerceLocale; setLocale: (locale: CommerceLocale) => void; children: ReactNode }) {
   const pathname = usePathname();
   const current = active ?? adminNavId(pathname);
   const [open, setOpen] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
   const l = (ar: string, en: string) => locale === "ar" ? ar : en;
-  const logout = async () => {
-    if (signingOut) return;
-    setSigningOut(true);
-    await completeClientLogout();
-  };
-  const logoutLabel = signingOut ? l("جارٍ الخروج...", "Signing out...") : l("تسجيل الخروج", "Sign out");
   return <main className="admin-app">
     {open && <button className="admin-backdrop" onClick={() => setOpen(false)} aria-label={l("إغلاق القائمة", "Close menu")} />}
     <aside className={open ? "open" : ""}>
@@ -237,10 +205,6 @@ export function AdminShell({ active, locale, setLocale, children }: { active?: s
       <nav>{adminLinks.map(([href, id, Icon, ar, en]) => <Link key={id} href={href} prefetch className={current === id ? "active" : ""} onClick={() => setOpen(false)}><Icon size={18} strokeWidth={2} /><span>{l(ar, en)}</span></Link>)}</nav>
       <div className="admin-side-foot">
         <Link href="/home"><FileText size={17} />{l("العودة للرئيسية", "Back to home")}</Link>
-        <button type="button" className="admin-logout" disabled={signingOut} onClick={() => void logout()}>
-          <LogOut size={17} />
-          {logoutLabel}
-        </button>
         <small>{l("لوحة عالمية", "Global console")}</small>
       </div>
     </aside>
@@ -251,11 +215,7 @@ export function AdminShell({ active, locale, setLocale, children }: { active?: s
         <div className="admin-head-actions">
           <button type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")}><Globe2 size={16} />{locale === "ar" ? "EN" : "عربي"}</button>
           <Link href="/documents" aria-label={l("الإيصالات والكشوفات", "Receipts & statements")}><FileText size={17} /></Link>
-          <button type="button" className="admin-logout" disabled={signingOut} onClick={() => void logout()}>
-            <LogOut size={16} />
-            {logoutLabel}
-          </button>
-          <AdminAccountMenu locale={locale} signingOut={signingOut} onLogout={() => void logout()} />
+          <AdminShellUserSwitcher locale={locale} />
         </div>
       </header>
       <div className="admin-content">{children}</div>

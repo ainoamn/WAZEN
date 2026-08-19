@@ -22,6 +22,10 @@ test("google oauth supports Hisaby-style GIS id tokens without a client secret",
   assert.match(idToken, /RSASSA-PKCS1-v1_5/);
   assert.match(idToken, /verifyGoogleAccessToken/);
   assert.match(start, /export async function POST/);
+  assert.match(start, /isBhdIdentityConfigured/);
+  assert.match(start, /BHD_IDENTITY_ONLY/);
+  assert.match(callback, /isBhdIdentityConfigured/);
+  assert.match(callback, /BHD_IDENTITY_ONLY/);
   assert.match(start, /verifyGoogleIdToken/);
   assert.match(callback, /exchangeGoogleCode/);
   assert.match(account, /oauth_identities/);

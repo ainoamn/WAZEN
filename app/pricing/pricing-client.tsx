@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { ErrorCard, money, AccountHeader, PublicHeader, useCommerceLocale, ContentBusy } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
+import { goToSignIn } from "../../lib/client-sign-in";
 import { errorLabel } from "../../lib/admin-labels";
 import { formatQuota } from "../../lib/plan-features";
 import { clearDashboardCache } from "../../lib/dashboard-session";
@@ -76,7 +77,7 @@ export function PricingClient() {
     setWorking(planId); setError(""); setResult(null);
     try {
       const response = await apiFetch("/api/platform", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "selectPlan", idempotencyKey: crypto.randomUUID(), planId, cycle: annual ? "annual" : "monthly", coupon: discount > 0 ? coupon : "" }) });
-      if (response.status === 401) { router.push("/login?next=/pricing"); return; }
+      if (response.status === 401) { goToSignIn("/pricing"); return; }
       const payload = await response.json() as SelectResult;
       if (!response.ok) {
         setError(errorLabel(payload.error ?? "INTERNAL_ERROR", locale));

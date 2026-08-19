@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { CreditCard, Globe, Search, ShieldCheck, Users, WalletCards } from "lucide-react";
 import { ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
+import { goToSignIn } from "../../lib/client-sign-in";
 import { DateField } from "../../components/ui/date-field";
 import { PLAN_FEATURE_CATALOG } from "../../lib/plan-features";
 import { fetchAdminConsole, readAdminConsole } from "../../lib/admin-session";
@@ -130,7 +131,7 @@ export function AdminUserDetail() {
     fetch(`/api/platform?view=admin&scope=users&userId=${encodeURIComponent(userId)}`, { cache: "no-store", credentials: "same-origin" })
       .then(async (userRes) => {
         if (userRes.status === 401) {
-          router.push(`/login?next=${encodeURIComponent(`/admin/users/${userId}`)}`);
+          goToSignIn(`/admin/users/${userId}`);
           throw new Error("AUTH");
         }
         const userResult = await userRes.json() as { error?: string; detail?: UserDetail; plans?: Row[] };
@@ -737,7 +738,7 @@ export function AdminTenants() {
         })
         .catch((caught: Error) => {
           if (caught.message === "AUTH") {
-            router.push("/login?next=/admin/tenants");
+            goToSignIn("/admin/tenants");
             return;
           }
           if (!readAdminConsole()) setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD");
@@ -748,7 +749,7 @@ export function AdminTenants() {
     fetch(`/api/platform?${params}`, { cache: "no-store" })
       .then(async (response) => {
         if (response.status === 401) {
-          router.push("/login?next=/admin/tenants");
+          goToSignIn("/admin/tenants");
           throw new Error("AUTH");
         }
         const result = await response.json() as { error?: string; tenantsPage?: typeof data };
@@ -833,7 +834,7 @@ export function AdminTenantDetail() {
     fetch(`/api/platform?view=admin&scope=tenants&tenantId=${encodeURIComponent(tenantId)}`, { cache: "no-store" })
       .then(async (response) => {
         if (response.status === 401) {
-          router.push(`/login?next=${encodeURIComponent(`/admin/tenants/${tenantId}`)}`);
+          goToSignIn(`/admin/tenants/${tenantId}`);
           throw new Error("AUTH");
         }
         const result = await response.json() as { error?: string; detail?: typeof detail };
@@ -913,7 +914,7 @@ export function AdminStaff() {
       .then((result) => setRoles(staffFrom(result.roles)))
       .catch((caught: Error) => {
         if (caught.message === "AUTH") {
-          router.push("/login?next=/admin/staff");
+          goToSignIn("/admin/staff");
           return;
         }
         if (!readAdminConsole()) setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD");

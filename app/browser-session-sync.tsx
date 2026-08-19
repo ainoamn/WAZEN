@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { clearAdminConsole } from "../lib/admin-session";
+import { goToSignIn } from "../lib/client-sign-in";
 import { ensureBrowserId, subscribeBrowserSessionChange } from "../lib/browser-session-client";
 import { clearDashboardCache, readDashboardCache } from "../lib/dashboard-session";
 
@@ -29,7 +30,7 @@ export function BrowserSessionSync() {
             clearDashboardCache();
             clearAdminConsole();
             if (!pathname.startsWith("/login") && !pathname.startsWith("/register")) {
-              router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+              goToSignIn(pathname);
             }
           }
           return;

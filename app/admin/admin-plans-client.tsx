@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { ContentBusy, ErrorCard, money, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
+import { goToSignIn } from "../../lib/client-sign-in";
 import { errorLabel, scopeLabel } from "../../lib/admin-labels";
 import {
   PLAN_FEATURE_CATALOG,
@@ -183,7 +184,7 @@ export function AdminPlans() {
       })
       .catch((caught: Error) => {
         if (caught.message === "AUTH") {
-          router.push("/login?next=/admin/plans");
+          goToSignIn("/admin/plans");
           return;
         }
         if (!readAdminConsole()) setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD");

@@ -15,6 +15,8 @@ import {
   isBhdIdentityConfigured,
   isBhdSsoReadyForOrigin,
   pkceChallenge,
+  signInEntryPathForOrigin,
+  signInEntryPath,
   safeReturnTo,
   verifyBhdIdToken,
   verifyHs256Jwt,
@@ -157,6 +159,16 @@ test("ID token HS256 verification checks iss, aud, nonce, and expiry", async () 
   if (!previous.BHD_IDENTITY_TOKEN_SECRET) delete process.env.BHD_IDENTITY_TOKEN_SECRET;
 });
 
+test("signInEntryPathForOrigin routes SSO vs local login by origin", () => {
+  const previous = { ...process.env };
+  delete process.env.BHD_SSO_READY;
+  process.env.BHD_OAUTH_CLIENT_ID = BHD_OAUTH_CLIENT_ID;
+  assert.match(signInEntryPathForOrigin("/home", "https://wazen.bhd-om.com"), /^\/api\/auth\/bhd\/start\?returnTo=/);
+  assert.match(signInEntryPathForOrigin("/home", "https://wazen-roan.vercel.app"), /^\/login\?local=1&next=/);
+  Object.assign(process.env, previous);
+  if (!previous.BHD_SSO_READY) delete process.env.BHD_SSO_READY;
+});
+
 test("Wazen BHD routes follow the product card in the identity spec", () => {
   const spec = fs.readFileSync(path.join(root, "docs/BHD-IDENTITY-SSO.md"), "utf8");
   const identity = fs.readFileSync(path.join(root, "lib/bhd-identity.ts"), "utf8");
@@ -172,6 +184,7 @@ test("Wazen BHD routes follow the product card in the identity spec", () => {
   assert.match(start, /isBhdSsoReadyForRequest/);
   assert.match(start, /returnTo/);
   assert.match(identity, /isBhdSsoReadyForOrigin/);
+  assert.match(identity, /signInEntryPathForOrigin/);
   assert.match(identity, /signInEntryPath/);
   assert.match(identity, /oauth\/authorize/);
   assert.match(identity, /code_challenge_method/);
