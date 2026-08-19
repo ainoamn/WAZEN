@@ -72,6 +72,8 @@ WAZEN_TRUST_OAI_HEADERS=0
 
 إن رفضت الهوية النطاق (حالياً `wazen-roan.vercel.app` غير مسجّل على `bhd-wazen`) يبقى النموذج المحلي `/login?local=1` بدل صفحة 400. بعد نجاح النموذج المحلي تُفتح الوجهة بتحميل كامل (`location.assign`).
 
+إذا عاد المستخدم من BHD إلى `/home` وبقيت صفحة الشعار فقط، فتحقق من سياسة `Content-Security-Policy` على الصفحات المحمية: Next قد يحتاج inline bootstrapping scripts حتى يكتمل hydration. الإصدار الحالي من `proxy.ts` يسمح بـ `script-src 'self' https://accounts.google.com 'unsafe-inline'` حتى لا تتعطل `/home` بعد SSO رغم نجاح إنشاء الجلسة.
+
 العملاء من الطرف الأول (`bhd-wazen`) يُكملون PKCE **بدون** `client_secret` (تحديث الهوية: «Allow first-party PKCE token exchange without a client secret»). حتى لو ضُبط `BHD_IDENTITY_ISSUER=https://id.bhd-om.com` تبقى نقاط authorize/token على `https://one-bhd.vercel.app` ما لم يُضبط `BHD_IDENTITY_ENDPOINT`.
 
 **إلزامي على مشروع الهوية `one-bhd`** في `BHD-Complete-Brand-and-Portal-v1.1.0/app/lib/identity/clients.ts` (ومثله في v1.1.1) لعميل `bhd-wazen`:
