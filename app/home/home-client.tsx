@@ -130,7 +130,7 @@ export function HomeClient() {
     const timer = window.setTimeout(() => {
       setLoading(false);
       setError(true);
-    }, 5_000);
+    }, 18_000);
     return () => window.clearTimeout(timer);
   }, [loading, data]);
   useLiveDashboard(() => { void load(true); }, !loading);

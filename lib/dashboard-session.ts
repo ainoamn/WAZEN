@@ -8,7 +8,7 @@ let cache: CacheEntry | null = null;
 let inflight: Promise<unknown> | null = null;
 
 const FRESH_MS = 20_000;
-const FETCH_MS = 8_000;
+const FETCH_MS = 14_000;
 
 export function readDashboardCache<T>(): T | null {
   return (cache?.data as T | undefined) ?? null;

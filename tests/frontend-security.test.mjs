@@ -260,7 +260,7 @@ test("in-app account routes keep client cache; first load still uses the brand s
   assert.doesNotMatch(prefetch, /fetchDashboardSession/);
   assert.match(session, /AbortController/);
   assert.match(session, /Promise\.race/);
-  assert.match(session, /FETCH_MS = 8_000/);
+  assert.match(session, /FETCH_MS = 14_000/);
   assert.match(gate, /PageLoader/);
   assert.doesNotMatch(gate, /ContentBusy/);
   assert.match(gate, /setGate\("failed"\)/);

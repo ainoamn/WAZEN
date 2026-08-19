@@ -31,11 +31,11 @@ export function AdminConsoleGate({ children }: { children: ReactNode }) {
     if (pathname.startsWith("/admin/setup")) return;
     let cancelled = false;
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 5_000);
+    const timer = window.setTimeout(() => controller.abort(), 18_000);
     let raceTimer = 0;
     void (async () => {
       const timeoutGuard = new Promise<never>((_, reject) => {
-        raceTimer = window.setTimeout(() => reject(new DOMException("Timeout", "AbortError")), 5_000);
+        raceTimer = window.setTimeout(() => reject(new DOMException("Timeout", "AbortError")), 18_000);
       });
       const response = await Promise.race([
         fetch("/api/auth", { cache: "no-store", credentials: "same-origin", signal: controller.signal }),
