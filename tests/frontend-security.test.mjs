@@ -205,6 +205,8 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   assert.match(landing, /AccountHeader/);
   assert.match(landing, /BHD_APPS/);
   assert.match(landing, /BhdAppIcon/);
+  assert.match(landing, /commerce-footer-top/);
+  assert.match(landing, /commerce-footer-bottom/);
   assert.match(home, /window\.location\.replace\(clientSignInPath\("\/home"\)\)/);
   assert.match(home, /setLoading\(false\)/);
   assert.match(dashboard, /window\.location\.replace\(clientSignInPath\("\/dashboard"\)\)/);

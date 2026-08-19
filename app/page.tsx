@@ -127,7 +127,42 @@ export default function LandingPage() {
     <section className="commerce-security" id="security"><div><LockKeyhole size={28}/><h2>{l("الأمان والصلاحيات من البداية", "Security and permissions by design")}</h2><p>{l("تسجيل دخول محمي، عزل بيانات المستخدمين، صلاحيات على مستوى الخادم وسجل تدقيق لكل عملية حساسة.", "Protected sign-in, isolated user data, server-side authorization and an audit trail for every sensitive action.")}</p></div><div><ShieldCheck/><b>{l("تشفير وحماية", "Encryption & protection")}</b></div><div><Users/><b>{l("صلاحيات دقيقة", "Granular roles")}</b></div><div><FileText/><b>{l("سجل تدقيق", "Audit trail")}</b></div><div><Globe2/><b>{l("عالمي وثنائي اللغة", "Global & bilingual")}</b></div></section>
 
     <section className="commerce-cta"><span className="brand-glyph"><WazenIcon className="h-9 w-auto" /></span><h2>{l("ابدأ بناء صورتك المالية الواضحة اليوم", "Build a clearer financial life today")}</h2><p>{l("ابدأ مجاناً، ثم اختر الباقة المناسبة عندما تنمو احتياجاتك.", "Start free and upgrade when your needs grow.")}</p><div className="commerce-hero-actions" style={{justifyContent:"center"}}><Link href="/home" prefetch={false}>{l("إنشاء حساب مجاني", "Create free account")}<Arrow size={18}/></Link><a className="secondary" href="/about">{l("من نحن", "About us")}</a></div></section>
-    <footer className="commerce-footer"><Brand/><p>{l("منصة عالمية لإدارة الأموال الشخصية والمشتركة.", "A global platform for personal and shared money.")}</p><div className="commerce-app-links" aria-label={l("تطبيقات BHD", "BHD apps")}>{footerApps.map((app) => <a key={app.id} className="commerce-app-link" href={app.mode === "sso" && app.startUrl ? app.startUrl : `${app.origin}/`}><BhdAppIcon id={app.id} title={locale === "ar" ? app.nameAr : app.nameEn} /><span>{locale === "ar" ? app.nameAr : app.nameEn}</span></a>)}</div><nav><a href="/about">{l("من نحن", "About")}</a><a href="/pricing">{l("الباقات", "Pricing")}</a><a href="/privacy">{l("الخصوصية", "Privacy")}</a><a href="/terms">{l("الشروط", "Terms")}</a><a href="/security">{l("الأمان", "Security")}</a></nav><small>© 2026 WAZEN. {l("جميع الحقوق محفوظة.", "All rights reserved.")}</small></footer>
+    <footer className="commerce-footer">
+      <div className="commerce-footer-top">
+        <div className="commerce-footer-title">
+          <small>{l("كل التطبيقات ومنتجاتها", "All BHD apps and products")}</small>
+        </div>
+        <div className="commerce-footer-heading">
+          <strong>{l("برامجنا", "Our apps")}</strong>
+        </div>
+      </div>
+      <div className="commerce-app-links" aria-label={l("تطبيقات BHD", "BHD apps")}>
+        {footerApps.map((app) => (
+          <a
+            key={app.id}
+            className="commerce-app-link"
+            href={app.mode === "sso" && app.startUrl ? app.startUrl : `${app.origin}/`}
+          >
+            <BhdAppIcon id={app.id} title={locale === "ar" ? app.nameAr : app.nameEn} />
+            <span>{locale === "ar" ? app.nameAr : app.nameEn}</span>
+          </a>
+        ))}
+      </div>
+      <div className="commerce-footer-bottom">
+        <nav>
+          <a href="/about">{l("من نحن", "About")}</a>
+          <a href="/pricing">{l("الباقات", "Pricing")}</a>
+          <a href="/privacy">{l("الخصوصية", "Privacy")}</a>
+          <a href="/terms">{l("الشروط", "Terms")}</a>
+          <a href="/security">{l("الأمان", "Security")}</a>
+        </nav>
+        <div className="commerce-footer-brand">
+          <p>{l("منصة عالمية لإدارة الأموال الشخصية والمشتركة.", "A global platform for personal and shared money.")}</p>
+          <Brand />
+        </div>
+      </div>
+      <small>© 2026 WAZEN. {l("جميع الحقوق محفوظة.", "All rights reserved.")}</small>
+    </footer>
   </main>;
 }
 
