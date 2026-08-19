@@ -183,9 +183,15 @@ export function isBhdSsoReadyForRequest(request: Request) {
   }
 }
 
-/** Always show the Wazen login form. BHD SSO is a button on that form — not an automatic redirect. */
-export function signInEntryPathForOrigin(next: string, _origin: string) {
+/**
+ * SSO-ready origins (wazen.bhd-om.com) go straight to BHD start.
+ * Other origins (Vercel preview, localhost without SSO) show the local form.
+ */
+export function signInEntryPathForOrigin(next: string, origin: string) {
   const safeNext = safeReturnTo(next);
+  if (isBhdSsoReadyForOrigin(origin)) {
+    return `/api/auth/bhd/start?next=${encodeURIComponent(safeNext)}`;
+  }
   return `/login?local=1&next=${encodeURIComponent(safeNext)}`;
 }
 

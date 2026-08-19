@@ -163,7 +163,7 @@ test("signInEntryPathForOrigin routes SSO vs local login by origin", () => {
   const previous = { ...process.env };
   delete process.env.BHD_SSO_READY;
   process.env.BHD_OAUTH_CLIENT_ID = BHD_OAUTH_CLIENT_ID;
-  assert.match(signInEntryPathForOrigin("/home", "https://wazen.bhd-om.com"), /^\/login\?local=1&next=/);
+  assert.match(signInEntryPathForOrigin("/home", "https://wazen.bhd-om.com"), /^\/api\/auth\/bhd\/start\?next=/);
   assert.match(signInEntryPathForOrigin("/home", "https://wazen-roan.vercel.app"), /^\/login\?local=1&next=/);
   Object.assign(process.env, previous);
   if (!previous.BHD_SSO_READY) delete process.env.BHD_SSO_READY;
