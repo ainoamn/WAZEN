@@ -31,12 +31,17 @@ function loadFailed(status: number) {
 }
 
 export async function fetchDashboardSession<T>(force = false): Promise<{ status: number; data: T | null }> {
-  if (!force && inflight) {
-    const data = await inflight as T;
-    return { status: 200, data };
-  }
   if (!force && cache && Date.now() - cache.at < FRESH_MS) {
     return { status: 200, data: cache.data as T };
+  }
+  if (!force && inflight) {
+    try {
+      const data = await inflight as T;
+      return { status: 200, data };
+    } catch (caught) {
+      if ((caught as { status?: number }).status === 401) throw caught;
+      inflight = null;
+    }
   }
   const request = (async () => {
     const controller = new AbortController();

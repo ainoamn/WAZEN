@@ -119,7 +119,7 @@ export function HomeClient() {
       if ((caught as { status?: number }).status === 401) {
         redirecting = true;
         setData(null);
-        window.location.replace("/login?next=/home");
+        window.location.replace("/login?local=1&next=/home");
         return;
       }
       if (!readDashboardCache()) setError(true);
@@ -129,6 +129,14 @@ export function HomeClient() {
   }, [router]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!loading || data) return;
+    const timer = window.setTimeout(() => {
+      setLoading(false);
+      setError(true);
+    }, 15_000);
+    return () => window.clearTimeout(timer);
+  }, [loading, data]);
   useLiveDashboard(() => { void load(true); }, !loading);
   useEffect(() => {
     if (!data) return;
