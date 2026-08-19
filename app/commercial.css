@@ -1419,3 +1419,5 @@
 .auth-inline-logout{border:0;background:transparent;color:#8f1d1d;font:inherit;font-weight:800;padding:0;cursor:pointer;text-decoration:underline}
 .auth-google{height:50px;border:1px solid #dfe6e1;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:10px;background:white;color:#12231f;text-decoration:none;font-size:14px;font-weight:750;width:100%;cursor:pointer;font-family:inherit}
 .auth-google:hover{border-color:#c5d0cb;background:#fbfcfa}
+
+.commerce-admin-login{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border:1px solid rgba(255,255,255,.14);border-radius:12px;color:#f4fbf7!important;background:rgba(255,255,255,.04);text-decoration:none;font-size:9px;font-weight:800}
