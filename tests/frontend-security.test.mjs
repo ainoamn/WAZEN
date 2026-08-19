@@ -201,6 +201,10 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   const publicHeader = kit.slice(kit.indexOf("export function PublicHeader"), kit.indexOf("export function AccountHeader"));
   assert.match(publicHeader, /href="\/home"\s+prefetch=\{false\}/);
   assert.match(landing, /href="\/home"\s+prefetch=\{false\}/);
+  assert.match(landing, /fetch\("\/api\/auth"/);
+  assert.match(landing, /AccountHeader/);
+  assert.match(landing, /BHD_APPS/);
+  assert.match(landing, /BhdAppIcon/);
   assert.match(home, /window\.location\.replace\(clientSignInPath\("\/home"\)\)/);
   assert.match(home, /setLoading\(false\)/);
   assert.match(dashboard, /window\.location\.replace\(clientSignInPath\("\/dashboard"\)\)/);
