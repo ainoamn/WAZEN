@@ -417,7 +417,7 @@ authorize وtoken دائماً على https://id.bhd-om.com وليس أصل ال
 | أسرار (أسماء فقط) | `BHD_IDENTITY_ISSUER`, `BHD_IDENTITY_ENDPOINT`, `BHD_OAUTH_CLIENT_ID`, `BHD_OAUTH_CLIENT_SECRET`, `BHD_OAUTH_REDIRECT_URI`, `BHD_IDENTITY_TOKEN_SECRET`, `AUTH_SECRET`, `DATABASE_URL`, `WAZEN_JOB_SECRET` |
 | التقنيات الكاملة لوازن | Next.js 16.3 · React 19.2 · TypeScript 5.9 · Drizzle ORM 0.45 · Neon Postgres · Vercel `wazen-roan` · جلسة `__Host-wazen_session` Host-only · PKCE S256 · CSP في `proxy.ts` · فوترة ومدفوعات وWebhooks محلية · `node --test` |
 | ما لم يُوحَّد | المحافظ، المصاريف، الرحلات، الجمعيات، الفواتير، الاشتراكات، أدوار `/admin` (تبقى صلاحية منصة وازن) |
-| ملاحظات صيانة | Vercel preview: أضف `https://wazen-roan.vercel.app/api/auth/bhd/callback` في ONE-BHD `clients.ts` ثم اقلب `mode` إلى `sso` · Google محظور على وازن عند تفعيل BHD Identity · يوجد في فوتر الصفحة الرئيسية رابط “دخول الأدمن” إلى ` /login?local=1&next=/admin` لتجاوز رفض SSO المؤقت حتى توحيد كلمات المرور لاحقًا |
+| ملاحظات صيانة | Vercel preview: أضف `https://wazen-roan.vercel.app/api/auth/bhd/callback` في ONE-BHD `clients.ts` ثم اقلب `mode` إلى `sso` · Google محظور على وازن عند تفعيل BHD Identity · يوجد في فوتر الصفحة الرئيسية ومدخل `/admin` رابط “دخول الأدمن” إلى `/api/auth/admin-entry`؛ هذا المسار يُنهي جلسة BHD الموحّدة أولًا ثم يعيدك إلى ` /login?local=1&next=/admin&fresh=1 ` حتى لا تبقى مسجّلًا بمستخدم موحّد وتفتح الأدمن بمستخدم مختلف في نفس المتصفح |
 
 ### 12.3 حسابي — `ainoamn/hisaby`
 

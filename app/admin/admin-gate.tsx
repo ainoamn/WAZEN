@@ -96,7 +96,7 @@ export function AdminConsoleGate({ children }: { children: ReactNode }) {
         <p>{l("تحقق من الاتصال ثم أعد المحاولة.", "Check your connection, then try again.")}</p>
         <div>
           <button type="button" className="primary-button" onClick={() => { setGate("pending"); setAttempt((current) => current + 1); }}>{l("إعادة المحاولة", "Try again")}</button>
-          <Link href="/login?local=1&next=/admin">{l("تسجيل الدخول", "Sign in")}</Link>
+          <Link href="/api/auth/admin-entry">{l("تسجيل الدخول", "Sign in")}</Link>
           <Link href="/home">{l("العودة للرئيسية", "Back to home")}</Link>
         </div>
       </main>

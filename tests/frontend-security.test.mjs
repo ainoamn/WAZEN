@@ -205,6 +205,9 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   const home = fs.readFileSync(path.join(root, "app/home/home-client.tsx"), "utf8");
   const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
   const dashboardRoute = fs.readFileSync(path.join(root, "app/api/dashboard/route.ts"), "utf8");
+  const loginPage = fs.readFileSync(path.join(root, "app/login/page.tsx"), "utf8");
+  const adminGate = fs.readFileSync(path.join(root, "app/admin/admin-gate.tsx"), "utf8");
+  const adminEntry = fs.readFileSync(path.join(root, "app/api/auth/admin-entry/route.ts"), "utf8");
   const publicHeader = kit.slice(kit.indexOf("export function PublicHeader"), kit.indexOf("export function AccountHeader"));
   assert.match(publicHeader, /href="\/home"\s+prefetch=\{false\}/);
   assert.match(landing, /href="\/home"\s+prefetch=\{false\}/);
@@ -212,7 +215,11 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   assert.match(landing, /AccountHeader/);
   assert.match(landing, /BHD_APPS/);
   assert.match(landing, /BhdAppIcon/);
-  assert.match(landing, /\/login\?local=1&next=\/admin/);
+  assert.match(landing, /\/api\/auth\/admin-entry/);
+  assert.match(adminGate, /\/api\/auth\/admin-entry/);
+  assert.match(loginPage, /redirect\("\/api\/auth\/admin-entry"\)/);
+  assert.match(adminEntry, /post_logout_redirect_uri/);
+  assert.match(adminEntry, /fresh=1/);
   assert.match(landing, /commerce-footer-top/);
   assert.match(landing, /commerce-footer-bottom/);
   assert.match(home, /window\.location\.replace\(clientSignInPath\("\/home"\)\)/);

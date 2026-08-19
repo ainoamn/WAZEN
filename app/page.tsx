@@ -155,7 +155,7 @@ export default function LandingPage() {
           <a href="/privacy">{l("الخصوصية", "Privacy")}</a>
           <a href="/terms">{l("الشروط", "Terms")}</a>
           <a href="/security">{l("الأمان", "Security")}</a>
-          <a className="commerce-admin-login" href="/login?local=1&next=/admin">{l("دخول الأدمن", "Admin login")}</a>
+          <a className="commerce-admin-login" href="/api/auth/admin-entry">{l("دخول الأدمن", "Admin login")}</a>
         </nav>
         <div className="commerce-footer-brand">
           <p>{l("منصة عالمية لإدارة الأموال الشخصية والمشتركة.", "A global platform for personal and shared money.")}</p>

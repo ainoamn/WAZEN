@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { AuthForm } from "../auth-form";
 import { isBhdIdentityConfigured, isBhdSsoReadyForOrigin } from "../../lib/bhd-identity";
 import { googleClientId } from "../../lib/google-oauth";
@@ -11,12 +12,15 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; error?: string; local?: string }>;
+  searchParams: Promise<{ next?: string; error?: string; local?: string; fresh?: string }>;
 }) {
   const params = await searchParams;
   const hdrs = await headers();
   const next = params.next?.startsWith("/") && !params.next.startsWith("//") ? params.next : "/home";
   const identityEnabled = isBhdIdentityConfigured();
+  if (identityEnabled && params.local === "1" && next === "/admin" && params.fresh !== "1") {
+    redirect("/api/auth/admin-entry");
+  }
   const ssoReady = identityEnabled && isBhdSsoReadyForOrigin(originFromHeaders(hdrs));
   return (
     <AuthForm
