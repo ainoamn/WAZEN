@@ -237,10 +237,11 @@ test("auth form stays visible when a browser session is already active", () => {
   assert.doesNotMatch(libAuth, /row\.browser_id && requestBrowserId && row\.browser_id !== requestBrowserId/);
   assert.match(browser, /browserIdCookieName/);
   assert.match(sync, /subscribeBrowserSessionChange/);
-  assert.match(globals, /data-panel-align="start"/);
+  assert.match(globals, /position: fixed;/);
   assert.match(globals, /max-width: min\(320px, calc\(100vw - 24px\)\)/);
-  assert.match(switcher, /data-panel-align=\{panelAlign\}/);
-  assert.match(switcher, /requestAnimationFrame/);
+  assert.match(switcher, /useLayoutEffect/);
+  assert.match(switcher, /window\.addEventListener\("scroll", updatePosition, true\)/);
+  assert.match(switcher, /style=\{panelStyle \?\? undefined\}/);
 });
 
 test("in-app account routes keep client cache; first load still uses the brand splash", () => {

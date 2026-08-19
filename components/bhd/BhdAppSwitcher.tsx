@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { CSSProperties, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { DEFAULT_BHD_IDENTITY_ISSUER } from "../../lib/bhd-identity";
 import { BHD_APPS, type BhdApp } from "../../lib/bhd/apps";
 import { BhdAppIcon } from "./BhdAppIcon";
@@ -12,8 +12,6 @@ export type BhdSwitcherUser = {
 };
 
 type Panel = "apps" | "account" | null;
-type PanelAlign = "start" | "end";
-
 function stripSlash(value: string) {
   return value.replace(/\/$/, "");
 }
@@ -74,10 +72,7 @@ export function BhdAppSwitcher({
   onSignOut: () => void | Promise<void>;
 }) {
   const [panel, setPanel] = useState<Panel>(null);
-  const [panelAlign, setPanelAlign] = useState<PanelAlign>(() => {
-    if (typeof document !== "undefined" && document.documentElement.dir === "rtl") return "start";
-    return "end";
-  });
+  const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null);
   const [origin, setOrigin] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const appsId = useId();
@@ -105,22 +100,36 @@ export function BhdAppSwitcher({
     };
   }, [panel, close]);
 
-  useEffect(() => {
-    if (!panel) return;
-    const frame = window.requestAnimationFrame(() => {
-      const card = rootRef.current?.querySelector<HTMLElement>(".bhd-switcher-card");
-      if (!card) return;
-      const rect = card.getBoundingClientRect();
+  useLayoutEffect(() => {
+    if (!panel) {
+      setPanelStyle(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      const anchor = rootRef.current?.getBoundingClientRect();
+      if (!anchor) return;
       const gutter = 12;
-      if (rect.left < gutter) {
-        setPanelAlign("start");
-        return;
-      }
-      if (rect.right > window.innerWidth - gutter) {
-        setPanelAlign("end");
-      }
-    });
-    return () => window.cancelAnimationFrame(frame);
+      const width = Math.min(320, Math.max(220, window.innerWidth - (gutter * 2)));
+      const prefersRtl = document.documentElement.dir === "rtl";
+      const desiredLeft = prefersRtl ? anchor.left : anchor.right - width;
+      const left = Math.min(Math.max(desiredLeft, gutter), window.innerWidth - width - gutter);
+      const top = Math.max(gutter, anchor.bottom + 10);
+      setPanelStyle({
+        position: "fixed",
+        top,
+        left,
+        width,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
   }, [panel]);
 
   function onAppClick(app: BhdApp) {
@@ -139,7 +148,7 @@ export function BhdAppSwitcher({
   const initial = user.name.trim().slice(0, 1) || "B";
 
   return (
-    <div className="bhd-switcher-slot" ref={rootRef} data-panel-align={panelAlign}>
+    <div className="bhd-switcher-slot" ref={rootRef}>
       <button
         type="button"
         className="bhd-switcher-grid"
@@ -169,7 +178,7 @@ export function BhdAppSwitcher({
       </button>
 
       {panel === "apps" ? (
-        <div className="bhd-switcher-card" id={appsId} role="dialog" aria-label="تطبيقات BHD">
+        <div className="bhd-switcher-card" style={panelStyle ?? undefined} id={appsId} role="dialog" aria-label="تطبيقات BHD">
           <div className="bhd-switcher-card-head">
             <p>تطبيقات BHD</p>
           </div>
@@ -200,7 +209,7 @@ export function BhdAppSwitcher({
       ) : null}
 
       {panel === "account" ? (
-        <div className="bhd-switcher-card bhd-switcher-account" id={accountId} role="dialog" aria-label="الحساب">
+        <div className="bhd-switcher-card bhd-switcher-account" style={panelStyle ?? undefined} id={accountId} role="dialog" aria-label="الحساب">
           <div className="bhd-switcher-account-row">
             {user.picture ? <img src={user.picture} alt="" width={44} height={44} /> : <span className="bhd-switcher-account-initial">{initial}</span>}
             <div>
