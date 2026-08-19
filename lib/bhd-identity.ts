@@ -161,6 +161,37 @@ const KNOWN_ORIGINS = new Set([
   "http://localhost:3001",
 ]);
 
+/** Origins where ONE-BHD has registered the OAuth callback for bhd-wazen. */
+const BHD_SSO_READY_ORIGINS = new Set([
+  "https://wazen.bhd-om.com",
+  "http://localhost:3000",
+  "http://localhost:3001",
+]);
+
+export function isBhdSsoReadyForOrigin(origin: string) {
+  if (!isBhdIdentityConfigured()) return false;
+  if (process.env.BHD_SSO_READY === "1") return true;
+  if (process.env.BHD_SSO_READY === "0") return false;
+  return BHD_SSO_READY_ORIGINS.has(origin.replace(/\/$/, ""));
+}
+
+export function isBhdSsoReadyForRequest(request: Request) {
+  try {
+    return isBhdSsoReadyForOrigin(publicRequestOrigin(request));
+  } catch {
+    return false;
+  }
+}
+
+/** Relative sign-in entry: BHD portal when allowlisted, otherwise local login. */
+export function signInEntryPath(next: string, request: Request) {
+  const safeNext = safeReturnTo(next);
+  if (isBhdSsoReadyForRequest(request)) {
+    return `/api/auth/bhd/start?next=${encodeURIComponent(safeNext)}`;
+  }
+  return `/login?local=1&next=${encodeURIComponent(safeNext)}`;
+}
+
 export function publicRequestOrigin(request: Request) {
   try {
     const origin = new URL(request.url).origin;

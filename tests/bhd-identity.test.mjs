@@ -13,6 +13,7 @@ import {
   identityEndpointBase,
   identityIssuer,
   isBhdIdentityConfigured,
+  isBhdSsoReadyForOrigin,
   pkceChallenge,
   safeReturnTo,
   verifyBhdIdToken,
@@ -88,6 +89,21 @@ test("BHD identity is on with frozen client id; secret is optional for first-par
   if (!previous.disabled) delete process.env.BHD_OAUTH_DISABLED;
 });
 
+test("BHD SSO readiness follows allowlisted production origins", () => {
+  const previous = { ...process.env };
+  delete process.env.BHD_SSO_READY;
+  process.env.BHD_OAUTH_CLIENT_ID = BHD_OAUTH_CLIENT_ID;
+  assert.equal(isBhdSsoReadyForOrigin("https://wazen.bhd-om.com"), true);
+  assert.equal(isBhdSsoReadyForOrigin("https://wazen-roan.vercel.app"), false);
+  assert.equal(isBhdSsoReadyForOrigin("http://localhost:3000"), true);
+  process.env.BHD_SSO_READY = "1";
+  assert.equal(isBhdSsoReadyForOrigin("https://wazen-roan.vercel.app"), true);
+  process.env.BHD_SSO_READY = "0";
+  assert.equal(isBhdSsoReadyForOrigin("https://wazen.bhd-om.com"), false);
+  Object.assign(process.env, previous);
+  if (!previous.BHD_SSO_READY) delete process.env.BHD_SSO_READY;
+});
+
 test("ID token HS256 verification checks iss, aud, nonce, and expiry", async () => {
   const secret = "wazen-identity-test-secret";
   const previous = { ...process.env };
@@ -153,7 +169,9 @@ test("Wazen BHD routes follow the product card in the identity spec", () => {
   assert.match(spec, /bhd-wazen/);
   assert.match(spec, /https:\/\/id\.bhd-om\.com/);
   assert.match(start, /createBhdAuthRequest/);
-  assert.match(start, /identityAcceptsAuthorizeUrl/);
+  assert.match(start, /isBhdSsoReadyForRequest/);
+  assert.match(identity, /isBhdSsoReadyForOrigin/);
+  assert.match(identity, /signInEntryPath/);
   assert.match(identity, /oauth\/authorize/);
   assert.match(identity, /code_challenge_method/);
   assert.match(callback, /exchangeBhdCode/);

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { signInEntryPath } from "./lib/bhd-identity";
 import { browserSessionCookie, sessionCookieName } from "./lib/session-policy";
 
 function sessionToken(request: NextRequest) {
@@ -12,18 +13,21 @@ export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const token = sessionToken(request);
   if ((pathname === "/home" || pathname === "/dashboard") && !token) {
-    const start = request.nextUrl.clone();
-    start.pathname = "/api/auth/bhd/start";
-    start.search = "";
-    start.searchParams.set("next", pathname);
-    return NextResponse.redirect(start);
+    const entry = signInEntryPath(pathname, new Request(request.url, { headers: request.headers }));
+    const target = request.nextUrl.clone();
+    const parsed = new URL(entry, request.url);
+    target.pathname = parsed.pathname;
+    target.search = parsed.search;
+    return NextResponse.redirect(target);
   }
   if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/setup") && !token) {
-    const start = request.nextUrl.clone();
-    start.pathname = "/api/auth/bhd/start";
-    start.search = "";
-    start.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
-    return NextResponse.redirect(start);
+    const next = `${pathname}${request.nextUrl.search}`;
+    const entry = signInEntryPath(next, new Request(request.url, { headers: request.headers }));
+    const target = request.nextUrl.clone();
+    const parsed = new URL(entry, request.url);
+    target.pathname = parsed.pathname;
+    target.search = parsed.search;
+    return NextResponse.redirect(target);
   }
 
   const development = process.env.NODE_ENV !== "production";

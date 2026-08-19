@@ -117,10 +117,10 @@ test("proxy CSP allows Next.js scripts without a nonce-only script policy", () =
   assert.doesNotMatch(source, /x-nonce/);
 });
 
-test("proxy redirects anonymous /admin visitors to BHD identity", () => {
+test("proxy redirects anonymous app routes through sign-in entry", () => {
   const source = fs.readFileSync(path.join(root, "proxy.ts"), "utf8");
   assert.match(source, /sessionToken/);
-  assert.match(source, /\/api\/auth\/bhd\/start/);
+  assert.match(source, /signInEntryPath/);
   assert.match(source, /pathname.startsWith\("\/admin"\)/);
   assert.match(source, /pathname === "\/home"/);
   assert.match(source, /pathname === "\/dashboard"/);
@@ -134,7 +134,8 @@ test("login and register wrap the unified BHD portal", () => {
   const authRoute = fs.readFileSync(path.join(root, "app/api/auth/route.ts"), "utf8");
   const form = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
   assert.match(login, /<AuthForm/);
-  assert.match(login, /redirect\(`\/api\/auth\/bhd\/start/);
+  assert.match(login, /isBhdSsoReadyForOrigin/);
+  assert.match(register, /isBhdSsoReadyForOrigin/);
   assert.match(login, /params.local !== "1"/);
   assert.doesNotMatch(login, /sessionCookieFromStore/);
   assert.doesNotMatch(login, /cookies\(/);
@@ -156,11 +157,16 @@ test("login and register wrap the unified BHD portal", () => {
 
 test("BHD SSO start/callback exist and login can wrap identity", () => {
   const login = fs.readFileSync(path.join(root, "app/login/page.tsx"), "utf8");
+  const homePage = fs.readFileSync(path.join(root, "app/home/page.tsx"), "utf8");
   const form = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
   const logout = fs.readFileSync(path.join(root, "lib/client-logout.ts"), "utf8");
   const home = fs.readFileSync(path.join(root, "app/home/home-client.tsx"), "utf8");
   assert.match(login, /isBhdIdentityConfigured/);
+  assert.match(login, /isBhdSsoReadyForOrigin/);
   assert.match(login, /api\/auth\/bhd\/start/);
+  assert.match(homePage, /authenticateRequest/);
+  assert.match(homePage, /signInEntryPath/);
+  assert.match(form, /ssoReady/);
   assert.match(form, /api\/auth\/bhd\/start/);
   assert.match(form, /الدخول بحساب BHD/);
   assert.match(logout, /endSessionUrl/);
@@ -174,15 +180,15 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
   const dashboardRoute = fs.readFileSync(path.join(root, "app/api/dashboard/route.ts"), "utf8");
   const publicHeader = kit.slice(kit.indexOf("export function PublicHeader"), kit.indexOf("export function AccountHeader"));
-  assert.match(publicHeader, /href="\/api\/auth\/bhd\/start/);
+  assert.match(publicHeader, /href="\/login\?next=%2Fhome"/);
   assert.doesNotMatch(publicHeader, /href="\/home"/);
-  assert.match(landing, /href="\/api\/auth\/bhd\/start/);
+  assert.match(landing, /href="\/login\?next=%2Fhome"/);
   assert.doesNotMatch(landing, /href="\/home"/);
   assert.match(home, /let redirecting = false/);
-  assert.match(home, /window\.location\.replace\("\/login\?next=\/home"\)/);
+  assert.match(home, /window\.location\.replace\("\/login\?local=1&next=\/home"\)/);
   assert.match(home, /if \(!redirecting\) setLoading\(false\)/);
   assert.match(dashboard, /let redirecting = false/);
-  assert.match(dashboard, /window\.location\.replace\("\/login\?next=\/dashboard"\)/);
+  assert.match(dashboard, /window\.location\.replace\("\/login\?local=1&next=\/dashboard"\)/);
   assert.match(dashboardRoute, /unauthenticatedResponse/);
   assert.match(dashboardRoute, /clearSessionCookie/);
 });

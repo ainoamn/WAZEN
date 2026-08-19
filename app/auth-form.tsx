@@ -35,7 +35,7 @@ function authRedirectTarget(role?: string) {
   return safeNext.startsWith("/admin") && !canOpenPlatformConsole(role) ? "/home" : safeNext;
 }
 
-export function AuthForm({ mode, next = "/home", googleClientId = "", identityEnabled = false }: { mode: "login" | "register"; next?: string; googleClientId?: string; identityEnabled?: boolean }) {
+export function AuthForm({ mode, next = "/home", googleClientId = "", identityEnabled = false, ssoReady = false }: { mode: "login" | "register"; next?: string; googleClientId?: string; identityEnabled?: boolean; ssoReady?: boolean }) {
   const router = useRouter();
   const { locale, setLocale, l } = useCommerceLocale();
   const [displayName, setDisplayName] = useState(""); const [email, setEmail] = useState("");
@@ -129,7 +129,7 @@ export function AuthForm({ mode, next = "/home", googleClientId = "", identityEn
         <Link href={activeSession.dest}>{l("فتح الرئيسية", "Open home")}</Link>
       </p>
     )}
-    {identityEnabled && (
+    {identityEnabled && ssoReady && (
       <>
         <a className="auth-submit" href={`/api/auth/bhd/start?next=${encodeURIComponent(authRedirectTarget())}`}>
           {l("الدخول بحساب BHD", "Sign in with BHD")}
