@@ -1413,5 +1413,9 @@
 
 .auth-divider{display:flex;align-items:center;gap:12px;margin:18px 0 14px;color:#80918b;font-size:12px;font-weight:700}
 .auth-divider:before,.auth-divider:after{content:"";flex:1;height:1px;background:#dfe6e1}
+.auth-session-note{display:flex;flex-direction:column;gap:10px}
+.auth-session-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.auth-session-actions a{color:#8f1d1d;font-weight:800}
+.auth-inline-logout{border:0;background:transparent;color:#8f1d1d;font:inherit;font-weight:800;padding:0;cursor:pointer;text-decoration:underline}
 .auth-google{height:50px;border:1px solid #dfe6e1;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:10px;background:white;color:#12231f;text-decoration:none;font-size:14px;font-weight:750;width:100%;cursor:pointer;font-family:inherit}
 .auth-google:hover{border-color:#c5d0cb;background:#fbfcfa}

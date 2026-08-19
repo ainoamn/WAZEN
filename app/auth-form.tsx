@@ -125,14 +125,15 @@ export function AuthForm({ mode, next = "/home", googleClientId = "", identityEn
     <header><Brand showArabic /><button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button></header>
     <div className="auth-copy"><small>{l("وصول آمن إلى وازن", "Secure access to Wazen")}</small><h1>{mode === "login" ? l("مرحباً بعودتك", "Welcome back") : l("أنشئ حسابك", "Create your account")}</h1><p>{identityEnabled ? l("ادخل بحساب BHD الموحّد. بيانات المحافظ تبقى في وازن فقط.", "Sign in with your unified BHD account. Wallet data stays in Wazen.") : l("بياناتك المالية تخصك. جلسة مشفرة وصلاحيات منفصلة لكل حساب.", "Your financial data stays yours, with secure sessions and isolated access.")}</p></div>
     {activeSession && (
-      <p className="auth-error" role="status">
-        {l("لديك جلسة في هذا المتصفح. أكمل النموذج لتحديث الدخول، أو اخرج أولاً.", "A session exists in this browser. Submit the form to refresh it, or sign out first.")}{" "}
-        <Link href={activeSession.dest}>{l("فتح الرئيسية", "Open home")}</Link>
-        {" · "}
-        <button type="button" className="auth-inline-logout" onClick={() => void completeClientLogout()}>
-          {l("تسجيل الخروج", "Sign out")}
-        </button>
-      </p>
+      <div className="auth-error auth-session-note" role="status">
+        <span>{l("لديك جلسة في هذا المتصفح. أكمل النموذج لتحديث الدخول، أو اخرج أولاً.", "A session exists in this browser. Submit the form to refresh it, or sign out first.")}</span>
+        <div className="auth-session-actions">
+          <Link href={activeSession.dest}>{l("فتح الرئيسية", "Open home")}</Link>
+          <button type="button" className="auth-inline-logout" onClick={() => void completeClientLogout()}>
+            {l("تسجيل الخروج", "Sign out")}
+          </button>
+        </div>
+      </div>
     )}
     {identityEnabled && ssoReady && (
       <>
