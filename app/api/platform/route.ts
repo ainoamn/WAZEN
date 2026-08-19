@@ -10,6 +10,7 @@ import { countryPack } from "../../../lib/country-packs";
 import { nextReference } from "../../../lib/reference";
 import { encryptSecret, loadKeyring } from "../../../lib/encryption";
 import { configuredAllowedHosts, validateOutboundHttpsUrl } from "../../../lib/outbound";
+import { ensureBootstrapPlatformRole } from "../../../lib/platform-role-bootstrap";
 import { listAdminUsers, getAdminUserDetail, adminVerifyUserEmail, adminUpdateUserProfile } from "../../../services/admin/users-service";
 import { computeAdminAlerts } from "../../../services/admin/alerts-service";
 import { blockIpByHash, unblockIpByHash, trustIpByHash, IP_BLOCK_HOURS } from "../../../lib/ip-security";
@@ -95,10 +96,7 @@ async function ensureIdentity(db: D1Database, user: RequestUser) {
 
   const role = await db.prepare("SELECT role FROM platform_roles WHERE user_id=?").bind(user.id).first<{ role: string }>();
   if (!role) {
-    const administrators = (process.env.WAZEN_ADMIN_EMAILS ?? "").split(",").map(normalizeEmail).filter(Boolean);
-    const assigned = administrators.includes(normalizeEmail(user.email)) ? "super_admin" : "customer";
-    await db.prepare("INSERT INTO platform_roles VALUES (?,?,?, ?, ?)")
-      .bind(user.id, assigned, JSON.stringify(assigned === "super_admin" ? ["*"] : ["wallets:own", "documents:own"]), now, now).run();
+    await ensureBootstrapPlatformRole(db, user.id, user.email, now);
   }
 
   const subscription = await db.prepare("SELECT id FROM subscriptions WHERE user_id=? LIMIT 1").bind(user.id).first();

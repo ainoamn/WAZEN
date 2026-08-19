@@ -200,6 +200,7 @@ test("Wazen BHD routes follow the product card in the identity spec", () => {
   assert.doesNotMatch(currentPath, /ensureBhdSubColumn/);
   assert.match(account, /bhd_sub/);
   assert.doesNotMatch(account, /super_admin/);
+  assert.match(account, /ensureBootstrapPlatformRole/);
   assert.match(account, /claims\.emailVerified/);
   assert.match(auth, /endSessionUrl/);
 });

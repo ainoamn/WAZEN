@@ -13,6 +13,7 @@ import { accountLiveBalance, dueAtForPeriod, monthKeysForRule, occurrenceLedgerS
 import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-forecast";
 import { filterSpacesByPlan } from "../../../lib/plan-features";
 import { filterSpacesForPlanAccess } from "../../../lib/plan-retention";
+import { ensureBootstrapPlatformRole } from "../../../lib/platform-role-bootstrap";
 
 type SpaceRow = {
   id: string;
@@ -221,14 +222,11 @@ async function ensureUser(db: D1Database, user: RequestUser) {
   }
 
   if (!existing) {
-    const configuredAdmins = (process.env.WAZEN_ADMIN_EMAILS ?? "").split(",").map((email) => email.trim().toLowerCase());
-    const role = configuredAdmins.includes(user.email.toLowerCase()) ? "super_admin" : "customer";
     await db.batch([
       db.prepare(`INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','OM',?,?)
         ON CONFLICT(user_id) DO UPDATE SET last_seen_at=excluded.last_seen_at`).bind(user.id, createdAt, createdAt),
-      db.prepare(`INSERT OR IGNORE INTO platform_roles (user_id,role,permissions_json,created_at,updated_at) VALUES (?,?,?,?,?)`)
-        .bind(user.id, role, role === "super_admin" ? '["*"]' : '["wallets:own","documents:own"]', createdAt, createdAt),
     ]);
+    await ensureBootstrapPlatformRole(db, user.id, user.email, createdAt);
     await ensureDefaultTenant(db, user);
   }
 

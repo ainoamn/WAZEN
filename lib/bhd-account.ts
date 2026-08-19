@@ -2,6 +2,7 @@ import { writeAudit } from "./audit";
 import { ensureDefaultTenant } from "./authorization";
 import type { BhdIdClaims } from "./bhd-identity";
 import { ApiError } from "./api-error.ts";
+import { ensureBootstrapPlatformRole } from "./platform-role-bootstrap";
 
 export async function upsertBhdUser(db: D1Database, claims: BhdIdClaims) {
   const email = claims.email.trim().toLowerCase();
@@ -50,9 +51,8 @@ export async function upsertBhdUser(db: D1Database, claims: BhdIdClaims) {
     db.prepare("INSERT INTO users (id,email,display_name,locale,currency,avatar_url,bhd_sub,created_at) VALUES (?,?,?,'ar','OMR',?,?,?)")
       .bind(userId, email, claims.name, claims.picture, claims.sub, now),
     db.prepare("INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','OM',?,?)").bind(userId, now, now),
-    db.prepare("INSERT INTO platform_roles (user_id,role,permissions_json,created_at,updated_at) VALUES (?,'customer','[\"wallets:own\",\"documents:own\"]',?,?)")
-      .bind(userId, now, now),
   ]);
+  await ensureBootstrapPlatformRole(db, userId, email, now);
   await ensureDefaultTenant(db, { id: userId, displayName: claims.name });
   await writeAudit(db, { userId, action: "auth.bhd_registered", entityType: "user", entityId: userId, createdAt: now });
   return { id: userId, email, displayName: claims.name, created: true };

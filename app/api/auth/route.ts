@@ -7,6 +7,7 @@ import { clientCountry, clientIp, recordSecurityEvent } from "../../../lib/ip-se
 import { appOrigin } from "../../../lib/app-origin";
 import { writeAudit } from "../../../lib/audit";
 import { decryptSecret, encryptSecret, loadKeyring } from "../../../lib/encryption";
+import { ensureBootstrapPlatformRole } from "../../../lib/platform-role-bootstrap";
 import { createTotpSecret, verifyTotp } from "../../../lib/totp";
 import { isEmailProviderConfigured } from "../../../lib/email-provider";
 import { isBhdIdentityConfigured, bhdEndSessionUrl } from "../../../lib/bhd-identity";
@@ -225,16 +226,14 @@ export async function POST(request: Request) {
       const passwordData = await hashPassword(password);
       const verificationToken = createSessionToken(); const verificationHash = await sha256(verificationToken);
       const origin = appOrigin(request);
-      const configuredAdmins = (process.env.WAZEN_ADMIN_EMAILS ?? "").split(",").map(normalizeEmail).filter(Boolean);
-      const role = configuredAdmins.includes(email) ? "super_admin" : "customer";
       await db.batch([
         db.prepare("INSERT INTO users (id,email,display_name,locale,currency,created_at) VALUES (?,?,?,'ar','OMR',?)").bind(userId, email, displayName, createdAt),
         db.prepare("INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','OM',?,?)").bind(userId, createdAt, createdAt),
-        db.prepare("INSERT INTO platform_roles (user_id,role,permissions_json,created_at,updated_at) VALUES (?,?,?,?,?)").bind(userId, role, role === "super_admin" ? '["*"]' : '["wallets:own","documents:own"]', createdAt, createdAt),
         db.prepare("INSERT INTO auth_credentials (user_id,password_hash,password_salt,password_iterations,created_at,updated_at) VALUES (?,?,?,?,?,?)").bind(userId, passwordData.hash, passwordData.salt, passwordData.iterations, createdAt, createdAt),
         db.prepare("INSERT INTO email_verification_tokens (id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)").bind(crypto.randomUUID(), userId, verificationHash, new Date(Date.now() + 86_400_000).toISOString(), createdAt),
         db.prepare("INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)").bind(crypto.randomUUID(), email, "verify_email", JSON.stringify({ displayName, link: `${origin}/verify-email?token=${encodeURIComponent(verificationToken)}` }), createdAt),
       ]);
+      await ensureBootstrapPlatformRole(db, userId, email, createdAt);
       await ensureDefaultTenant(db, { id: userId, displayName });
       await writeAudit(db, { userId, action: "auth.registered", entityType: "user", entityId: userId, createdAt });
       const emailReady = isEmailProviderConfigured();

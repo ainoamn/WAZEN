@@ -41,7 +41,14 @@ test("admin layout does not paint the console chrome before an access gate", () 
 
 test("dashboard hides platform admin unless canOpenPlatformConsole is true", () => {
   const source = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
+  const authRoute = fs.readFileSync(path.join(root, "app/api/auth/route.ts"), "utf8");
+  const googleAccount = fs.readFileSync(path.join(root, "lib/google-account.ts"), "utf8");
+  const platformBootstrap = fs.readFileSync(path.join(root, "lib/platform-role-bootstrap.ts"), "utf8");
   assert.match(source, /canOpenPlatformConsole\(role\) \? <Link href="\/admin"/);
+  assert.match(authRoute, /ensureBootstrapPlatformRole/);
+  assert.match(googleAccount, /ensureBootstrapPlatformRole/);
+  assert.match(platformBootstrap, /shouldBootstrapPlatformAdmin/);
+  assert.match(platformBootstrap, /never demote an existing explicit role/);
 });
 
 test("dashboard settings includes a password-change form", () => {

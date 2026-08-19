@@ -3,6 +3,7 @@ import { ensureDefaultTenant } from "./authorization";
 import { writeAudit } from "./audit";
 import type { GoogleProfile } from "./google-oauth";
 import { ApiError } from "./api-error";
+import { ensureBootstrapPlatformRole } from "./platform-role-bootstrap";
 
 export async function upsertGoogleUser(db: D1Database, profile: GoogleProfile) {
   if (!profile.emailVerified) throw new ApiError(403, "GOOGLE_EMAIL_UNVERIFIED");
@@ -37,19 +38,16 @@ export async function upsertGoogleUser(db: D1Database, profile: GoogleProfile) {
 
   const userId = crypto.randomUUID();
   const passwordData = await hashPassword(createSessionToken() + createSessionToken());
-  const configuredAdmins = (process.env.WAZEN_ADMIN_EMAILS ?? "").split(",").map(normalizeEmail).filter(Boolean);
-  const role = configuredAdmins.includes(email) ? "super_admin" : "customer";
   await db.batch([
     db.prepare("INSERT INTO users (id,email,display_name,locale,currency,avatar_url,created_at) VALUES (?,?,?,'ar','OMR',?,?)")
       .bind(userId, email, profile.name, profile.picture, now),
     db.prepare("INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','OM',?,?)").bind(userId, now, now),
-    db.prepare("INSERT INTO platform_roles (user_id,role,permissions_json,created_at,updated_at) VALUES (?,?,?,?,?)")
-      .bind(userId, role, role === "super_admin" ? '["*"]' : '["wallets:own","documents:own"]', now, now),
     db.prepare("INSERT INTO auth_credentials (user_id,password_hash,password_salt,password_iterations,email_verified_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?)")
       .bind(userId, passwordData.hash, passwordData.salt, passwordData.iterations, now, now, now),
     db.prepare("INSERT INTO oauth_identities (id,user_id,provider,provider_user_id,email,created_at) VALUES (?,?, 'google',?,?,?)")
       .bind(crypto.randomUUID(), userId, profile.sub, email, now),
   ]);
+  await ensureBootstrapPlatformRole(db, userId, email, now);
   await ensureDefaultTenant(db, { id: userId, displayName: profile.name });
   await writeAudit(db, { userId, action: "auth.google_registered", entityType: "user", entityId: userId, createdAt: now });
   return { id: userId, email, displayName: profile.name, created: true };
