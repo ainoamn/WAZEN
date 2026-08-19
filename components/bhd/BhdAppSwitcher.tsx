@@ -12,6 +12,7 @@ export type BhdSwitcherUser = {
 };
 
 type Panel = "apps" | "account" | null;
+type PanelAlign = "start" | "end";
 
 function stripSlash(value: string) {
   return value.replace(/\/$/, "");
@@ -73,6 +74,10 @@ export function BhdAppSwitcher({
   onSignOut: () => void | Promise<void>;
 }) {
   const [panel, setPanel] = useState<Panel>(null);
+  const [panelAlign, setPanelAlign] = useState<PanelAlign>(() => {
+    if (typeof document !== "undefined" && document.documentElement.dir === "rtl") return "start";
+    return "end";
+  });
   const [origin, setOrigin] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const appsId = useId();
@@ -100,6 +105,24 @@ export function BhdAppSwitcher({
     };
   }, [panel, close]);
 
+  useEffect(() => {
+    if (!panel) return;
+    const frame = window.requestAnimationFrame(() => {
+      const card = rootRef.current?.querySelector<HTMLElement>(".bhd-switcher-card");
+      if (!card) return;
+      const rect = card.getBoundingClientRect();
+      const gutter = 12;
+      if (rect.left < gutter) {
+        setPanelAlign("start");
+        return;
+      }
+      if (rect.right > window.innerWidth - gutter) {
+        setPanelAlign("end");
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [panel]);
+
   function onAppClick(app: BhdApp) {
     if (!app.enabled) return;
     if (app.id === "account") {
@@ -116,7 +139,7 @@ export function BhdAppSwitcher({
   const initial = user.name.trim().slice(0, 1) || "B";
 
   return (
-    <div className="bhd-switcher-slot" ref={rootRef}>
+    <div className="bhd-switcher-slot" ref={rootRef} data-panel-align={panelAlign}>
       <button
         type="button"
         className="bhd-switcher-grid"

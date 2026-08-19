@@ -220,6 +220,7 @@ test("auth form stays visible when a browser session is already active", () => {
   const sync = fs.readFileSync(path.join(root, "app/browser-session-sync.tsx"), "utf8");
   const browser = fs.readFileSync(path.join(root, "lib/browser-session.ts"), "utf8");
   const globals = fs.readFileSync(path.join(root, "app/globals.css"), "utf8");
+  const switcher = fs.readFileSync(path.join(root, "components/bhd/BhdAppSwitcher.tsx"), "utf8");
   assert.match(auth, /fetch\("\/api\/auth"/);
   assert.match(auth, /credentials: "same-origin"/);
   assert.match(auth, /result\.authenticated/);
@@ -236,8 +237,10 @@ test("auth form stays visible when a browser session is already active", () => {
   assert.doesNotMatch(libAuth, /row\.browser_id && requestBrowserId && row\.browser_id !== requestBrowserId/);
   assert.match(browser, /browserIdCookieName/);
   assert.match(sync, /subscribeBrowserSessionChange/);
-  assert.match(globals, /html\[dir="rtl"\] \.bhd-switcher-card/);
+  assert.match(globals, /data-panel-align="start"/);
   assert.match(globals, /max-width: min\(320px, calc\(100vw - 24px\)\)/);
+  assert.match(switcher, /data-panel-align=\{panelAlign\}/);
+  assert.match(switcher, /requestAnimationFrame/);
 });
 
 test("in-app account routes keep client cache; first load still uses the brand splash", () => {
