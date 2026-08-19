@@ -66,7 +66,7 @@ WAZEN_TRUST_OAI_HEADERS=0
 
 ## حساب BHD الموحّد (SSO)
 
-المواصفة: [BHD-IDENTITY-SSO.md](./BHD-IDENTITY-SSO.md) (نسخة من ONE-BHD بلا تعديل القيم المجمّدة).
+المواصفة: [BHD-IDENTITY-SSO.md](./BHD-IDENTITY-SSO.md) (نسخة من ONE-BHD بلا تعديل القيم المجمّدة). **الدليل المرجعي الكامل:** [BHD-UNIFIED-LOGIN-AND-APPS.md](./BHD-UNIFIED-LOGIN-AND-APPS.md) (القسم 12.2 — سجل وازن).
 
 `/login` وزر **تسجيل الدخول** يحوّلان إلى `GET /api/auth/bhd/start`. إن قبلت الهوية `redirect_uri` يفتح المتصفح بوابة المجموعة (`one-bhd.vercel.app`) بنفس شاشة الدخول: بريد أو جوجل هناك، ثم يعود وازن بجلسة `__Host-wazen_session`. جوجل لا يظهر على وازن بعد الربط.
 

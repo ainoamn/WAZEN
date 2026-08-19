@@ -9,18 +9,18 @@ function sessionToken(request: NextRequest) {
     || "";
 }
 
+function needsSession(pathname: string) {
+  if (pathname === "/home" || pathname === "/dashboard") return true;
+  if (pathname === "/billing" || pathname === "/documents" || pathname === "/pricing") return true;
+  if (pathname.startsWith("/account")) return true;
+  if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/setup")) return true;
+  return false;
+}
+
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const token = sessionToken(request);
-  if ((pathname === "/home" || pathname === "/dashboard") && !token) {
-    const entry = signInEntryPath(pathname, new Request(request.url, { headers: request.headers }));
-    const target = request.nextUrl.clone();
-    const parsed = new URL(entry, request.url);
-    target.pathname = parsed.pathname;
-    target.search = parsed.search;
-    return NextResponse.redirect(target);
-  }
-  if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/setup") && !token) {
+  if (needsSession(pathname) && !token) {
     const next = `${pathname}${request.nextUrl.search}`;
     const entry = signInEntryPath(next, new Request(request.url, { headers: request.headers }));
     const target = request.nextUrl.clone();

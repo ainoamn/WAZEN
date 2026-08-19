@@ -20,13 +20,12 @@ import { BhdAppSwitcher } from "../../components/bhd/BhdAppSwitcher";
 import { apiFetch } from "../../lib/client-api";
 import { prefetchAppRoutes, warmAppCaches } from "../../lib/app-prefetch";
 import { completeClientLogout } from "../../lib/client-logout";
+import { goToSignIn } from "../../lib/client-sign-in";
 import { fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../../lib/dashboard-session";
 import { useLiveDashboard } from "../../lib/live-sync";
 import { formatMoneyMinor, currencyScale } from "../../lib/money";
 import { memberDisplayCreditMinor, pendingSettlementsWithCredit } from "../../lib/finance";
 import { memberAccruedDueMinor } from "../../components/members/association-members";
-import { canOpenPlatformConsole } from "../../lib/platform-console";
-
 type Locale = "ar" | "en";
 
 type Space = {
@@ -120,7 +119,7 @@ export function HomeClient() {
       if ((caught as { status?: number }).status === 401) {
         redirecting = true;
         setData(null);
-        window.location.replace("/login?local=1&next=/home");
+        goToSignIn("/home");
         return;
       }
       if (!readDashboardCache()) setError(true);
@@ -216,7 +215,6 @@ export function HomeClient() {
           </button>
           <BhdAppSwitcher
             user={{ name: data.user.displayName, email: data.user.email, picture: data.user.avatarUrl ?? null }}
-            platformAdmin={canOpenPlatformConsole(data.user.role)}
             onSignOut={() => void logout()}
           />
         </div>

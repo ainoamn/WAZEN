@@ -102,7 +102,9 @@ test("customer billing uses account header and never links to admin plans", () =
   assert.doesNotMatch(dashboard, /href="\/admin\/plans"/);
   assert.match(kit, /Signed-in header for customer commerce pages/);
   assert.match(kit, /never links to \/admin\/plans/);
-  assert.match(kit, /function AccountHeader/);
+  assert.match(kit, /BhdAppSwitcher/);
+  assert.match(kit, /AdminShellUserSwitcher/);
+  assert.doesNotMatch(kit, /AdminAccountMenu/);
   const accountHeader = kit.slice(kit.indexOf("function AccountHeader"), kit.indexOf("const adminLinks"));
   assert.match(accountHeader, /href="\/pricing"/);
   assert.match(accountHeader, /href="\/billing"/);
@@ -121,6 +123,9 @@ test("proxy redirects anonymous app routes through sign-in entry", () => {
   const source = fs.readFileSync(path.join(root, "proxy.ts"), "utf8");
   assert.match(source, /sessionToken/);
   assert.match(source, /signInEntryPath/);
+  assert.match(source, /pathname === "\/billing"/);
+  assert.match(source, /pathname === "\/documents"/);
+  assert.match(source, /pathname.startsWith\("\/account"\)/);
   assert.match(source, /pathname.startsWith\("\/admin"\)/);
   assert.match(source, /pathname === "\/home"/);
   assert.match(source, /pathname === "\/dashboard"/);
@@ -177,8 +182,12 @@ test("BHD SSO start/callback exist and login can wrap identity", () => {
   assert.match(home, /completeClientLogout/);
   assert.match(dashboard, /BhdAppSwitcher/);
   assert.match(switcher, /BHD_APPS/);
+  assert.doesNotMatch(switcher, /platformAdmin/);
+  assert.doesNotMatch(switcher, /href="\/admin"/);
   assert.match(apps, /BHD_APP_SWITCHER_SPEC/);
   assert.match(apps, /bhd-wazen/);
+  assert.match(fs.readFileSync(path.join(root, "lib/client-sign-in.ts"), "utf8"), /goToSignIn/);
+  assert.match(fs.readFileSync(path.join(root, "docs/BHD-UNIFIED-LOGIN-AND-APPS.md"), "utf8"), /12\.2 وازن/);
 });
 
 test("logged-out sign-in does not paint the home load-error screen", () => {
@@ -193,10 +202,11 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   assert.match(landing, /href="\/login\?next=%2Fhome"/);
   assert.doesNotMatch(landing, /href="\/home"/);
   assert.match(home, /let redirecting = false/);
-  assert.match(home, /window\.location\.replace\("\/login\?local=1&next=\/home"\)/);
+  assert.doesNotMatch(home, /window\.location\.replace\("\/login\?local=1&next=\/home"\)/);
+  assert.match(home, /goToSignIn\("\/home"\)/);
   assert.match(home, /if \(!redirecting\) setLoading\(false\)/);
   assert.match(dashboard, /let redirecting = false/);
-  assert.match(dashboard, /window\.location\.replace\("\/login\?local=1&next=\/dashboard"\)/);
+  assert.match(dashboard, /goToSignIn\("\/dashboard"\)/);
   assert.match(dashboardRoute, /unauthenticatedResponse/);
   assert.match(dashboardRoute, /clearSessionCookie/);
 });

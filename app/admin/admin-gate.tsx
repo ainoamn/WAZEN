@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
 import { AdminShell, Brand, PageLoader, useCommerceLocale } from "../commercial-kit";
 import { ADMIN_PREFETCH_PATHS, clearAdminConsole, fetchAdminConsole, readAdminConsole } from "../../lib/admin-session";
+import { goToSignIn } from "../../lib/client-sign-in";
 import { prefetchAppRoutes } from "../../lib/app-prefetch";
 import { clearDashboardCache, readDashboardCache } from "../../lib/dashboard-session";
 import { canOpenPlatformConsole } from "../../lib/platform-console";
@@ -45,7 +46,7 @@ export function AdminConsoleGate({ children }: { children: ReactNode }) {
       if (response.status === 401) {
         clearAdminConsole();
         clearDashboardCache();
-        router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+        goToSignIn(pathname);
         return;
       }
       const result = await response.json() as { authenticated?: boolean; role?: string };

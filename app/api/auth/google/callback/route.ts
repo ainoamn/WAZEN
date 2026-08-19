@@ -1,5 +1,6 @@
 import { getRawDb, ensureSchema } from "../../../../../db/runtime";
 import { authenticateRequest, createSession, sessionHeaders } from "../../../../../lib/auth";
+import { isBhdIdentityConfigured } from "../../../../../lib/bhd-identity";
 import { browserIdFromRequest } from "../../../../../lib/browser-session";
 import { upsertGoogleUser } from "../../../../../lib/google-account";
 import {
@@ -38,6 +39,7 @@ export async function GET(request: Request) {
     const db = getRawDb();
     await ensureSchema(db);
     await rateLimit(db, request, "auth-google", 12, 900);
+    if (isBhdIdentityConfigured()) return failRedirect(request, "BHD_IDENTITY_ONLY");
     if (!isGoogleRedirectConfigured()) return failRedirect(request, "GOOGLE_NOT_CONFIGURED");
     const url = new URL(request.url);
     const googleError = mapGoogleCallbackError(url.searchParams.get("error"));

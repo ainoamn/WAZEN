@@ -184,12 +184,20 @@ export function isBhdSsoReadyForRequest(request: Request) {
 }
 
 /** Relative sign-in entry: BHD portal when allowlisted, otherwise local login. */
-export function signInEntryPath(next: string, request: Request) {
+export function signInEntryPathForOrigin(next: string, origin: string) {
   const safeNext = safeReturnTo(next);
-  if (isBhdSsoReadyForRequest(request)) {
-    return `/api/auth/bhd/start?next=${encodeURIComponent(safeNext)}`;
+  if (isBhdSsoReadyForOrigin(origin)) {
+    return `/api/auth/bhd/start?returnTo=${encodeURIComponent(safeNext)}`;
   }
   return `/login?local=1&next=${encodeURIComponent(safeNext)}`;
+}
+
+export function signInEntryPath(next: string, request: Request) {
+  try {
+    return signInEntryPathForOrigin(next, publicRequestOrigin(request));
+  } catch {
+    return `/login?local=1&next=${encodeURIComponent(safeReturnTo(next))}`;
+  }
 }
 
 export function publicRequestOrigin(request: Request) {

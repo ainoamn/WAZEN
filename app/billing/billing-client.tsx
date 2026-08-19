@@ -7,6 +7,7 @@ import { ErrorCard, money, AccountHeader, Status, useCommerceLocale, ContentBusy
 import { PLAN_FEATURE_CATALOG, formatQuota, planHasFeature } from "../../lib/plan-features";
 import { userGraceWarningCopy } from "../../lib/plan-retention-rules";
 import { apiFetch } from "../../lib/client-api";
+import { goToSignIn } from "../../lib/client-sign-in";
 import { prefetchApp } from "../../lib/app-prefetch";
 import { errorLabel } from "../../lib/admin-labels";
 import { clearDashboardCache } from "../../lib/dashboard-session";
@@ -64,7 +65,7 @@ export function BillingClient() {
     fetchPageCache<BillingData>("billing", "/api/platform?view=billing", true)
       .then(setData)
       .catch((caught: Error & { status?: number }) => {
-        if (caught.status === 401) { router.replace("/login?next=/billing"); return; }
+        if (caught.status === 401) { goToSignIn("/billing"); return; }
         if (!readPageCache("billing")) setError(locale === "ar" ? "تعذر تحميل الفوترة" : "Could not load billing");
       });
   };

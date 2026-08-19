@@ -78,6 +78,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import { apiFetch } from "../lib/client-api";
 import { prefetchAppRoutes, warmAppCaches } from "../lib/app-prefetch";
 import { completeClientLogout } from "../lib/client-logout";
+import { goToSignIn } from "../lib/client-sign-in";
 import { BhdAppSwitcher } from "../components/bhd/BhdAppSwitcher";
 import { fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../lib/dashboard-session";
 import { notifyLiveRefresh, useLiveDashboard } from "../lib/live-sync";
@@ -859,7 +860,7 @@ export function WazenDashboard() {
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) {
         redirecting = true;
-        window.location.replace("/login?local=1&next=/dashboard");
+        goToSignIn("/dashboard");
         return;
       }
       if (!readDashboardCache()) setError(true);
@@ -1067,7 +1068,6 @@ export function WazenDashboard() {
             }} />
             <BhdAppSwitcher
               user={{ name: data.user.displayName, email: data.user.email, picture: data.user.avatarUrl ?? null }}
-              platformAdmin={canOpenPlatformConsole(data.user.role ?? undefined)}
               onSignOut={() => void logout()}
             />
           </div>

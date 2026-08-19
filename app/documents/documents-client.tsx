@@ -1,17 +1,16 @@
 "use client";
 
-import { CheckCircle2, Download, FileBarChart, FileCheck2, FileDown, FileText, Filter, LogOut, Plus, Printer, ReceiptText, Search, X } from "lucide-react";
+import { CheckCircle2, Download, FileBarChart, FileCheck2, FileDown, FileText, Filter, Plus, Printer, ReceiptText, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Brand, ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
+import { AccountHeader, Brand, ContentBusy, ErrorCard, money, Status, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
+import { goToSignIn } from "../../lib/client-sign-in";
 import { prefetchApp } from "../../lib/app-prefetch";
-import { completeClientLogout } from "../../lib/client-logout";
 import { wrapPrintDocument, printWazenHtml, downloadReportHtml, resolvePrintLogoUrl } from "../../lib/print-document";
 import { escapeHtml, safeDownloadFilename } from "../../lib/html";
 import { planHasFeature } from "../../lib/plan-features";
-import { canOpenPlatformConsole } from "../../lib/platform-console";
 import { consumePlanQuota } from "../../lib/plan-quota-client";
 import { errorLabel, methodLabel } from "../../lib/admin-labels";
 import { fetchPageCache, readPageCache } from "../../lib/page-cache";
@@ -30,13 +29,14 @@ export function DocumentsClient() {
   const { locale, setLocale, l } = useCommerceLocale();
   const [data, setData] = useState<Data | null>(() => readPageCache<Data>("documents")); const [selected, setSelected] = useState<DocumentRow | null>(null);
   const [query, setQuery] = useState(""); const [filter, setFilter] = useState("all"); const [modal, setModal] = useState(false); const [error, setError] = useState("");
-  const load = useCallback(() => fetchPageCache<Data>("documents", "/api/platform?view=documents").then((result) => { const documents = result.documents ?? []; const next = { ...result, documents, spaces: result.spaces ?? [] }; setData(next); setError(""); setSelected(current => current ? documents.find(doc => doc.id === current.id) ?? documents[0] : documents[0]); }).catch((caught: Error & { status?: number }) => { if (caught.status === 401) { router.replace("/login?next=/documents"); return; } if (!readPageCache("documents")) setError(locale === "ar" ? "تعذر تحميل المستندات" : "Could not load documents"); }), [locale, router]);
+  const load = useCallback(() => fetchPageCache<Data>("documents", "/api/platform?view=documents").then((result) => { const documents = result.documents ?? []; const next = { ...result, documents, spaces: result.spaces ?? [] }; setData(next); setError(""); setSelected(current => current ? documents.find(doc => doc.id === current.id) ?? documents[0] : documents[0]); }).catch((caught: Error & { status?: number }) => { if (caught.status === 401) { goToSignIn("/documents"); return; } if (!readPageCache("documents")) setError(locale === "ar" ? "تعذر تحميل المستندات" : "Could not load documents"); }), [locale]);
   useEffect(() => { void load(); prefetchApp(router); }, [load, router]);
   const rows = useMemo(() => data?.documents.filter(doc => (filter === "all" || doc.type === filter) && `${doc.reference} ${doc.person_name} ${doc.description}`.toLowerCase().includes(query.toLowerCase())) ?? [], [data,filter,query]);
-  if (error && !data) return <ErrorCard message={error} retry={load}/>; if (!data) return <ContentBusy/>;
+  if (error && !data) return <ErrorCard message={error} retry={load}/>; if (!data) return <main className="documents-page admin-console"><AccountHeader locale={locale} setLocale={setLocale} active="documents" /><ContentBusy /></main>;
   const documentsUnlocked = planHasFeature(data.entitlements?.features?.length ? data.entitlements.features : ["personal"], "documents");
+  const headerUser = { name: data.user.displayName, email: data.user.email, picture: null };
   if (!documentsUnlocked) {
-    return <main className="documents-page admin-console"><header className="documents-header"><Brand/><nav><Link href="/dashboard">{l("لوحة المستخدم","Dashboard")}</Link><Link href="/billing">{l("الفوترة","Billing")}</Link></nav><button type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button></header>
+    return <main className="documents-page admin-console"><AccountHeader locale={locale} setLocale={setLocale} active="documents" user={headerUser} />
       <div className="admin-access-denied"><b>{l("الإيصالات والكشوفات غير مشمولة في باقتك","Receipts and statements are not on your plan")}</b><p>{l("رقِّ الباقة من صفحة التسعير لفتح هذه البيانات.","Upgrade from the pricing page to open this data.")}</p><div><Link href="/pricing">{l("ترقية الباقة","Upgrade plan")}</Link><Link href="/dashboard">{l("لوحة المستخدم","Dashboard")}</Link></div></div></main>;
   }
   const counts = Object.fromEntries(Object.keys(types).map(type => [type, data.documents.filter(doc => doc.type === type).length]));
@@ -60,10 +60,7 @@ export function DocumentsClient() {
       void printWazenHtml((logoUrl) => documentHtml(selected, locale, data.user.displayName, logoUrl), true);
     });
   };
-  const logout = async () => {
-    await completeClientLogout();
-  };
-  return <main className="documents-page admin-console"><header className="documents-header"><Brand/><nav><Link href="/dashboard">{l("لوحة المستخدم","Dashboard")}</Link><Link href="/billing">{l("الفوترة","Billing")}</Link>{canOpenPlatformConsole(data.role)&&<Link href="/admin">{l("الإدارة","Admin")}</Link>}</nav><button type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button><button type="button" className="admin-logout" onClick={() => void logout()}><LogOut size={16} />{l("تسجيل الخروج","Sign out")}</button></header>
+  return <main className="documents-page admin-console"><AccountHeader locale={locale} setLocale={setLocale} active="documents" user={headerUser} />
     <div className="documents-layout"><aside><h2>{l("المستندات المالية","Financial documents")}</h2><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}><FileText/> {l("جميع المستندات","All documents")}<b>{data.documents.length}</b></button>{Object.entries(types).map(([key,value]) => <button className={filter === key ? "active" : ""} onClick={() => setFilter(key)} key={key}><ReceiptText/> {locale === "ar" ? value[0] : value[1]}<b>{counts[key]}</b></button>)}</aside>
     <section className="documents-main"><div className="documents-title"><div><small>{l("الإدارة / الإيصالات والكشوفات","Admin / Receipts & statements")}</small><h1>{l("الإيصالات والكشوفات","Receipts & statements")}</h1><p>{l("قائمة الأنواع في العمود، والمعاينة بجانب التحكم. أنشئ وطبع ونزّل المستندات المرقمة.", "Types in the side column, preview beside controls. Create, print and download numbered documents.")}</p></div><div><button onClick={printSelected}><Printer/>{l("طباعة / PDF","Print / PDF")}</button><button className={canDownload ? "" : "is-plan-locked"} onClick={download}><Download/>{l("تنزيل نسخة","Download")}{canDownload ? null : <em className="plan-lock-badge">{l("ترقية","Upgrade")}</em>}</button><button className="primary" onClick={() => setModal(true)}><Plus/>{l("مستند جديد","New document")}</button></div></div>
     <div className="document-kpis"><article><ReceiptText/><span>{l("إيصالات قبض","Receipts")}</span><b>{counts.receipt}</b></article><article><FileDown/><span>{l("سندات صرف","Disbursements")}</span><b>{counts.disbursement}</b></article><article><FileCheck2/><span>{l("تسليم واستلام","Handovers")}</span><b>{counts.handover}</b></article><article><FileBarChart/><span>{l("كشوف وتقارير","Statements")}</span><b>{data.documents.length-counts.receipt-counts.disbursement-counts.handover}</b></article></div>

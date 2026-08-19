@@ -68,11 +68,9 @@ function openApp(app: BhdApp, pageOrigin: string) {
 export function BhdAppSwitcher({
   user,
   onSignOut,
-  platformAdmin = false,
 }: {
   user: BhdSwitcherUser;
   onSignOut: () => void | Promise<void>;
-  platformAdmin?: boolean;
 }) {
   const [panel, setPanel] = useState<Panel>(null);
   const [origin, setOrigin] = useState("");
@@ -190,11 +188,6 @@ export function BhdAppSwitcher({
           <a className="bhd-switcher-account-link" href={accountPageUrl(origin)}>
             الحساب
           </a>
-          {platformAdmin ? (
-            <a className="bhd-switcher-account-link" href="/admin">
-              الإدارة
-            </a>
-          ) : null}
           <button type="button" className="bhd-switcher-signout" onClick={() => void onSignOut()}>
             خروج
           </button>

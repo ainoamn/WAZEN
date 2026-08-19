@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CreditCard, Globe2, Landmark, WalletCards } from "lucide-react";
 import { ContentBusy, ErrorCard, useCommerceLocale } from "../commercial-kit";
 import { apiFetch } from "../../lib/client-api";
+import { goToSignIn } from "../../lib/client-sign-in";
 import { fetchAdminConsole, patchAdminConsole, readAdminConsole } from "../../lib/admin-session";
 import { AdminConsole, AdminSwitch } from "./admin-ui";
 import { methodListLabel, errorLabel, scopeLabel } from "../../lib/admin-labels";
@@ -41,7 +42,7 @@ export function AdminGateways() {
       })
       .catch((caught: Error) => {
         if (caught.message === "AUTH") {
-          router.push("/login?next=/admin/gateways");
+          goToSignIn("/admin/gateways");
           return;
         }
         if (!readAdminConsole()) setError(caught.message === "FORBIDDEN" ? "FORBIDDEN" : "LOAD");

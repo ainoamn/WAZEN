@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getRawDb, ensureSchema } from "../../../../db/runtime";
 import { authenticateRequest, createSession, createSessionToken, sessionHeaders } from "../../../../lib/auth";
+import { isBhdIdentityConfigured } from "../../../../lib/bhd-identity";
 import { platformRoleOf } from "../../../../lib/authorization";
 import { browserIdCookie, browserIdFromRequest } from "../../../../lib/browser-session";
 import { upsertGoogleUser } from "../../../../lib/google-account";
@@ -27,6 +28,7 @@ export async function GET(request: Request) {
     const db = getRawDb();
     await ensureSchema(db);
     await rateLimit(db, request, "auth-google", 12, 900);
+    if (isBhdIdentityConfigured()) throw new ApiError(503, "BHD_IDENTITY_ONLY");
     if (!isGoogleRedirectConfigured()) throw new ApiError(503, "GOOGLE_NOT_CONFIGURED");
     const user = await authenticateRequest(db, request);
     const next = safeAuthNext(new URL(request.url).searchParams.get("next"));
@@ -58,6 +60,7 @@ export async function POST(request: Request) {
     const db = getRawDb();
     await ensureSchema(db);
     await rateLimit(db, request, "auth-google", 12, 900);
+    if (isBhdIdentityConfigured()) throw new ApiError(503, "BHD_IDENTITY_ONLY");
     if (!isGoogleOAuthConfigured()) throw new ApiError(503, "GOOGLE_NOT_CONFIGURED");
     const existing = await authenticateRequest(db, request);
     if (existing?.authType === "session") {

@@ -56,12 +56,12 @@ export async function GET(request: Request) {
       const headers = new Headers({ "Cache-Control": "no-store" });
       headers.append("Set-Cookie", clearSessionCookie());
       headers.append("Set-Cookie", clearCsrfCookie());
-      return Response.json({ authenticated: false, googleEnabled: isGoogleOAuthConfigured(), identityEnabled: isBhdIdentityConfigured() }, { status: 401, headers });
+      return Response.json({ authenticated: false, googleEnabled: isGoogleOAuthConfigured() && !isBhdIdentityConfigured(), identityEnabled: isBhdIdentityConfigured() }, { status: 401, headers });
     }
     const role = await platformRoleOf(db, user.id);
     const issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
     const headers = new Headers({ "Cache-Control": "no-store" }); if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
-    return Response.json({ authenticated: true, user, role, googleEnabled: isGoogleOAuthConfigured(), identityEnabled: isBhdIdentityConfigured() }, { headers });
+    return Response.json({ authenticated: true, user, role, googleEnabled: isGoogleOAuthConfigured() && !isBhdIdentityConfigured(), identityEnabled: isBhdIdentityConfigured() }, { headers });
   } catch (error) { return errorResponse(error); }
 }
 
