@@ -172,8 +172,9 @@ test("BHD SSO start/callback exist and login can wrap identity", () => {
   assert.match(login, /isBhdIdentityConfigured/);
   assert.match(login, /isBhdSsoReadyForOrigin/);
   assert.match(login, /api\/auth\/bhd\/start/);
-  assert.match(homePage, /authenticateRequest/);
-  assert.match(homePage, /signInEntryPath/);
+  assert.match(homePage, /HomeClient/);
+  assert.doesNotMatch(homePage, /ensureSchema/);
+  assert.doesNotMatch(homePage, /authenticateRequest/);
   assert.match(form, /ssoReady/);
   assert.match(form, /api\/auth\/bhd\/start/);
   assert.match(form, /الدخول بحساب BHD/);
@@ -201,14 +202,13 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   assert.doesNotMatch(publicHeader, /href="\/home"/);
   assert.match(landing, /href="\/login\?next=%2Fhome"/);
   assert.doesNotMatch(landing, /href="\/home"/);
-  assert.match(home, /let redirecting = false/);
-  assert.doesNotMatch(home, /window\.location\.replace\("\/login\?local=1&next=\/home"\)/);
-  assert.match(home, /goToSignIn\("\/home"\)/);
-  assert.match(home, /if \(!redirecting\) setLoading\(false\)/);
-  assert.match(dashboard, /let redirecting = false/);
-  assert.match(dashboard, /goToSignIn\("\/dashboard"\)/);
+  assert.doesNotMatch(home, /goToSignIn\("\/home"\)/);
+  assert.match(home, /\/login\?local=1&next=\/home/);
+  assert.match(home, /setLoading\(false\)/);
+  assert.doesNotMatch(dashboard, /goToSignIn\("\/dashboard"\)/);
+  assert.match(dashboard, /\/login\?local=1&next=\/dashboard/);
   assert.match(dashboardRoute, /unauthenticatedResponse/);
-  assert.match(dashboardRoute, /clearSessionCookie/);
+  assert.doesNotMatch(dashboardRoute, /clearSessionCookie/);
 });
 
 test("auth form stays visible when a browser session is already active", () => {
@@ -228,6 +228,8 @@ test("auth form stays visible when a browser session is already active", () => {
   assert.doesNotMatch(auth, /PageLoader/);
   assert.doesNotMatch(auth, /WazenPageLoader/);
   assert.match(libAuth, /DELETE FROM auth_sessions WHERE browser_id=\?/);
+  assert.match(libAuth, /UPDATE auth_sessions SET browser_id=\? WHERE id=\?/);
+  assert.doesNotMatch(libAuth, /row\.browser_id && requestBrowserId && row\.browser_id !== requestBrowserId/);
   assert.match(browser, /browserIdCookieName/);
   assert.match(sync, /subscribeBrowserSessionChange/);
 });
@@ -259,7 +261,7 @@ test("in-app account routes keep client cache; first load still uses the brand s
   assert.doesNotMatch(prefetch, /fetchDashboardSession/);
   assert.match(session, /AbortController/);
   assert.match(session, /Promise\.race/);
-  assert.match(session, /FETCH_MS = 12_000/);
+  assert.match(session, /FETCH_MS = 8_000/);
   assert.match(gate, /PageLoader/);
   assert.doesNotMatch(gate, /ContentBusy/);
   assert.match(gate, /setGate\("failed"\)/);

@@ -53,10 +53,7 @@ export async function GET(request: Request) {
     const db = getRawDb(); await ensureSchema(db);
     const user = await authenticateRequest(db, request);
     if (!user) {
-      const headers = new Headers({ "Cache-Control": "no-store" });
-      headers.append("Set-Cookie", clearSessionCookie());
-      headers.append("Set-Cookie", clearCsrfCookie());
-      return Response.json({ authenticated: false, googleEnabled: isGoogleOAuthConfigured() && !isBhdIdentityConfigured(), identityEnabled: isBhdIdentityConfigured() }, { status: 401, headers });
+      return Response.json({ authenticated: false, googleEnabled: isGoogleOAuthConfigured() && !isBhdIdentityConfigured(), identityEnabled: isBhdIdentityConfigured() }, { status: 401, headers: { "Cache-Control": "no-store" } });
     }
     const role = await platformRoleOf(db, user.id);
     const issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;

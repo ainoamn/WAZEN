@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
 import { AdminShell, Brand, PageLoader, useCommerceLocale } from "../commercial-kit";
 import { ADMIN_PREFETCH_PATHS, clearAdminConsole, fetchAdminConsole, readAdminConsole } from "../../lib/admin-session";
-import { goToSignIn } from "../../lib/client-sign-in";
 import { prefetchAppRoutes } from "../../lib/app-prefetch";
 import { clearDashboardCache, readDashboardCache } from "../../lib/dashboard-session";
 import { canOpenPlatformConsole } from "../../lib/platform-console";
@@ -32,11 +31,11 @@ export function AdminConsoleGate({ children }: { children: ReactNode }) {
     if (pathname.startsWith("/admin/setup")) return;
     let cancelled = false;
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 20_000);
+    const timer = window.setTimeout(() => controller.abort(), 5_000);
     let raceTimer = 0;
     void (async () => {
       const timeoutGuard = new Promise<never>((_, reject) => {
-        raceTimer = window.setTimeout(() => reject(new DOMException("Timeout", "AbortError")), 20_000);
+        raceTimer = window.setTimeout(() => reject(new DOMException("Timeout", "AbortError")), 5_000);
       });
       const response = await Promise.race([
         fetch("/api/auth", { cache: "no-store", credentials: "same-origin", signal: controller.signal }),
@@ -46,7 +45,7 @@ export function AdminConsoleGate({ children }: { children: ReactNode }) {
       if (response.status === 401) {
         clearAdminConsole();
         clearDashboardCache();
-        goToSignIn(pathname);
+        setGate("failed");
         return;
       }
       const result = await response.json() as { authenticated?: boolean; role?: string };
@@ -97,6 +96,7 @@ export function AdminConsoleGate({ children }: { children: ReactNode }) {
         <p>{l("تحقق من الاتصال ثم أعد المحاولة.", "Check your connection, then try again.")}</p>
         <div>
           <button type="button" className="primary-button" onClick={() => { setGate("pending"); setAttempt((current) => current + 1); }}>{l("إعادة المحاولة", "Try again")}</button>
+          <Link href="/login?local=1&next=/admin">{l("تسجيل الدخول", "Sign in")}</Link>
           <Link href="/home">{l("العودة للرئيسية", "Back to home")}</Link>
         </div>
       </main>
