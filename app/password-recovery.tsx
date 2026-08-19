@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { WazenIcon } from "../components/brand/WazenLogo";
 import { Brand, useCommerceLocale } from "./commercial-kit";
+import { clientSignInPath } from "../lib/client-sign-in";
 
 export function PasswordRecovery({ mode, token = "" }: { mode: "forgot" | "reset"; token?: string }) {
   const router = useRouter();
@@ -60,7 +61,7 @@ export function PasswordRecovery({ mode, token = "" }: { mode: "forgot" | "reset
           </form>
         )}
         <footer>
-          <Link href="/login?local=1&next=%2Fhome">{l("العودة لتسجيل الدخول", "Back to sign in")}</Link>
+          <Link href={clientSignInPath("/home")}>{l("العودة لتسجيل الدخول", "Back to sign in")}</Link>
         </footer>
       </section>
       <aside>

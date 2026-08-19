@@ -78,6 +78,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import { apiFetch } from "../lib/client-api";
 import { prefetchAppRoutes, warmAppCaches } from "../lib/app-prefetch";
 import { completeClientLogout } from "../lib/client-logout";
+import { clientSignInPath } from "../lib/client-sign-in";
 import { BhdAppSwitcher } from "../components/bhd/BhdAppSwitcher";
 import { fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../lib/dashboard-session";
 import { notifyLiveRefresh, useLiveDashboard } from "../lib/live-sync";
@@ -857,7 +858,7 @@ export function WazenDashboard() {
       if (result.data) setDataState(result.data);
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) {
-        window.location.replace("/login?local=1&next=/dashboard");
+        window.location.replace(clientSignInPath("/dashboard"));
         return;
       }
       if (!readDashboardCache()) setError(true);
@@ -2645,7 +2646,7 @@ function ErrorScreen({ message, retry }: { message: string; retry: () => void })
       <h1>وازن</h1>
       <p>{message}</p>
       <button className="primary-button" onClick={retry}>Try again</button>
-      <a className="secondary-button" href="/login?local=1&next=/dashboard">Sign in</a>
+      <a className="secondary-button" href={clientSignInPath("/dashboard")}>Sign in</a>
     </div>
   );
 }

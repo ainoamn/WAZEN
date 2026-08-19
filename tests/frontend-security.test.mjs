@@ -199,13 +199,13 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
   const dashboardRoute = fs.readFileSync(path.join(root, "app/api/dashboard/route.ts"), "utf8");
   const publicHeader = kit.slice(kit.indexOf("export function PublicHeader"), kit.indexOf("export function AccountHeader"));
-  assert.match(publicHeader, /href="\/login\?local=1&next=%2Fhome"/);
+  assert.match(publicHeader, /clientSignInPath\("\/home"\)/);
   assert.doesNotMatch(publicHeader, /href="\/home"/);
-  assert.match(landing, /href="\/login\?local=1&next=%2Fhome"/);
+  assert.match(landing, /clientSignInPath\("\/home"\)/);
   assert.doesNotMatch(landing, /href="\/home"/);
-  assert.match(home, /window\.location\.replace\("\/login\?local=1&next=\/home"\)/);
+  assert.match(home, /window\.location\.replace\(clientSignInPath\("\/home"\)\)/);
   assert.match(home, /setLoading\(false\)/);
-  assert.match(dashboard, /window\.location\.replace\("\/login\?local=1&next=\/dashboard"\)/);
+  assert.match(dashboard, /window\.location\.replace\(clientSignInPath\("\/dashboard"\)\)/);
   assert.match(dashboardRoute, /unauthenticatedResponse/);
   assert.match(dashboardRoute, /clearSessionCookie/);
 });

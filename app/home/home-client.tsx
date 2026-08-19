@@ -20,6 +20,7 @@ import { BhdAppSwitcher } from "../../components/bhd/BhdAppSwitcher";
 import { apiFetch } from "../../lib/client-api";
 import { prefetchAppRoutes, warmAppCaches } from "../../lib/app-prefetch";
 import { completeClientLogout } from "../../lib/client-logout";
+import { clientSignInPath } from "../../lib/client-sign-in";
 import { fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../../lib/dashboard-session";
 import { useLiveDashboard } from "../../lib/live-sync";
 import { formatMoneyMinor, currencyScale } from "../../lib/money";
@@ -115,7 +116,7 @@ export function HomeClient() {
       }
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) {
-        window.location.replace("/login?local=1&next=/home");
+        window.location.replace(clientSignInPath("/home"));
         return;
       }
       if (!readDashboardCache()) setError(true);
@@ -190,7 +191,7 @@ export function HomeClient() {
         <button type="button" className="primary-button" onClick={() => { setLoading(true); void load(); }}>
           {locale === "ar" ? "إعادة المحاولة" : "Try again"}
         </button>
-        <a className="secondary-button" href="/login?local=1&next=/home">
+        <a className="secondary-button" href={clientSignInPath("/home")}>
           {locale === "ar" ? "تسجيل الدخول" : "Sign in"}
         </a>
       </div>

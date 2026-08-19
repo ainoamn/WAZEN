@@ -11,6 +11,7 @@ import { formatMoneyMinor } from "../lib/money";
 import { statusLabel } from "../lib/admin-labels";
 import { fetchAdminConsole, readAdminConsole } from "../lib/admin-session";
 import { completeClientLogout } from "../lib/client-logout";
+import { clientSignInPath } from "../lib/client-sign-in";
 
 export type CommerceLocale = "ar" | "en";
 
@@ -87,8 +88,8 @@ export function PublicHeader({ locale, setLocale }: { locale: CommerceLocale; se
     </nav>
     <div className="commerce-header-actions">
       <button onClick={() => setLocale(locale === "ar" ? "en" : "ar")}><Globe2 size={16} />{locale === "ar" ? "EN" : "عربي"}</button>
-      <Link href="/login?local=1&next=%2Fhome">{l("تسجيل الدخول", "Sign in")}</Link>
-      <Link className="filled" href="/login?local=1&next=%2Fhome">{l("ابدأ مجاناً", "Start free")}</Link>
+      <Link href={clientSignInPath("/home")}>{l("تسجيل الدخول", "Sign in")}</Link>
+      <Link className="filled" href={clientSignInPath("/home")}>{l("ابدأ مجاناً", "Start free")}</Link>
     </div>
   </header>;
 }
