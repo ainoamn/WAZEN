@@ -32,7 +32,10 @@ function safeFormNext(value: string | null | undefined) {
 }
 
 async function readAuthPayload(request: Request) {
-  if (!isHtmlAuthForm(request)) return { html: false as const, next: "/home", body: await request.json() };
+  if (!isHtmlAuthForm(request)) {
+    const body = await request.json() as Record<string, unknown>;
+    return { html: false as const, next: safeFormNext(typeof body.next === "string" ? body.next : "/home"), body };
+  }
   const form = await request.formData();
   const totp = String(form.get("totpCode") ?? "").replace(/\D/g, "");
   return {
@@ -53,7 +56,10 @@ export async function GET(request: Request) {
     const db = getRawDb(); await ensureSchema(db);
     const user = await authenticateRequest(db, request);
     if (!user) {
-      return Response.json({ authenticated: false, googleEnabled: isGoogleOAuthConfigured() && !isBhdIdentityConfigured(), identityEnabled: isBhdIdentityConfigured() }, { status: 401, headers: { "Cache-Control": "no-store" } });
+      const headers = new Headers({ "Cache-Control": "no-store" });
+      headers.append("Set-Cookie", clearSessionCookie());
+      headers.append("Set-Cookie", clearCsrfCookie());
+      return Response.json({ authenticated: false, googleEnabled: isGoogleOAuthConfigured() && !isBhdIdentityConfigured(), identityEnabled: isBhdIdentityConfigured() }, { status: 401, headers });
     }
     const role = await platformRoleOf(db, user.id);
     const issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
@@ -70,7 +76,9 @@ export async function POST(request: Request) {
     if (!htmlForm) enforceWriteRequest(request, 16_384);
     const db = getRawDb(); await ensureSchema(db); await rateLimit(db, request, "auth", 10, 900);
     const payload = await readAuthPayload(request);
-    const parsed = credentialsSchema.safeParse(payload.body);
+    const authBody = { ...payload.body } as Record<string, unknown>;
+    delete authBody.next;
+    const parsed = credentialsSchema.safeParse(authBody);
     if (!parsed.success) throw new ApiError(400, "INVALID_CREDENTIALS");
     const formNext = payload.next;
     const { action } = parsed.data;
@@ -243,10 +251,6 @@ export async function POST(request: Request) {
         ...(!emailReady && !isProductionLikeRuntime() ? { verifyUrl: `/verify-email?token=${encodeURIComponent(verificationToken)}` } : {}),
       }, { status: 201, headers: { "Cache-Control": "no-store" } });
     }
-    const active = await authenticateRequest(db, request);
-    if (active?.authType === "session" && normalizeEmail(active.email) !== email) {
-      throw new ApiError(409, "SESSION_ALREADY_ACTIVE");
-    }
     const row = await db.prepare(`SELECT u.id,u.email,u.display_name,c.password_hash,c.password_salt,c.password_iterations,c.email_verified_at,p.status,t.encrypted_secret,t.last_used_step,t.enabled_at
       FROM users u JOIN auth_credentials c ON c.user_id=u.id LEFT JOIN customer_profiles p ON p.user_id=u.id
       LEFT JOIN totp_credentials t ON t.user_id=u.id
@@ -272,18 +276,6 @@ export async function POST(request: Request) {
       if (!result.valid) throw new ApiError(401, "INVALID_TOTP");
       const update = await db.prepare("UPDATE totp_credentials SET last_used_step=?,updated_at=? WHERE user_id=? AND (last_used_step IS NULL OR last_used_step<?)").bind(result.step, new Date().toISOString(), row.id, result.step).run();
       if (Number(update.meta.changes) !== 1) throw new ApiError(401, "TOTP_REPLAYED");
-    }
-    const existing = await authenticateRequest(db, request);
-    if (existing?.authType === "session" && existing.id === row.id) {
-      const role = await platformRoleOf(db, row.id);
-      const issued = await issueCsrfToken(db, request);
-      const headers = new Headers({ "Cache-Control": "no-store" });
-      if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
-      if (htmlForm) {
-        headers.set("Location", `${requestOrigin}${formNext}`);
-        return new Response(null, { status: 303, headers });
-      }
-      return Response.json({ ok: true, user: { id: row.id, email: row.email, displayName: row.display_name, isDemo: false }, role }, { headers });
     }
     const session = await createSession(db, row.id, request);
     await recordSecurityEvent(db, {

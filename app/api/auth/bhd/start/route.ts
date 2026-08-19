@@ -1,5 +1,4 @@
 import { getRawDb, ensureSchema } from "../../../../../db/runtime";
-import { authenticateRequest } from "../../../../../lib/auth";
 import { bhdOauthStateCookie, createBhdAuthRequest, isBhdIdentityConfigured, isBhdSsoReadyForRequest, publicRequestOrigin, safeReturnTo } from "../../../../../lib/bhd-identity";
 import { ApiError, errorResponse, rateLimit } from "../../../../../lib/security";
 
@@ -17,8 +16,6 @@ export async function GET(request: Request) {
     if (!isBhdSsoReadyForRequest(request)) {
       return Response.redirect(`${origin}/login?error=BHD_REDIRECT_DENIED&local=1&next=${encodeURIComponent(next)}`, 302);
     }
-    const user = await authenticateRequest(db, request);
-    if (user) return Response.redirect(`${origin}${next}`, 302);
     const started = await createBhdAuthRequest(request, next);
     const headers = new Headers({ Location: started.url, "Cache-Control": "no-store" });
     headers.append("Set-Cookie", bhdOauthStateCookie(started.cookie));

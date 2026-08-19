@@ -857,7 +857,7 @@ export function WazenDashboard() {
       if (result.data) setDataState(result.data);
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) {
-        setError(true);
+        window.location.replace("/login?local=1&next=/dashboard");
         return;
       }
       if (!readDashboardCache()) setError(true);

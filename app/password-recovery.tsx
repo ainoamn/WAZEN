@@ -60,7 +60,7 @@ export function PasswordRecovery({ mode, token = "" }: { mode: "forgot" | "reset
           </form>
         )}
         <footer>
-          <Link href="/login?next=%2Fhome">{l("العودة لتسجيل الدخول", "Back to sign in")}</Link>
+          <Link href="/login?local=1&next=%2Fhome">{l("العودة لتسجيل الدخول", "Back to sign in")}</Link>
         </footer>
       </section>
       <aside>

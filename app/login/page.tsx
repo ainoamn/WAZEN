@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import { AuthForm } from "../auth-form";
 import { isBhdIdentityConfigured, isBhdSsoReadyForOrigin } from "../../lib/bhd-identity";
 import { googleClientId } from "../../lib/google-oauth";
@@ -19,9 +18,6 @@ export default async function LoginPage({
   const next = params.next?.startsWith("/") && !params.next.startsWith("//") ? params.next : "/home";
   const identityEnabled = isBhdIdentityConfigured();
   const ssoReady = identityEnabled && isBhdSsoReadyForOrigin(originFromHeaders(hdrs));
-  if (ssoReady && params.local !== "1" && !params.error) {
-    redirect(`/api/auth/bhd/start?next=${encodeURIComponent(next)}`);
-  }
   return (
     <AuthForm
       mode="login"

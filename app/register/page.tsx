@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import { AuthForm } from "../auth-form";
 import { isBhdIdentityConfigured, isBhdSsoReadyForOrigin } from "../../lib/bhd-identity";
 import { googleClientId } from "../../lib/google-oauth";
@@ -14,13 +13,10 @@ export default async function RegisterPage({
 }: {
   searchParams: Promise<{ local?: string; error?: string }>;
 }) {
-  const params = await searchParams;
+  await searchParams;
   const hdrs = await headers();
   const identityEnabled = isBhdIdentityConfigured();
   const ssoReady = identityEnabled && isBhdSsoReadyForOrigin(originFromHeaders(hdrs));
-  if (ssoReady && params.local !== "1" && !params.error) {
-    redirect("/api/auth/bhd/start?next=%2Fhome");
-  }
   return (
     <AuthForm
       mode="register"
