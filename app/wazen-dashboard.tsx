@@ -78,6 +78,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import { apiFetch } from "../lib/client-api";
 import { prefetchAppRoutes, warmAppCaches } from "../lib/app-prefetch";
 import { completeClientLogout } from "../lib/client-logout";
+import { BhdAppSwitcher } from "../components/bhd/BhdAppSwitcher";
 import { fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../lib/dashboard-session";
 import { notifyLiveRefresh, useLiveDashboard } from "../lib/live-sync";
 
@@ -1064,7 +1065,11 @@ export function WazenDashboard() {
               }
               changeView(view, spaceId);
             }} />
-            <UserMenu locale={locale} name={data.user.displayName} email={data.user.email} avatarUrl={data.user.avatarUrl} onSettings={() => changeView("settings")} onLogout={() => void logout()} />
+            <BhdAppSwitcher
+              user={{ name: data.user.displayName, email: data.user.email, picture: data.user.avatarUrl ?? null }}
+              platformAdmin={canOpenPlatformConsole(data.user.role ?? undefined)}
+              onSignOut={() => void logout()}
+            />
           </div>
         </header>
 
@@ -1317,37 +1322,6 @@ function AccentPicker({ locale, accent, onPick }: { locale: Locale; accent: Acce
               />
             ))}
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function UserMenu({ locale, name, email, avatarUrl, onSettings, onLogout }: { locale: Locale; name: string; email: string; avatarUrl?: string | null; onSettings: () => void; onLogout: () => void }) {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const close = (event: MouseEvent) => {
-      if (root.current && !root.current.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, []);
-  const t = copy[locale];
-  return (
-    <div className="user-menu" ref={root}>
-      <button type="button" className="user-avatar" title={email} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
-        {avatarUrl ? <img src={avatarUrl} alt="" /> : name.slice(0, 1)}
-      </button>
-      {open && (
-        <div className="user-menu-panel" role="menu">
-          <div className="user-menu-identity">
-            <strong>{name}</strong>
-            <small>{email}</small>
-          </div>
-          <Link href="/account/security" prefetch role="menuitem" onClick={() => setOpen(false)}><ShieldCheck size={16} />{locale === "ar" ? "أمان الحساب" : "Account security"}</Link>
-          <button type="button" role="menuitem" onClick={() => { setOpen(false); onSettings(); }}><Settings size={16} />{t.settings}</button>
-          <button type="button" role="menuitem" className="user-menu-logout" onClick={() => { setOpen(false); onLogout(); }}><LogOut size={16} />{t.logout}</button>
         </div>
       )}
     </div>

@@ -170,6 +170,7 @@ test("Wazen BHD routes follow the product card in the identity spec", () => {
   assert.match(spec, /https:\/\/id\.bhd-om\.com/);
   assert.match(start, /createBhdAuthRequest/);
   assert.match(start, /isBhdSsoReadyForRequest/);
+  assert.match(start, /returnTo/);
   assert.match(identity, /isBhdSsoReadyForOrigin/);
   assert.match(identity, /signInEntryPath/);
   assert.match(identity, /oauth\/authorize/);

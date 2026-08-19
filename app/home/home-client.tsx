@@ -7,7 +7,6 @@ import {
   Bell,
   Globe2,
   Landmark,
-  LogOut,
   Plus,
   Settings2,
   TrendingDown,
@@ -17,6 +16,7 @@ import {
 import OmrSymbol from "../../components/brand/OmrSymbol";
 import WazenLogo from "../../components/brand/WazenLogo";
 import WazenPageLoader from "../../components/brand/WazenPageLoader";
+import { BhdAppSwitcher } from "../../components/bhd/BhdAppSwitcher";
 import { apiFetch } from "../../lib/client-api";
 import { prefetchAppRoutes, warmAppCaches } from "../../lib/app-prefetch";
 import { completeClientLogout } from "../../lib/client-logout";
@@ -25,6 +25,7 @@ import { useLiveDashboard } from "../../lib/live-sync";
 import { formatMoneyMinor, currencyScale } from "../../lib/money";
 import { memberDisplayCreditMinor, pendingSettlementsWithCredit } from "../../lib/finance";
 import { memberAccruedDueMinor } from "../../components/members/association-members";
+import { canOpenPlatformConsole } from "../../lib/platform-console";
 
 type Locale = "ar" | "en";
 
@@ -77,7 +78,7 @@ type Occurrence = {
 type PersonalAccount = { id: string; space_id: string; name: string };
 
 type HomeData = {
-  user: { displayName: string; email: string };
+  user: { displayName: string; email: string; avatarUrl?: string | null; role?: string };
   spaces: Space[];
   members: Member[];
   transactions: Transaction[];
@@ -213,9 +214,11 @@ export function HomeClient() {
             <Globe2 size={16} />
             {locale === "ar" ? "EN" : "عربي"}
           </button>
-          <button type="button" className="icon-button" onClick={() => void logout()} aria-label={locale === "ar" ? "خروج" : "Sign out"}>
-            <LogOut size={18} />
-          </button>
+          <BhdAppSwitcher
+            user={{ name: data.user.displayName, email: data.user.email, picture: data.user.avatarUrl ?? null }}
+            platformAdmin={canOpenPlatformConsole(data.user.role)}
+            onSignOut={() => void logout()}
+          />
         </div>
       </header>
 
