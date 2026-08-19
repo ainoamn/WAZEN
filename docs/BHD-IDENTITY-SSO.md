@@ -1,10 +1,10 @@
 # مواصفة هوية BHD الموحّدة (BHD Identity / SSO)
 
-> **الحالة:** معتمدة للتنفيذ كما هي — لا تُحرَّف محلياً في كل مستودع. 
-> **المصدر الوحيد:** هذا الملف في [ainoamn/ONE-BHD](https://github.com/ainoamn/ONE-BHD) — `docs/BHD-IDENTITY-SSO.md` 
-> **التاريخ:** 18 أغسطس 2026 
-> **الإصدار:** `bhd-identity.v1` 
-> **الناشر:** بوابة BHD — مشروع Vercel `one-bhd` 
+> **الحالة:** معتمدة للتنفيذ كما هي — لا تُحرَّف محلياً في كل مستودع.  
+> **المصدر الوحيد:** هذا الملف في [ainoamn/ONE-BHD](https://github.com/ainoamn/ONE-BHD) — `docs/BHD-IDENTITY-SSO.md`  
+> **التاريخ:** 18 أغسطس 2026  
+> **الإصدار:** `bhd-identity.v1`  
+> **الناشر:** بوابة BHD — مشروع Vercel `one-bhd`  
 > **المُصدِر (Issuer):** `https://id.bhd-om.com`
 
 **حالة التنفيذ الحي (18 أغسطس 2026):** مزوّد الهوية يعمل على البوابة المنشورة. اكتشاف OIDC:
@@ -26,7 +26,7 @@
 5. المعرّف المشترك الوحيد هو مطالبة JWT: **`sub`** = UUID المستخدم في جداول الهوية (`bhd_users.id`).
 6. كل منتج يخزّن `bhd_sub` (نفس قيمة `sub`) ويربط حسابه المحلي به.
 7. بروتوكول الربط: **OAuth 2.0 Authorization Code + PKCE (S256)** مع **OpenID Connect**.
-8. إن تعارض هذا الملف مع `docs/BHD-UNIFIED-GOOGLE-AUTH.md` فهذه المواصفة هي المرجع لـ SSO. وثيقة جوجل تصف المرحلة 0 فقط (دخول محلي بنفس Client ID).
+9. مشغّل التطبيقات بعد الدخول مواصفته [`BHD-APP-SWITCHER.md`](BHD-APP-SWITCHER.md). لا تُبتكر قائمة تطبيقات محلية.
 
 ---
 
@@ -91,11 +91,11 @@ sequenceDiagram
 |---|---|---|---|
 | البوابة | `bhd-portal` | `https://www.bhd-om.com` و`https://bhd-om.com` | `https://www.bhd-om.com/api/auth/bhd/callback` |
 | وازن | `bhd-wazen` | `https://wazen.bhd-om.com` | `https://wazen.bhd-om.com/api/auth/bhd/callback` |
-| حسابي | `bhd-hisaby` | `https://www.hisaby.pro` | `https://www.hisaby.pro/api/auth/bhd/callback` |
-| نَسَب | `bhd-nasab` | `https://nasab.bhd-om.com` (حتى يُضبط: `https://nasab-mu.vercel.app`) | `{origin}/api/auth/bhd/callback` |
-| متجر BHD | `bhd-store` | عند الإطلاق `https://store.bhd-om.com` | `{origin}/api/auth/bhd/callback` |
+| حسابي | `bhd-hisaby` | `https://hisaby.bhd-om.com` (و`hisaby.pro`) | `https://hisaby.bhd-om.com/api/auth/bhd/callback` |
+| نَسَب | `bhd-nasab` | `https://nasab.bhd-om.com` | `https://nasab.bhd-om.com/api/auth/bhd/callback` |
+| متجر BHD | `bhd-store` | `https://bhdstor.bhd-om.com` | `https://bhdstor.bhd-om.com/api/auth/bhd/callback` |
 | مكتب BHD | `bhd-office` | داخلي | `{origin}/api/auth/bhd/callback` |
-| عين عُمان | `bhd-ain-oman` | عند الإطلاق | `{origin}/api/auth/bhd/callback` |
+| بيتك | `bhd-baitak` | `https://baitak.bhd-om.com` | `https://baitak.bhd-om.com/api/auth/bhd/callback` |
 
 محلياً لكل منتج:
 
@@ -117,6 +117,9 @@ sequenceDiagram
 | `GOOGLE_CLIENT_ID` | نفس عميل One BHD |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | نفس القيمة |
 | `BHD_OAUTH_CLIENTS` | JSON للعملاء (انظر 2.3) أو جدول `bhd_oauth_clients` |
+| `BHD_PLATFORM_ADMIN_EMAILS` | بريد مديري المنصة، مفصول بفاصلة. يفتح `/admin` |
+
+**لوحة التحكم:** `https://id.bhd-om.com/admin` و`https://www.bhd-om.com/admin` نفس التطبيق. الدخول بحساب هوية موجود في القائمة. لا تُفهرس. أدوار المنتجات لا تُمنح من هنا.
 
 **على كل منتج:**
 
@@ -158,7 +161,7 @@ sequenceDiagram
 | وازن | المحافظ، الأعضاء، الفوترة + عمود `bhd_sub` | وازن فقط |
 | حسابي | الشركات، الفواتير، الكاشير + عمود `bhd_sub` على المستخدم | حسابي فقط |
 | البوابة | بعد المرحلة 2 تصبح واجهة فوق الهوية أو تحوّل `/login` إلى المُصدِر | لا قاعدة مستخدمين ثانية |
-| نَسَب / متجر / مكتب / عين عُمان | بيانات المنتج + `bhd_sub` | ذلك المنتج فقط |
+| نَسَب / متجر / مكتب / بيتك | بيانات المنتج + `bhd_sub` | ذلك المنتج فقط |
 
 `bhd_contacts` من نوع `SELF` هو دفتر عناوين الحساب الموحّد. دفاتر عملاء حسابي تبقى جداول حسابي.
 
@@ -178,10 +181,14 @@ sequenceDiagram
 | POST | `/oauth/revoke` | إلغاء refresh |
 | GET | `/oauth/end-session` | خروج موحّد (RP-initiated logout) |
 | GET | `/login` | واجهة الدخول (بريد/اسم مستخدم + Google) |
+| GET | `/account` | صفحة ملف الحساب: البيانات، المواقع المرتبطة، الاشتراكات |
+| GET / PATCH | `/api/account` | قراءة/تعديل الملف الشخصي (جلسة هوية مطلوبة) |
 | POST | `/api/auth/login` | دخول محلي للهوية |
 | POST | `/api/auth/register` | إنشاء حساب هوية |
 | POST | `/api/auth/google` | تحقق ID Token من Google على خادم الهوية |
 | POST | `/api/auth/logout` | مسح `bhd_id` ثم إن وُجد `post_logout_redirect_uri` يُحوَّل إليه |
+
+تعديل الاسم/الهاتف/العنوان على `/account` يكتب في `bhd_users` و`bhd_contacts` (SELF). `/oauth/userinfo` وID Token التالي يقرآن القيم الجديدة. المنتج يحدّث نسخته المحلية عند الدخول التالي (قسم 6.4). الاشتراكات تظهر في `/account` عندما يبلّغ المنتج عنها؛ حتى ذلك الحين القائمة فارغة عمدًا.
 
 ### 4.1 اكتشاف OIDC (شكل ثابت)
 
@@ -292,7 +299,7 @@ grant_type=refresh_token
 
 ممنوع ضبط `Domain=.bhd-om.com` على `bhd_id`. SSO يعمل بإعادة توجيه المنتج إلى الهوية التي ترى كوكيزها على `id.bhd-om.com`.
 
-حسابي على `hisaby.pro` يعمل بنفس التحويل. لا حاجة لكوكي مشترك عبر النطاقات.
+حسابي على `hisaby.bhd-om.com` (و`hisaby.pro`) يعمل بنفس التحويل. لا حاجة لكوكي مشترك عبر النطاقات.
 
 ---
 
@@ -353,7 +360,7 @@ CREATE INDEX IF NOT EXISTS users_bhd_sub_idx ON <users>(bhd_sub);
 6. `upsert` المستخدم المحلي:
 
 ```
-إن وُجد صف bhd_sub = sub → حدّث الاسم/البريد/الصورة من التوكن، last_login
+إن وُجد صف bhd_sub = sub → حدّث الاسم/البريد/الهاتف/الصورة من التوكن، last_login
 وإلا إن وُجد صف google_id = (اختياري: لا تعتمد عليه بعد النقل) أو بريد موثّق مطابق email
     → اكتب bhd_sub إن كان فارغاً
 وإلا → أنشئ مستخدم منتج جديد مرتبطاً بـ bhd_sub
@@ -487,7 +494,7 @@ bhd_oauth_consents
 | **3** | وازن | قسم 6 كامل؛ دخول محلي يُحوَّل إلى الهوية؛ ترحيل بالقسم 7 |
 | **4** | حسابي | قسم 6 على Nest/Next مع `/api/auth/bhd/callback` عبر بروكسي نفس المنشأ |
 | **5** | البوابة `/login` | تحويل إلى المُصدِر أو نفس التطبيق يخدم الهوية والواجهة |
-| **6** | نَسَب ثم المتجر ثم المكتب ثم عين عُمان | قسم 6 عند أول شاشة دخول |
+| **6** | نَسَب ثم المتجر ثم المكتب ثم بيتك | قسم 6 عند أول شاشة دخول |
 | **7** | قطع | إزالة أزرار جوجل المحلية وأصول Google الزائدة |
 
 لا تبدأ مرحلة 3 قبل نجاح اختبارات المرحلة 2 في القسم 13.
@@ -510,8 +517,8 @@ bhd_oauth_consents
 - الواجهة تبدأ التحويل؛ الـ callback يضبط كوكي `bhd_access` كما اليوم بعد التحقق
 - Prisma: `bhdSub String? @unique` على User
 - الشركة لا تُنشأ من الهوية. إن لم يكن للمستخدم شركة: مسار «إنشاء شركة» الحالي بعد ربط `bhd_sub`
-- `hisaby.pro` يبقى؛ SSO عبر التحويل إلى `id.bhd-om.com`
-- لاحقاً اختياري: `hisaby.bhd-om.com` تحويل من `hisaby.pro`
+- النطاق الرسمي داخل منظومة BHD: `hisaby.bhd-om.com` — CNAME `cname.vercel-dns.com`
+- `hisaby.pro` يبقى نطاقاً إضافياً؛ SSO عبر التحويل إلى `id.bhd-om.com`
 
 ### البوابة (`ainoamn/ONE-BHD`)
 
@@ -519,7 +526,14 @@ bhd_oauth_consents
 - `/login` هو شاشة الهوية
 - `client_id=bhd-portal` إن بقيت البوابة تطلب توكن لنفسها (جلسة `bhd_portal` يمكن أن تُشتق من `bhd_id` دون OIDC داخلي لأنها نفس التطبيق)
 
-### نَسَب / متجر / مكتب / عين عُمان
+### متجر BHD (`ainoamn/BHD-STOR`)
+
+- `BHD_OAUTH_CLIENT_ID=bhd-store`
+- النطاق الرسمي: `bhdstor.bhd-om.com` — CNAME `cname.vercel-dns.com`
+- `redirect_uri`: `https://bhdstor.bhd-om.com/api/auth/bhd/callback`
+- نفّذ القسم 6 عند أول شاشة دخول
+
+### نَسَب / مكتب / بيتك
 
 - نفّذ القسم 6 فقط
 - `client_id` من جدول 2.1
@@ -559,7 +573,6 @@ bhd_oauth_consents
 - MFA / مفاتيح مرور على الهوية فقط.
 - `prompt=consent` لعملاء طرف ثالث.
 - تقسيم مشروع Vercel `bhd-identity` عن البوابة إن ثقل الحمل.
-- نطاق `hisaby.bhd-om.com`.
 
 ---
 
@@ -571,4 +584,5 @@ bhd_oauth_consents
 Issuer: https://id.bhd-om.com
 لا تشارك قواعد البيانات. نفّذ القسم 6 وبطاقة المنتج في القسم 12.
 client_id ثابت من جدول 2.1.
+مشغّل التطبيقات: https://github.com/ainoamn/ONE-BHD/blob/main/docs/BHD-APP-SWITCHER.md
 ```

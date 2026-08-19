@@ -9,7 +9,8 @@ export async function GET(request: Request) {
     await ensureSchema(db);
     await rateLimit(db, request, "auth-bhd", 10, 60);
     const origin = publicRequestOrigin(request);
-    const next = safeReturnTo(new URL(request.url).searchParams.get("next"));
+    const params = new URL(request.url).searchParams;
+    const next = safeReturnTo(params.get("next") ?? params.get("returnTo"));
     if (!isBhdIdentityConfigured()) {
       return Response.redirect(`${origin}/login?error=BHD_NOT_CONFIGURED&local=1&next=${encodeURIComponent(next)}`, 302);
     }

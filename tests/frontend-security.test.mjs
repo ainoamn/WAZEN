@@ -161,6 +161,9 @@ test("BHD SSO start/callback exist and login can wrap identity", () => {
   const form = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
   const logout = fs.readFileSync(path.join(root, "lib/client-logout.ts"), "utf8");
   const home = fs.readFileSync(path.join(root, "app/home/home-client.tsx"), "utf8");
+  const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
+  const switcher = fs.readFileSync(path.join(root, "components/bhd/BhdAppSwitcher.tsx"), "utf8");
+  const apps = fs.readFileSync(path.join(root, "lib/bhd/apps.ts"), "utf8");
   assert.match(login, /isBhdIdentityConfigured/);
   assert.match(login, /isBhdSsoReadyForOrigin/);
   assert.match(login, /api\/auth\/bhd\/start/);
@@ -170,7 +173,12 @@ test("BHD SSO start/callback exist and login can wrap identity", () => {
   assert.match(form, /api\/auth\/bhd\/start/);
   assert.match(form, /الدخول بحساب BHD/);
   assert.match(logout, /endSessionUrl/);
+  assert.match(home, /BhdAppSwitcher/);
   assert.match(home, /completeClientLogout/);
+  assert.match(dashboard, /BhdAppSwitcher/);
+  assert.match(switcher, /BHD_APPS/);
+  assert.match(apps, /BHD_APP_SWITCHER_SPEC/);
+  assert.match(apps, /bhd-wazen/);
 });
 
 test("logged-out sign-in does not paint the home load-error screen", () => {
