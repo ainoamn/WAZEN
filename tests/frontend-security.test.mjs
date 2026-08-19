@@ -199,10 +199,8 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
   const dashboardRoute = fs.readFileSync(path.join(root, "app/api/dashboard/route.ts"), "utf8");
   const publicHeader = kit.slice(kit.indexOf("export function PublicHeader"), kit.indexOf("export function AccountHeader"));
-  assert.match(publicHeader, /clientSignInPath\("\/home"\)/);
-  assert.doesNotMatch(publicHeader, /href="\/home"/);
-  assert.match(landing, /clientSignInPath\("\/home"\)/);
-  assert.doesNotMatch(landing, /href="\/home"/);
+  assert.match(publicHeader, /href="\/home"\s+prefetch=\{false\}/);
+  assert.match(landing, /href="\/home"\s+prefetch=\{false\}/);
   assert.match(home, /window\.location\.replace\(clientSignInPath\("\/home"\)\)/);
   assert.match(home, /setLoading\(false\)/);
   assert.match(dashboard, /window\.location\.replace\(clientSignInPath\("\/dashboard"\)\)/);
