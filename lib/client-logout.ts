@@ -36,5 +36,5 @@ export async function completeClientLogout() {
   clearDashboardCache();
   resetAppPrefetch();
   notifyBrowserSessionChange(null);
-  window.location.assign(endSessionUrl || "/login");
+  window.location.assign(endSessionUrl || "/login?local=1");
 }

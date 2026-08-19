@@ -183,12 +183,9 @@ export function isBhdSsoReadyForRequest(request: Request) {
   }
 }
 
-/** Relative sign-in entry: BHD portal when allowlisted, otherwise local login. */
-export function signInEntryPathForOrigin(next: string, origin: string) {
+/** Always show the Wazen login form. BHD SSO is a button on that form — not an automatic redirect. */
+export function signInEntryPathForOrigin(next: string, _origin: string) {
   const safeNext = safeReturnTo(next);
-  if (isBhdSsoReadyForOrigin(origin)) {
-    return `/api/auth/bhd/start?returnTo=${encodeURIComponent(safeNext)}`;
-  }
   return `/login?local=1&next=${encodeURIComponent(safeNext)}`;
 }
 

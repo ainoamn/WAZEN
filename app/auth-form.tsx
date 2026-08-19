@@ -7,6 +7,7 @@ import { WazenIcon } from "../components/brand/WazenLogo";
 import { Brand, useCommerceLocale } from "./commercial-kit";
 import { clearAdminConsole } from "../lib/admin-session";
 import { ensureBrowserId, notifyBrowserSessionChange } from "../lib/browser-session-client";
+import { completeClientLogout } from "../lib/client-logout";
 import { clearDashboardCache } from "../lib/dashboard-session";
 import { canOpenPlatformConsole } from "../lib/platform-console";
 
@@ -69,7 +70,7 @@ export function AuthForm({ mode, next = "/home", googleClientId = "", identityEn
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 20_000);
     try {
-      const response = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, credentials: "same-origin", signal: controller.signal, body: JSON.stringify({ action: mode, displayName: mode === "register" ? displayName : undefined, email, password, totpCode: totpCode || undefined }) });
+      const response = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, credentials: "same-origin", signal: controller.signal, body: JSON.stringify({ action: mode, next, displayName: mode === "register" ? displayName : undefined, email, password, totpCode: totpCode || undefined }) });
       const result = await response.json() as {
         error?: string;
         verificationRequired?: boolean;
@@ -125,8 +126,12 @@ export function AuthForm({ mode, next = "/home", googleClientId = "", identityEn
     <div className="auth-copy"><small>{l("وصول آمن إلى وازن", "Secure access to Wazen")}</small><h1>{mode === "login" ? l("مرحباً بعودتك", "Welcome back") : l("أنشئ حسابك", "Create your account")}</h1><p>{identityEnabled ? l("ادخل بحساب BHD الموحّد. بيانات المحافظ تبقى في وازن فقط.", "Sign in with your unified BHD account. Wallet data stays in Wazen.") : l("بياناتك المالية تخصك. جلسة مشفرة وصلاحيات منفصلة لكل حساب.", "Your financial data stays yours, with secure sessions and isolated access.")}</p></div>
     {activeSession && (
       <p className="auth-error" role="status">
-        {l("لديك جلسة نشطة في هذا المتصفح.", "A session is already active in this browser.")}{" "}
+        {l("لديك جلسة في هذا المتصفح. أكمل النموذج لتحديث الدخول، أو اخرج أولاً.", "A session exists in this browser. Submit the form to refresh it, or sign out first.")}{" "}
         <Link href={activeSession.dest}>{l("فتح الرئيسية", "Open home")}</Link>
+        {" · "}
+        <button type="button" className="auth-inline-logout" onClick={() => void completeClientLogout()}>
+          {l("تسجيل الخروج", "Sign out")}
+        </button>
       </p>
     )}
     {identityEnabled && ssoReady && (

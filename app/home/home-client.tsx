@@ -115,8 +115,7 @@ export function HomeClient() {
       }
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) {
-        setData(null);
-        setError(true);
+        window.location.replace("/login?local=1&next=/home");
         return;
       }
       if (!readDashboardCache()) setError(true);

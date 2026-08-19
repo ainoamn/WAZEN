@@ -140,14 +140,14 @@ test("login and register wrap the unified BHD portal", () => {
   const form = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
   assert.match(login, /<AuthForm/);
   assert.match(login, /isBhdSsoReadyForOrigin/);
-  assert.match(register, /isBhdSsoReadyForOrigin/);
-  assert.match(login, /params.local !== "1"/);
+  assert.doesNotMatch(login, /redirect\(`\/api\/auth\/bhd\/start/);
+  assert.doesNotMatch(login, /params.local !== "1"/);
   assert.doesNotMatch(login, /sessionCookieFromStore/);
   assert.doesNotMatch(login, /cookies\(/);
   assert.match(register, /<AuthForm/);
-  assert.match(register, /\/api\/auth\/bhd\/start/);
+  assert.doesNotMatch(register, /\/api\/auth\/bhd\/start/);
   assert.doesNotMatch(register, /sessionCookieFromStore/);
-  assert.match(authRoute, /SESSION_ALREADY_ACTIVE/);
+  assert.doesNotMatch(authRoute, /SESSION_ALREADY_ACTIVE/);
   assert.match(authRoute, /isHtmlAuthForm/);
   assert.match(authRoute, /htmlForm/);
   assert.match(form, /method="post"/);
@@ -171,7 +171,8 @@ test("BHD SSO start/callback exist and login can wrap identity", () => {
   const apps = fs.readFileSync(path.join(root, "lib/bhd/apps.ts"), "utf8");
   assert.match(login, /isBhdIdentityConfigured/);
   assert.match(login, /isBhdSsoReadyForOrigin/);
-  assert.match(login, /api\/auth\/bhd\/start/);
+  assert.doesNotMatch(login, /api\/auth\/bhd\/start/);
+  assert.match(form, /api\/auth\/bhd\/start/);
   assert.match(homePage, /HomeClient/);
   assert.doesNotMatch(homePage, /ensureSchema/);
   assert.doesNotMatch(homePage, /authenticateRequest/);
@@ -198,17 +199,15 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
   const dashboardRoute = fs.readFileSync(path.join(root, "app/api/dashboard/route.ts"), "utf8");
   const publicHeader = kit.slice(kit.indexOf("export function PublicHeader"), kit.indexOf("export function AccountHeader"));
-  assert.match(publicHeader, /href="\/login\?next=%2Fhome"/);
+  assert.match(publicHeader, /href="\/login\?local=1&next=%2Fhome"/);
   assert.doesNotMatch(publicHeader, /href="\/home"/);
-  assert.match(landing, /href="\/login\?next=%2Fhome"/);
+  assert.match(landing, /href="\/login\?local=1&next=%2Fhome"/);
   assert.doesNotMatch(landing, /href="\/home"/);
-  assert.doesNotMatch(home, /goToSignIn\("\/home"\)/);
-  assert.match(home, /\/login\?local=1&next=\/home/);
+  assert.match(home, /window\.location\.replace\("\/login\?local=1&next=\/home"\)/);
   assert.match(home, /setLoading\(false\)/);
-  assert.doesNotMatch(dashboard, /goToSignIn\("\/dashboard"\)/);
-  assert.match(dashboard, /\/login\?local=1&next=\/dashboard/);
+  assert.match(dashboard, /window\.location\.replace\("\/login\?local=1&next=\/dashboard"\)/);
   assert.match(dashboardRoute, /unauthenticatedResponse/);
-  assert.doesNotMatch(dashboardRoute, /clearSessionCookie/);
+  assert.match(dashboardRoute, /clearSessionCookie/);
 });
 
 test("auth form stays visible when a browser session is already active", () => {
