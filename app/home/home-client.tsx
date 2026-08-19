@@ -102,6 +102,10 @@ export function HomeClient() {
   const [data, setData] = useState<HomeData | null>(() => readDashboardCache<HomeData>());
   const [loading, setLoading] = useState(() => !readDashboardCache());
   const [error, setError] = useState(false);
+  const [sessionUser, setSessionUser] = useState<HomeData["user"] | null>(() => {
+    const cached = readDashboardCache<HomeData>();
+    return cached?.user ?? null;
+  });
   const [addOpen, setAddOpen] = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [toast, setToast] = useState("");
@@ -113,6 +117,7 @@ export function HomeClient() {
       if (result.data) {
         writeDashboardCache(result.data);
         setData(result.data);
+        setSessionUser(result.data.user);
       }
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) {
@@ -126,6 +131,28 @@ export function HomeClient() {
   }, [router]);
 
   useEffect(() => { void load(); }, [load]);
+  // Load lightweight session info for the app switcher.
+  // This prevents showing an auth/login UI when /api/dashboard is slow or times out.
+  useEffect(() => {
+    if (data || sessionUser) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 4_000);
+
+    void fetch("/api/auth", {
+      cache: "no-store",
+      credentials: "same-origin",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const result = (await response.json()) as { authenticated?: boolean; user?: HomeData["user"] };
+        if (result?.authenticated && result?.user) setSessionUser(result.user);
+      })
+      .catch(() => { /* ignore */ })
+      .finally(() => window.clearTimeout(timer));
+
+    return () => controller.abort();
+  }, [data, sessionUser]);
   useEffect(() => {
     if (!loading || data) return;
     const timer = window.setTimeout(() => {
@@ -181,12 +208,64 @@ export function HomeClient() {
     window.setTimeout(() => setToast(""), 2600);
   };
 
+  const switcherUser = data?.user ?? sessionUser;
+
   if (loading && !data) {
-    return <WazenPageLoader label={locale === "ar" ? "جاري التحميل…" : "Loading…"} />;
+    return (
+      <div className="home-shell">
+        {switcherUser && (
+          <header className="home-top">
+            <WazenLogo showText iconClassName="home-logo-img" />
+            <div className="home-top-actions">
+              <button
+                type="button"
+                className="language-button"
+                onClick={() => setLocale(locale === "ar" ? "en" : "ar")}
+              >
+                <Globe2 size={16} />
+                {locale === "ar" ? "EN" : "عربي"}
+              </button>
+              <BhdAppSwitcher
+                user={{
+                  name: switcherUser.displayName,
+                  email: switcherUser.email,
+                  picture: switcherUser.avatarUrl ?? null,
+                }}
+                onSignOut={() => void logout()}
+              />
+            </div>
+          </header>
+        )}
+        <WazenPageLoader label={locale === "ar" ? "جاري التحميل…" : "Loading…"} />
+      </div>
+    );
   }
   if (error || !data) {
     return (
       <div className="home-shell">
+        {switcherUser && (
+          <header className="home-top">
+            <WazenLogo showText iconClassName="home-logo-img" />
+            <div className="home-top-actions">
+              <button
+                type="button"
+                className="language-button"
+                onClick={() => setLocale(locale === "ar" ? "en" : "ar")}
+              >
+                <Globe2 size={16} />
+                {locale === "ar" ? "EN" : "عربي"}
+              </button>
+              <BhdAppSwitcher
+                user={{
+                  name: switcherUser.displayName,
+                  email: switcherUser.email,
+                  picture: switcherUser.avatarUrl ?? null,
+                }}
+                onSignOut={() => void logout()}
+              />
+            </div>
+          </header>
+        )}
         <p className="home-error">{locale === "ar" ? "تعذر تحميل البيانات." : "Could not load data."}</p>
         <button type="button" className="primary-button" onClick={() => { setLoading(true); void load(); }}>
           {locale === "ar" ? "إعادة المحاولة" : "Try again"}
