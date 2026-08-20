@@ -234,6 +234,12 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   assert.match(home, /window\.location\.replace\(clientSignInPath\("\/home"\)\)/);
   assert.match(home, /setLoading\(false\)/);
   assert.match(dashboard, /window\.location\.replace\(clientSignInPath\("\/dashboard"\)\)/);
+  assert.match(dashboard, /confirmResetWalletData/);
+  assert.match(dashboard, /kind: space\.type === "personal" \? "personal" : "group"/);
+  assert.match(dashboard, /existing && !isPersonal/);
+  assert.match(dashboardRoute, /action === "resetWalletData"/);
+  assert.match(dashboardRoute, /DELETE FROM member_installments WHERE space_id=\?/);
+  assert.match(dashboardRoute, /DELETE FROM circle_turns WHERE space_id=\?/);
   assert.match(dashboardRoute, /unauthenticatedResponse/);
   assert.match(dashboardRoute, /clearSessionCookie/);
 });

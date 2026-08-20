@@ -20,10 +20,16 @@ export async function confirmResetWalletData(
   locale: Locale,
   spaceId: string,
   onChanged: (next: Record<string, unknown>) => void,
+  options?: { kind?: "personal" | "group" },
 ) {
+  const group = options?.kind === "group";
   const first = window.confirm(locale === "ar"
-    ? "تصفية المحفظة تصفّر الرصيد وتحذف الحسابات والدخل والخصوم وكل العمليات. المحفظة نفسها تبقى. لا يمكن التراجع."
-    : "This wipes balances, accounts, income, bills, and every transaction. The wallet itself stays. This cannot be undone.");
+    ? (group
+      ? "تصفية المحفظة تصفّر الرصيد وتحذف العمليات والمصروفات والتسويات والأقساط وأدوار الدفع. الأعضاء وخطة المساهمة واسم المحفظة تبقى. لا يمكن التراجع."
+      : "تصفية المحفظة تصفّر الرصيد وتحذف الحسابات والدخل والخصوم وكل العمليات. المحفظة نفسها تبقى. لا يمكن التراجع.")
+    : (group
+      ? "This wipes balances, transactions, expenses, settlements, installments, and turn payments. Members, the contribution plan, and the wallet name stay. This cannot be undone."
+      : "This wipes balances, accounts, income, bills, and every transaction. The wallet itself stays. This cannot be undone."));
   if (!first) return false;
   const typed = window.prompt(locale === "ar" ? "اكتب تصفير للتأكيد" : "Type RESET to confirm", "");
   if ((locale === "ar" && typed !== "تصفير") || (locale !== "ar" && typed !== "RESET")) {

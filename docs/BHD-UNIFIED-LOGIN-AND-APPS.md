@@ -427,8 +427,9 @@ authorize وtoken دائماً على https://id.bhd-om.com وليس أصل ال
 | «دخول الأدمن» يفتح `https://id.bhd-om.com/` ولا يعود | `post_logout_redirect_uri` غير مسجّل (مثل `/login?...`) | المسار الصحيح: `end-session` → `{origin}/` + كوكي `wazen_admin_entry` → `/login?local=1&next=/admin&fresh=1` (`lib/admin-entry.ts` + `proxy.ts`) — مُثبّت على `main` منذ 20 أغسطس 2026 |
 | فيسبوك: «التطبيق غير نشط» على الهاتف | تطبيق Meta للهوية Development/Inactive أو المستخدم ليس Tester | من [Meta for Developers](https://developers.facebook.com/) على تطبيق **الهوية** (ONE-BHD): App Mode → **Live**، أو أضف الحساب تحت Roles → Testers. وازن لا يملك إعداد فيسبوك |
 | إنشاء محفظة بطيء ثم `INTERNAL_ERROR` | `readDashboardRevision` بعد الكتابة بربط SQL خاطئ (7 vs 6) | مُصلَح: 6 معاملات + حماية revision على POST + `refreshDerived: false` في رد الكتابة |
+| تصفية/تصفير لا تظهر إلا للشخصية | زر التصفير كان مشروطًا بـ `space.type === "personal"` | يظهر لكل الأنواع في شريط الأدوات ونافذة التعديل؛ `resetWalletData` يصفّر أيضًا الأقساط وأدوار الجمعية مع الإبقاء على الأعضاء وخطة المساهمة |
 
-ملفات مرتبطة: `app/api/auth/admin-entry/route.ts` · `lib/admin-entry.ts` · `proxy.ts` · `lib/bhd-identity.ts` · `app/api/dashboard/route.ts`.
+ملفات مرتبطة: `app/api/auth/admin-entry/route.ts` · `lib/admin-entry.ts` · `proxy.ts` · `lib/bhd-identity.ts` · `app/api/dashboard/route.ts` · `app/wazen-dashboard.tsx` · `components/personal/personal-wallet.tsx`.
 
 ### 12.3 حسابي — `ainoamn/hisaby`
 

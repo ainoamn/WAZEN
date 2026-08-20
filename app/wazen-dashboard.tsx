@@ -1612,17 +1612,20 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
       <button type="button" onClick={onAdd}><Plus size={16} />{t.add}</button>
       {["trip", "society", "group"].includes(space.type) && <button type="button" onClick={onInvite}><UserPlus size={16} />{t.invite}</button>}
       <button type="button" onClick={onEditWallet}><Pencil size={16} />{space.type === "personal" ? (locale === "ar" ? "ضبط المحفظة" : "Wallet setup") : (locale === "ar" ? "تعديل" : "Edit")}</button>
-      {space.type === "personal" ? (
-        <button
-          type="button"
-          className="danger-button"
-          onClick={() => {
-            void confirmResetWalletData(locale, space.id, (next) => onTxnChanged(next as Partial<DashboardData>));
-          }}
-        >
-          <Trash2 size={16} />{locale === "ar" ? "تصفية وتصفير" : "Wipe & reset"}
-        </button>
-      ) : null}
+      <button
+        type="button"
+        className="danger-button"
+        onClick={() => {
+          void confirmResetWalletData(
+            locale,
+            space.id,
+            (next) => onTxnChanged(next as Partial<DashboardData>),
+            { kind: space.type === "personal" ? "personal" : "group" },
+          );
+        }}
+      >
+        <Trash2 size={16} />{locale === "ar" ? "تصفية وتصفير" : "Wipe & reset"}
+      </button>
       <button type="button" onClick={onArchiveWallet}><Archive size={16} />{(space.status ?? "active") === "archived" ? (locale === "ar" ? "استعادة" : "Restore") : (locale === "ar" ? "أرشفة" : "Archive")}</button>
       <button type="button" onClick={onDeleteWallet}><Trash2 size={16} />{locale === "ar" ? "حذف" : "Delete"}</button>
     </div>
@@ -2286,6 +2289,7 @@ function WalletModal({ data, locale, existing, defaultType = "trip", lockType = 
   const t = copy[locale];
   const plan = existing ? data.plans.find((item) => String(item.space_id) === existing.id) : undefined;
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [error, setError] = useState("");
   const [name, setName] = useState(existing ? (locale === "ar" ? existing.name_ar : existing.name_en) : "");
   const [type, setType] = useState(lockType ? defaultType : defaultType);
@@ -2296,6 +2300,24 @@ function WalletModal({ data, locale, existing, defaultType = "trip", lockType = 
   const isPersonal = (existing?.type ?? type) === "personal";
   const liveGoalMinor = Math.round(Number(monthlyContribution || 0) * 1000) * Math.max(1, Number(durationMonths) || 1);
   const features = planFeaturesOf(data);
+  const resetExisting = async () => {
+    if (!existing) return;
+    setResetting(true);
+    try {
+      await confirmResetWalletData(
+        locale,
+        existing.id,
+        (next) => {
+          onLiveData?.(next as Partial<DashboardData>);
+          onSaved(next as Partial<DashboardData>);
+          onClose();
+        },
+        { kind: isPersonal ? "personal" : "group" },
+      );
+    } finally {
+      setResetting(false);
+    }
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setSaving(true); setError("");
     try {
@@ -2331,7 +2353,7 @@ function WalletModal({ data, locale, existing, defaultType = "trip", lockType = 
       setError(caught instanceof Error ? caught.message : "SAVE_FAILED");
     } finally { setSaving(false); }
   };
-  return <Modal title={existing ? (isPersonal ? (locale === "ar" ? "ضبط المحفظة" : "Wallet setup") : (locale === "ar" ? "تعديل بيانات الجمعية" : "Edit association")) : t.newWallet} wide={Boolean(existing && isPersonal)} xl={Boolean(existing && isPersonal)} onClose={onClose}><form className={`modal-form${existing && isPersonal ? " wallet-setup-form" : ""}`} onSubmit={submit}><label><span>{t.walletName}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={locale === "ar" ? "مثال: سفرة الإخوة 2027" : "e.g. Siblings trip 2027"} /></label>{!lockType && !existing && <label><span>{t.walletType}</span><select value={type} onChange={(event) => setType(event.target.value)}>{Object.entries(typeLabels[locale]).map(([value, label]) => <option key={value} value={value} disabled={!planAllowsSpaceType(features, value)}>{label}{planAllowsSpaceType(features, value) ? "" : (locale === "ar" ? " — ترقية" : " — Upgrade")}</option>)}</select></label>}{isGroup && <div className="form-row"><label><span>{locale === "ar" ? "المساهمة الشهرية الإلزامية" : "Mandatory monthly contribution"}</span><div className="money-input"><input required min="0.01" step="0.001" type="number" value={monthlyContribution} onChange={(event) => setMonthlyContribution(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label><label><span>{locale === "ar" ? "مدة الخطة (أشهر)" : "Plan duration (months)"}</span><input required type="number" min="1" max="120" value={durationMonths} onChange={(event) => setDurationMonths(event.target.value)} /></label></div>}<label><span>{locale === "ar" ? "تاريخ بداية الجمعية / المحفظة" : "Association / wallet start date"}</span><DateField required value={startsAt} onChange={setStartsAt} /></label>{isGroup && <div className="modal-note split-preview"><span>{locale === "ar" ? "الهدف المالي للشخص = المساهمة × عدد الأشهر" : "Personal financial goal = contribution × months"}</span><strong>{formatMoney(Number.isFinite(liveGoalMinor) ? liveGoalMinor : 0, "OMR", locale)}</strong></div>}{isGroup && <p className="modal-note">{locale === "ar" ? "عند استلام مبلغ من عضو: يُخصم أولاً من المطالبات المتراكمة عليه، وأي زيادة تُسجَّل مقدّماً (له)." : "When a member pays: outstanding dues are cleared first, and any surplus is booked as advance credit."}</p>}{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : (existing ? t.save : t.create)}</button></div></form>{existing && isPersonal && <PersonalRulesSetup spaceId={existing.id} locale={locale} accounts={data.personalAccounts ?? []} rules={data.personalRules ?? []} onChanged={(next) => onLiveData?.(next as Partial<DashboardData>)} />}</Modal>;
+  return <Modal title={existing ? (isPersonal ? (locale === "ar" ? "ضبط المحفظة" : "Wallet setup") : (locale === "ar" ? "تعديل بيانات الجمعية" : "Edit association")) : t.newWallet} wide={Boolean(existing && isPersonal)} xl={Boolean(existing && isPersonal)} onClose={onClose}><form className={`modal-form${existing && isPersonal ? " wallet-setup-form" : ""}`} onSubmit={submit}><label><span>{t.walletName}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={locale === "ar" ? "مثال: سفرة الإخوة 2027" : "e.g. Siblings trip 2027"} /></label>{!lockType && !existing && <label><span>{t.walletType}</span><select value={type} onChange={(event) => setType(event.target.value)}>{Object.entries(typeLabels[locale]).map(([value, label]) => <option key={value} value={value} disabled={!planAllowsSpaceType(features, value)}>{label}{planAllowsSpaceType(features, value) ? "" : (locale === "ar" ? " — ترقية" : " — Upgrade")}</option>)}</select></label>}{isGroup && <div className="form-row"><label><span>{locale === "ar" ? "المساهمة الشهرية الإلزامية" : "Mandatory monthly contribution"}</span><div className="money-input"><input required min="0.01" step="0.001" type="number" value={monthlyContribution} onChange={(event) => setMonthlyContribution(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label><label><span>{locale === "ar" ? "مدة الخطة (أشهر)" : "Plan duration (months)"}</span><input required type="number" min="1" max="120" value={durationMonths} onChange={(event) => setDurationMonths(event.target.value)} /></label></div>}<label><span>{locale === "ar" ? "تاريخ بداية الجمعية / المحفظة" : "Association / wallet start date"}</span><DateField required value={startsAt} onChange={setStartsAt} /></label>{isGroup && <div className="modal-note split-preview"><span>{locale === "ar" ? "الهدف المالي للشخص = المساهمة × عدد الأشهر" : "Personal financial goal = contribution × months"}</span><strong>{formatMoney(Number.isFinite(liveGoalMinor) ? liveGoalMinor : 0, "OMR", locale)}</strong></div>}{isGroup && <p className="modal-note">{locale === "ar" ? "عند استلام مبلغ من عضو: يُخصم أولاً من المطالبات المتراكمة عليه، وأي زيادة تُسجَّل مقدّماً (له)." : "When a member pays: outstanding dues are cleared first, and any surplus is booked as advance credit."}</p>}{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : (existing ? t.save : t.create)}</button></div></form>{existing && !isPersonal && <div className="personal-reset-box"><div><strong>{locale === "ar" ? "تصفية وتصفير البيانات" : "Wipe and reset data"}</strong><p>{locale === "ar" ? "يحذف العمليات والمصروفات والتسويات والأقساط وأدوار الدفع ويرجع الرصيد إلى صفر. الأعضاء وخطة المساهمة واسم المحفظة تبقى." : "Deletes transactions, expenses, settlements, installments, and turn payments, and sets the balance to zero. Members, the contribution plan, and the wallet name stay."}</p></div><button type="button" className="danger-button" disabled={resetting} onClick={() => void resetExisting()}><Trash2 size={14} />{resetting ? "…" : (locale === "ar" ? "تصفية المحفظة" : "Reset wallet")}</button></div>}{existing && isPersonal && <PersonalRulesSetup spaceId={existing.id} locale={locale} accounts={data.personalAccounts ?? []} rules={data.personalRules ?? []} onChanged={(next) => onLiveData?.(next as Partial<DashboardData>)} />}</Modal>;
 }
 
 function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data: DashboardData; locale: Locale; preferredSpaceId?: string; onClose: () => void; onDone: (message: string) => void }) {

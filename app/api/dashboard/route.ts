@@ -1395,11 +1395,25 @@ export async function POST(request: Request) {
         db.prepare("DELETE FROM personal_accounts WHERE space_id=?").bind(parsed.data.spaceId),
         db.prepare("DELETE FROM transactions WHERE space_id=?").bind(parsed.data.spaceId),
         db.prepare("DELETE FROM period_ledger_events WHERE space_id=?").bind(parsed.data.spaceId),
+        db.prepare("DELETE FROM member_installments WHERE space_id=?").bind(parsed.data.spaceId),
+        db.prepare("DELETE FROM circle_turns WHERE space_id=?").bind(parsed.data.spaceId),
+        db.prepare("UPDATE circle_configs SET current_turn=0, updated_by=?, updated_at=? WHERE space_id=?").bind(user.id, createdAt, parsed.data.spaceId),
         db.prepare("UPDATE members SET paid_minor=0, extra_minor=0, addon_minor=0 WHERE space_id=?").bind(parsed.data.spaceId),
         db.prepare("UPDATE spaces SET balance_minor=0 WHERE id=?").bind(parsed.data.spaceId),
-        prepareAudit(db, { userId: user.id, action: "wallet.reset", entityType: "space", entityId: parsed.data.spaceId, metadata: {}, createdAt }),
+        prepareAudit(db, {
+          userId: user.id,
+          action: "wallet.reset",
+          entityType: "space",
+          entityId: parsed.data.spaceId,
+          metadata: { type: space.type },
+          createdAt,
+        }),
       ]);
-    } else if (action === "addPersonalAccount") {
+      try {
+        await rebuildSpaceBalance(db, [parsed.data.spaceId]);
+      } catch {
+        /* balance already forced to 0 */
+      } else if (action === "addPersonalAccount") {
       const parsed = z.object({
         spaceId: z.string().min(1).max(120),
         name: z.string().trim().min(2).max(80),
