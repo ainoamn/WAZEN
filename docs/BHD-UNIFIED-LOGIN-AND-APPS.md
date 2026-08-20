@@ -419,6 +419,16 @@ authorize وtoken دائماً على https://id.bhd-om.com وليس أصل ال
 | ما لم يُوحَّد | المحافظ، المصاريف، الرحلات، الجمعيات، الفواتير، الاشتراكات، أدوار `/admin` (تبقى صلاحية منصة وازن) |
 | ملاحظات صيانة | Vercel preview: أضف `https://wazen-roan.vercel.app/api/auth/bhd/callback` في ONE-BHD `clients.ts` ثم اقلب `mode` إلى `sso` · Google محظور على وازن عند تفعيل BHD Identity · رابط “دخول الأدمن” → `/api/auth/admin-entry` يمسح جلسة وازن ثم `end-session` بـ `post_logout_redirect_uri={origin}/` فقط (المسجّل في الهوية)؛ كوكي `wazen_admin_entry` يجعل `proxy.ts` يحوّل من `/` إلى `/login?local=1&next=/admin&fresh=1` — **لا** تمرّر مسار `/login?...` كـ post_logout وإلا الهوية تُبقي المستخدم على `https://id.bhd-om.com/` · عند `?error=BHD_TOKEN_INVALID` راجع سجلات Vercel لـ `BHD_HS256_MISMATCH` / `BHD_USERINFO_*` / `BHD_TOKEN_ISS|AUD|EXP` وزامن `BHD_IDENTITY_TOKEN_SECRET` مع `IDENTITY_TOKEN_SECRET` في الهوية أو اتركه فارغًا ليعتمد userinfo · **فيسبوك على شاشة الهوية**: رسالة «التطبيق غير نشط» من Meta تعني أن تطبيق Facebook في وضع Development/Inactive على لوحة Meta للمطوّرين (ليست من وازن) — انقل التطبيق إلى Live أو أضف الحساب كـ Tester |
 
+#### 12.2.1 استكشاف أعطال الدخول (وازن)
+
+| العَرَض | السبب | الإجراء |
+|---|---|---|
+| `?error=BHD_TOKEN_INVALID` بعد زر BHD | سر HS256 قديم أو فشل تحقق التوكن | وازن يؤكّد عبر `/oauth/userinfo` تلقائيًا؛ راجع سجلات `BHD_HS256_MISMATCH` وزامن أو امسح `BHD_IDENTITY_TOKEN_SECRET` |
+| «دخول الأدمن» يفتح `https://id.bhd-om.com/` ولا يعود | `post_logout_redirect_uri` غير مسجّل (مثل `/login?...`) | المسار الصحيح: `end-session` → `{origin}/` + كوكي `wazen_admin_entry` → `/login?local=1&next=/admin&fresh=1` (`lib/admin-entry.ts` + `proxy.ts`) — مُثبّت على `main` منذ 20 أغسطس 2026 |
+| فيسبوك: «التطبيق غير نشط» على الهاتف | تطبيق Meta للهوية Development/Inactive أو المستخدم ليس Tester | من [Meta for Developers](https://developers.facebook.com/) على تطبيق **الهوية** (ONE-BHD): App Mode → **Live**، أو أضف الحساب تحت Roles → Testers. وازن لا يملك إعداد فيسبوك |
+
+ملفات مرتبطة: `app/api/auth/admin-entry/route.ts` · `lib/admin-entry.ts` · `proxy.ts` · `lib/bhd-identity.ts`.
+
 ### 12.3 حسابي — `ainoamn/hisaby`
 
 | البند | التوثيق |

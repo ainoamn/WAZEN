@@ -225,6 +225,10 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   const proxy = fs.readFileSync(path.join(root, "proxy.ts"), "utf8");
   assert.match(proxy, /ADMIN_ENTRY_COOKIE/);
   assert.match(proxy, /ADMIN_LOCAL_LOGIN_PATH/);
+  const guide = fs.readFileSync(path.join(root, "docs/BHD-UNIFIED-LOGIN-AND-APPS.md"), "utf8");
+  assert.match(guide, /12\.2\.1 استكشاف أعطال الدخول/);
+  assert.match(guide, /wazen_admin_entry/);
+  assert.match(guide, /التطبيق غير نشط/);
   assert.match(landing, /commerce-footer-top/);
   assert.match(landing, /commerce-footer-bottom/);
   assert.match(home, /window\.location\.replace\(clientSignInPath\("\/home"\)\)/);
