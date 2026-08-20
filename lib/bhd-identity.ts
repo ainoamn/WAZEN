@@ -86,13 +86,24 @@ export function identityIssuer() {
   return (configured || DEFAULT_BHD_IDENTITY_ISSUER).replace(/\/$/, "");
 }
 
-/** Host used for authorize/token/jwks. Prefer the Vercel identity origin so Oman can reach it. */
+/** Host used for browser authorize / end-session. Prefer the Vercel identity origin so Oman can reach it. */
 export function identityEndpointBase() {
   const endpoint = process.env.BHD_IDENTITY_ENDPOINT?.trim();
   if (endpoint) return endpoint.replace(/\/$/, "");
   const configured = process.env.BHD_IDENTITY_ISSUER?.trim().replace(/\/$/, "") || "";
   if (!configured || configured === DEFAULT_BHD_IDENTITY_ISSUER) return BHD_IDENTITY_VERCEL_ORIGIN;
   return configured;
+}
+
+/**
+ * Host used for server-side token / userinfo / JWKS.
+ * Prefer the canonical issuer so Wazen does not depend on Vercel→id.bhd-om.com 308 hops
+ * (and so a mismatched BHD_IDENTITY_TOKEN_SECRET can still fall back to userinfo cleanly).
+ */
+export function identityApiBase() {
+  const api = process.env.BHD_IDENTITY_API_ENDPOINT?.trim();
+  if (api) return api.replace(/\/$/, "");
+  return identityIssuer();
 }
 
 /** Identity returns 400 for unknown redirect_uri; 307/302 when the client is allowed. */
@@ -140,14 +151,31 @@ export function identityAllowedHosts() {
   } catch {
     /* ignore */
   }
+  try {
+    hosts.add(new URL(identityApiBase()).hostname.toLowerCase());
+  } catch {
+    /* ignore */
+  }
   return [...hosts];
+}
+
+function normalizeIssuer(value: string) {
+  return value.trim().replace(/\/$/, "");
 }
 
 function issuerAllowed(iss: string | undefined) {
   if (!iss) return false;
-  const allowed = new Set([identityIssuer(), DEFAULT_BHD_IDENTITY_ISSUER, BHD_IDENTITY_VERCEL_ORIGIN]);
-  try { allowed.add(identityEndpointBase()); } catch { /* ignore */ }
-  return allowed.has(iss);
+  const normalized = normalizeIssuer(iss);
+  const allowed = new Set(
+    [identityIssuer(), DEFAULT_BHD_IDENTITY_ISSUER, BHD_IDENTITY_VERCEL_ORIGIN, identityEndpointBase(), identityApiBase()]
+      .map(normalizeIssuer)
+      .filter(Boolean),
+  );
+  return allowed.has(normalized);
+}
+
+function logBhdTokenIssue(code: string, detail: Record<string, unknown> = {}) {
+  console.error(JSON.stringify({ level: "error", code, ...detail, at: new Date().toISOString() }));
 }
 
 export function safeReturnTo(value: string | null | undefined) {
@@ -315,11 +343,14 @@ function claimsFromPayload(payload: JwtPayload): BhdIdClaims {
 }
 
 async function identityJwks() {
-  const uri = `${identityEndpointBase()}/oauth/jwks.json`;
+  const uri = `${identityApiBase()}/oauth/jwks.json`;
   if (jwkCache && jwkCache.uri === uri && jwkCache.expiresAt > Date.now()) return jwkCache.keys;
   const url = validateOutboundHttpsUrl(uri, identityAllowedHosts());
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) throw new ApiError(401, "BHD_TOKEN_INVALID");
+  const response = await fetch(url, { cache: "no-store", redirect: "follow" });
+  if (!response.ok) {
+    logBhdTokenIssue("BHD_JWKS_FAILED", { status: response.status, uri });
+    throw new ApiError(401, "BHD_TOKEN_INVALID");
+  }
   const body = await response.json() as { keys?: Jwk[] };
   const keys = Array.isArray(body.keys) ? body.keys : [];
   jwkCache = { keys, uri, expiresAt: Date.now() + JWKS_CACHE_MS };
@@ -367,10 +398,52 @@ export async function verifyHs256Jwt(idToken: string, secret: string) {
 }
 
 async function fetchUserinfo(accessToken: string) {
-  const url = validateOutboundHttpsUrl(`${identityEndpointBase()}/oauth/userinfo`, identityAllowedHosts());
-  const response = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` }, cache: "no-store" });
-  if (!response.ok) throw new ApiError(401, "BHD_TOKEN_INVALID");
-  return await response.json() as { sub?: string; email?: string; email_verified?: boolean };
+  const url = validateOutboundHttpsUrl(`${identityApiBase()}/oauth/userinfo`, identityAllowedHosts());
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+    redirect: "follow",
+  });
+  if (!response.ok) {
+    logBhdTokenIssue("BHD_USERINFO_FAILED", { status: response.status, host: url.hostname });
+    throw new ApiError(401, "BHD_TOKEN_INVALID");
+  }
+  return await response.json() as {
+    sub?: string;
+    email?: string;
+    email_verified?: boolean | string;
+    name?: string;
+    picture?: string | null;
+    preferred_username?: string | null;
+    phone_number?: string | null;
+  };
+}
+
+function mergeUserinfoIntoPayload(payload: JwtPayload, info: Awaited<ReturnType<typeof fetchUserinfo>>) {
+  if (!payload.sub && info.sub) payload.sub = info.sub;
+  if (!payload.email && info.email) payload.email = info.email;
+  if (payload.email_verified == null && info.email_verified != null) payload.email_verified = info.email_verified;
+  if (!payload.name && info.name) payload.name = info.name;
+  if (payload.picture == null && info.picture) payload.picture = info.picture;
+  if (!payload.preferred_username && info.preferred_username) payload.preferred_username = info.preferred_username;
+  if (!payload.phone_number && info.phone_number) payload.phone_number = info.phone_number;
+}
+
+async function confirmWithUserinfo(payload: JwtPayload, accessToken: string) {
+  const info = await fetchUserinfo(accessToken);
+  const tokenSub = String(payload.sub ?? "").trim();
+  const infoSub = String(info.sub ?? "").trim();
+  if (!infoSub || (tokenSub && tokenSub !== infoSub)) {
+    logBhdTokenIssue("BHD_USERINFO_SUB_MISMATCH", { hasTokenSub: Boolean(tokenSub) });
+    throw new ApiError(401, "BHD_TOKEN_INVALID");
+  }
+  const tokenEmail = String(payload.email ?? "").trim().toLowerCase();
+  const infoEmail = String(info.email ?? "").trim().toLowerCase();
+  if (tokenEmail && infoEmail && tokenEmail !== infoEmail) {
+    logBhdTokenIssue("BHD_USERINFO_EMAIL_MISMATCH");
+    throw new ApiError(401, "BHD_TOKEN_INVALID");
+  }
+  mergeUserinfoIntoPayload(payload, info);
 }
 
 export async function verifyBhdIdToken(idToken: string, nonce: string, accessToken?: string): Promise<BhdIdClaims> {
@@ -387,22 +460,36 @@ export async function verifyBhdIdToken(idToken: string, nonce: string, accessTok
   } else if (alg === "HS256") {
     const secret = process.env.BHD_IDENTITY_TOKEN_SECRET?.trim() || "";
     if (secret) {
-      if (!await verifyHs256Jwt(idToken, secret)) throw new ApiError(401, "BHD_TOKEN_INVALID");
-      signed = true;
+      if (await verifyHs256Jwt(idToken, secret)) {
+        signed = true;
+      } else {
+        // Stale/wrong secret must not hard-fail: identity currently signs HS256 and exposes userinfo.
+        logBhdTokenIssue("BHD_HS256_MISMATCH", { fallback: Boolean(accessToken) });
+      }
     }
   } else {
+    logBhdTokenIssue("BHD_TOKEN_ALG", { alg: alg ?? null });
     throw new ApiError(401, "BHD_TOKEN_INVALID");
   }
   if (!signed) {
-    if (!accessToken) throw new ApiError(401, "BHD_TOKEN_INVALID");
-    const info = await fetchUserinfo(accessToken);
-    if (info.sub !== payload.sub || String(info.email ?? "").trim().toLowerCase() !== String(payload.email ?? "").trim().toLowerCase()) {
+    if (!accessToken) {
+      logBhdTokenIssue("BHD_TOKEN_UNSIGNED_NO_ACCESS");
       throw new ApiError(401, "BHD_TOKEN_INVALID");
     }
+    await confirmWithUserinfo(payload, accessToken);
   }
-  if (!issuerAllowed(payload.iss)) throw new ApiError(401, "BHD_TOKEN_INVALID");
-  if (!audienceMatches(payload.aud, bhdClientId())) throw new ApiError(401, "BHD_TOKEN_INVALID");
-  if (!payload.exp || payload.exp * 1000 < Date.now() - 60_000) throw new ApiError(401, "BHD_TOKEN_INVALID");
+  if (!issuerAllowed(payload.iss)) {
+    logBhdTokenIssue("BHD_TOKEN_ISS", { iss: payload.iss ?? null });
+    throw new ApiError(401, "BHD_TOKEN_INVALID");
+  }
+  if (!audienceMatches(payload.aud, bhdClientId())) {
+    logBhdTokenIssue("BHD_TOKEN_AUD", { aud: payload.aud ?? null });
+    throw new ApiError(401, "BHD_TOKEN_INVALID");
+  }
+  if (!payload.exp || payload.exp * 1000 < Date.now() - 60_000) {
+    logBhdTokenIssue("BHD_TOKEN_EXP", { exp: payload.exp ?? null });
+    throw new ApiError(401, "BHD_TOKEN_INVALID");
+  }
   if (!payload.nonce || payload.nonce !== nonce) throw new ApiError(401, "BHD_NONCE_MISMATCH");
   const claims = claimsFromPayload(payload);
   if (!claims.emailVerified) throw new ApiError(403, "BHD_EMAIL_UNVERIFIED");
@@ -412,7 +499,7 @@ export async function verifyBhdIdToken(idToken: string, nonce: string, accessTok
 export async function exchangeBhdCode(request: Request, code: string, verifier: string, nonce: string): Promise<BhdIdClaims> {
   if (!isBhdIdentityConfigured()) throw new ApiError(503, "BHD_NOT_CONFIGURED");
   if (!code || !verifier) throw new ApiError(401, "BHD_AUTH_FAILED");
-  const tokenUrl = validateOutboundHttpsUrl(`${identityEndpointBase()}/oauth/token`, identityAllowedHosts());
+  const tokenUrl = validateOutboundHttpsUrl(`${identityApiBase()}/oauth/token`, identityAllowedHosts());
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
@@ -426,10 +513,11 @@ export async function exchangeBhdCode(request: Request, code: string, verifier: 
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body,
+    redirect: "follow",
   });
   if (!response.ok) {
     const detail = (await response.text().catch(() => "")).slice(0, 400);
-    console.error(JSON.stringify({ level: "error", code: "BHD_TOKEN_FAILED", status: response.status, detail, at: new Date().toISOString() }));
+    logBhdTokenIssue("BHD_TOKEN_FAILED", { status: response.status, detail, host: tokenUrl.hostname });
     throw new ApiError(401, "BHD_TOKEN_FAILED");
   }
   const tokens = await response.json() as { id_token?: string; access_token?: string };

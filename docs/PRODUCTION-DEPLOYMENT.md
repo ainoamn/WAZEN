@@ -95,11 +95,12 @@ WAZEN_TRUST_OAI_HEADERS=0
 ```text
 BHD_IDENTITY_ISSUER=https://id.bhd-om.com
 # BHD_IDENTITY_ENDPOINT=https://one-bhd.vercel.app
+# BHD_IDENTITY_API_ENDPOINT=https://id.bhd-om.com
 BHD_OAUTH_CLIENT_ID=bhd-wazen
 # اختياري إن وُجد السر على الهوية:
 # BHD_OAUTH_CLIENT_SECRET=
 # لا تضبط BHD_OAUTH_REDIRECT_URI على نطاق مختلف عن صفحة المستخدم
-# BHD_IDENTITY_TOKEN_SECRET=  # إن وُجد يتحقق HS256 محلياً؛ وإلا يُستخدم /oauth/userinfo
+# BHD_IDENTITY_TOKEN_SECRET=  # يجب أن يطابق IDENTITY_TOKEN_SECRET في الهوية؛ إن اختلف أو قَدُم يُستخدم /oauth/userinfo تلقائياً
 ```
 
 لا ترفع الأسرار إلى Git. لا تشارك `DATABASE_URL` مع الهوية.

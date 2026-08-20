@@ -9,6 +9,7 @@ import {
   DEFAULT_BHD_IDENTITY_ISSUER,
   decodeBhdOauthState,
   encodeBhdOauthState,
+  identityApiBase,
   identityAuthorizeProbeAllows,
   identityEndpointBase,
   identityIssuer,
@@ -56,6 +57,7 @@ test("BHD identity is on with frozen client id; secret is optional for first-par
   const previous = {
     issuer: process.env.BHD_IDENTITY_ISSUER,
     endpoint: process.env.BHD_IDENTITY_ENDPOINT,
+    apiEndpoint: process.env.BHD_IDENTITY_API_ENDPOINT,
     id: process.env.BHD_OAUTH_CLIENT_ID,
     secret: process.env.BHD_OAUTH_CLIENT_SECRET,
     disabled: process.env.BHD_OAUTH_DISABLED,
@@ -64,15 +66,21 @@ test("BHD identity is on with frozen client id; secret is optional for first-par
   delete process.env.BHD_OAUTH_DISABLED;
   delete process.env.BHD_IDENTITY_ISSUER;
   delete process.env.BHD_IDENTITY_ENDPOINT;
+  delete process.env.BHD_IDENTITY_API_ENDPOINT;
   process.env.BHD_OAUTH_CLIENT_ID = BHD_OAUTH_CLIENT_ID;
   assert.equal(isBhdIdentityConfigured(), true);
   assert.equal(identityIssuer(), DEFAULT_BHD_IDENTITY_ISSUER);
   assert.equal(identityEndpointBase(), BHD_IDENTITY_VERCEL_ORIGIN);
+  assert.equal(identityApiBase(), DEFAULT_BHD_IDENTITY_ISSUER);
   process.env.BHD_IDENTITY_ISSUER = DEFAULT_BHD_IDENTITY_ISSUER;
   assert.equal(identityEndpointBase(), BHD_IDENTITY_VERCEL_ORIGIN);
+  assert.equal(identityApiBase(), DEFAULT_BHD_IDENTITY_ISSUER);
   process.env.BHD_IDENTITY_ENDPOINT = BHD_IDENTITY_VERCEL_ORIGIN;
   process.env.BHD_IDENTITY_ISSUER = "https://id.example.invalid";
   assert.equal(identityEndpointBase(), BHD_IDENTITY_VERCEL_ORIGIN);
+  assert.equal(identityApiBase(), "https://id.example.invalid");
+  process.env.BHD_IDENTITY_API_ENDPOINT = "https://one-bhd.vercel.app";
+  assert.equal(identityApiBase(), BHD_IDENTITY_VERCEL_ORIGIN);
   assert.equal(identityAuthorizeProbeAllows(307), true);
   assert.equal(identityAuthorizeProbeAllows(302), true);
   assert.equal(identityAuthorizeProbeAllows(400), false);
@@ -82,11 +90,13 @@ test("BHD identity is on with frozen client id; secret is optional for first-par
   process.env.BHD_OAUTH_CLIENT_SECRET = previous.secret;
   process.env.BHD_IDENTITY_ISSUER = previous.issuer;
   process.env.BHD_IDENTITY_ENDPOINT = previous.endpoint;
+  process.env.BHD_IDENTITY_API_ENDPOINT = previous.apiEndpoint;
   process.env.BHD_OAUTH_CLIENT_ID = previous.id;
   process.env.BHD_OAUTH_DISABLED = previous.disabled;
   if (!previous.secret) delete process.env.BHD_OAUTH_CLIENT_SECRET;
   if (!previous.issuer) delete process.env.BHD_IDENTITY_ISSUER;
   if (!previous.endpoint) delete process.env.BHD_IDENTITY_ENDPOINT;
+  if (!previous.apiEndpoint) delete process.env.BHD_IDENTITY_API_ENDPOINT;
   if (!previous.id) delete process.env.BHD_OAUTH_CLIENT_ID;
   if (!previous.disabled) delete process.env.BHD_OAUTH_DISABLED;
 });
@@ -129,6 +139,17 @@ test("ID token HS256 verification checks iss, aud, nonce, and expiry", async () 
   assert.equal(claims.sub, "11111111-1111-4111-8111-111111111111");
   assert.equal(claims.email, "user@example.com");
 
+  const trailingIss = signHs256({
+    iss: `${DEFAULT_BHD_IDENTITY_ISSUER}/`,
+    aud: BHD_OAUTH_CLIENT_ID,
+    sub: "11111111-1111-4111-8111-111111111111",
+    exp: Math.floor(Date.now() / 1000) + 600,
+    nonce,
+    email: "user@example.com",
+    email_verified: true,
+  }, secret);
+  assert.equal((await verifyBhdIdToken(trailingIss, nonce)).email, "user@example.com");
+
   const otherAud = signHs256({
     iss: DEFAULT_BHD_IDENTITY_ISSUER,
     aud: "bhd-hisaby",
@@ -159,6 +180,54 @@ test("ID token HS256 verification checks iss, aud, nonce, and expiry", async () 
   if (!previous.BHD_IDENTITY_TOKEN_SECRET) delete process.env.BHD_IDENTITY_TOKEN_SECRET;
 });
 
+test("wrong HS256 secret falls back to userinfo instead of BHD_TOKEN_INVALID", async () => {
+  const previous = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  process.env.BHD_IDENTITY_ISSUER = DEFAULT_BHD_IDENTITY_ISSUER;
+  process.env.BHD_OAUTH_CLIENT_ID = BHD_OAUTH_CLIENT_ID;
+  process.env.BHD_IDENTITY_TOKEN_SECRET = "stale-wazen-secret";
+  delete process.env.BHD_IDENTITY_API_ENDPOINT;
+  const nonce = "nonce-userinfo-fallback";
+  const token = signHs256({
+    iss: DEFAULT_BHD_IDENTITY_ISSUER,
+    aud: BHD_OAUTH_CLIENT_ID,
+    sub: "22222222-2222-4222-8222-222222222222",
+    exp: Math.floor(Date.now() / 1000) + 600,
+    iat: Math.floor(Date.now() / 1000),
+    nonce,
+    email: "fallback@example.com",
+    email_verified: true,
+    name: "Fallback",
+  }, "identity-real-secret");
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    assert.match(url, /https:\/\/id\.bhd-om\.com\/oauth\/userinfo/);
+    return new Response(JSON.stringify({
+      sub: "22222222-2222-4222-8222-222222222222",
+      email: "fallback@example.com",
+      email_verified: true,
+      name: "Fallback",
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+
+  try {
+    const claims = await verifyBhdIdToken(token, nonce, "access-token-value");
+    assert.equal(claims.email, "fallback@example.com");
+    assert.equal(claims.sub, "22222222-2222-4222-8222-222222222222");
+  } finally {
+    globalThis.fetch = originalFetch;
+    process.env.BHD_IDENTITY_ISSUER = previous.BHD_IDENTITY_ISSUER;
+    process.env.BHD_OAUTH_CLIENT_ID = previous.BHD_OAUTH_CLIENT_ID;
+    process.env.BHD_IDENTITY_TOKEN_SECRET = previous.BHD_IDENTITY_TOKEN_SECRET;
+    process.env.BHD_IDENTITY_API_ENDPOINT = previous.BHD_IDENTITY_API_ENDPOINT;
+    if (!previous.BHD_IDENTITY_ISSUER) delete process.env.BHD_IDENTITY_ISSUER;
+    if (!previous.BHD_OAUTH_CLIENT_ID) delete process.env.BHD_OAUTH_CLIENT_ID;
+    if (!previous.BHD_IDENTITY_TOKEN_SECRET) delete process.env.BHD_IDENTITY_TOKEN_SECRET;
+    if (!previous.BHD_IDENTITY_API_ENDPOINT) delete process.env.BHD_IDENTITY_API_ENDPOINT;
+  }
+});
+
 test("signInEntryPathForOrigin routes SSO vs local login by origin", () => {
   const previous = { ...process.env };
   delete process.env.BHD_SSO_READY;
@@ -187,6 +256,8 @@ test("Wazen BHD routes follow the product card in the identity spec", () => {
   assert.match(identity, /signInEntryPathForOrigin/);
   assert.match(identity, /signInEntryPath/);
   assert.match(identity, /oauth\/authorize/);
+  assert.match(identity, /identityApiBase/);
+  assert.match(identity, /BHD_HS256_MISMATCH/);
   assert.match(identity, /code_challenge_method/);
   assert.match(callback, /exchangeBhdCode/);
   assert.match(callback, /upsertBhdUser/);
