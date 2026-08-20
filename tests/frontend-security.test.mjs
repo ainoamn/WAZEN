@@ -218,8 +218,13 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   assert.match(landing, /\/api\/auth\/admin-entry/);
   assert.match(adminGate, /\/api\/auth\/admin-entry/);
   assert.match(loginPage, /redirect\("\/api\/auth\/admin-entry"\)/);
-  assert.match(adminEntry, /post_logout_redirect_uri/);
-  assert.match(adminEntry, /fresh=1/);
+  assert.match(adminEntry, /bhdEndSessionUrl/);
+  assert.match(adminEntry, /adminEntryCookie/);
+  assert.doesNotMatch(adminEntry, /post_logout_redirect_uri.*login/);
+  assert.match(adminEntry, /fresh=1|ADMIN_LOCAL_LOGIN_PATH/);
+  const proxy = fs.readFileSync(path.join(root, "proxy.ts"), "utf8");
+  assert.match(proxy, /ADMIN_ENTRY_COOKIE/);
+  assert.match(proxy, /ADMIN_LOCAL_LOGIN_PATH/);
   assert.match(landing, /commerce-footer-top/);
   assert.match(landing, /commerce-footer-bottom/);
   assert.match(home, /window\.location\.replace\(clientSignInPath\("\/home"\)\)/);
