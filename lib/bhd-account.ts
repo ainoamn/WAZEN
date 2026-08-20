@@ -19,6 +19,7 @@ export async function upsertBhdUser(db: D1Database, claims: BhdIdClaims) {
     await db.prepare("UPDATE customer_profiles SET last_seen_at=? WHERE user_id=?").bind(now, bySub.id).run();
     await db.prepare("UPDATE auth_credentials SET email_verified_at=COALESCE(email_verified_at,?),updated_at=? WHERE user_id=?")
       .bind(now, now, bySub.id).run();
+    await ensureBootstrapPlatformRole(db, bySub.id, email, now);
     return { id: bySub.id, email, displayName: claims.name, created: false };
   }
 
@@ -42,6 +43,8 @@ export async function upsertBhdUser(db: D1Database, claims: BhdIdClaims) {
     await db.prepare("UPDATE customer_profiles SET last_seen_at=? WHERE user_id=?").bind(now, existing.id).run();
     await db.prepare("UPDATE auth_credentials SET email_verified_at=COALESCE(email_verified_at,?),updated_at=? WHERE user_id=?")
       .bind(now, now, existing.id).run();
+    // Preserve existing platform_roles; promote only when WAZEN_ADMIN_EMAILS matches (§0.7).
+    await ensureBootstrapPlatformRole(db, existing.id, email, now);
     await writeAudit(db, { userId: existing.id, action: "auth.bhd_linked", entityType: "user", entityId: existing.id, createdAt: now });
     return { id: existing.id, email: existing.email, displayName: claims.name, created: false };
   }

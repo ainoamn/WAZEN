@@ -1,15 +1,15 @@
 # الدليل المرجعي — الدخول الموحّد ومشغّل تطبيقات BHD
 
-> **الحالة:** مرجع تشغيلي معتمد لكل المواقع الحالية والمستقبلية. 
-> **المصدر الوحيد:** هذا الملف في [ainoamn/ONE-BHD](https://github.com/ainoamn/ONE-BHD) — `docs/BHD-UNIFIED-LOGIN-AND-APPS.md` 
-> **التاريخ:** 19 أغسطس 2026 
-> **الإصدار:** `bhd-unified-login-apps.v1` 
-> **المواصفات البروتوكولية (لا تُحرَّف):** 
-> - [`BHD-IDENTITY-SSO.md`](BHD-IDENTITY-SSO.md) — `bhd-identity.v1` 
-> - [`BHD-APP-SWITCHER.md`](BHD-APP-SWITCHER.md) — `bhd-appswitcher.v1` 
+> **الحالة:** مرجع تشغيلي معتمد لكل المواقع الحالية والمستقبلية.  
+> **المصدر الوحيد:** هذا الملف في [ainoamn/ONE-BHD](https://github.com/ainoamn/ONE-BHD) — `docs/BHD-UNIFIED-LOGIN-AND-APPS.md`  
+> **التاريخ:** 19 أغسطس 2026  
+> **الإصدار:** `bhd-unified-login-apps.v1`  
+> **المواصفات البروتوكولية (لا تُحرَّف):**  
+> - [`BHD-IDENTITY-SSO.md`](BHD-IDENTITY-SSO.md) — `bhd-identity.v1`  
+> - [`BHD-APP-SWITCHER.md`](BHD-APP-SWITCHER.md) — `bhd-appswitcher.v1`  
 > **الناشر:** بوابة BHD — مشروع Vercel `one-bhd` — المُصدِر `https://id.bhd-om.com`
 
-انسخ هذا الملف إلى مستودع كل منتج تحت `docs/BHD-UNIFIED-LOGIN-AND-APPS.md`. بعد تثبيت الدخول والمشغّل **املأ القسم 12 الخاص بموقعك**: كيف ثبّتت، كيف يعمل، والتقنيات الكاملة لبناء ذلك الموقع. لا تحذف أقسام المواقع الأخرى.
+انسخ هذا الملف إلى مستودع كل منتج تحت `docs/BHD-UNIFIED-LOGIN-AND-APPS.md`. بعد تثبيت الدخول والمشغّل **املأ القسم 12 الخاص بموقعك**: كيف ثبّتت، كيف يعمل، والتقنيات الكاملة لبناء ذلك الموقع. لا تحذف أقسام المواقع الأخرى. المرجع الحي لهذه القواعد هو البوابة `BHD-Complete-Brand-and-Portal-v1.1.0`.
 
 ---
 
@@ -27,15 +27,144 @@
 
 ---
 
+## 0.1 الهوية البصرية والتصميم — إلزامي لكل موقع
+
+كل مواقع المجموعة (الحالية والمستقبلية) تستخدم **نفس الهوية البصرية وطريقة التصميم** كما في البوابة الحية ودليل [`BHD-BRAND-IDENTITY`](../BHD-Complete-Brand-and-Portal-v1.1.0/docs/BHD-BRAND-IDENTITY.md) وصفحة `/brand`.
+
+| الرمز | القيمة على البوابة |
+|---|---|
+| الحبر | `#092d24` (`--ink`) |
+| الأخضر | `#075c45` (`--emerald`) |
+| الرمل/الخلفية | `#fbfaf7` / `#f4f0e8` |
+| الخط العربي | IBM Plex Sans Arabic |
+| الاتجاه | RTL للعربية |
+| الشعار | ملفات `/brand/bhd-logo.svg` و`bhd-mark.svg` الرسمية — لا شعار بديل |
+| الزوايا والهدوء | بطاقات بحدود `#d7e2dc` وظل خفيف كما في البوابة |
+
+لا يُبتكر نظام ألوان محلي لكل منتج. لون تمييز المنتج (وازن، نَسَب…) يُستخدم داخل أيقونة البرنامج فقط، لا لإعادة طلاء الموقع كله.
+
+كل موقع يعرض نبذة الشركة ورابط **عن الشركة** و**هوية الشركة** (على البوابة: `/about` و`/brand`). المواقع الأخرى تنسخ المحتوى أو تربط صفحتي البوابة إن لم تُبنَ محلياً بعد.
+
+---
+
+## 0.2 الجلسة: خمول 48 ساعة، حساب واحد، الإدارة
+
+**الخمول.** بعد **48 ساعة بلا استخدام** يُسجَّل الخروج تلقائياً. أي استخدام (نقرة، لوحة مفاتيح، إعادة إظهار التبويب، طلب `/api/auth/me`) يجدّد النافذة 48 ساعة أخرى. المرجع في البوابة: `SESSION_IDLE_MAX_AGE_SEC` و`SessionKeepAlive` وتجديد الكوكي في `GET /api/auth/me`. المنتج يطبّق النافذة نفسها على **جلسته المحلية**، وتبقى جلسة الهوية على `id` بنفس القاعدة حتى يبقى التنقل الصامت متسقاً.
+
+**حساب واحد لكل متصفح — إلزامي.** لا يُسمح بجلستين لحسابين في نفس المتصفح (نفس الملف الشخصي) في **أي** موقع من المجموعة في الوقت نفسه.
+
+- الدخول يحدث فقط على `https://id.bhd-om.com`. `/login` و`/account` و`/admin` و`/oauth` على `www` أو `one-bhd.vercel.app` تُحوَّل إلى مضيف الهوية حتى لا تنشأ كوكي ثانية.
+- لا قائمة «إضافة حساب». إن كانت جلسة الهوية قائمة يظهر تنبيه: اخرج ثم ادخل بالحساب الآخر.
+- المنتجات (وازن، حسابي، نَسَب، بيتك، المتجر، المكتب) **ممنوع** أن تُبقي دخولاً محلياً مستقلاً (جوجل/كلمة مرور/أدمن محلي) بجانب هوية BHD. مسار `/admin` في المنتج لنفس `bhd_sub` فقط.
+- عند `callback` SSO: امسح أي جلسة منتج سابقة واستبدلها بالمستخدم القادم من الهوية. لا تُبقَ مستخدم أدمن قديم إن دخل حساب BHD مختلف.
+- لتغيير الحساب: خروج موحّد من الهوية (`/oauth/end-session`) يمسح `bhd_id` ثم يجب أن يمسح المنتج جلسته. بعدها فقط يُسمح بدخول جديد.
+
+هذه الفقرة جزء من المواصفة. مخالفتها (مثل فتح `wazen.bhd-om.com/admin` بحساب بينما `id` بحساب آخر) تُعدّ عيباً في تثبيت المنتج لا في الهوية.
+
+**الإدارة.** صفحات إعدادات الأدمن (`/admin` على الهوية، ولوحات الأدمن داخل كل منتج) **للمدير فقط**. دخول الإدارة من المنتج: `GET /api/auth/admin-entry` (القسم 4.9) وليس `/login?local=1`. على البوابة: `BHD_PLATFORM_ADMIN_EMAILS` و`requirePlatformAdmin` — غير المدرج يرى منعاً صريحاً. أدوار منتج تبقى جداول ذلك المنتج ولا تُفتح من الهوية. التفصيل والتشخيص: القسم **0.7**.
+
+---
+
+## 0.3 التحميل المسبق والتنقل السلس
+
+عند أول تحميل يُسخَّن التطبيق في الخلفية: `NavigationWarmup` يستدعي `router.prefetch` لكل الصفحات العامة (`/`, المنتجات، `/apps`, `/about`, `/brand`, `/login`, `/account`…). الروابط `InstantLink` مع `prefetch`. النتيجة: الانتقال الداخلي يبدو كأنه محمّل مسبقاً. كل موقع ينفّذ التسخين لصفحاته هو، لا لصفحات منتج آخر.
+
+---
+
+## 0.4 المزامنة الفورية — ماذا ينعكس وما لا
+
+| ينعكس فوراً عبر الهوية (حاسوب ↔ هاتف) | لا ينعكس بين المواقع |
+|---|---|
+| الاسم، البريد، الهاتف، العنوان، الصورة في `/account` | فواتير حسابي، محافظ وازن، طلبات المتجر، شجرة نَسَب، عقارات بيتك |
+| قائمة المواقع المرتبطة بالحساب | اشتراكات ذلك المنتج وخططه |
+| حالة الدخول على الهوية (بعد SSO) | أدوار المشرف داخل المنتج |
+
+المصدر: Neon `bhd-identity` بلا كاش على `/api/account` و`/oauth/userinfo`. تعديل على الهاتف يظهر على الكمبيوتر في الطلب التالي لنفس واجهات الهوية. بيانات التشغيل تُزامَن داخل **قاعدة ذلك المنتج** فقط (آليات المنتج: ويب سوكت/استعلام حي — ليست مسؤولية الهوية).
+
+---
+
+## 0.5 الفوتر: برامجنا وشرح التطبيقات
+
+في أسفل **كل** موقع (مرجع البوابة: `SiteFooter`):
+
+1. صف **برامجنا** بشعار واسم كل تطبيق.
+2. رابط «كل التطبيقات وشرحها» إلى صفحة `/apps` (أو المكافئ).
+3. روابط: عن الشركة، هوية الشركة، الخصوصية، الشروط، الأمان.
+
+صفحة `/apps` على البوابة تشرح لكل برنامج: الشعار، الاسم، الفئة، الفوائد، كيف يعمل، ورابط الفتح. المواقع الأخرى تنسخ المكوّن والصفحة أو تربط `https://www.bhd-om.com/apps` إلى أن تُبنَى الصفحة محلياً بنفس المحتوى.
+
+## 0.6 الموقع العام: لا روابط مصدر خاص
+
+صفحات [www.bhd-om.com](https://www.bhd-om.com/) لا تعرض كلمة «مستودع المشروع» ولا أي رابط إلى GitHub أو مصدر خاص. روابط المنتجات تذهب إلى نطاقات `*.bhd-om.com` فقط. النظام الداخلي (مكتب BHD) يفتح صفحة المنتج داخل البوابة لا مصدره.
+
+---
+
+## 0.7 تشخيص: لوحات قديمة، تنقّل يطلب دخولاً، أدمن المنتج
+
+### ماذا يحدث فعلياً (لماذا يبدو «مكسوراً»)
+
+| العرض | السبب الحقيقي | الإصلاح في مستودع المنتج |
+|---|---|---|
+| الموقع ما زال يعرض لوحة تسجيل قديمة | المنتج لم يحوّل `/login` إلى `/api/auth/bhd/start`، أو ما زال فيه جوجل/كلمة مرور محلية | غلاف دخول فقط → الهوية؛ أزل النموذج المحلي للمستخدم النهائي |
+| دخلت موقعاً ثم الآخر يطلب دخولاً | إما `mode=browse` (لا يمرّ بـ authorize)، أو لا يوجد `start`/`callback`، أو الدخول كان محلياً فلم تُضبط كوكي `bhd_id` على `id.bhd-om.com` | أكمل القسم 4؛ تأكد أن أول دخول يمر عبر `id`؛ بعد نجاح `start` بـ 302 أبلغ ONE-BHD لقلب `mode` إلى `sso` |
+| حساب الأدمن القديم يقول «غير موجود / خطأ» عند الدخول الموحّد | الأدمن كان صفاً محلياً بكلمة مرور المنتج فقط؛ الهوية لا تعرف ذلك الصف؛ أو `callback` أنشأ مستخدماً جديداً بلا دور `admin` | اربط الصف القديم بـ `bhd_sub` (انظر أدناه) — لا تُبقِ دخول أدمن محلي موازياً |
+
+التنقّل الصامت **لا يعني** أن كوكي وازن تُقرأ في نَسَب. يعني: كوكي `bhd_id` على الهوية → `authorize` بلا نموذج → `callback` يضبط جلسة المنتج. إن لم يمر المنتج بهذا المسار فسيطلب دخولاً دائماً.
+
+### الخلاصة التقنية المعتمدة — الأدوار (الأنسب والآمن)
+
+**لا توحّد صلاحية «أدمن كل المواقع» في حساب واحد افتراضياً.** ذلك خطر أمني: اختراق حساب واحد يفتح وازن وحسابي والمتجر والمكتب معاً. الهوية تثبت **من أنت**؛ كل منتج يقرر **ماذا يحق لك** داخل جداوله.
+
+| الطبقة | أين تُدار | من يدخلها |
+|---|---|---|
+| هوية واحدة | `id.bhd-om.com` — حساب / بريد / Google / Facebook | كل المستخدمين |
+| أدمن المنصة (الهوية فقط) | `BHD_PLATFORM_ADMIN_EMAILS` → `/admin` على الهوية | مالكو المنصة فقط — مستخدمون ونظرة عامة للهوية، **ليس** أدمن وازن أو المتجر |
+| أدمن المنتج | عمود/جدول دور داخل قاعدة ذلك المنتج (`role=admin`، `is_admin`، عضوية شركة…) مربوط بنفس `bhd_sub` | من عيّنه مالك ذلك المنتج |
+
+النموذج الصحيح لمشرف وازن مثلاً:
+
+1. يملك حساباً على الهوية (نفس البريد الذي كان أدمن وازن المحلي إن أمكن).
+2. يدخل عبر `admin-entry` → SSO → `callback`.
+3. المنتج يربط أو ينشئ الصف على `bhd_sub`، ويُبقي/يمنح دور `admin` **في جدول وازن فقط**.
+4. في نَسَب أو المتجر يظهر كمستخدم عادي ما لم يُعيَّن أدمن هناك أيضاً.
+
+متى يكون «أدمن واحد لكل المواقع» مقبولاً؟ فقط لمالك المنصة، وبقرار صريح: نفس البريد يُدرَج في قائمة أدمن **كل** منتج على حدة (أو سكربت تعيين)، لا عبر مفتاح سحري في الهوية يفتح كل شيء. حتى حينها تبقى الصلاحية محلية لكل قاعدة بيانات.
+
+### آلية ربط أدمن قديم بهوية BHD (إلزامي في `callback`)
+
+```
+بعد التحقق من id_token:
+1. إن وُجد مستخدم bhd_sub = sub → حدّث الملف وافتح الجلسة (احتفظ بدوره).
+2. وإلا إن وُجد مستخدم بنفس البريد الموثّق (أو اسم مستخدم أدمن معروف) و bhd_sub فارغ
+   → اكتب bhd_sub = sub، احتفظ بـ role/admin كما هو، امسح اعتماد كلمة المرور المحلية للدخول العام إن لزم.
+3. وإلا → أنشئ مستخدماً جديداً بدور افتراضي (مستخدم) — ليس أدمن تلقائياً.
+4. امسح أي جلسة منتج سابقة قبل ضبط الكوكي الجديدة.
+```
+
+تعيين أدمن جديد لاحقاً: من لوحة `/admin` داخل المنتج (أو SQL/سكربت مالك المنتج) على الصف المرتبط بـ `bhd_sub` — **ليس** من شاشة الهوية.
+
+### قائمة تحقق سريعة لكل موقع ما زال يعاني
+
+1. لا لوحة تسجيل قديمة للمستخدم النهائي — فقط تحويل إلى الهوية.
+2. `GET /api/auth/bhd/start` و`callback` يعملان؛ authorize يفتح `id.bhd-om.com` لا أصل المنتج.
+3. الكتالوج في ONE-BHD: `mode: "sso"` لذلك المنتج بعد التحقق.
+4. مشغّل التطبيقات يفتح عبر `startUrl` لا رابط تسويقي عارٍ فقط.
+5. `/admin` عبر `/api/auth/admin-entry`؛ ربط الأدمن القديم بـ `bhd_sub` كما أعلاه.
+6. اختبار: دخول الهوية → فتح منتج ثانٍ → بلا نموذج كلمة مرور → نفس الشخص؛ فتح `/admin` إن كان الدور محلياً admin.
+
+دليل لصق جاهز للمنتجات: [`BHD-PRODUCT-SSO-ADMIN.md`](BHD-PRODUCT-SSO-ADMIN.md).
+
+---
+
 ## 1. لماذا يعمل التنقل دون إعادة تسجيل (بدون مخاطرة)
 
 الكوكي **لا يُشارك** عبر النطاقات. لا `Domain=.bhd-om.com`. لا `iframe`. لا قاعدة بيانات مشتركة.
 
 ما يحدث فعلياً:
 
-1. عند أول دخول ناجح على `id.bhd-om.com` تُضبط كوكي هوية اسمها `bhd_id`، **Host-only** على مضيف الهوية فقط، مدة 7 أيام، `HttpOnly` + `Secure` + `SameSite=Lax`.
-2. عندما يفتح المستخدم منتجاً آخر (مثلاً وازن) يذهب المتصفح إلى `{origin}/api/auth/bhd/start` ثم إلى 
- `https://id.bhd-om.com/oauth/authorize?...`
+1. عند أول دخول ناجح على `id.bhd-om.com` تُضبط كوكي هوية اسمها `bhd_id`، **Host-only** على مضيف الهوية فقط، **48 ساعة خمول منزلق**، `HttpOnly` + `Secure` + `SameSite=Lax`.
+2. عندما يفتح المستخدم منتجاً آخر (مثلاً وازن) يذهب المتصفح إلى `{origin}/api/auth/bhd/start` ثم إلى  
+   `https://id.bhd-om.com/oauth/authorize?...`
 3. الهوية ترى كوكي `bhd_id` لأنها على **نفس المضيف** الذي ضبطها. لا تحتاج كلمة مرور.
 4. تصدر كود تفويض لمرة واحدة (60 ثانية) وترجع المنتج إلى `/api/auth/bhd/callback`.
 5. خادم المنتج يستبدل الكود بتوكن على `POST /oauth/token`، يتحقق من `id_token`، يربط أو ينشئ مستخدمه المحلي بـ `bhd_sub = sub`، ثم يضبط **كوكي جلسة ذلك المنتج** على نطاقه وحده.
@@ -84,7 +213,7 @@ sequenceDiagram
 | صلاحية الكود | 60 ثانية، استخدام واحد |
 | صلاحية ID/Access Token | 10 دقائق |
 | صلاحية Refresh | 30 يوماً مع تدوير |
-| صلاحية `bhd_id` | 7 أيام |
+| صلاحية `bhd_id` | 48 ساعة خمول منزلق (أي استخدام يجدّد) |
 | DNS للنطاقات الفرعية | CNAME → `cname.vercel-dns.com` (**ليس** `vercel-dns-017`) |
 
 ### 2.1 `client_id` و`redirect_uri` الإنتاج
@@ -116,7 +245,7 @@ sequenceDiagram
 
 ### 2.3 مطالبات ID Token
 
-إلزامي: `iss`, `aud`, `sub`, `exp`, `iat`, `nonce`, `email`, `email_verified` 
+إلزامي: `iss`, `aud`, `sub`, `exp`, `iat`, `nonce`, `email`, `email_verified`  
 اختياري: `name`, `picture`, `preferred_username`, `phone_number`
 
 التحقق على **خادم المنتج**: `iss` === Issuer، `aud` === `client_id` الخاص به، `nonce` يطابق الكوكي، `email_verified === true`. رفض توكن `aud` لمنتج آخر.
@@ -135,8 +264,8 @@ sequenceDiagram
 
 ### 3.2 ماذا تعرض الشاشة
 
-1. شعار BHD الرسمي ووعد **ابنِ أحلامًا أكبر**.
-2. دخول بالبريد أو اسم مستخدم + كلمة المرور (`POST /api/auth/login`).
+1. لوحة **بوابة BHD** بنص موحّد: «من هنا تبدأ الخطوة نحو أحلام أكبر» ثم وعد **Build Higher Dreams**. اسم **بن حمود للتطوير** / **Bin Hamood Development** يظهر بلون ذهبي. النص موسّط ومتجاوب (`clamp` + عمود واحد تحت 900px).
+2. دخول بالبريد أو اسم المستخدم + كلمة المرور (`POST /api/auth/login`).
 3. إنشاء حساب (`POST /api/auth/register`) مع دفتر عنوان SELF اختياري (هاتف، مدينة…).
 4. زر Google **على هذه الشاشة فقط** — GIS / `POST /api/auth/google` يتحقق من ID Token على الخادم بـ `google-auth-library`.
 5. لا زر Google على وازن أو حسابي بعد القطع.
@@ -261,6 +390,35 @@ CREATE INDEX IF NOT EXISTS users_bhd_sub_idx ON <users>(bhd_sub);
 
 عندما يعمل `start` بـ 302 إلى الهوية: أبلغ ONE-BHD لقلب `mode` إلى `"sso"` وإعادة نسخ الكتالوج.
 
+### 4.9 دخول الإدارة — `GET /api/auth/admin-entry` (Checklist سريع)
+
+لا ترسل المشرف إلى `/login?local=1&next=/admin`. ذلك يفتح كلمة مرور محلية ويكسر الحساب الواحد. انسخ الملف المرجعي:
+
+`BHD-Complete-Brand-and-Portal-v1.1.0/app/api/auth/admin-entry/route.ts`
+
+يحوّل إلى `{origin}/api/auth/bhd/start?returnTo=/admin` (نفس جلسة هوية BHD).
+
+| خطوة | ماذا تفعل |
+|---|---|
+| 1 | انسخ `app/api/auth/admin-entry/route.ts` إلى المنتج |
+| 2 | في صفحة `/login` (أو `/auth/login`) إن وُجد `local=1` و`next` يبدأ بـ `/admin` → `redirect("/api/auth/admin-entry")` |
+| 3 | أي Gate يمنع `/admin`: زر الدخول = `/api/auth/admin-entry` لا `/login?local=1…` |
+| 4 | رابط «دخول أدمن» في الفوتر = `/api/auth/admin-entry` |
+| 5 | إن لم يكن مسار الإدارة `/admin` مرّر `?next=/المسار` أو غيّر القيمة الافتراضية في الملف |
+
+مسارات الإدارة المعتمدة اليوم:
+
+| الموقع | مسار الإدارة | `returnTo` |
+|---|---|---|
+| الهوية / البوابة | `/admin` | `/admin` |
+| وازن | `/admin` | `/admin` |
+| نَسَب | `/admin` | `/admin` |
+| حسابي | أكّد المسار في مستودع حسابي إن لم يكن `/admin` | |
+| المتجر | `/dashboard/admin` | `/dashboard/admin` (افتراضي `admin-entry`) |
+| بيتك / المكتب | أكّد المسار إن اختلف | |
+
+بعد `callback` امسح جلسة المنتج السابقة. `/admin` لنفس `bhd_sub` فقط. لربط أدمن محلي قديم أو سياسة الأدوار الآمنة اتبع القسم **0.7**.
+
 ---
 
 ## 5. ما يُحظر (مخاطر مرفوضة)
@@ -310,8 +468,13 @@ CREATE INDEX IF NOT EXISTS users_bhd_sub_idx ON <users>(bhd_sub);
 | `app/oauth/token/route.ts` | استبدال الكود/التحديث |
 | `app/oauth/userinfo/route.ts` | قراءة الملف الحي للمنتجات |
 | `app/api/auth/bhd/start/route.ts` | SSO البوابة (يحوّل إلى origin لأنها الهوية) |
+| `app/api/auth/admin-entry/route.ts` | دخول الإدارة → `start?returnTo=/admin` (يُنسخ للمنتجات) |
 | `app/lib/bhd/apps.ts` | الكتالوج المجمد |
 | `app/lib/identity/clients.ts` | تسجيل `redirect_uri` |
+| `app/components/SiteFooter.tsx` | فوتر برامجنا + عن الشركة + الهوية |
+| `app/apps/page.tsx` | شرح كل برنامج وفوائده وكيف يعمل |
+| `app/components/auth/SessionKeepAlive.tsx` | تجديد الجلسة عند الاستخدام |
+| `app/lib/auth/config.ts` | `SESSION_IDLE_MAX_AGE_SEC` = 48 ساعة |
 | `db/schema.ts` | جداول Neon للهوية فقط |
 
 ---
@@ -324,6 +487,9 @@ CREATE INDEX IF NOT EXISTS users_bhd_sub_idx ON <users>(bhd_sub);
 4. `state`/`nonce` خاطئ → رفض.
 5. كود مستخدم مرتين → الثانية `invalid_grant`.
 6. خروج المنتج ثم فتحه → يطلب دخولاً. خروج الهوية ثم منتج آخر → يطلب دخولاً.
+6ب. خمول 48 ساعة بلا استخدام → خروج. استخدام خلال النافذة يجدّد.
+6ج. لا يمكن جلستان لحسابين في نفس المتصفح.
+6د. غير المدير لا يدخل `/admin` ولا إعدادات أدمن المنتج.
 7. من عُمان: `id.bhd-om.com` يفتح.
 8. بلا جلسة منتج: لا تسع نقاط.
 9. «الحساب» من المنتج يفتح `https://id.bhd-om.com/account`.
@@ -336,9 +502,9 @@ CREATE INDEX IF NOT EXISTS users_bhd_sub_idx ON <users>(bhd_sub);
 | الموقع | دخول OIDC | مشغّل | `mode` في الكتالوج | سجل الصيانة |
 |---|---|---|---|---|
 | الهوية / البوابة | نعم (هي المُصدِر) | نعم | portal `sso` | القسم 6 أعلاه + 12.1 |
-| وازن | نعم | نعم | `browse` حتى إشعار ONE-BHD بقلبه إلى `sso` | 12.2 |
+| وازن | نعم | نعم | `sso` (نسخة الكتالوج في وازن؛ يُزامَن في ONE-BHD) | 12.2 |
 | حسابي | لم يُربط | — | `browse` | 12.3 |
-| نَسَب | لم يُربط | — | `browse` | 12.4 |
+| نَسَب | نعم | نعم | `sso` | 12.4 |
 | بيتك | لم يُربط | — | `browse` | 12.5 |
 | المتجر | نعم | نعم | `sso` | 12.6 |
 | المكتب | معطّل في المشغّل | — | `enabled: false` | 12.7 |
@@ -400,7 +566,7 @@ authorize وtoken دائماً على https://id.bhd-om.com وليس أصل ال
 | كيف يعمل التنقل | منتج آخر يستدعي authorize؛ الهوية لا تعرض نموذجاً إن `bhd_id` قائمة |
 | كيف يعمل المشغّل | `SessionMenu` يحمّل `/api/auth/me` ثم `BhdAppSwitcher` |
 | ملفات أُضيفت | انظر القسم 6 |
-| أسرار (أسماء فقط) | `DATABASE_URL`, `AUTH_SECRET`, `IDENTITY_TOKEN_SECRET`, `GOOGLE_CLIENT_ID`, `BHD_PLATFORM_ADMIN_EMAILS`, أسرار العملاء `BHD_OAUTH_CLIENT_SECRET_*` |
+| أسرار (أسماء فقط) | `DATABASE_URL`, `AUTH_SECRET`, `IDENTITY_TOKEN_SECRET`, `GOOGLE_CLIENT_ID`, `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`, `BHD_PLATFORM_ADMIN_EMAILS`, أسرار العملاء `BHD_OAUTH_CLIENT_SECRET_*` |
 | التقنيات الكاملة | القسم 6 |
 | ملاحظات صيانة | لا تستخدم مسار `start` في البوابة كقالب لمنتج: البوابة تحوّل إلى `origin` |
 
@@ -408,28 +574,38 @@ authorize وtoken دائماً على https://id.bhd-om.com وليس أصل ال
 
 | البند | التوثيق |
 |---|---|
-| تاريخ التثبيت | 19 أغسطس 2026 — OIDC + مشغّل على `main` |
-| كيف ثُبّت | اتبع [BHD-WAZEN-INTEGRATION.md](BHD-WAZEN-INTEGRATION.md) — `client_id=bhd-wazen` · `lib/bhd-identity.ts` · `/api/auth/bhd/start`+`callback` · عمود `users.bhd_sub` · غلاف `/login`/`/register` → SSO أو `?local=1` على Vercel · `proxy.ts` يحمي `/home` `/dashboard` `/billing` `/documents` `/pricing` `/account/*` `/admin` |
-| كيف يعمل الدخول | `signInEntryPathForOrigin` → `/api/auth/bhd/start?returnTo=` على `wazen.bhd-om.com`؛ `/login?local=1&next=` على `wazen-roan.vercel.app` حتى تسجيل callback في ONE-BHD · authorize/end-session للمتصفح على `one-bhd.vercel.app` (fallback عُمان) · **token/userinfo/JWKS من الخادم** على `identityApiBase()` = `https://id.bhd-om.com` (أو `BHD_IDENTITY_API_ENDPOINT`) · إن فشل تحقق HS256 بسبب سر قديم (`BHD_IDENTITY_TOKEN_SECRET` ≠ `IDENTITY_TOKEN_SECRET`) يُؤكَّد التوكن عبر `/oauth/userinfo` بدل `BHD_TOKEN_INVALID` |
-| كيف يعمل التنقل الصامت | كوكي `bhd_id` على الهوية فقط؛ وازن يستدعي authorize ولا يرى كوكي البوابة أو المنتجات الأخرى |
-| المشغّل | `BhdAppSwitcher` في `/home` · `/dashboard` · `AccountHeader` (فوترة/باقات/مستندات) · `AdminShell` — لا رابط `/admin` داخل المشغّل · الحساب → `https://id.bhd-om.com/account` — وإذا كان `GET /api/dashboard` بطيئًا/timeout، تعرض `/home` الهيدر/الأيقونات عبر `GET /api/auth` لتفادي شاشة “Sign in” بشكل خاطئ — والصفحة الرئيسية `/` تتحول إلى `AccountHeader` عند وجود جلسة وتعرض روابط تطبيقات BHD في فوتر داكن بنفس بنية فوتر BHD المركزي ومن الكتالوج نفسه — وتم تثبيت تموضع بطاقات الحساب/التطبيقات بتموضع ثابت محسوب على مستوى الشاشة (`fixed`) مع تحديث تلقائي عند الفتح/التمرير/تغيير المقاس حتى لا تخرج خارج الحدود عند الضغط على صورة المستخدم أو زر التطبيقات — بريد الأدمن القادم من الهوية الموحّدة يُنشأ/يُربط كمستخدم عادي في التطبيقات الأخرى، لكن يُرقّى محليًا في وازن فقط إذا طابق `WAZEN_ADMIN_EMAILS`، ولا يصبح أدمنًا في منتج آخر إلا إذا مُنح الدور هناك محليًا |
-| ملفات أُضيفت | `lib/bhd-identity.ts` · `lib/bhd/apps.ts` · `lib/client-sign-in.ts` · `components/bhd/BhdAppSwitcher.tsx` · `components/bhd/BhdAppIcon.tsx` · `.bhd-switcher-*` في `app/globals.css` |
-| أسرار (أسماء فقط) | `BHD_IDENTITY_ISSUER`, `BHD_IDENTITY_ENDPOINT`, `BHD_IDENTITY_API_ENDPOINT`, `BHD_OAUTH_CLIENT_ID`, `BHD_OAUTH_CLIENT_SECRET`, `BHD_OAUTH_REDIRECT_URI`, `BHD_IDENTITY_TOKEN_SECRET`, `AUTH_SECRET`, `DATABASE_URL`, `WAZEN_JOB_SECRET` |
-| التقنيات الكاملة لوازن | Next.js 16.3 · React 19.2 · TypeScript 5.9 · Drizzle ORM 0.45 · Neon Postgres · Vercel `wazen-roan` · جلسة `__Host-wazen_session` Host-only · PKCE S256 · CSP في `proxy.ts` · فوترة ومدفوعات وWebhooks محلية · `node --test` |
-| ما لم يُوحَّد | المحافظ، المصاريف، الرحلات، الجمعيات، الفواتير، الاشتراكات، أدوار `/admin` (تبقى صلاحية منصة وازن) |
-| ملاحظات صيانة | Vercel preview: أضف `https://wazen-roan.vercel.app/api/auth/bhd/callback` في ONE-BHD `clients.ts` ثم اقلب `mode` إلى `sso` · Google محظور على وازن عند تفعيل BHD Identity · رابط “دخول الأدمن” → `/api/auth/admin-entry` يمسح جلسة وازن ثم `end-session` بـ `post_logout_redirect_uri={origin}/` فقط (المسجّل في الهوية)؛ كوكي `wazen_admin_entry` يجعل `proxy.ts` يحوّل من `/` إلى `/login?local=1&next=/admin&fresh=1` — **لا** تمرّر مسار `/login?...` كـ post_logout وإلا الهوية تُبقي المستخدم على `https://id.bhd-om.com/` · عند `?error=BHD_TOKEN_INVALID` راجع سجلات Vercel لـ `BHD_HS256_MISMATCH` / `BHD_USERINFO_*` / `BHD_TOKEN_ISS|AUD|EXP` وزامن `BHD_IDENTITY_TOKEN_SECRET` مع `IDENTITY_TOKEN_SECRET` في الهوية أو اتركه فارغًا ليعتمد userinfo · **فيسبوك على شاشة الهوية**: رسالة «التطبيق غير نشط» من Meta تعني أن تطبيق Facebook في وضع Development/Inactive على لوحة Meta للمطوّرين (ليست من وازن) — انقل التطبيق إلى Live أو أضف الحساب كـ Tester · **إنشاء محفظة → INTERNAL_ERROR بعد تأخير طويل**: كان `readDashboardRevision` يمرّر 7 معاملات لـ SQL فيه 6 `?` فيفشل POST بعد نجاح الإدراج؛ أصلِح الربط وصار رد الكتابة بدون `refreshDerived` الثقيل |
+| تاريخ التثبيت الحي | أغسطس 2026 — OIDC + مشغّل؛ امتثال §0.7 / §4.9 في 20 أغسطس 2026 |
+| `client_id` | `bhd-wazen` |
+| الأصل | `https://wazen.bhd-om.com` (Vercel: `https://wazen-roan.vercel.app`) |
+| `redirect_uri` | `https://wazen.bhd-om.com/api/auth/bhd/callback` (+ preview بعد تسجيله في ONE-BHD `clients.ts`) |
+| الحالة في المشغّل | `enabled: true` · `mode: sso` في `lib/bhd/apps.ts` (نسخة المنتج) — أبلغ ONE-BHD لنسخ الكتالوج |
+| كيف ثُبّت | القسم 4 + **0.7** + **4.9**: `users.bhd_sub` · `start`/`callback`/`logout` · `GET /api/auth/admin-entry` → `start?returnTo=/admin` (أبداً `?local=1`) · غلاف `/login` و`/register` → الهوية على أصول SSO · `local=1` نحو `/admin` → `admin-entry` · ربط مستخدم قديم بالبريد الموثّق مع الإبقاء على `platform_roles` وترقية عبر `WAZEN_ADMIN_EMAILS` فقط · مشغّل بعد الجلسة |
+| كيف يعمل الدخول | `signInEntryPathForOrigin` → `/api/auth/bhd/start?returnTo=` على `wazen.bhd-om.com` · authorize للمتصفح عبر `identityEndpointBase()` (`one-bhd.vercel.app` fallback لعُمان، وإلا `id.bhd-om.com`) · token/userinfo/JWKS من الخادم عبر `identityApiBase()` = `https://id.bhd-om.com` · `callback` → `upsertBhdUser` + `createSession` (تمسح الجلسة السابقة) |
+| الأدمن | صلاحية محلية في `platform_roles` مربوطة بـ `bhd_sub` فقط — الهوية لا تمنح أدمن وازن. `BHD_PLATFORM_ADMIN_EMAILS` يخص `/admin` على الهوية فقط. مسار الدخول: `/api/auth/admin-entry` لا `?local=1`. ترقية اختيارية إن طابق البريد `WAZEN_ADMIN_EMAILS`؛ لا تُنزَّل أدوار صريحة عند غياب البريد من القائمة |
+| التنقل الصامت | كوكي `bhd_id` على مضيف الهوية فقط؛ وازن يستدعي authorize ولا يقرأ كوكي البوابة أو المنتجات الأخرى |
+| المشغّل | `BhdAppSwitcher` في `/home` · `/dashboard` · `AccountHeader` · `AdminShell` — الحساب → `https://id.bhd-om.com/account` — لا رابط `/admin` داخل المشغّل |
+| جلسة المنتج | كوكي `__Host-wazen_session` Host-only · خمول منزلق · `callback` يستبدل الجلسة |
+| الفوتر | صف برامجنا من الكتالوج + «دخول الأدمن» → `/api/auth/admin-entry` |
+| ملفات `start` / `callback` | `app/api/auth/bhd/start|callback|logout` · `app/api/auth/admin-entry/route.ts` · `lib/bhd-identity.ts` · `lib/bhd-account.ts` · `lib/platform-role-bootstrap.ts` |
+| عمود `bhd_sub` | جدول `users` (Neon Postgres عبر Drizzle / D1-style runtime) |
+| تاريخ قلب `mode` إلى `sso` | 20 أغسطس 2026 في نسخة وازن من `lib/bhd/apps.ts` (زامن ONE-BHD) |
+| أسرار (أسماء فقط) | `BHD_IDENTITY_ISSUER`, `BHD_OAUTH_CLIENT_ID`, `BHD_OAUTH_CLIENT_SECRET`, `BHD_OAUTH_REDIRECT_URI`, `BHD_IDENTITY_TOKEN_SECRET` (اختياري؛ يُفضّل مطابقته أو تركه فارغاً لـ userinfo), `WAZEN_ADMIN_EMAILS`, سر جلسة وازن, `DATABASE_URL` |
+| **التقنيات الكاملة** | Next.js 16.3 · React 19.2 · TypeScript 5.9 · Drizzle ORM 0.45 · Neon Postgres · Vercel مشروع `wazen-roan` · جلسة Host-only · PKCE S256 · CSP في `proxy.ts` · فوترة ومدفوعات وWebhooks محلية · `node --test` |
+| ما لم يُوحَّد | المحافظ، المصاريف، الرحلات، الجمعيات، الفواتير، الاشتراكات، أدوار `/admin` (منصة وازن فقط) |
+| فريق الصيانة | مستودع `ainoamn/WAZEN` |
 
 #### 12.2.1 استكشاف أعطال الدخول (وازن)
 
-| العَرَض | السبب | الإجراء |
+| العرض | السبب | الإصلاح |
 |---|---|---|
-| `?error=BHD_TOKEN_INVALID` بعد زر BHD | سر HS256 قديم أو فشل تحقق التوكن | وازن يؤكّد عبر `/oauth/userinfo` تلقائيًا؛ راجع سجلات `BHD_HS256_MISMATCH` وزامن أو امسح `BHD_IDENTITY_TOKEN_SECRET` |
-| «دخول الأدمن» يفتح `https://id.bhd-om.com/` ولا يعود | `post_logout_redirect_uri` غير مسجّل (مثل `/login?...`) | المسار الصحيح: `end-session` → `{origin}/` + كوكي `wazen_admin_entry` → `/login?local=1&next=/admin&fresh=1` (`lib/admin-entry.ts` + `proxy.ts`) — مُثبّت على `main` منذ 20 أغسطس 2026 |
-| فيسبوك: «التطبيق غير نشط» على الهاتف | تطبيق Meta للهوية Development/Inactive أو المستخدم ليس Tester | من [Meta for Developers](https://developers.facebook.com/) على تطبيق **الهوية** (ONE-BHD): App Mode → **Live**، أو أضف الحساب تحت Roles → Testers. وازن لا يملك إعداد فيسبوك |
-| إنشاء محفظة بطيء ثم `INTERNAL_ERROR` | `readDashboardRevision` بعد الكتابة بربط SQL خاطئ (7 vs 6) | مُصلَح: 6 معاملات + حماية revision على POST + `refreshDerived: false` في رد الكتابة |
-| تصفية/تصفير لا تظهر إلا للشخصية | زر التصفير كان مشروطًا بـ `space.type === "personal"` | أزرار **تصفية وتصفير** و**حذف المحفظة** داخل نافذة «ضبط المحفظة» لكل الأنواع؛ الشريط الخارجي يحتفظ بالأرشفة فقط |
+| لوحة تسجيل قديمة للمستخدم النهائي | أصل غير SSO-ready أو `?local=1` | على `wazen.bhd-om.com`: `/login` و`/register` يحوّلان إلى `bhd/start` (§0.7) |
+| منتج آخر يطلب دخولاً بعد وازن | كتالوج `mode=browse` أو دخول محلي بلا `bhd_id` | `start` يرد 302؛ قلب `mode` إلى `sso` في ONE-BHD |
+| أدمن قديم «غير موجود» بعد SSO | صف محلي بلا `bhd_sub` أو مستخدم جديد بلا دور | `upsertBhdUser` يربط بالبريد الموثّق ويُبقي/يمنح الدور عبر `platform_roles` + `WAZEN_ADMIN_EMAILS` |
+| `?error=BHD_TOKEN_INVALID` | سر HS256 قديم أو فشل تحقق التوكن | تأكيد عبر `/oauth/userinfo`؛ راجع `BHD_HS256_MISMATCH` وزامن أو امسح `BHD_IDENTITY_TOKEN_SECRET` |
+| فيسبوك: «التطبيق غير نشط» | تطبيق Meta للهوية Development/Inactive | Live أو Testers على تطبيق **الهوية** (ONE-BHD) — ليس إعداد وازن |
+| إنشاء محفظة → `INTERNAL_ERROR` بعد تأخير | ربط خاطئ لمعاملات `readDashboardRevision` | مُصلَح في مسار dashboard POST — راجع سجل النشر |
 
-ملفات مرتبطة: `app/api/auth/admin-entry/route.ts` · `lib/admin-entry.ts` · `proxy.ts` · `lib/bhd-identity.ts` · `app/api/dashboard/route.ts` · `app/wazen-dashboard.tsx` · `components/personal/personal-wallet.tsx`.
+ملفات مرتبطة: `app/api/auth/admin-entry/route.ts` · `app/login/page.tsx` · `app/register/page.tsx` · `lib/bhd-account.ts` · `lib/bhd-identity.ts` · `proxy.ts` · `lib/bhd/apps.ts`.
 
 ### 12.3 حسابي — `ainoamn/hisaby`
 
@@ -445,10 +621,23 @@ authorize وtoken دائماً على https://id.bhd-om.com وليس أصل ال
 
 | البند | التوثيق |
 |---|---|
+| تاريخ التثبيت الحي | 18–19 أغسطس 2026 — OIDC ثم المشغّل (`e1231cd` وما بعده) |
 | `client_id` | `bhd-nasab` |
-| الأصل | `https://nasab.bhd-om.com` |
-| التقنيات الكاملة | _يملأها فريق نَسَب_ |
-| ما لم يُوحَّد | الأشجار، الدعوات، القصص |
+| الأصل | `https://nasab.bhd-om.com` (نسخة Vercel: `https://nasab-mu.vercel.app`) |
+| `redirect_uri` | `https://nasab.bhd-om.com/api/auth/bhd/callback` + `https://nasab-mu.vercel.app/api/auth/bhd/callback` + `http://localhost:5173/api/auth/bhd/callback` |
+| كيف ثُبّت | القسم 6 من SSO ثم نسخ الكتالوج والمشغّل من `v1.1.0`. الخطة في مستودع نَسَب: `docs/BHD-NASAB-INTEGRATION.md` |
+| كيف يعمل الدخول | زر «تسجيل الدخول» → `GET /api/auth/bhd/start` → `https://id.bhd-om.com/oauth/authorize` (ليس أصل نَسَب) → `callback` يستبدل `code` على الخادم → كوكي `kimi_sid` + عمود `bhd_sub` |
+| كيف يعمل التنقل الصامت | كوكي `bhd_id` على مضيف الهوية فقط؛ نَسَب لا يقرأ كوكي البوابة |
+| المشغّل | `AppHeader` بعد جلسة نَسَب فقط. «الحساب» → `https://id.bhd-om.com/account`. إعدادات الشجرة/الفوترة تبقى `/account` داخل نَسَب |
+| جلسة المنتج | خمول منزلق 48 ساعة + `SessionKeepAlive` + `GET /api/auth/me` + تجديد في `auth.me` |
+| الإدارة | `/admin` لدور `admin` المحلي؛ غير المشرف يرى منعاً صريحاً |
+| ملفات `start` / `callback` | `app/server/bhd/auth.ts` — `/api/auth/bhd/start` و`/callback` و`/logout` |
+| عمود `bhd_sub` | جدول `users` (Neon PostgreSQL) |
+| قلب `mode` إلى `sso` | 19 أغسطس 2026 في `lib/bhd/apps.ts` داخل ONE-BHD |
+| أسرار (أسماء فقط) | `BHD_IDENTITY_ISSUER`, `BHD_OAUTH_CLIENT_ID`, `BHD_OAUTH_CLIENT_SECRET`, `BHD_OAUTH_REDIRECT_URI`, `BHD_IDENTITY_TOKEN_SECRET`, `APP_SECRET`, `DATABASE_URL` |
+| التقنيات الكاملة لبناء هذا الموقع وكيف يعمل | SPA: Vite + React + TypeScript + Tailwind + tRPC من المتصفح. الخادم: Hono داخل `app/server` يُنشر دالة Vercel واحدة (`Root Directory = app`، مشروع `nasab`). البيانات: Neon PostgreSQL (eu-west-2) عبر Drizzle ومسار Neon HTTP sidecar. الجلسة: JWT HS256 في كوكي Host-only اسمها `kimi_sid` موقَّعة بـ `APP_SECRET`، خمول منزلق 48 ساعة. الواجهة عربية/إنجليزية. المدفوعات (تحويل بنكي / ثواني / Stripe) والكوبونات محلية في نَسَب. الاختبار: Vitest. |
+| ما لم يُوحَّد | الأشجار، الأعضاء، الدعوات، القصص، GEDCOM، فواتير نَسَب، الخطط، أدوار الشجرة |
+| فريق الصيانة | مستودع `ainoamn/Nasab` |
 
 ### 12.5 بيتك — `ainoamn/ainoamn-ain-oman-web`
 
@@ -467,10 +656,13 @@ authorize وtoken دائماً على https://id.bhd-om.com وليس أصل ال
 | الأصل | `https://bhdstor.bhd-om.com` |
 | تاريخ التثبيت | 18–19 أغسطس 2026 — OIDC + مشغّل على `main` |
 | خطة التنفيذ | [BHD-STORE-INTEGRATION.md](BHD-STORE-INTEGRATION.md) |
-| كيف ثُبّت | `users.bhd_sub` · `/api/auth/bhd/start`+`callback`+`logout` · غلاف `/auth/login` و`/auth/register` → الهوية إلا `?local=1` · مشغّل بعد الجلسة |
+| كيف ثُبّت | `users.bhd_sub` · `/api/auth/bhd/start`+`callback`+`logout` · `GET /api/auth/admin-entry` → `returnTo=/dashboard/admin` · غلاف `/auth/login` و`/auth/register` → الهوية إلا `?local=1` (و`local=1` نحو لوحة الإدارة → `admin-entry`) · ربط أدمن قديم بالبريد مع الإبقاء على الدور · مشغّل بعد الجلسة |
 | كيف يعمل الدخول | authorize/token على `id.bhd-om.com` بـ `client_id=bhd-store` لا أصل المتجر |
+| الأدمن | صلاحية محلية في جدول `users.role` فقط؛ الهوية لا تمنح أدمن. مسار الدخول: `/api/auth/admin-entry` لا `?local=1`. يتطلب `BACKEND_URL` + migration 017 لربط `bhd_sub` |
 | التنقل الصامت | كوكي `bhd_id` على الهوية؛ الكتالوج `mode=sso` للمتجر |
 | المشغّل | تسع نقاط في شريط المتجر؛ الحساب `https://id.bhd-om.com/account` |
+| جلسة المنتج | خمول منزلق 48 ساعة + تجديد عند الاستخدام؛ `callback` يمسح الجلسة السابقة قبل ضبط الجديدة |
+| الفوتر | صف برامجنا + رابط «دخول الإدارة» → `/api/auth/admin-entry` |
 | تاريخ قلب `mode` إلى `sso` | 19 أغسطس 2026 |
 | أسرار (أسماء فقط) | `BHD_IDENTITY_ISSUER`, `BHD_OAUTH_CLIENT_ID`, `BHD_OAUTH_CLIENT_SECRET`, `BACKEND_URL` |
 | **التقنيات الكاملة** | Next.js 14 · NestJS · TypeORM · PostgreSQL · Redis · Vercel `bhdstor` · حكم NO-GO للإنتاج |
@@ -480,9 +672,24 @@ authorize وtoken دائماً على https://id.bhd-om.com وليس أصل ال
 
 | البند | التوثيق |
 |---|---|
+| تاريخ التثبيت | 19 أغسطس 2026 — OIDC + مشغّل على `master` |
 | `client_id` | `bhd-office` |
-| الحالة في المشغّل | `enabled: false` حتى يتوفر أصل إنتاج |
-| التقنيات الكاملة | _داخلي_ |
+| الأصل | `https://baitak.bhd-om.com` (نطاق إنتاج المكتب الحالي) |
+| `redirect_uri` | `https://baitak.bhd-om.com/api/auth/bhd/callback` + localhost |
+| الحالة في المشغّل | `enabled: true` · `origin: https://baitak.bhd-om.com` · `mode: sso` (20 أغسطس 2026) |
+| كيف ثُبّت | القسم 4 + **0.7** + **4.9**: `User.bhdSub` · `start`/`callback`/`logout` · `GET /api/auth/admin-entry` · غلاف `/login`→الهوية · فوتر «دخول الإدارة»→`admin-entry` · ربط أدمن قديم بالبريد مع الإبقاء على الدور · خمول 48 ساعة |
+| كيف يعمل الدخول | `start` → `id.bhd-om.com/oauth/authorize` → `callback` upsert على `bhdSub` (يحفظ ADMIN) → كوكي NextAuth Host-only بعد مسح الجلسة السابقة |
+| التنقل الصامت | كوكي `bhd_id` على مضيف الهوية فقط؛ المكتب لا يقرأ كوكي البوابة |
+| المشغّل | تسع نقاط بعد الجلسة؛ الحساب → `https://id.bhd-om.com/account` |
+| جلسة المنتج | خمول منزلق 48 ساعة + `SessionKeepAlive` + `GET /api/auth/me` |
+| الإدارة | `/api/auth/admin-entry` → SSO → `/{locale}/admin`؛ الدور من جدول `User` المحلي فقط (ليس من الهوية). أدمن المنصة `BHD_PLATFORM_ADMIN_EMAILS` يخص هوية فقط |
+| ملفات `start` / `callback` | `app/api/auth/bhd/start|callback|logout` · `app/api/auth/admin-entry/route.ts` |
+| عمود `bhd_sub` | `User.bhdSub` |
+| تاريخ قلب `mode` إلى `sso` | 20 أغسطس 2026 |
+| أسرار (أسماء فقط) | `BHD_IDENTITY_ISSUER`, `BHD_OAUTH_CLIENT_ID`, `BHD_OAUTH_CLIENT_SECRET`, `BHD_OAUTH_REDIRECT_URI`, `NEXTAUTH_SECRET`, `DATABASE_URL` |
+| **التقنيات الكاملة** | Next.js 16 App Router · React 19 · TypeScript · Tailwind · Prisma · PostgreSQL (Neon المنتج) · NextAuth JWT Host-only · next-intl · Vercel مشروع `bhd-om` · عقارات/عقود/محاسبة/دفتر عناوين محلية |
+| ما لم يُوحَّد | العقارات، العقود، الحجوزات، المحاسبة، النظام القديم، أدوار المكتب، الفواتير |
+| فريق الصيانة | مستودع `ainoamn/bhd-om` |
 
 ### 12.8 موقع مستقبلي — قالب للنسخ
 

@@ -1,45 +1,26 @@
-import { clearCsrfCookie, clearSessionCookie, revokeSession } from "../../../../lib/auth";
-import { getRawDb } from "../../../../db/runtime";
-import { ADMIN_LOCAL_LOGIN_PATH, adminEntryCookie } from "../../../../lib/admin-entry";
-import { bhdEndSessionUrl, isBhdIdentityConfigured, publicRequestOrigin } from "../../../../lib/bhd-identity";
+import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+/** Safe admin landing. Matches ONE-BHD admin-entry — never local password login. */
+function adminReturnTo(request: Request): string {
+  const raw = new URL(request.url).searchParams.get("next")?.trim() || "/admin";
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.includes("://") || raw.includes("\\")) {
+    return "/admin";
+  }
+  return raw;
+}
+
 /**
- * Clears the local Wazen session, then RP-logout on BHD Identity using only the
- * registered post_logout_redirect_uri (`{origin}/`). An intent cookie tells
- * proxy.ts to send the browser to the local admin login form after return.
- *
- * Do NOT pass `/login?...` as post_logout_redirect_uri — Identity rejects it and
- * drops the user on https://id.bhd-om.com/.
+ * Product + identity: never send admins to a local password login form.
+ * Forwards to BHD start so the same identity session opens `/admin`.
+ * Admin role stays in Wazen's `platform_roles` for this `bhd_sub` only (guide §0.7).
  */
 export async function GET(request: Request) {
-  const db = getRawDb();
-  try {
-    await revokeSession(db, request);
-  } catch {
-    /* best effort local sign-out */
-  }
-
-  const origin = (() => {
-    try {
-      return publicRequestOrigin(request);
-    } catch {
-      return new URL(request.url).origin;
-    }
-  })();
-  const localLogin = new URL(ADMIN_LOCAL_LOGIN_PATH, `${origin}/`);
-  const headers = new Headers({ "Cache-Control": "no-store" });
-  headers.append("Set-Cookie", clearSessionCookie());
-  headers.append("Set-Cookie", clearCsrfCookie());
-  headers.append("Set-Cookie", adminEntryCookie());
-
-  if (isBhdIdentityConfigured()) {
-    // bhdEndSessionUrl already sets post_logout_redirect_uri to `${origin}/`
-    headers.set("Location", bhdEndSessionUrl(request));
-    return new Response(null, { status: 303, headers });
-  }
-
-  headers.set("Location", localLogin.toString());
-  return new Response(null, { status: 303, headers });
+  const origin = new URL(request.url).origin;
+  const returnTo = adminReturnTo(request);
+  return NextResponse.redirect(
+    new URL(`/api/auth/bhd/start?returnTo=${encodeURIComponent(returnTo)}`, origin),
+    303,
+  );
 }

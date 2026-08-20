@@ -203,7 +203,7 @@ https://id.bhd-om.com/oauth/end-session
 
 عندما يرد `GET https://wazen.bhd-om.com/api/auth/bhd/start` بتحويل 302 إلى `id.bhd-om.com`:
 
-1. في `lib/bhd/apps.ts` يُقلَب عنصر وازن من `mode: "browse"` إلى `mode: "sso"`.
+1. في `lib/bhd/apps.ts` يُقلَب عنصر وازن من `mode: "browse"` إلى `mode: "sso"` (نُفِّذ في وازن 20 أغسطس 2026؛ يُزامَن الكتالوج في ONE-BHD).
 2. يُعاد نسخ الملف إلى البوابة وباقي المواقع.
 
 حتى ذلك الحين، النقر على وازن من البوابة يفتح الموقع فقط دون دخول تلقائي.

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { AuthForm } from "../auth-form";
-import { isBhdIdentityConfigured, isBhdSsoReadyForOrigin } from "../../lib/bhd-identity";
+import { isBhdIdentityConfigured, isBhdSsoReadyForOrigin, safeReturnTo } from "../../lib/bhd-identity";
 import { googleClientId } from "../../lib/google-oauth";
 import { originFromHeaders } from "../../lib/server-request";
 
@@ -11,12 +12,20 @@ export const dynamic = "force-dynamic";
 export default async function RegisterPage({
   searchParams,
 }: {
-  searchParams: Promise<{ local?: string; error?: string }>;
+  searchParams: Promise<{ local?: string; error?: string; next?: string; returnTo?: string }>;
 }) {
-  await searchParams;
+  const params = await searchParams;
   const hdrs = await headers();
+  const next = safeReturnTo(params.next || params.returnTo || "/home");
   const identityEnabled = isBhdIdentityConfigured();
-  const ssoReady = identityEnabled && isBhdSsoReadyForOrigin(originFromHeaders(hdrs));
+  const origin = originFromHeaders(hdrs);
+  const ssoReady = identityEnabled && isBhdSsoReadyForOrigin(origin);
+
+  // Guide §0.2 / §0.7: no parallel end-user local register on SSO origins.
+  if (ssoReady && params.local !== "1") {
+    redirect(`/api/auth/bhd/start?returnTo=${encodeURIComponent(next)}`);
+  }
+
   return (
     <AuthForm
       mode="register"

@@ -105,10 +105,10 @@ BHD_OAUTH_CLIENT_ID=bhd-wazen
 
 لا ترفع الأسرار إلى Git. لا تشارك `DATABASE_URL` مع الهوية.
 
-### دخول الأدمن المحلي وفيسبوك الهوية
+### دخول الأدمن وفيسبوك الهوية (§0.7 / §4.9)
 
-- رابط الفوتر `/api/auth/admin-entry` يُنهي جلسة BHD ثم يعود إلى `/` (المسجّل في `post_logout_redirect_uris`) ثم `proxy.ts` يفتح `/login?local=1&next=/admin&fresh=1` عبر كوكي `wazen_admin_entry`.
-- لا تستخدم `/login?...` كـ `post_logout_redirect_uri` — الهوية ترفضه وتُبقي المتصفح على `https://id.bhd-om.com/`.
+- رابط الفوتر `/api/auth/admin-entry` يحوّل إلى `/api/auth/bhd/start?returnTo=/admin` (أبداً `?local=1`). الأدمن صلاحية محلية في `platform_roles` لنفس `bhd_sub` فقط.
+- على أصول SSO: `/login` و`/register` يحوّلان إلى الهوية؛ `local=1` نحو `/admin` يُعاد توجيهه إلى `admin-entry`.
 - رسالة فيسبوك «التطبيق غير نشط» تُعالَج في لوحة Meta لتطبيق **ONE-BHD / الهوية** (Live أو Testers)، وليست متغير بيئة في وازن.
 
 ## البريد والدعوات

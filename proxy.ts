@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ADMIN_ENTRY_COOKIE, ADMIN_LOCAL_LOGIN_PATH, clearAdminEntryCookie } from "./lib/admin-entry";
 import { signInEntryPath } from "./lib/bhd-identity";
 import { browserSessionCookie, sessionCookieName } from "./lib/session-policy";
 
@@ -21,18 +20,6 @@ function needsSession(pathname: string) {
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const token = sessionToken(request);
-
-  // After BHD end-session returns to `/` (the only registered logout URI),
-  // continue to the local admin login form.
-  if ((pathname === "/" || pathname === "") && request.cookies.get(ADMIN_ENTRY_COOKIE)?.value === "1") {
-    const target = request.nextUrl.clone();
-    const parsed = new URL(ADMIN_LOCAL_LOGIN_PATH, request.url);
-    target.pathname = parsed.pathname;
-    target.search = parsed.search;
-    const response = NextResponse.redirect(target);
-    response.headers.append("Set-Cookie", clearAdminEntryCookie());
-    return response;
-  }
 
   if (needsSession(pathname) && !token) {
     const next = `${pathname}${request.nextUrl.search}`;

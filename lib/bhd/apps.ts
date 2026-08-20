@@ -50,7 +50,7 @@ export const BHD_APPS: BhdApp[] = [
     nameEn: "WAZEN",
     origin: "https://wazen.bhd-om.com",
     startUrl: "https://wazen.bhd-om.com/api/auth/bhd/start?returnTo=/",
-    mode: "browse",
+    mode: "sso",
     enabled: true,
     mark: "و",
     accent: "#126b63",
