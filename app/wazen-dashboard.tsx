@@ -2322,8 +2322,8 @@ function WalletModal({ data, locale, existing, defaultType = "trip", lockType = 
       if (!response.ok) {
         const code = result.error ?? "save failed";
         const messages: Record<string, string> = locale === "ar"
-          ? { PLAN_FEATURE_REQUIRED: "باقتك الحالية لا تسمح بإنشاء هذا النوع من المحافظ.", PLAN_WALLET_LIMIT: "وصلت إلى حد المحافظ في باقتك.", INVALID_WALLET: "بيانات المحفظة غير مكتملة." }
-          : { PLAN_FEATURE_REQUIRED: "Your current plan does not allow this wallet type.", PLAN_WALLET_LIMIT: "You reached the wallet limit on your plan.", INVALID_WALLET: "Wallet details are incomplete." };
+          ? { PLAN_FEATURE_REQUIRED: "باقتك الحالية لا تسمح بإنشاء هذا النوع من المحافظ.", PLAN_WALLET_LIMIT: "وصلت إلى حد المحافظ في باقتك.", INVALID_WALLET: "بيانات المحفظة غير مكتملة.", INTERNAL_ERROR: "تعذر حفظ المحفظة. حدّث الصفحة وتحقق إن ظهرت، أو حاول مرة أخرى." }
+          : { PLAN_FEATURE_REQUIRED: "Your current plan does not allow this wallet type.", PLAN_WALLET_LIMIT: "You reached the wallet limit on your plan.", INVALID_WALLET: "Wallet details are incomplete.", INTERNAL_ERROR: "Could not save the wallet. Refresh to check if it appeared, or try again." };
         throw new Error(messages[code] ?? code);
       }
       onSaved(result);

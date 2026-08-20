@@ -1052,7 +1052,7 @@ async function readDashboardRevision(db: D1Database, userId: string) {
       (SELECT COALESCE(MAX(t.created_at),'') FROM transactions t JOIN spaces s ON s.id=t.space_id WHERE ${owned}) AS txn_at,
       (SELECT COALESCE(MAX(updated_at),'') FROM subscriptions WHERE user_id=?) AS sub_at,
       (SELECT COALESCE(plan_id,'') || ':' || COALESCE(status,'') || ':' || COALESCE(pending_plan_id,'') FROM subscriptions WHERE user_id=? ORDER BY created_at DESC LIMIT 1) AS plan_stamp`,
-  ).bind(userId, userId, userId, userId, userId, userId, userId).first<{
+  ).bind(userId, userId, userId, userId, userId, userId).first<{
     space_at: string; txn_at: string; sub_at: string; plan_stamp: string;
   }>();
   return [row?.space_at ?? "", row?.txn_at ?? "", row?.sub_at ?? "", row?.plan_stamp ?? ""].join("|");
@@ -2651,7 +2651,9 @@ export async function POST(request: Request) {
     const entitlements = await getActivePlanEntitlements(db, user.id);
     let dashboard: Awaited<ReturnType<typeof loadDashboard>>;
     try {
-      dashboard = await loadDashboard(db, user.id, { refreshDerived: true, features: entitlements.features });
+      // Writes already updated the affected rows; skip expensive ledger rebuild on the response path
+      // (same pattern as GET / consumeQuota) so create/update finish quickly on Neon cold starts.
+      dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features });
     } catch (error) {
       console.error(JSON.stringify({
         level: "error",
@@ -2666,11 +2668,22 @@ export async function POST(request: Request) {
       };
     }
     const role = await platformRoleOf(db, user.id);
+    let revision = "";
+    try {
+      revision = await readDashboardRevision(db, user.id);
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: "error",
+        code: "DASHBOARD_REVISION_FAILED",
+        message: error instanceof Error ? error.message : String(error),
+        at: new Date().toISOString(),
+      }));
+    }
     const response = {
       ok: true,
       user: { ...user, role, displayName: freshUser?.display_name ?? user.displayName, avatarUrl: freshUser?.avatar_url ?? user.avatarUrl ?? null },
       entitlements,
-      revision: await readDashboardRevision(db, user.id),
+      revision,
       ...dashboard,
       ...(notification ? { notification } : {}),
     };

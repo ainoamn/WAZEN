@@ -317,7 +317,14 @@ test("dashboard GET skips ledger rebuild; current schema skips oauth/bhd patches
   assert.match(loadFn, /if \(options\?\.refreshDerived !== false\)/);
   assert.match(loadFn, /await reconcileMemberLedgers\(db, ids\)/);
   assert.match(getFn, /refreshDerived: false/);
-  assert.match(postTail, /refreshDerived: true/);
+  assert.match(postTail, /refreshDerived: false/);
+  assert.match(postTail, /DASHBOARD_REVISION_FAILED/);
+  const revisionFn = dashboard.slice(
+    dashboard.indexOf("async function readDashboardRevision"),
+    dashboard.indexOf("function unauthenticatedResponse"),
+  );
+  assert.match(revisionFn, /\.bind\(userId, userId, userId, userId, userId, userId\)/);
+  assert.doesNotMatch(revisionFn, /\.bind\(userId, userId, userId, userId, userId, userId, userId\)/);
   const currentPath = runtime.slice(
     runtime.indexOf("if (row && Number(row.version) >= SCHEMA_VERSION)"),
     runtime.indexOf("schema_meta missing"),
