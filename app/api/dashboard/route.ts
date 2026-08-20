@@ -1413,7 +1413,8 @@ export async function POST(request: Request) {
         await rebuildSpaceBalance(db, [parsed.data.spaceId]);
       } catch {
         /* balance already forced to 0 */
-      } else if (action === "addPersonalAccount") {
+      }
+    } else if (action === "addPersonalAccount") {
       const parsed = z.object({
         spaceId: z.string().min(1).max(120),
         name: z.string().trim().min(2).max(80),
