@@ -235,8 +235,12 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   assert.match(home, /setLoading\(false\)/);
   assert.match(dashboard, /window\.location\.replace\(clientSignInPath\("\/dashboard"\)\)/);
   assert.match(dashboard, /confirmResetWalletData/);
-  assert.match(dashboard, /kind: space\.type === "personal" \? "personal" : "group"/);
-  assert.match(dashboard, /existing && !isPersonal/);
+  assert.match(dashboard, /wallet-danger-zone/);
+  assert.match(dashboard, /onDeleted/);
+  assert.match(dashboard, /ضبط المحفظة/);
+  const toolbar = dashboard.slice(dashboard.indexOf('<div className="space-toolbar">'), dashboard.indexOf("FoldWrap id={`${space.id}:hero`}"));
+  assert.doesNotMatch(toolbar, /تصفية وتصفير|Wipe & reset|onDeleteWallet|حذف المحفظة|Delete wallet/);
+  assert.match(toolbar, /ضبط المحفظة|Wallet setup/);
   assert.match(dashboardRoute, /action === "resetWalletData"/);
   assert.match(dashboardRoute, /DELETE FROM member_installments WHERE space_id=\?/);
   assert.match(dashboardRoute, /DELETE FROM circle_turns WHERE space_id=\?/);

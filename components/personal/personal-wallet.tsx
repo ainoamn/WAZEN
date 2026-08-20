@@ -401,7 +401,6 @@ export function PersonalRulesSetup({
 }) {
   const [incomeMenu, setIncomeMenu] = useState(false);
   const [expenseMenu, setExpenseMenu] = useState(false);
-  const [busyReset, setBusyReset] = useState(false);
   const [ruleOpen, setRuleOpen] = useState<{ kind: "income" | "expense"; schedule: "monthly" | "once" | "unscheduled"; amountMode: "fixed" | "variable"; existing?: PersonalRule } | null>(null);
   const spaceRules = rules.filter((item) => item.space_id === spaceId);
   const activeAccounts = accounts.filter((item) => item.space_id === spaceId && (item.status ?? "active") === "active");
@@ -410,14 +409,6 @@ export function PersonalRulesSetup({
     const result = await response.json() as Record<string, unknown> & { error?: string };
     if (!response.ok) { window.alert(result.error ?? "FAILED"); return; }
     onChanged(result);
-  };
-  const resetWallet = async () => {
-    setBusyReset(true);
-    try {
-      await confirmResetWalletData(locale, spaceId, onChanged);
-    } finally {
-      setBusyReset(false);
-    }
   };
   const removeRule = async (ruleId: string) => {
     if (!window.confirm(locale === "ar" ? "حذف هذا البند؟ القيود المرحلة تبقى، والاستحقاقات المعلقة تُلغى." : "Delete this rule? Posted entries stay; pending months are removed.")) return;
@@ -480,15 +471,6 @@ export function PersonalRulesSetup({
         {!spaceRules.length && <p className="empty-state">{locale === "ar" ? "أضف راتباً ثابتاً أو متغيراً أو دخلاً بلا موعد، وجدوِل مصروفاً لشهر معيّن مثل أكتوبر." : "Add fixed, variable, or undated income, and schedule an expense for a month such as October."}</p>}
       </div>
       {ruleOpen && <RuleModal locale={locale} spaceId={spaceId} kind={ruleOpen.kind} schedule={ruleOpen.schedule} amountMode={ruleOpen.amountMode} existing={ruleOpen.existing} accounts={activeAccounts} onClose={() => setRuleOpen(null)} onChanged={(next) => { onChanged(next); setRuleOpen(null); }} />}
-      <div className="personal-reset-box">
-        <div>
-          <strong>{locale === "ar" ? "تصفية وتصفير البيانات" : "Wipe and reset data"}</strong>
-          <p>{locale === "ar" ? "يحذف الحسابات والدخل والخصوم وكل العمليات ويرجع الرصيد إلى صفر. اسم المحفظة يبقى." : "Deletes accounts, income, bills, and every transaction, and sets the balance to zero. The wallet name stays."}</p>
-        </div>
-        <button type="button" className="danger-button" disabled={busyReset} onClick={() => void resetWallet()}>
-          <Trash2 size={14} />{busyReset ? "…" : (locale === "ar" ? "تصفية المحفظة" : "Reset wallet")}
-        </button>
-      </div>
     </div>
   );
 }
