@@ -477,9 +477,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 
 @media (max-width: 900px) {
   .modal-card.xl-modal, .modal-card.wide-modal { width: calc(100vw - 24px); max-width: calc(100vw - 24px); }
-  .wallet-setup-form { grid-template-columns: 1fr; }
+  .wallet-setup-form,
+  .modal-form.wallet-setup-form { grid-template-columns: 1fr; }
   .xl-modal .personal-setup-rules .panel-heading { flex-direction: column; align-items: stretch; }
   .xl-modal .personal-setup-rules .section-title-actions { margin-inline-start: 0; width: 100%; }
+  .form-row { grid-template-columns: 1fr; }
+  .phone-with-dial { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
 }
 
 @media (max-width: 1180px) {
@@ -569,16 +572,81 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .panel-heading .primary-button, .panel-heading .secondary-button { width: 100%; }
   .space-switcher { display: flex; flex-wrap: wrap; }
   .space-hero { min-height: 0; padding: 16px; }.space-hero-top { flex-direction: column; }.space-hero-balance { min-width: 0; width: 100%; align-items: flex-start; }.space-hero-balance strong { font-size: 22px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }.space-hero-facts-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .form-row, .member-detail-meta, .report-filters, .report-type-grid { grid-template-columns: 1fr 1fr; }
+  .form-row, .member-detail-meta, .report-filters, .report-type-grid { grid-template-columns: 1fr; }
   .segmented-control { grid-template-columns: 1fr 1fr; }
-  .modal-backdrop { padding: 0; place-items: end center; align-items: stretch; }
-  .modal-card, .wide-modal, .xl-modal, .modal-card.xl-modal, .modal-card.wide-modal { width: 100%; max-width: 100%; min-height: min(88dvh, 100dvh); max-height: 100dvh; border-radius: 22px 22px 0 0; margin-top: auto; }
+  .segmented-control button { min-height: 42px; font-size: 12px; padding: 4px 6px; }
+  .modal-backdrop {
+    padding: 0;
+    place-items: end center;
+    align-items: stretch;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal-card,
+  .wide-modal,
+  .xl-modal,
+  .modal-card.xl-modal,
+  .modal-card.wide-modal {
+    width: 100%;
+    max-width: 100%;
+    min-height: min(88dvh, 100dvh);
+    max-height: 100dvh;
+    border-radius: 22px 22px 0 0;
+    margin-top: auto;
+    overflow-x: hidden;
+    box-sizing: border-box;
+  }
+  .modal-card .modal-form,
+  .add-txn-modal .modal-form {
+    padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+    gap: 16px;
+    min-width: 0;
+  }
+  .modal-card .modal-form input,
+  .modal-card .modal-form select,
+  .modal-card .date-field-input,
+  .add-txn-modal .modal-form input,
+  .add-txn-modal .modal-form select {
+    height: 52px;
+    font-size: 16px; /* avoid iOS zoom */
+  }
+  .modal-card .date-field-toggle {
+    width: 52px;
+    height: 52px;
+  }
+  .modal-header {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    min-height: 64px;
+    padding: 0 16px;
+    background: white;
+  }
+  .modal-header h2 { font-size: 18px; line-height: 1.35; padding-inline-end: 8px; overflow-wrap: anywhere; }
   .add-txn-modal { min-height: 92dvh; }
-  .add-txn-modal .modal-form { padding: 20px 18px calc(20px + env(safe-area-inset-bottom, 0px)); gap: 18px; }
-  .add-txn-modal .modal-form input, .add-txn-modal .modal-form select { height: 52px; font-size: 16px; }
-  .add-txn-modal .modal-header { min-height: 72px; padding: 0 18px; }
-  .add-txn-modal .modal-header h2 { font-size: 20px; }
-  .add-txn-modal .segmented-control button { min-height: 42px; font-size: 13px; }
+  .phone-with-dial { grid-template-columns: 1fr; }
+  .phone-with-dial select,
+  .phone-with-dial input { height: 52px; font-size: 16px; }
+  .receipt-channel-grid { gap: 10px; }
+  .receipt-channel-grid .primary-button {
+    width: 100%;
+    min-height: 48px;
+    justify-content: center;
+  }
+  .modal-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin: 0 -4px;
+    padding: 12px 4px calc(8px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(180deg, rgba(255,255,255,0), #fff 28%);
+  }
+  .modal-actions .primary-button,
+  .modal-actions .secondary-button { width: 100%; min-height: 48px; }
+  .modal-actions:has(> :only-child) { grid-template-columns: 1fr; }
+  .month-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   .wallet-setup-form { grid-template-columns: 1fr; }
   .space-toolbar { display: grid; grid-template-columns: 1fr 1fr; }
   .space-toolbar button { width: 100%; }
@@ -588,8 +656,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .wallet-danger-actions { width: 100%; }
   .wallet-danger-actions .danger-button { flex: 1 1 auto; }
   .personal-rule-row { grid-template-columns: 1fr; }
-  .modal-actions { display: grid; grid-template-columns: 1fr 1fr; }
-  .modal-actions .primary-button, .modal-actions .secondary-button { width: 100%; }
   .bars-chart { gap: 4px; }.bar-column span { font-size: 6px; }
   .sidebar-nav button, .sidebar-setting { min-height: 44px; font-size: 14px; }
   .sidebar-nav button svg, .sidebar-setting svg { width: 18px; height: 18px; flex-shrink: 0; }
@@ -602,6 +668,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .circle-order-list > div, .circle-order-list > div.period-row { grid-template-columns: 1fr; min-width: 0; }
   .wallet-card-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .settings-grid { grid-template-columns: 1fr; }
+  .member-detail-meta { grid-template-columns: 1fr 1fr; }
+  .txn-pager { flex-direction: column; align-items: stretch; }
+  .txn-pager-sizes, .txn-pager-nav { width: 100%; justify-content: space-between; }
 }
 
 .sidebar-external { display: grid; gap: 4px; padding: 10px 12px; border-top: 1px solid var(--line); flex-shrink: 0; }
@@ -892,6 +961,7 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
   .section-title-actions { grid-template-columns: 1fr; }
   .modal-header { position: sticky; top: 0; z-index: 2; background: white; }
   .loading-screen, .error-screen, .app-shell { min-height: 100dvh; }
+  .receipt-channel-grid .primary-button { min-height: 46px; }
 }
 
 @media (max-width: 420px) {

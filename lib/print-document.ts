@@ -411,3 +411,69 @@ export async function printWazenHtml(build: (logoUrl: string) => string, autoPri
     return openReportPreview(html, autoPrint);
   }
 }
+
+export type SharePdfResult = "shared" | "downloaded" | "cancelled" | "failed";
+
+/**
+ * Attach a generated PDF with the caption text.
+ * Prefer the system share sheet (WhatsApp accepts file + text as caption on mobile).
+ * Otherwise download the PDF and open wa.me with the text so the user can attach the file.
+ */
+export async function shareWazenPdfWithText(input: {
+  buildHtml: (logoUrl: string) => string;
+  text: string;
+  filename?: string;
+  /** Digits only, no + — opens a direct chat when Web Share is unavailable. */
+  phone?: string | null;
+  title?: string;
+}): Promise<SharePdfResult> {
+  if (typeof window === "undefined") return "failed";
+  const filename = pdfFilename(input.filename ?? "wazen-receipt");
+  const title = input.title ?? "WAZEN";
+  const text = String(input.text ?? "").trim();
+  try {
+    const logoUrl = await resolvePrintLogoUrl();
+    const html = input.buildHtml(logoUrl);
+    const blob = await htmlDocumentToPdfBlob(html);
+    const file = new File([blob], filename, { type: "application/pdf" });
+    const shareData: ShareData = { files: [file], title, text };
+    if (typeof navigator.canShare === "function" && navigator.canShare(shareData) && typeof navigator.share === "function") {
+      try {
+        await navigator.share(shareData);
+        return "shared";
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return "cancelled";
+        // Fall through: some browsers advertise canShare then reject file shares.
+      }
+    }
+    // Partial share: files-only sheet still gets the PDF into WhatsApp; text is in the download fallback path.
+    const filesOnly: ShareData = { files: [file], title };
+    if (typeof navigator.canShare === "function" && navigator.canShare(filesOnly) && typeof navigator.share === "function") {
+      try {
+        await navigator.share(filesOnly);
+        const phone = String(input.phone ?? "").replace(/\D/g, "");
+        const wa = phone
+          ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+          : `https://wa.me/?text=${encodeURIComponent(text)}`;
+        if (text) window.open(wa, "_blank", "noopener,noreferrer");
+        return "shared";
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return "cancelled";
+      }
+    }
+    triggerBlobDownload(blob, filename);
+    const phone = String(input.phone ?? "").replace(/\D/g, "");
+    const wa = phone
+      ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(wa, "_blank", "noopener,noreferrer");
+    return "downloaded";
+  } catch {
+    const phone = String(input.phone ?? "").replace(/\D/g, "");
+    const wa = phone
+      ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(wa, "_blank", "noopener,noreferrer");
+    return "failed";
+  }
+}

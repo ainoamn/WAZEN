@@ -12,8 +12,9 @@ import { HouseholdFamilyPanel } from "../components/household/household-family";
 import { WalletForecastPanel } from "../components/forecast/wallet-forecast";
 import { projectCashflow } from "../lib/wallet-forecast";
 import { isPeriodLocked } from "../lib/accounting-periods";
-import { buildReportHtml, printWazenHtml } from "../lib/reports";
+import { buildReportHtml, printWazenHtml, shareWazenPdfWithText } from "../lib/reports";
 import { wrapPrintDocument } from "../lib/print-document";
+import { composeWhatsAppPhone, splitPhoneParts, toWhatsAppNumber } from "../lib/phone";
 import { buildAccountStatementHtml } from "../lib/account-statement";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor, currencyScale } from "../lib/money";
@@ -25,7 +26,6 @@ import { canOpenPlatformConsole } from "../lib/platform-console";
 import { consumePlanQuota } from "../lib/plan-quota-client";
 import { TRANSACTION_PAGE_SIZES, pageTransactions } from "../lib/transaction-page";
 import { dialCodesForSelect, DEFAULT_DIAL_CODE, DEFAULT_DIAL_ISO2 } from "../lib/country-dial-codes";
-import { composeWhatsAppPhone, splitPhoneParts } from "../lib/phone";
 import type { MemberLedgerFocus } from "../lib/member-ledger";
 import { occurrenceVarianceCopy } from "../lib/personal-finance";
 import {
@@ -649,7 +649,7 @@ function dashboardError(code: string, locale: Locale) {
   return table[code as keyof typeof table] ?? code;
 }
 
-function openTransactionReceipt(transaction: Transaction, data: DashboardData, locale: Locale) {
+function buildTransactionReceiptParts(transaction: Transaction, data: DashboardData, locale: Locale) {
   const space = data.spaces.find((item) => item.id === transaction.space_id);
   const member = data.members.find((item) => item.id === transaction.member_id);
   const occurrence = (data.personalOccurrences ?? []).find((item) => item.transaction_id === transaction.id);
@@ -657,13 +657,14 @@ function openTransactionReceipt(transaction: Transaction, data: DashboardData, l
   const actual = Number(occurrence?.actual_minor ?? transaction.amount_minor);
   const delta = actual - expected;
   const title = locale === "ar" ? "إيصال وازن" : "WAZEN receipt";
+  const amount = formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale);
   const extra = occurrence && expected > 0
     ? `<tr><td>${locale === "ar" ? "الالتزام" : "Commitment"}</td><td>${formatMoney(expected, space?.currency ?? "OMR", locale)}</td></tr>
     <tr><td>${locale === "ar" ? "المدفوع" : "Paid"}</td><td>${formatMoney(actual, space?.currency ?? "OMR", locale)}</td></tr>
     <tr><td>${locale === "ar" ? "الفرق" : "Variance"}</td><td>${delta === 0 ? (locale === "ar" ? "مطابق" : "Match") : `${delta > 0 ? (locale === "ar" ? "زيادة" : "Over") : (locale === "ar" ? "نقص" : "Short")} ${formatMoney(Math.abs(delta), space?.currency ?? "OMR", locale)}`}</td></tr>
     <tr><td>${locale === "ar" ? "الملخص" : "Summary"}</td><td>${escapeHtml(occurrenceVarianceCopy(expected, actual, locale))}</td></tr>`
-    : `<tr><td>${locale === "ar" ? "المبلغ" : "Amount"}</td><td>${formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale)}</td></tr>`;
-  const table = `<section><h2>${escapeHtml(title)}</h2><table>
+    : `<tr><td>${locale === "ar" ? "المبلغ" : "Amount"}</td><td>${amount}</td></tr>`;
+  const bodyHtml = `<section><h2>${escapeHtml(title)}</h2><table>
     <tr><td>${locale === "ar" ? "الوصف" : "Description"}</td><td>${escapeHtml(transactionName(transaction, locale))}</td></tr>
     <tr><td>${locale === "ar" ? "المحفظة" : "Wallet"}</td><td>${escapeHtml(space ? nameOf(space, locale) : "—")}</td></tr>
     <tr><td>${locale === "ar" ? "المساهم" : "Member"}</td><td>${escapeHtml(member?.display_name ?? "—")}</td></tr>
@@ -671,28 +672,7 @@ function openTransactionReceipt(transaction: Transaction, data: DashboardData, l
     ${extra}
     <tr><td>${locale === "ar" ? "المرجع" : "Reference"}</td><td>${transaction.id.slice(0, 8).toUpperCase()}</td></tr>
   </table></section>`;
-  void consumePlanQuota("print", locale, transaction.space_id).then((quota) => {
-    if (!quota.ok) return;
-    void printWazenHtml((logoUrl) => wrapPrintDocument({
-    locale,
-    title,
-    entityName: space ? nameOf(space, locale) : "WAZEN",
-    logoUrl,
-    subtitle: new Date(transaction.occurred_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB"),
-    bodyHtml: table,
-  }), true);
-  });
-}
-
-function shareTransactionWhatsApp(transaction: Transaction, data: DashboardData, locale: Locale) {
-  if (!planHasFeature(planFeaturesOf(data), "whatsapp")) {
-    goToPricing();
-    return;
-  }
-  const space = data.spaces.find((item) => item.id === transaction.space_id);
-  const member = data.members.find((item) => item.id === transaction.member_id);
-  const amount = formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale);
-  const lines = locale === "ar"
+  const text = locale === "ar"
     ? [
         "إيصال وازن",
         `الوصف: ${transactionName(transaction, locale)}`,
@@ -701,7 +681,7 @@ function shareTransactionWhatsApp(transaction: Transaction, data: DashboardData,
         `المبلغ: ${amount}`,
         `التاريخ: ${new Date(transaction.occurred_at).toLocaleDateString("ar-OM")}`,
         `المرجع: ${transaction.id.slice(0, 8).toUpperCase()}`,
-      ]
+      ].join("\n")
     : [
         "WAZEN receipt",
         `Description: ${transactionName(transaction, locale)}`,
@@ -710,8 +690,54 @@ function shareTransactionWhatsApp(transaction: Transaction, data: DashboardData,
         `Amount: ${amount}`,
         `Date: ${new Date(transaction.occurred_at).toLocaleDateString("en-GB")}`,
         `Ref: ${transaction.id.slice(0, 8).toUpperCase()}`,
-      ];
-  window.open(`https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`, "_blank", "noopener,noreferrer");
+      ].join("\n");
+  return {
+    title,
+    entityName: space ? nameOf(space, locale) : "WAZEN",
+    subtitle: new Date(transaction.occurred_at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB"),
+    bodyHtml,
+    text,
+    phone: member?.phone ? toWhatsAppNumber(member.phone) : "",
+    filename: `wazen-receipt-${transaction.id.slice(0, 8)}`,
+    spaceId: transaction.space_id,
+  };
+}
+
+function openTransactionReceipt(transaction: Transaction, data: DashboardData, locale: Locale) {
+  const parts = buildTransactionReceiptParts(transaction, data, locale);
+  void consumePlanQuota("print", locale, parts.spaceId).then((quota) => {
+    if (!quota.ok) return;
+    void printWazenHtml((logoUrl) => wrapPrintDocument({
+      locale,
+      title: parts.title,
+      entityName: parts.entityName,
+      logoUrl,
+      subtitle: parts.subtitle,
+      bodyHtml: parts.bodyHtml,
+    }), true);
+  });
+}
+
+async function shareTransactionWhatsApp(transaction: Transaction, data: DashboardData, locale: Locale) {
+  if (!planHasFeature(planFeaturesOf(data), "whatsapp")) {
+    goToPricing();
+    return;
+  }
+  const parts = buildTransactionReceiptParts(transaction, data, locale);
+  await shareWazenPdfWithText({
+    buildHtml: (logoUrl) => wrapPrintDocument({
+      locale,
+      title: parts.title,
+      entityName: parts.entityName,
+      logoUrl,
+      subtitle: parts.subtitle,
+      bodyHtml: parts.bodyHtml,
+    }),
+    text: parts.text,
+    filename: parts.filename,
+    phone: parts.phone || null,
+    title: parts.title,
+  });
 }
 
 
@@ -1277,8 +1303,30 @@ export function WazenDashboard() {
             transactionId={receiptTxnId}
             canEmail={planHasFeature(planFeaturesOf(data), "email")}
             canWhatsapp={planHasFeature(planFeaturesOf(data), "whatsapp")}
+            onPrepareWhatsAppPdf={async (transactionId) => {
+              const txn = data.transactions.find((item) => item.id === transactionId);
+              if (!txn) return "failed" as const;
+              const parts = buildTransactionReceiptParts(txn, data, locale);
+              return shareWazenPdfWithText({
+                buildHtml: (logoUrl) => wrapPrintDocument({
+                  locale,
+                  title: parts.title,
+                  entityName: parts.entityName,
+                  logoUrl,
+                  subtitle: parts.subtitle,
+                  bodyHtml: parts.bodyHtml,
+                }),
+                text: parts.text,
+                filename: parts.filename,
+                phone: parts.phone || (member.phone ? toWhatsAppNumber(member.phone) : null),
+                title: parts.title,
+              });
+            }}
             onClose={() => setModal(null)}
-            onDone={(message) => { setModal(null); flash(message); }}
+            onDone={(message) => {
+              setModal(null);
+              flash(message);
+            }}
           />
         );
       })()}
@@ -1538,7 +1586,7 @@ function TransactionRow({ transaction, data, locale, onEdit, onVoid }: { transac
     <strong className={positive ? "amount-positive" : "amount-negative"}>{positive ? "+" : "−"}{formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale)}</strong>
     <div className="transaction-actions">
       <button type="button" title={locale === "ar" ? "إيصال" : "Receipt"} onClick={() => openTransactionReceipt(transaction, data, locale)}><Printer size={15} /></button>
-      <button type="button" className={planHasFeature(planFeaturesOf(data), "whatsapp") ? "" : "is-plan-locked"} title="WhatsApp" onClick={() => shareTransactionWhatsApp(transaction, data, locale)}><MessageCircle size={15} />{planHasFeature(planFeaturesOf(data), "whatsapp") ? null : <PlanLockBadge locale={locale} />}</button>
+      <button type="button" className={planHasFeature(planFeaturesOf(data), "whatsapp") ? "" : "is-plan-locked"} title="WhatsApp" onClick={() => { void shareTransactionWhatsApp(transaction, data, locale); }}><MessageCircle size={15} />{planHasFeature(planFeaturesOf(data), "whatsapp") ? null : <PlanLockBadge locale={locale} />}</button>
       {onEdit && !locked && isLiveTransaction(transaction) && <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => onEdit(transaction)}><Pencil size={15} /></button>}
       {onVoid && !locked && isLiveTransaction(transaction) && <button type="button" className="danger" title={locale === "ar" ? "إلغاء" : "Void"} onClick={() => onVoid(transaction)}><Trash2 size={15} /></button>}
     </div>
