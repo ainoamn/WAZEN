@@ -24,6 +24,8 @@ import { userGraceWarningCopy } from "../lib/plan-retention-rules";
 import { canOpenPlatformConsole } from "../lib/platform-console";
 import { consumePlanQuota } from "../lib/plan-quota-client";
 import { TRANSACTION_PAGE_SIZES, pageTransactions } from "../lib/transaction-page";
+import { dialCodesForSelect, DEFAULT_DIAL_CODE, DEFAULT_DIAL_ISO2 } from "../lib/country-dial-codes";
+import { composeWhatsAppPhone, splitPhoneParts } from "../lib/phone";
 import type { MemberLedgerFocus } from "../lib/member-ledger";
 import { occurrenceVarianceCopy } from "../lib/personal-finance";
 import {
@@ -2367,6 +2369,8 @@ function WalletModal({ data, locale, existing, defaultType = "trip", lockType = 
 function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data: DashboardData; locale: Locale; preferredSpaceId?: string; onClose: () => void; onDone: (message: string) => void }) {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [dialIso2, setDialIso2] = useState(DEFAULT_DIAL_ISO2);
+  const [dialCode, setDialCode] = useState(DEFAULT_DIAL_CODE);
   const [displayName, setDisplayName] = useState("");
   const [recordOnly, setRecordOnly] = useState(true);
   const [role, setRole] = useState("member");
@@ -2377,11 +2381,19 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const totalMinor = Math.round(Number(monthlyContribution || 0) * 1000) * Math.max(1, Number(durationMonths) || 1);
+  const dialOptions = dialCodesForSelect(locale);
+  const applyStoredPhone = (raw: string) => {
+    const parts = splitPhoneParts(raw, DEFAULT_DIAL_CODE);
+    setDialCode(parts.dial);
+    setDialIso2(parts.iso2);
+    setPhone(parts.national);
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
     setError("");
     try {
+      const fullPhone = phone.trim() ? composeWhatsAppPhone(dialCode, phone) : "";
       const response = await apiFetch(recordOnly ? "/api/dashboard" : "/api/platform", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -2389,7 +2401,7 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
           action: recordOnly ? "addMember" : "inviteMember",
           idempotencyKey: crypto.randomUUID(),
           email,
-          phone,
+          phone: fullPhone,
           displayName,
           role,
           spaceId,
@@ -2403,8 +2415,8 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : "Unable to create invitation";
       const messages: Record<string, string> = locale === "ar"
-        ? { INVALID_PHONE: "رقم الهاتف غير مكتمل. أدخل 7 أرقام على الأقل، مثل 9904406 أو 9689904406.", INVALID_MEMBER: "تعذر إضافة المساهم.", PLAN_MEMBER_LIMIT: "تم بلوغ حد الأعضاء في الخطة." }
-        : { INVALID_PHONE: "Phone number is too short. Enter at least 7 digits.", INVALID_MEMBER: "Could not add this member.", PLAN_MEMBER_LIMIT: "Member limit reached for this plan." };
+        ? { INVALID_PHONE: "رقم الهاتف غير مكتمل. اختر مفتاح الدولة وأدخل الرقم المحلي (مثال عمان: 9904406).", INVALID_MEMBER: "تعذر إضافة المساهم.", PLAN_MEMBER_LIMIT: "تم بلوغ حد الأعضاء في الخطة." }
+        : { INVALID_PHONE: "Phone number is incomplete. Choose a country code and enter the local number.", INVALID_MEMBER: "Could not add this member.", PLAN_MEMBER_LIMIT: "Member limit reached for this plan." };
       setError(messages[code] ?? code);
     } finally {
       setSaving(false);
@@ -2423,17 +2435,36 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
           if (!contact) return;
           setDisplayName(contact.display_name);
           setEmail(contact.email ?? "");
-          setPhone(contact.phone ?? "");
+          applyStoredPhone(contact.phone ?? "");
         }}>
           <option value="">{locale === "ar" ? "اختر عضواً محفوظاً (اختياري)" : "Pick a saved member (optional)"}</option>
           {(data.contacts ?? []).map((contact) => <option key={contact.id} value={contact.id}>{contact.display_name}{contact.phone ? ` · ${contact.phone}` : ""}</option>)}
         </select>
       </label>
       <label><span>{locale === "ar" ? "اسم المساهم" : "Member name"}</span><input required minLength={2} maxLength={80} value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
-      <div className="form-row">
-        <label><span>{locale === "ar" ? `البريد${recordOnly ? " (اختياري)" : ""}` : `Email${recordOnly ? " (optional)" : ""}`}</span><input required={!recordOnly} type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="member@example.com" /></label>
-        <label><span>{locale === "ar" ? "رقم الهاتف" : "Phone"}</span><input required={recordOnly} value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="9904406" inputMode="tel" /></label>
-      </div>
+      <label><span>{locale === "ar" ? `البريد${recordOnly ? " (اختياري)" : ""}` : `Email${recordOnly ? " (optional)" : ""}`}</span><input required={!recordOnly} type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="member@example.com" /></label>
+      <label><span>{locale === "ar" ? "رقم الهاتف (واتساب)" : "Phone (WhatsApp)"}</span>
+        <div className="phone-with-dial">
+          <select
+            aria-label={locale === "ar" ? "مفتاح الدولة" : "Country dial code"}
+            value={dialIso2}
+            onChange={(event) => {
+              const next = dialOptions.find((item) => item.iso2 === event.target.value);
+              if (!next) return;
+              setDialIso2(next.iso2);
+              setDialCode(next.dial);
+            }}
+          >
+            {dialOptions.map((item) => (
+              <option key={item.iso2} value={item.iso2}>
+                {locale === "ar" ? item.nameAr : item.nameEn} (+{item.dial})
+              </option>
+            ))}
+          </select>
+          <input required={recordOnly} value={phone} onChange={(event) => setPhone(event.target.value)} placeholder={dialCode === "968" ? "9904406" : "501234567"} inputMode="tel" autoComplete="tel-national" />
+        </div>
+        <small className="field-hint">{locale === "ar" ? `المفتاح الافتراضي: سلطنة عمان (+${DEFAULT_DIAL_CODE}). يُحفظ الرقم مع المفتاح لإرسال واتساب مباشرة.` : `Default: Oman (+${DEFAULT_DIAL_CODE}). The dial code is stored so WhatsApp opens directly.`}</small>
+      </label>
       <label><span>{locale === "ar" ? "الجمعية / المحفظة" : "Circle / wallet"}</span><select required value={spaceId} onChange={(event) => setSpaceId(event.target.value)}>{groupSpaces.map((space) => <option key={space.id} value={space.id}>{nameOf(space, locale)}</option>)}</select></label>
       {recordOnly && <div className="form-row">
         <label><span>{locale === "ar" ? "قيمة الاشتراك الشهري" : "Monthly subscription"}</span><div className="money-input"><input required min="0.001" step="0.001" type="number" value={monthlyContribution} onChange={(event) => setMonthlyContribution(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>

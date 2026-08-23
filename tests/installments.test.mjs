@@ -8,7 +8,8 @@ import {
   selectThroughOldest,
   totalRemainingMinor,
 } from "../lib/installments.ts";
-import { isLikelyPhone, toWhatsAppNumber } from "../lib/phone.ts";
+import { DEFAULT_DIAL_CODE, dialCodesForSelect } from "../lib/country-dial-codes.ts";
+import { composeWhatsAppPhone, isLikelyPhone, splitPhoneParts, toWhatsAppNumber } from "../lib/phone.ts";
 
 test("member schedule computes total and marks paid months from cash already received", () => {
   const schedule = buildInstallmentSchedule({
@@ -80,4 +81,22 @@ test("omani phones become WhatsApp numbers", () => {
   assert.equal(toWhatsAppNumber("9904406"), "9689904406");
   assert.equal(isLikelyPhone("9904406"), true);
   assert.equal(isLikelyPhone("12"), false);
+});
+
+test("member phone dial codes default to Oman and cover the world", () => {
+  assert.equal(DEFAULT_DIAL_CODE, "968");
+  const listed = dialCodesForSelect("en");
+  assert.equal(listed[0].iso2, "OM");
+  assert.ok(listed.length >= 190);
+  assert.ok(listed.some((item) => item.iso2 === "AE" && item.dial === "971"));
+  assert.ok(listed.some((item) => item.iso2 === "US" && item.dial === "1"));
+  assert.equal(composeWhatsAppPhone("968", "9904406"), "9689904406");
+  assert.equal(composeWhatsAppPhone("971", "0501234567"), "971501234567");
+  assert.equal(composeWhatsAppPhone("966", "501234567"), "966501234567");
+  const oman = splitPhoneParts("9689904406");
+  assert.equal(oman.dial, "968");
+  assert.equal(oman.national, "9904406");
+  const uae = splitPhoneParts("+971 50 123 4567");
+  assert.equal(uae.dial, "971");
+  assert.equal(uae.national, "501234567");
 });
