@@ -26,7 +26,18 @@ import { useLiveDashboard } from "../../lib/live-sync";
 import { formatMoneyMinor, currencyScale } from "../../lib/money";
 import { memberDisplayCreditMinor, pendingSettlementsWithCredit } from "../../lib/finance";
 import { memberAccruedDueMinor } from "../../components/members/association-members";
+import { DateField } from "../../components/ui/date-field";
 type Locale = "ar" | "en";
+
+function todayDateInput() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function dateInputToOccurredAt(date: string) {
+  const day = String(date ?? "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return new Date().toISOString();
+  return `${day}T12:00:00.000Z`;
+}
 
 type Space = {
   id: string;
@@ -562,6 +573,7 @@ function QuickAddModal({
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [memberId, setMemberId] = useState("");
+  const [occurredOn, setOccurredOn] = useState(todayDateInput());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const members = (data.members ?? []).filter((member) => member.space_id === spaceId);
@@ -575,6 +587,7 @@ function QuickAddModal({
         throw new Error(locale === "ar" ? "اختر العضو" : "Choose a member");
       }
       const useContribution = kind === "contribution" && memberId;
+      const occurredAt = dateInputToOccurredAt(occurredOn);
       const response = await apiFetch("/api/dashboard", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -587,6 +600,7 @@ function QuickAddModal({
               amount,
               description: description || undefined,
               extraPolicy: "advance_credit",
+              occurredAt,
             }
           : {
               action: "addTransaction",
@@ -597,6 +611,7 @@ function QuickAddModal({
               description: description || (locale === "ar" ? "عملية مالية" : "Transaction"),
               allocation: "general",
               memberId: memberId || undefined,
+              occurredAt,
             }),
       });
       const result = await response.json() as { error?: string };
@@ -645,6 +660,10 @@ function QuickAddModal({
               <input required min="0.01" step="0.001" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.000" />
               <b className="money-currency"><OmrSymbol size={14} /></b>
             </div>
+          </label>
+          <label>
+            <span>{locale === "ar" ? "تاريخ العملية" : "Transaction date"}</span>
+            <DateField required value={occurredOn} onChange={setOccurredOn} />
           </label>
           {members.length > 0 && (
             <label>
