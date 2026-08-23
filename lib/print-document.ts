@@ -344,6 +344,71 @@ body.is-receipt footer.sheet-foot .foot-site {
   color: #6a7a74;
   letter-spacing: 0;
 }
+/* —— Member statement (phone-clear cards) —— */
+body.is-statement {
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+body.is-statement .sheet { max-width: 640px; margin: 16px auto 36px; }
+body.is-statement .head { text-align: center; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+body.is-statement .head h1 { font-size: 24px; letter-spacing: 0; }
+body.is-statement .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+body.is-statement .kpi strong { font-size: 16px; }
+.statement-block { padding: 8px 20px 16px; }
+.statement-cards { display: grid; gap: 10px; }
+.statement-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #fff;
+}
+.statement-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.statement-card header strong {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: 0;
+}
+.statement-card header em { font-style: normal; font-size: 16px; font-weight: 800; white-space: nowrap; }
+.statement-card p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+.statement-card footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #6a7a74;
+  font-size: 12px;
+  font-weight: 700;
+}
+body.is-statement footer.sheet-foot {
+  text-align: center;
+  background: linear-gradient(180deg, #fff 0%, #f4f8f6 100%);
+}
+body.is-statement footer.sheet-foot .foot-mark {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--green-deep);
+  font-size: 14px;
+  font-weight: 800;
+}
+body.is-statement footer.sheet-foot .foot-site {
+  display: block;
+  font-size: 12px;
+  color: #6a7a74;
+}
 footer.sheet-foot {
   padding: 16px 28px 24px;
   color: var(--muted);
@@ -540,12 +605,13 @@ export function wrapPrintDocument(options: {
   bodyHtml: string;
   footer?: string;
   orientation?: PrintOrientation;
-  /** Receipt layout: clearer hierarchy + electronic-receipt footer. */
-  variant?: "report" | "receipt";
+  /** Receipt / statement layouts for phone-clear documents. */
+  variant?: "report" | "receipt" | "statement";
 }) {
   const dir = options.locale === "ar" ? "rtl" : "ltr";
   const orientation = options.orientation ?? "portrait";
   const isReceipt = options.variant === "receipt";
+  const isStatement = options.variant === "statement";
   const printLabel = options.locale === "ar" ? "طباعة المستند" : "Print document";
   const metaHtml = (options.meta ?? [])
     .map((item) => `<div><span>${escapeHtml(item.label)}</span><b>${escapeHtml(item.value)}</b></div>`)
@@ -555,20 +621,29 @@ export function wrapPrintDocument(options: {
     .join("");
   const pageRule = orientation === "landscape"
     ? "@page { size: A4 landscape; margin: 8mm; }"
-    : isReceipt
+    : (isReceipt || isStatement)
       ? "@page { size: A4 portrait; margin: 8mm; }"
       : "@page { size: A4 portrait; margin: 12mm; }";
   const receiptFoot = receiptElectronicFooter(options.locale);
+  const statementFootAr = { mark: "هذا كشف إلكتروني من موقع وازن", site: "واضح على الجوال والكمبيوتر" };
+  const statementFootEn = { mark: "Electronic statement from Wazen", site: "Clear on phone and desktop" };
+  const statementFoot = options.locale === "ar" ? statementFootAr : statementFootEn;
   const footerHtml = isReceipt
     ? (options.footer
       ? escapeHtml(options.footer)
       : `<span class="foot-mark">${escapeHtml(receiptFoot.mark)}</span><span class="foot-site">${escapeHtml(receiptFoot.site)}</span>`)
+    : isStatement
+      ? (options.footer
+        ? escapeHtml(options.footer)
+        : `<span class="foot-mark">${escapeHtml(statementFoot.mark)}</span><span class="foot-site">${escapeHtml(statementFoot.site)}</span>`)
     : escapeHtml(options.footer ?? (options.locale === "ar"
       ? "مستند رسمي من منصة وازن — للاستخدام داخل الجمعية أو المحفظة."
       : "Official document from Wazen — for the wallet or association."));
   const badge = isReceipt
     ? `<span class="receipt-badge">${options.locale === "ar" ? "إيصال إلكتروني" : "Electronic receipt"}</span>`
-    : "";
+    : isStatement
+      ? `<span class="receipt-badge">${options.locale === "ar" ? "كشف إلكتروني" : "Electronic statement"}</span>`
+      : "";
   return `<!doctype html>
 <html lang="${options.locale}" dir="${dir}" data-orientation="${orientation}">
 <head>
@@ -577,7 +652,7 @@ export function wrapPrintDocument(options: {
   <title>${escapeHtml(options.title)} · ${escapeHtml(options.entityName)}</title>
   <style>${PRINT_DOCUMENT_CSS}\n${pageRule}</style>
 </head>
-<body class="page-${orientation}${isReceipt ? " is-receipt" : ""}">
+<body class="page-${orientation}${isReceipt ? " is-receipt" : ""}${isStatement ? " is-statement" : ""}">
   <div class="print-actions"><button type="button" onclick="window.print()">${escapeHtml(printLabel)}</button></div>
   <article class="sheet">
     <div class="sheet-accent" aria-hidden="true"></div>
@@ -710,10 +785,10 @@ async function htmlDocumentToPdfBlob(html: string): Promise<Blob> {
     const pageW = pdf.internal.pageSize.getWidth();
     const pageH = pdf.internal.pageSize.getHeight();
     const imgData = canvas.toDataURL("image/jpeg", 0.92);
-    const isReceiptDoc = /is-receipt/.test(html);
+    const isReceiptDoc = /is-receipt|is-statement/.test(html);
     let imgW = pageW;
     let imgH = (canvas.height * imgW) / canvas.width;
-    // Receipts must fit on a single A4 page — scale down instead of slicing.
+    // Receipts/statements must fit on a single A4 page — scale down instead of slicing.
     if (isReceiptDoc && imgH > pageH) {
       const scale = pageH / imgH;
       imgW *= scale;
@@ -792,8 +867,8 @@ export function openReportPreview(html: string, autoPrint = false) {
 
 export async function downloadReportHtml(html: string, filename: string) {
   if (typeof window === "undefined") return;
-  // Arabic receipts: keep native HTML so shaping stays intact (canvas PDF breaks joins).
-  if (/lang=["']ar["']/i.test(html) && /\bis-receipt\b/.test(html)) {
+  // Arabic receipts/statements: keep native HTML so shaping stays intact (canvas PDF breaks joins).
+  if (/lang=["']ar["']/i.test(html) && (/\bis-receipt\b/.test(html) || /\bis-statement\b/.test(html))) {
     openReportPreview(html, false);
     return;
   }
@@ -811,7 +886,7 @@ export async function printWazenHtml(build: (logoUrl: string) => string, autoPri
   const logoUrl = await resolvePrintLogoUrl();
   const html = build(logoUrl);
   if (typeof window === "undefined") return false;
-  if (/lang=["']ar["']/i.test(html) && /\bis-receipt\b/.test(html)) {
+  if (/lang=["']ar["']/i.test(html) && (/\bis-receipt\b/.test(html) || /\bis-statement\b/.test(html))) {
     return openReportPreview(html, autoPrint);
   }
   try {

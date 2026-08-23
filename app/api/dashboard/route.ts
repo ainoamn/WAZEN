@@ -11,6 +11,8 @@ import { coveringPeriod } from "../../../lib/accounting-periods";
 import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
 import { appOrigin } from "../../../lib/app-origin";
 import { buildReceiptWhatsAppMessage, signReceiptShareToken, whatsappShareUrl } from "../../../lib/receipt-share";
+import { buildMemberStatementWhatsAppMessage, signMemberStatementToken } from "../../../lib/statement-share";
+import type { MemberLedgerFocus } from "../../../lib/member-ledger";
 import { accountLiveBalance, dueAtForPeriod, monthKeysForRule, occurrenceLedgerStatus } from "../../../lib/personal-finance";
 import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-forecast";
 import { filterSpacesByPlan } from "../../../lib/plan-features";
@@ -2749,6 +2751,59 @@ export async function POST(request: Request) {
         whatsappUrl: whatsappShareUrl(whatsappNumber || null, message),
         transactionId: txn.id,
         receiptUrl,
+      };
+      await completeIdempotency(db, user.id, idempotencyKey, { ok: true, notification });
+      claimed = null;
+      return Response.json({ ok: true, notification }, { headers: { "Cache-Control": "no-store" } });
+    } else if (action === "createMemberStatementShare") {
+      const parsed = z.object({
+        memberId: z.string().min(1).max(120),
+        focus: z.enum(["all", "paid", "spent", "owes", "credit"]).optional(),
+        locale: z.enum(["ar", "en"]).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_STATEMENT");
+      const locale = parsed.data.locale ?? "ar";
+      const focus = (parsed.data.focus ?? "all") as MemberLedgerFocus;
+      const member = await db.prepare("SELECT * FROM members WHERE id=? AND status='active'").bind(parsed.data.memberId).first<MemberRow>();
+      if (!member) throw new ApiError(404, "MEMBER_NOT_FOUND");
+      const spaceAuth = await authorizeSpace(db, user, member.space_id, "read");
+      const { assertPlanShareFeature } = await import("../../../services/admin/billing-service");
+      await assertPlanShareFeature(db, spaceAuth.owner_user_id, "whatsapp", user.id);
+      const space = await db.prepare("SELECT name_ar,name_en,currency FROM spaces WHERE id=?")
+        .bind(member.space_id)
+        .first<{ name_ar: string; name_en: string; currency: string }>();
+      const shareToken = signMemberStatementToken({
+        memberId: member.id,
+        spaceId: member.space_id,
+        focus,
+        locale,
+      });
+      const statementUrl = `${appOrigin(request)}/s/${encodeURIComponent(shareToken)}`;
+      const money = (minor: number) => formatMoneyMinor(minor, space?.currency ?? "OMR", locale);
+      const focusLabel = ({
+        all: locale === "ar" ? "الكل" : "All",
+        paid: locale === "ar" ? "المدفوع" : "Paid",
+        spent: locale === "ar" ? "الصرف" : "Spent",
+        owes: locale === "ar" ? "عليه" : "Owes",
+        credit: locale === "ar" ? "له" : "Credit",
+      })[focus];
+      const message = buildMemberStatementWhatsAppMessage({
+        locale,
+        memberName: member.display_name,
+        walletName: locale === "ar" ? (space?.name_ar ?? "") : (space?.name_en ?? ""),
+        focusLabel,
+        paidLabel: money(Number(member.paid_minor) || 0),
+        owesLabel: money(Math.max(0, Number(member.due_minor) - Number(member.paid_minor))),
+        creditLabel: money(Number(member.extra_minor) + Number(member.addon_minor ?? 0)),
+        statementUrl,
+      });
+      const whatsappNumber = member.phone ? toWhatsAppNumber(member.phone) : "";
+      if (!whatsappNumber) throw new ApiError(400, "MEMBER_PHONE_MISSING");
+      notification = {
+        emailQueued: false,
+        whatsappUrl: whatsappShareUrl(whatsappNumber, message),
+        transactionId: member.id,
+        receiptUrl: statementUrl,
       };
       await completeIdempotency(db, user.id, idempotencyKey, { ok: true, notification });
       claimed = null;

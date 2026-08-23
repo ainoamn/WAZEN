@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import OmrSymbol from "../brand/OmrSymbol";
 import { apiFetch } from "../../lib/client-api";
 import { buildMemberLedger, buildMemberLedgerHtml, filterMemberLedgerLines, type MemberLedgerFocus } from "../../lib/member-ledger";
-import { printWazenHtml, shareWazenPdfWithText } from "../../lib/print-document";
+import { printWazenHtml } from "../../lib/print-document";
 import { consumePlanQuota } from "../../lib/plan-quota-client";
 import {
   allocateOldestFirst,
@@ -18,8 +18,7 @@ import {
   type InstallmentLike,
 } from "../../lib/installments";
 import { formatMoneyMinor } from "../../lib/money";
-import { toWhatsAppNumber } from "../../lib/phone";
-import { openWhatsAppUrl, whatsappShareUrl } from "../../lib/receipt-share";
+import { openWhatsAppUrl } from "../../lib/receipt-share";
 
 type Locale = "ar" | "en";
 
@@ -254,51 +253,27 @@ function MemberLedgerBody({
     if (sending) return;
     setSending(true);
     try {
-      const phone = toWhatsAppNumber(member.phone);
-      const spaceName = locale === "ar" ? space.name_ar : space.name_en;
-      const text = locale === "ar"
-        ? [
-            `السلام عليكم ${member.display_name}`,
-            "",
-            `كشف حساب من وازن — ${spaceName}`,
-            `القسم: ${tabs.find((item) => item.id === tab)?.ar ?? "الكل"}`,
-            `عليه: ${money(ledger.owesMinor, space.currency, locale)}`,
-            `له: ${money(ledger.creditMinor, space.currency, locale)}`,
-            `المدفوع: ${money(ledger.paidMinor, space.currency, locale)}`,
-            "",
-            "مرفق كشف الحساب بنفس شكل الطباعة (PDF).",
-          ].join("\n")
-        : [
-            `Hello ${member.display_name}`,
-            "",
-            `WAZEN statement — ${spaceName}`,
-            `Section: ${tabs.find((item) => item.id === tab)?.en ?? "All"}`,
-            `Owes: ${money(ledger.owesMinor, space.currency, locale)}`,
-            `Credit: ${money(ledger.creditMinor, space.currency, locale)}`,
-            `Paid: ${money(ledger.paidMinor, space.currency, locale)}`,
-            "",
-            "Attached is the same statement PDF as print.",
-          ].join("\n");
-      const result = await shareWazenPdfWithText({
-        buildHtml: ledgerHtml,
-        text,
-        phone,
-        filename: `wazen-statement-${member.display_name.slice(0, 24)}`,
-        title: locale === "ar" ? `كشف ${member.display_name}` : `Statement ${member.display_name}`,
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "createMemberStatementShare",
+          idempotencyKey: crypto.randomUUID(),
+          memberId: member.id,
+          focus: tab,
+          locale,
+        }),
       });
-      if (result === "cancelled") return;
-      if (result === "failed") {
-        openWhatsAppUrl(whatsappShareUrl(phone, text));
+      const result = await response.json() as { error?: string; notification?: { whatsappUrl?: string | null } };
+      if (!response.ok) throw new Error(result.error ?? "SHARE_FAILED");
+      if (result.notification?.whatsappUrl) {
+        openWhatsAppUrl(result.notification.whatsappUrl);
       }
       onStatementSent?.(locale === "ar"
-        ? (result === "downloaded"
-          ? "تم تنزيل كشف PDF وفتح واتساب — أرفق الملف إن لزم."
-          : "تم تجهيز كشف الحساب للإرسال عبر واتساب.")
-        : (result === "downloaded"
-          ? "Statement PDF downloaded and WhatsApp opened — attach the file if needed."
-          : "Member statement ready to send on WhatsApp."));
+        ? "تم فتح واتساب برابط كشف واضح للجوال (مثل إيصال العملية)."
+        : "WhatsApp opened with a clear phone statement link (like a receipt).");
     } catch {
-      window.alert(locale === "ar" ? "تعذر تجهيز كشف الحساب للإرسال." : "Could not prepare the statement to send.");
+      window.alert(locale === "ar" ? "تعذر تجهيز رابط الكشف للإرسال." : "Could not prepare the statement link to send.");
     } finally {
       setSending(false);
     }

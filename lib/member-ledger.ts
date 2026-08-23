@@ -367,7 +367,13 @@ export function buildMemberLedgerHtml(input: {
   phone?: string | null;
   email?: string | null;
   focus: MemberLedgerFocus;
-  ledger: ReturnType<typeof buildMemberLedger>;
+  ledger: {
+    paidMinor: number;
+    addonMinor: number;
+    owesMinor: number;
+    creditMinor: number;
+    lines: MemberLedgerLine[];
+  };
 }) {
   const locale = input.locale;
   const money = (minor: number) => formatMoneyMinor(minor, input.currency, locale);
@@ -380,13 +386,6 @@ export function buildMemberLedgerHtml(input: {
   };
   const title = text(locale, focusTitle[input.focus][0], focusTitle[input.focus][1]);
   const rows = filterMemberLedgerLines(input.ledger.lines, input.focus);
-  const head = [
-    text(locale, "التاريخ", "Date"),
-    text(locale, "البيان", "Description"),
-    text(locale, "التفصيل", "Detail"),
-    text(locale, "النوع", "Type"),
-    text(locale, "المبلغ", "Amount"),
-  ];
   const typeLabel = (focus: MemberLedgerLine["focus"]) => {
     const map = {
       paid: text(locale, "مدفوع", "Paid"),
@@ -396,19 +395,30 @@ export function buildMemberLedgerHtml(input: {
     };
     return map[focus];
   };
-  const body = rows.map((line) => {
+
+  const cards = rows.map((line) => {
     const when = new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB");
     const titleText = locale === "ar" ? line.titleAr : line.titleEn;
     const detail = locale === "ar" ? line.detailAr : line.detailEn;
     const cls = line.direction === "in" ? "in" : line.direction === "out" ? "out" : "";
-    return `<tr><td>${escapeHtml(when)}</td><td>${escapeHtml(titleText)}</td><td>${escapeHtml(detail)}</td><td>${escapeHtml(typeLabel(line.focus))}</td><td class="num ${cls}">${escapeHtml(money(line.amountMinor))}</td></tr>`;
+    return `<article class="statement-card">
+      <header>
+        <strong>${escapeHtml(titleText)}</strong>
+        <em class="num ${cls}">${escapeHtml(money(line.amountMinor))}</em>
+      </header>
+      <p>${escapeHtml(detail)}</p>
+      <footer>
+        <span>${escapeHtml(when)}</span>
+        <span>${escapeHtml(typeLabel(line.focus))}</span>
+      </footer>
+    </article>`;
   }).join("");
 
-  const table = `<section><h2>${escapeHtml(text(locale, "الحركات والتفاصيل", "Movements and detail"))}</h2>
-    <table>
-      <thead><tr>${head.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr></thead>
-      <tbody>${body || `<tr><td colspan="5">${escapeHtml(text(locale, "لا توجد بنود في هذا القسم.", "No rows in this section."))}</td></tr>`}</tbody>
-    </table>
+  const bodyHtml = `<section class="statement-block">
+    <h2>${escapeHtml(text(locale, "الحركات والتفاصيل", "Movements and detail"))}</h2>
+    <div class="statement-cards">
+      ${cards || `<p class="empty">${escapeHtml(text(locale, "لا توجد بنود في هذا القسم.", "No rows in this section."))}</p>`}
+    </div>
   </section>`;
 
   return wrapPrintDocument({
@@ -416,8 +426,9 @@ export function buildMemberLedgerHtml(input: {
     title,
     entityName: `${input.memberName} · ${input.spaceName}`,
     logoUrl: input.logoUrl,
-    subtitle: text(locale, "كشف قابل للطباعة يوضح المدفوع والصرف وما عليه وما له مع السبب والتاريخ.", "Printable statement of paid, spent, owed and credit with dates and reasons."),
-    orientation: "landscape",
+    subtitle: text(locale, "كشف واضح على الجوال والطباعة يوضح المدفوع والصرف وما عليه وما له.", "Clear phone-friendly statement of paid, spent, owed and credit."),
+    orientation: "portrait",
+    variant: "statement",
     meta: [
       { label: text(locale, "العضو", "Member"), value: input.memberName },
       { label: text(locale, "الجمعية", "Association"), value: input.spaceName },
@@ -432,6 +443,6 @@ export function buildMemberLedgerHtml(input: {
       { label: text(locale, "عليه", "Owes"), value: money(input.ledger.owesMinor) },
       { label: text(locale, "له", "Credit"), value: money(input.ledger.creditMinor) },
     ],
-    bodyHtml: table,
+    bodyHtml,
   });
 }
