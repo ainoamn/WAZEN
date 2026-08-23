@@ -596,7 +596,6 @@ export function ReceiptChannelModal({
   onDone,
   canEmail = true,
   canWhatsapp = true,
-  onPrepareWhatsAppPdf,
 }: {
   member: AssociationMember;
   locale: Locale;
@@ -605,8 +604,6 @@ export function ReceiptChannelModal({
   onDone: (message: string) => void;
   canEmail?: boolean;
   canWhatsapp?: boolean;
-  /** Client-side PDF + text share (Web Share / download + wa.me). */
-  onPrepareWhatsAppPdf?: (transactionId: string) => Promise<"shared" | "downloaded" | "cancelled" | "failed">;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -616,29 +613,20 @@ export function ReceiptChannelModal({
       const response = await apiFetch("/api/dashboard", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "sendReceipt", idempotencyKey: crypto.randomUUID(), memberId: member.id, transactionId, channel }),
+        body: JSON.stringify({ action: "sendReceipt", idempotencyKey: crypto.randomUUID(), memberId: member.id, transactionId, channel, locale }),
       });
-      const result = await response.json() as { error?: string; notification?: { whatsappUrl?: string | null; emailQueued?: boolean; transactionId?: string } };
+      const result = await response.json() as { error?: string; notification?: { whatsappUrl?: string | null; emailQueued?: boolean; receiptUrl?: string | null } };
       if (!response.ok) throw new Error(result.error ?? "SEND_FAILED");
-      if ((channel === "whatsapp" || channel === "both") && result.notification?.transactionId && onPrepareWhatsAppPdf) {
-        const shareResult = await onPrepareWhatsAppPdf(result.notification.transactionId);
-        if (shareResult === "cancelled") {
-          setError(locale === "ar" ? "تم إلغاء المشاركة." : "Share cancelled.");
-          return;
-        }
-        if (shareResult === "failed" && result.notification.whatsappUrl) {
-          window.open(result.notification.whatsappUrl, "_blank", "noopener,noreferrer");
-        }
-      } else if (result.notification?.whatsappUrl && (channel === "whatsapp" || channel === "both")) {
+      if (result.notification?.whatsappUrl && (channel === "whatsapp" || channel === "both")) {
         window.open(result.notification.whatsappUrl, "_blank", "noopener,noreferrer");
       }
       onDone(locale === "ar"
         ? (channel === "email"
           ? "تم تجهيز الإيصال حسب بيانات المساهم المسجّلة."
-          : "تم تجهيز إيصال PDF مع الرسالة النصية لواتساب.")
+          : "تم فتح واتساب بالنص ورابط الإيصال (فتح / تنزيل PDF).")
         : (channel === "email"
           ? "Receipt prepared using the member’s saved contact details."
-          : "Receipt PDF prepared with the WhatsApp text message."));
+          : "WhatsApp opened with the receipt text and PDF link."));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "SEND_FAILED");
     } finally {
@@ -649,7 +637,7 @@ export function ReceiptChannelModal({
     <Modal title={locale === "ar" ? "إرسال الإيصال" : "Send receipt"} onClose={onClose}>
       <div className="modal-form">
         <p className="modal-note">{locale === "ar" ? `إلى ${member.display_name} — البريد: ${member.email || "غير مسجّل"} — الهاتف: ${member.phone || "غير مسجّل"}` : `To ${member.display_name} — email: ${member.email || "missing"} — phone: ${member.phone || "missing"}`}</p>
-        <p className="modal-note">{locale === "ar" ? "واتساب: يُرفق ملف PDF مع النص. إن لم يدعم المتصفح المشاركة المباشرة يُنزَّل الـ PDF ويُفتح واتساب بالنص لإرفاق الملف." : "WhatsApp: a PDF is attached with the text. If the browser cannot share files, the PDF downloads and WhatsApp opens with the text so you can attach it."}</p>
+        <p className="modal-note">{locale === "ar" ? "واتساب يرسل النص مع رابط يفتح صفحة الإيصال للتنزيل أو الطباعة — بدون مرفق ملف." : "WhatsApp sends the text plus a link that opens the receipt page to download or print — no file attachment."}</p>
         {error && <p className="modal-error">{error}</p>}
         <div className="receipt-channel-grid">
           <button type="button" className={`primary-button${canEmail ? "" : " is-plan-locked"}`} disabled={saving || !member.email || !canEmail} onClick={() => { if (!canEmail) { window.location.assign("/pricing"); return; } void send("email"); }}><Mail size={16} />{locale === "ar" ? "بريد فقط" : "Email only"}{canEmail ? null : <em className="plan-lock-badge">{locale === "ar" ? "ترقية" : "Upgrade"}</em>}</button>

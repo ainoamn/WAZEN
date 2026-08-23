@@ -5,10 +5,12 @@ import { buildCircleOrder, minimizeSettlements, splitContributionPayment, splitE
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
 import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf } from "../../../lib/authorization";
 import { prepareAudit } from "../../../lib/audit";
-import { multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
+import { formatMoneyMinor, multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
 import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, periodKeyFromDate, type InstallmentLike } from "../../../lib/installments";
 import { coveringPeriod } from "../../../lib/accounting-periods";
 import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
+import { appOrigin } from "../../../lib/app-origin";
+import { buildReceiptWhatsAppMessage, signReceiptShareToken, whatsappShareUrl } from "../../../lib/receipt-share";
 import { accountLiveBalance, dueAtForPeriod, monthKeysForRule, occurrenceLedgerStatus } from "../../../lib/personal-finance";
 import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-forecast";
 import { filterSpacesByPlan } from "../../../lib/plan-features";
@@ -1123,7 +1125,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   let claimed: { db: D1Database; userId: string; key: string } | null = null;
-  let notification: { emailQueued: boolean; whatsappUrl: string | null; transactionId: string } | undefined;
+  let notification: { emailQueued: boolean; whatsappUrl: string | null; transactionId: string; receiptUrl?: string | null } | undefined;
   try {
     enforceWriteRequest(request);
     const db = getRawDb();
@@ -2606,13 +2608,51 @@ export async function POST(request: Request) {
       await completeIdempotency(db, user.id, idempotencyKey, { ok: true });
       claimed = null;
       return Response.json({ ok: true, entitlements }, { headers: { "Cache-Control": "no-store" } });
+    } else if (action === "createReceiptShare") {
+      const parsed = z.object({
+        transactionId: z.string().min(1).max(120),
+        locale: z.enum(["ar", "en"]).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_RECEIPT");
+      const locale = parsed.data.locale ?? "ar";
+      const txn = await db.prepare("SELECT * FROM transactions WHERE id=?").bind(parsed.data.transactionId).first<TransactionRow>();
+      if (!txn || (txn.status ?? "approved") === "voided") throw new ApiError(404, "RECEIPT_NOT_FOUND");
+      const spaceAuth = await authorizeSpace(db, user, txn.space_id, "read");
+      const { assertPlanShareFeature } = await import("../../../services/admin/billing-service");
+      await assertPlanShareFeature(db, spaceAuth.owner_user_id, "whatsapp", user.id);
+      const member = txn.member_id
+        ? await db.prepare("SELECT * FROM members WHERE id=?").bind(txn.member_id).first<MemberRow>()
+        : null;
+      const space = await db.prepare("SELECT name_ar,name_en,currency FROM spaces WHERE id=?").bind(txn.space_id).first<{ name_ar: string; name_en: string; currency: string }>();
+      const memberName = member?.display_name || (locale === "ar" ? "العضو" : "Member");
+      const shareToken = signReceiptShareToken({ transactionId: txn.id, locale });
+      const receiptUrl = `${appOrigin(request)}/r/${encodeURIComponent(shareToken)}`;
+      const message = buildReceiptWhatsAppMessage({
+        locale,
+        memberName,
+        description: locale === "ar" ? txn.description_ar : txn.description_en,
+        walletName: locale === "ar" ? (space?.name_ar ?? "") : (space?.name_en ?? ""),
+        amountLabel: formatMoneyMinor(Number(txn.amount_minor), space?.currency ?? "OMR", locale),
+        dateLabel: new Date(txn.occurred_at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB"),
+        reference: txn.id.slice(0, 8).toUpperCase(),
+        receiptUrl,
+      });
+      const whatsappNumber = member?.phone ? toWhatsAppNumber(member.phone) : "";
+      notification = {
+        emailQueued: false,
+        whatsappUrl: whatsappShareUrl(whatsappNumber || null, message),
+        transactionId: txn.id,
+        receiptUrl,
+      };
     } else if (action === "sendReceipt") {
       const parsed = z.object({
         memberId: z.string().min(1).max(120),
         transactionId: z.string().min(1).max(120).optional(),
         channel: z.enum(["email", "whatsapp", "both"]),
+        locale: z.enum(["ar", "en"]).optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_RECEIPT");
+      const locale = parsed.data.locale ?? "ar";
       const member = await db.prepare("SELECT * FROM members WHERE id=? AND status='active'").bind(parsed.data.memberId).first<MemberRow>();
       if (!member) throw new ApiError(404, "MEMBER_NOT_FOUND");
       const spaceAuth = await authorizeSpace(db, user, member.space_id, "read");
@@ -2628,19 +2668,31 @@ export async function POST(request: Request) {
         : await db.prepare("SELECT * FROM transactions WHERE member_id=? AND status<>'voided' ORDER BY occurred_at DESC LIMIT 1").bind(member.id).first<TransactionRow>();
       if (!txn) throw new ApiError(404, "RECEIPT_NOT_FOUND");
       const space = await db.prepare("SELECT name_ar,name_en,currency FROM spaces WHERE id=?").bind(member.space_id).first<{ name_ar: string; name_en: string; currency: string }>();
+      const shareToken = signReceiptShareToken({ transactionId: txn.id, locale });
+      const receiptUrl = `${appOrigin(request)}/r/${encodeURIComponent(shareToken)}`;
+      const message = buildReceiptWhatsAppMessage({
+        locale,
+        memberName: member.display_name,
+        description: locale === "ar" ? txn.description_ar : txn.description_en,
+        walletName: locale === "ar" ? (space?.name_ar ?? "") : (space?.name_en ?? ""),
+        amountLabel: formatMoneyMinor(Number(txn.amount_minor), space?.currency ?? "OMR", locale),
+        dateLabel: new Date(txn.occurred_at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB"),
+        reference: txn.id.slice(0, 8).toUpperCase(),
+        receiptUrl,
+      });
       const createdAt = now();
-      const message = `إيصال وازن\nالمساهم: ${member.display_name}\nالجمعية: ${space?.name_ar ?? ""}\nالمبلغ: ${(txn.amount_minor / 1000).toFixed(3)} ${space?.currency ?? "OMR"}\nالبيان: ${txn.description_ar}\nالمرجع: ${txn.id.slice(0, 8).toUpperCase()}`;
       if (parsed.data.channel === "email" || parsed.data.channel === "both") {
         if (!member.email) throw new ApiError(400, "MEMBER_EMAIL_MISSING");
         await db.prepare("INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)")
-          .bind(crypto.randomUUID(), member.email, "member_receipt", JSON.stringify({ displayName: member.display_name, message, html: message.replaceAll("\n", "<br/>"), transactionId: txn.id }), createdAt).run();
+          .bind(crypto.randomUUID(), member.email, "member_receipt", JSON.stringify({ displayName: member.display_name, message, html: message.replaceAll("\n", "<br/>"), transactionId: txn.id, receiptUrl }), createdAt).run();
       }
       const whatsappNumber = member.phone ? toWhatsAppNumber(member.phone) : "";
       if ((parsed.data.channel === "whatsapp" || parsed.data.channel === "both") && !whatsappNumber) throw new ApiError(400, "MEMBER_PHONE_MISSING");
       notification = {
         emailQueued: parsed.data.channel !== "whatsapp",
-        whatsappUrl: whatsappNumber ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}` : null,
+        whatsappUrl: whatsappNumber ? whatsappShareUrl(whatsappNumber, message) : null,
         transactionId: txn.id,
+        receiptUrl,
       };
     } else if (action === "updateUserProfile") {
       const parsed = z.object({

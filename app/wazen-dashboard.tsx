@@ -12,9 +12,10 @@ import { HouseholdFamilyPanel } from "../components/household/household-family";
 import { WalletForecastPanel } from "../components/forecast/wallet-forecast";
 import { projectCashflow } from "../lib/wallet-forecast";
 import { isPeriodLocked } from "../lib/accounting-periods";
-import { buildReportHtml, printWazenHtml, shareWazenPdfWithText } from "../lib/reports";
+import { buildReportHtml, printWazenHtml } from "../lib/reports";
 import { wrapPrintDocument } from "../lib/print-document";
 import { composeWhatsAppPhone, splitPhoneParts, toWhatsAppNumber } from "../lib/phone";
+import { apiFetch } from "../lib/client-api";
 import { buildAccountStatementHtml } from "../lib/account-statement";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor, currencyScale } from "../lib/money";
@@ -77,7 +78,6 @@ import {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
-import { apiFetch } from "../lib/client-api";
 import { prefetchAppRoutes, warmAppCaches } from "../lib/app-prefetch";
 import { completeClientLogout } from "../lib/client-logout";
 import { clientSignInPath } from "../lib/client-sign-in";
@@ -723,21 +723,25 @@ async function shareTransactionWhatsApp(transaction: Transaction, data: Dashboar
     goToPricing();
     return;
   }
-  const parts = buildTransactionReceiptParts(transaction, data, locale);
-  await shareWazenPdfWithText({
-    buildHtml: (logoUrl) => wrapPrintDocument({
-      locale,
-      title: parts.title,
-      entityName: parts.entityName,
-      logoUrl,
-      subtitle: parts.subtitle,
-      bodyHtml: parts.bodyHtml,
-    }),
-    text: parts.text,
-    filename: parts.filename,
-    phone: parts.phone || null,
-    title: parts.title,
-  });
+  try {
+    const response = await apiFetch("/api/dashboard", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "createReceiptShare",
+        idempotencyKey: crypto.randomUUID(),
+        transactionId: transaction.id,
+        locale,
+      }),
+    });
+    const result = await response.json() as { error?: string; notification?: { whatsappUrl?: string | null } };
+    if (!response.ok) throw new Error(result.error ?? "SHARE_FAILED");
+    if (result.notification?.whatsappUrl) {
+      window.open(result.notification.whatsappUrl, "_blank", "noopener,noreferrer");
+    }
+  } catch {
+    window.alert(locale === "ar" ? "تعذر تجهيز رابط الإيصال لواتساب." : "Could not prepare the WhatsApp receipt link.");
+  }
 }
 
 
@@ -1303,25 +1307,6 @@ export function WazenDashboard() {
             transactionId={receiptTxnId}
             canEmail={planHasFeature(planFeaturesOf(data), "email")}
             canWhatsapp={planHasFeature(planFeaturesOf(data), "whatsapp")}
-            onPrepareWhatsAppPdf={async (transactionId) => {
-              const txn = data.transactions.find((item) => item.id === transactionId);
-              if (!txn) return "failed" as const;
-              const parts = buildTransactionReceiptParts(txn, data, locale);
-              return shareWazenPdfWithText({
-                buildHtml: (logoUrl) => wrapPrintDocument({
-                  locale,
-                  title: parts.title,
-                  entityName: parts.entityName,
-                  logoUrl,
-                  subtitle: parts.subtitle,
-                  bodyHtml: parts.bodyHtml,
-                }),
-                text: parts.text,
-                filename: parts.filename,
-                phone: parts.phone || (member.phone ? toWhatsAppNumber(member.phone) : null),
-                title: parts.title,
-              });
-            }}
             onClose={() => setModal(null)}
             onDone={(message) => {
               setModal(null);
