@@ -1327,7 +1327,8 @@ export function WazenDashboard() {
               if (!planHasFeature(planFeaturesOf(data), "smart_accountant")) { goToPricing(); return; }
               setModal("smartPay");
             }}
-            onSendReceipt={() => { setReceiptTxnId(undefined); setModal("sendReceipt"); }}
+            onStatementSent={(message) => flash(message)}
+            canWhatsapp={planHasFeature(planFeaturesOf(data), "whatsapp")}
           />
         );
       })()}
@@ -1355,7 +1356,8 @@ export function WazenDashboard() {
               setActiveMemberId(memberId);
               setModal("smartPay");
             }}
-            onSendReceipt={(memberId) => { setActiveMemberId(memberId); setReceiptTxnId(undefined); setModal("sendReceipt"); }}
+            onStatementSent={(message) => flash(message)}
+            canWhatsapp={planHasFeature(planFeaturesOf(data), "whatsapp")}
           />
         );
       })()}

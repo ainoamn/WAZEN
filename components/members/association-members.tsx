@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import OmrSymbol from "../brand/OmrSymbol";
 import { apiFetch } from "../../lib/client-api";
 import { buildMemberLedger, buildMemberLedgerHtml, filterMemberLedgerLines, type MemberLedgerFocus } from "../../lib/member-ledger";
-import { printWazenHtml } from "../../lib/print-document";
+import { printWazenHtml, shareWazenPdfWithText } from "../../lib/print-document";
 import { consumePlanQuota } from "../../lib/plan-quota-client";
 import {
   allocateOldestFirst,
@@ -18,7 +18,8 @@ import {
   type InstallmentLike,
 } from "../../lib/installments";
 import { formatMoneyMinor } from "../../lib/money";
-import { openWhatsAppUrl } from "../../lib/receipt-share";
+import { toWhatsAppNumber } from "../../lib/phone";
+import { openWhatsAppUrl, whatsappShareUrl } from "../../lib/receipt-share";
 
 type Locale = "ar" | "en";
 
@@ -179,8 +180,8 @@ type LedgerInputs = {
   }>;
   expenseSplits?: Array<{ expense_id: string; member_id: string; share_minor: number }>;
   onSmartPay: () => void;
-  onSendReceipt: () => void;
-  canEmail?: boolean;
+  /** Called after statement share succeeds (for toast). */
+  onStatementSent?: (message: string) => void;
   canWhatsapp?: boolean;
 };
 
@@ -197,9 +198,11 @@ function MemberLedgerBody({
   tripExpenses = [],
   expenseSplits = [],
   onSmartPay,
-  onSendReceipt,
+  onStatementSent,
+  canWhatsapp = true,
 }: LedgerInputs) {
   const [tab, setTab] = useState<MemberLedgerFocus>(focus);
+  const [sending, setSending] = useState(false);
   useEffect(() => { setTab(focus); }, [focus, member.id, space.id]);
   const ledger = useMemo(() => buildMemberLedger({
     member,
@@ -222,23 +225,83 @@ function MemberLedgerBody({
     { id: "owes", ar: "عليه", en: "Owes", amount: ledger.owesMinor },
     { id: "credit", ar: "له", en: "Credit", amount: ledger.creditMinor },
   ];
+  const ledgerHtml = (logoUrl: string) => buildMemberLedgerHtml({
+    locale,
+    logoUrl,
+    issuerName,
+    memberName: member.display_name,
+    spaceName: locale === "ar" ? space.name_ar : space.name_en,
+    currency: space.currency,
+    joinedAt: member.joined_at,
+    phone: member.phone,
+    email: member.email,
+    focus: tab,
+    ledger,
+  });
   const printLedger = () => {
-    void consumePlanQuota("print", locale, space.id).then((quota) => {
-      if (!quota.ok) return;
-      void printWazenHtml((logoUrl) => buildMemberLedgerHtml({
-      locale,
-      logoUrl,
-      issuerName,
-      memberName: member.display_name,
-      spaceName: locale === "ar" ? space.name_ar : space.name_en,
-      currency: space.currency,
-      joinedAt: member.joined_at,
-      phone: member.phone,
-      email: member.email,
-      focus: tab,
-      ledger,
-    }), true);
-    });
+    void consumePlanQuota("print", locale, space.id);
+    void printWazenHtml((logoUrl) => ledgerHtml(logoUrl), true);
+  };
+  const sendLedger = async () => {
+    if (!canWhatsapp) {
+      window.location.assign("/pricing");
+      return;
+    }
+    if (!member.phone) {
+      window.alert(locale === "ar" ? "سجّل رقم هاتف العضو أولاً لإرسال الكشف عبر واتساب." : "Add the member’s phone number first to send the statement on WhatsApp.");
+      return;
+    }
+    if (sending) return;
+    setSending(true);
+    try {
+      const phone = toWhatsAppNumber(member.phone);
+      const spaceName = locale === "ar" ? space.name_ar : space.name_en;
+      const text = locale === "ar"
+        ? [
+            `السلام عليكم ${member.display_name}`,
+            "",
+            `كشف حساب من وازن — ${spaceName}`,
+            `القسم: ${tabs.find((item) => item.id === tab)?.ar ?? "الكل"}`,
+            `عليه: ${money(ledger.owesMinor, space.currency, locale)}`,
+            `له: ${money(ledger.creditMinor, space.currency, locale)}`,
+            `المدفوع: ${money(ledger.paidMinor, space.currency, locale)}`,
+            "",
+            "مرفق كشف الحساب بنفس شكل الطباعة (PDF).",
+          ].join("\n")
+        : [
+            `Hello ${member.display_name}`,
+            "",
+            `WAZEN statement — ${spaceName}`,
+            `Section: ${tabs.find((item) => item.id === tab)?.en ?? "All"}`,
+            `Owes: ${money(ledger.owesMinor, space.currency, locale)}`,
+            `Credit: ${money(ledger.creditMinor, space.currency, locale)}`,
+            `Paid: ${money(ledger.paidMinor, space.currency, locale)}`,
+            "",
+            "Attached is the same statement PDF as print.",
+          ].join("\n");
+      const result = await shareWazenPdfWithText({
+        buildHtml: ledgerHtml,
+        text,
+        phone,
+        filename: `wazen-statement-${member.display_name.slice(0, 24)}`,
+        title: locale === "ar" ? `كشف ${member.display_name}` : `Statement ${member.display_name}`,
+      });
+      if (result === "cancelled") return;
+      if (result === "failed") {
+        openWhatsAppUrl(whatsappShareUrl(phone, text));
+      }
+      onStatementSent?.(locale === "ar"
+        ? (result === "downloaded"
+          ? "تم تنزيل كشف PDF وفتح واتساب — أرفق الملف إن لزم."
+          : "تم تجهيز كشف الحساب للإرسال عبر واتساب.")
+        : (result === "downloaded"
+          ? "Statement PDF downloaded and WhatsApp opened — attach the file if needed."
+          : "Member statement ready to send on WhatsApp."));
+    } catch {
+      window.alert(locale === "ar" ? "تعذر تجهيز كشف الحساب للإرسال." : "Could not prepare the statement to send.");
+    } finally {
+      setSending(false);
+    }
   };
   return (
     <>
@@ -289,7 +352,12 @@ function MemberLedgerBody({
       </div>
       <div className="modal-actions">
         <button type="button" className="secondary-button" onClick={printLedger}><Printer size={16} />{locale === "ar" ? "طباعة الكشف" : "Print statement"}</button>
-        <button type="button" className="secondary-button" onClick={onSendReceipt}><Printer size={16} />{locale === "ar" ? "إرسال إيصال" : "Send receipt"}</button>
+        <button type="button" className={`secondary-button${canWhatsapp ? "" : " is-plan-locked"}`} disabled={sending} onClick={() => { void sendLedger(); }}>
+          <MessageCircle size={16} />
+          {sending
+            ? (locale === "ar" ? "جارٍ التجهيز…" : "Preparing…")
+            : (locale === "ar" ? "إرسال الكشف" : "Send statement")}
+        </button>
         <button type="button" className="primary-button" onClick={onSmartPay}><Sparkles size={16} />{locale === "ar" ? "المحاسب الذكي" : "Smart accountant"}</button>
       </div>
     </>
@@ -310,7 +378,8 @@ export function MemberDetailModal({
   expenseSplits = [],
   onClose,
   onSmartPay,
-  onSendReceipt,
+  onStatementSent,
+  canWhatsapp = true,
 }: LedgerInputs & { onClose: () => void }) {
   return (
     <Modal title={member.display_name} onClose={onClose}>
@@ -328,7 +397,8 @@ export function MemberDetailModal({
           tripExpenses={tripExpenses}
           expenseSplits={expenseSplits}
           onSmartPay={onSmartPay}
-          onSendReceipt={onSendReceipt}
+          onStatementSent={onStatementSent}
+          canWhatsapp={canWhatsapp}
         />
       </div>
     </Modal>
@@ -349,7 +419,8 @@ export function MemberPersonProfile({
   expenseSplits = [],
   onClose,
   onSmartPay,
-  onSendReceipt,
+  onStatementSent,
+  canWhatsapp = true,
 }: {
   records: AssociationMember[];
   spaces: AssociationSpace[];
@@ -364,7 +435,8 @@ export function MemberPersonProfile({
   expenseSplits?: LedgerInputs["expenseSplits"];
   onClose: () => void;
   onSmartPay: (memberId: string) => void;
-  onSendReceipt: (memberId: string) => void;
+  onStatementSent?: (message: string) => void;
+  canWhatsapp?: boolean;
 }) {
   const primary = records[0];
   const preferred = records.find((row) => {
@@ -442,7 +514,8 @@ export function MemberPersonProfile({
             tripExpenses={tripExpenses}
             expenseSplits={expenseSplits}
             onSmartPay={() => onSmartPay(selected.id)}
-            onSendReceipt={() => onSendReceipt(selected.id)}
+            onStatementSent={onStatementSent}
+            canWhatsapp={canWhatsapp}
           />
         )}
       </div>
