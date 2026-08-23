@@ -142,4 +142,7 @@ test("print document CSS uses large readable fonts for paper output", async () =
   assert.match(html, /is-receipt/);
   assert.match(html, /هذا إيصال إلكتروني طُبع من موقع وازن/);
   assert.match(html, /receipt-badge/);
+  assert.match(PRINT_DOCUMENT_CSS, /\.receipt-badge \{[\s\S]*letter-spacing: 0;/);
+  assert.match(PRINT_DOCUMENT_CSS, /\.receipt-amount span \{[\s\S]*letter-spacing: 0;/);
+  assert.match(PRINT_DOCUMENT_CSS, /\.receipt-qr/);
 });

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import WazenLogo from "../../../components/brand/WazenLogo";
-import { buildReceiptBodyHtml, downloadReportHtml, printWazenHtml, wrapPrintDocument } from "../../../lib/print-document";
+import { buildReceiptBodyHtml, buildReceiptQrDataUrl, downloadReportHtml, printWazenHtml, wrapPrintDocument } from "../../../lib/print-document";
 
 type ReceiptPayload = {
   locale: "ar" | "en";
@@ -17,8 +17,9 @@ type ReceiptPayload = {
   occurredAt: string;
 };
 
-function receiptBodyHtml(data: ReceiptPayload) {
+async function receiptBodyHtml(data: ReceiptPayload, receiptUrl: string) {
   const l = data.locale;
+  const qrDataUrl = receiptUrl ? await buildReceiptQrDataUrl(receiptUrl) : "";
   return buildReceiptBodyHtml({
     locale: l,
     amountLabel: data.amountLabel,
@@ -30,6 +31,8 @@ function receiptBodyHtml(data: ReceiptPayload) {
       { label: l === "ar" ? "النوع" : "Type", value: data.kind },
     ],
     reference: data.reference,
+    receiptUrl: receiptUrl || undefined,
+    qrDataUrl: qrDataUrl || undefined,
   });
 }
 
@@ -37,6 +40,7 @@ export default function ReceiptShareClient({ token }: { token: string }) {
   const [data, setData] = useState<ReceiptPayload | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<"print" | "download" | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -46,6 +50,9 @@ export default function ReceiptShareClient({ token }: { token: string }) {
         const result = await response.json() as ReceiptPayload & { error?: string };
         if (!response.ok) throw new Error(result.error ?? "RECEIPT_NOT_FOUND");
         if (!cancelled) setData(result);
+        const permanentUrl = `${window.location.origin}/r/${encodeURIComponent(token)}`;
+        const qr = await buildReceiptQrDataUrl(permanentUrl);
+        if (!cancelled) setQrDataUrl(qr);
       } catch (caught) {
         if (!cancelled) setError(caught instanceof Error ? caught.message : "RECEIPT_NOT_FOUND");
       }
@@ -57,13 +64,15 @@ export default function ReceiptShareClient({ token }: { token: string }) {
     if (!data) return;
     setBusy("print");
     try {
+      const permanentUrl = `${window.location.origin}/r/${encodeURIComponent(token)}`;
+      const bodyHtml = await receiptBodyHtml(data, permanentUrl);
       await printWazenHtml((logoUrl) => wrapPrintDocument({
         locale: data.locale,
         title: data.title,
         entityName: data.walletName,
         logoUrl,
         subtitle: data.dateLabel,
-        bodyHtml: receiptBodyHtml(data),
+        bodyHtml,
         variant: "receipt",
       }), true);
     } finally {
@@ -76,13 +85,15 @@ export default function ReceiptShareClient({ token }: { token: string }) {
     setBusy("download");
     try {
       const logoUrl = `${window.location.origin}/brand/wazen-lockup.png`;
+      const permanentUrl = `${window.location.origin}/r/${encodeURIComponent(token)}`;
+      const bodyHtml = await receiptBodyHtml(data, permanentUrl);
       const html = wrapPrintDocument({
         locale: data.locale,
         title: data.title,
         entityName: data.walletName,
         logoUrl,
         subtitle: data.dateLabel,
-        bodyHtml: receiptBodyHtml(data),
+        bodyHtml,
         variant: "receipt",
       });
       await downloadReportHtml(html, `wazen-receipt-${data.reference}`);
@@ -116,9 +127,15 @@ export default function ReceiptShareClient({ token }: { token: string }) {
             <div><dt>{locale === "ar" ? "النوع" : "Type"}</dt><dd>{data.kind}</dd></div>
             <div><dt>{locale === "ar" ? "المرجع" : "Reference"}</dt><dd>{data.reference}</dd></div>
           </dl>
+          {qrDataUrl ? (
+            <div className="receipt-share-qr">
+              <img src={qrDataUrl} width={148} height={148} alt="QR" />
+              <p>{locale === "ar" ? "امسح الرمز لفتح الإيصال الإلكتروني" : "Scan to open the electronic receipt"}</p>
+            </div>
+          ) : null}
           <div className="receipt-share-actions">
             <button type="button" className="primary-button" disabled={busy !== null} onClick={() => void download()}>
-              {busy === "download" ? "…" : (locale === "ar" ? "تنزيل PDF" : "Download PDF")}
+              {busy === "download" ? "…" : (locale === "ar" ? "تنزيل / فتح" : "Download / open")}
             </button>
             <button type="button" className="secondary-button" disabled={busy !== null} onClick={() => void print()}>
               {busy === "print" ? "…" : (locale === "ar" ? "فتح للطباعة" : "Open to print")}

@@ -179,8 +179,9 @@ body.is-receipt .brand-bar {
 body.is-receipt .brand-bar img { height: 44px; max-width: min(200px, 58vw); }
 body.is-receipt .brand-bar small {
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: .06em;
+  /* Never letter-space or uppercase Arabic — breaks glyph joining. */
+  letter-spacing: 0;
+  text-transform: none;
 }
 body.is-receipt .brand-bar strong {
   font-size: 16px;
@@ -211,35 +212,39 @@ body.is-receipt .receipt-badge {
   color: var(--green-deep);
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: .02em;
+  letter-spacing: 0;
 }
 .receipt-block { padding: 8px 24px 8px; }
 .receipt-amount {
   margin: 12px 0 18px;
-  padding: 20px 16px 18px;
+  padding: 22px 16px 26px;
   border-radius: 16px;
   background: linear-gradient(160deg, #084c3f 0%, #0d7a65 48%, #18917a 100%);
   color: #fff;
   text-align: center;
   box-shadow: 0 14px 32px rgba(10,92,76,.18);
+  overflow: visible;
 }
 .receipt-amount span {
   display: block;
   font-size: 13px;
   font-weight: 700;
   opacity: .9;
-  margin-bottom: 8px;
-  letter-spacing: .04em;
+  margin-bottom: 10px;
+  letter-spacing: 0;
+  line-height: 1.5;
 }
 .receipt-amount strong {
   display: block;
-  font-size: clamp(30px, 8vw, 42px);
-  line-height: 1.12;
+  font-size: clamp(28px, 7.5vw, 40px);
+  line-height: 1.4;
   font-weight: 800;
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
   direction: ltr;
   unicode-bidi: isolate;
+  padding: 2px 4px 6px;
+  overflow: visible;
 }
 .receipt-fields {
   margin: 0;
@@ -287,8 +292,43 @@ body.is-receipt .receipt-badge {
   font-size: 13px;
   font-weight: 800;
   text-align: center;
-  letter-spacing: .06em;
+  letter-spacing: 0;
   font-variant-numeric: tabular-nums;
+}
+.receipt-qr {
+  margin: 18px 0 4px;
+  padding: 16px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #fff;
+  text-align: center;
+}
+.receipt-qr img {
+  display: block;
+  width: 148px;
+  height: 148px;
+  margin: 0 auto 10px;
+  border-radius: 8px;
+  background: #fff;
+}
+.receipt-qr p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+.receipt-qr a {
+  display: inline-block;
+  margin-top: 6px;
+  color: var(--green-deep);
+  font-size: 11px;
+  font-weight: 700;
+  word-break: break-all;
+  text-decoration: none;
+  letter-spacing: 0;
+  max-width: 100%;
 }
 body.is-receipt footer.sheet-foot {
   margin-top: 8px;
@@ -312,7 +352,7 @@ body.is-receipt footer.sheet-foot .foot-site {
   font-size: 12px;
   font-weight: 600;
   color: #6a7a74;
-  letter-spacing: .02em;
+  letter-spacing: 0;
 }
 footer.sheet-foot {
   padding: 16px 28px 24px;
@@ -353,8 +393,8 @@ body.page-landscape td.col-desc { min-width: 160px; white-space: normal; overflo
   .brand-bar strong, .meta b, .kpi strong, td, .head p, .receipt-fields dd { color: #000 !important; }
   .head h1 { font-size: 32px; color: #0a5c4c !important; }
   body.is-receipt .head h1 { font-size: 26px !important; }
-  body.is-receipt .receipt-amount strong { font-size: 36px !important; color: #fff !important; }
-  body.is-receipt .receipt-amount span { color: #fff !important; }
+  body.is-receipt .receipt-amount strong { font-size: 34px !important; color: #fff !important; line-height: 1.4 !important; }
+  body.is-receipt .receipt-amount span { color: #fff !important; letter-spacing: 0 !important; }
   body.is-receipt footer.sheet-foot .foot-mark { color: #0a5c4c !important; }
   body.page-landscape .head h1 { font-size: 20px !important; }
   table, td, .num { font-size: 16px; }
@@ -422,6 +462,9 @@ export function buildReceiptBodyHtml(input: {
   amountLabel: string;
   fields: Array<{ label: string; value: string }>;
   reference?: string;
+  /** Permanent public receipt URL (never a blob: URL). */
+  receiptUrl?: string;
+  qrDataUrl?: string;
 }) {
   const amountCaption = input.locale === "ar" ? "المبلغ" : "Amount";
   const rows = input.fields
@@ -431,10 +474,21 @@ export function buildReceiptBodyHtml(input: {
   const ref = input.reference
     ? `<p class="receipt-ref">${input.locale === "ar" ? "المرجع" : "Ref"} · ${escapeHtml(input.reference)}</p>`
     : "";
+  const qrHint = input.locale === "ar"
+    ? "امسح الرمز لفتح الإيصال الإلكتروني"
+    : "Scan to open the electronic receipt";
+  const qr = input.qrDataUrl && input.receiptUrl
+    ? `<div class="receipt-qr">
+  <img src="${escapeHtml(input.qrDataUrl)}" width="148" height="148" alt="QR" />
+  <p>${escapeHtml(qrHint)}</p>
+  <a href="${escapeHtml(input.receiptUrl)}">${escapeHtml(input.receiptUrl)}</a>
+</div>`
+    : "";
   return `<section class="receipt-block">
   <div class="receipt-amount"><span>${escapeHtml(amountCaption)}</span><strong>${escapeHtml(input.amountLabel)}</strong></div>
   <dl class="receipt-fields">${rows}</dl>
   ${ref}
+  ${qr}
 </section>`;
 }
 
@@ -449,6 +503,19 @@ export function receiptElectronicFooter(locale: "ar" | "en") {
     mark: "This is an electronic receipt printed from the Wazen website",
     site: "WAZEN · وازن",
   };
+}
+
+/** QR data URL for a permanent https receipt link (not blob:). */
+export async function buildReceiptQrDataUrl(receiptUrl: string) {
+  const url = String(receiptUrl ?? "").trim();
+  if (!url || url.startsWith("blob:")) return "";
+  const QRCode = (await import("qrcode")).default;
+  return QRCode.toDataURL(url, {
+    width: 280,
+    margin: 1,
+    errorCorrectionLevel: "M",
+    color: { dark: "#0a5c4c", light: "#ffffff" },
+  });
 }
 
 export function wrapPrintDocument(options: {
@@ -584,6 +651,10 @@ async function htmlDocumentToPdfBlob(html: string): Promise<Blob> {
     html, body { width: ${pageCssPx}px !important; min-width: ${pageCssPx}px !important; background: #fff !important; }
     .print-actions { display: none !important; }
     .sheet { margin: 0 !important; max-width: none !important; border-radius: 0 !important; overflow: visible !important; }
+    /* letter-spacing / uppercase shreds Arabic joining when rasterized */
+    * { letter-spacing: 0 !important; text-transform: none !important; }
+    .receipt-amount { overflow: visible !important; padding-bottom: 28px !important; }
+    .receipt-amount strong { line-height: 1.45 !important; padding-bottom: 8px !important; }
   </style>`;
   const injected = html.includes("</head>") ? html.replace("</head>", `${captureCss}</head>`) : `${captureCss}${html}`;
   document.body.appendChild(host);
@@ -615,6 +686,12 @@ async function htmlDocumentToPdfBlob(html: string): Promise<Blob> {
       windowHeight: height,
       scrollX: 0,
       scrollY: 0,
+      onclone(clonedDoc) {
+        clonedDoc.querySelectorAll<HTMLElement>("*").forEach((el) => {
+          el.style.letterSpacing = "0";
+          el.style.textTransform = "none";
+        });
+      },
     });
     const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: orientation === "landscape" ? "l" : "p", compress: true });
     const pageW = pdf.internal.pageSize.getWidth();
@@ -692,6 +769,11 @@ export function openReportPreview(html: string, autoPrint = false) {
 
 export async function downloadReportHtml(html: string, filename: string) {
   if (typeof window === "undefined") return;
+  // Arabic receipts: keep native HTML so shaping stays intact (canvas PDF breaks joins).
+  if (/lang=["']ar["']/i.test(html) && /\bis-receipt\b/.test(html)) {
+    openReportPreview(html, false);
+    return;
+  }
   try {
     const blob = await htmlDocumentToPdfBlob(html);
     triggerBlobDownload(blob, pdfFilename(filename));
@@ -701,11 +783,14 @@ export async function downloadReportHtml(html: string, filename: string) {
   }
 }
 
-/** Build a multi-page A4 PDF, then open the browser print dialog on the PDF (not the live webpage). */
+/** Build document then print. Arabic receipts use HTML print (correct shaping), not canvas PDF. */
 export async function printWazenHtml(build: (logoUrl: string) => string, autoPrint = true) {
   const logoUrl = await resolvePrintLogoUrl();
   const html = build(logoUrl);
   if (typeof window === "undefined") return false;
+  if (/lang=["']ar["']/i.test(html) && /\bis-receipt\b/.test(html)) {
+    return openReportPreview(html, autoPrint);
+  }
   try {
     const blob = await htmlDocumentToPdfBlob(html);
     const url = URL.createObjectURL(blob);

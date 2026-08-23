@@ -12,7 +12,7 @@ import { HouseholdFamilyPanel } from "../components/household/household-family";
 import { WalletForecastPanel } from "../components/forecast/wallet-forecast";
 import { projectCashflow } from "../lib/wallet-forecast";
 import { isPeriodLocked } from "../lib/accounting-periods";
-import { buildReportHtml, printWazenHtml, buildReceiptBodyHtml } from "../lib/reports";
+import { buildReportHtml, printWazenHtml, buildReceiptBodyHtml, buildReceiptQrDataUrl } from "../lib/reports";
 import { wrapPrintDocument } from "../lib/print-document";
 import { composeWhatsAppPhone, splitPhoneParts, toWhatsAppNumber } from "../lib/phone";
 import { apiFetch } from "../lib/client-api";
@@ -660,7 +660,12 @@ function dashboardError(code: string, locale: Locale) {
   return table[code as keyof typeof table] ?? code;
 }
 
-function buildTransactionReceiptParts(transaction: Transaction, data: DashboardData, locale: Locale) {
+function buildTransactionReceiptParts(
+  transaction: Transaction,
+  data: DashboardData,
+  locale: Locale,
+  link?: { receiptUrl?: string; qrDataUrl?: string },
+) {
   const space = data.spaces.find((item) => item.id === transaction.space_id);
   const member = data.members.find((item) => item.id === transaction.member_id);
   const occurrence = (data.personalOccurrences ?? []).find((item) => item.transaction_id === transaction.id);
@@ -693,6 +698,8 @@ function buildTransactionReceiptParts(transaction: Transaction, data: DashboardD
     amountLabel: amount,
     fields,
     reference: transaction.id.slice(0, 8).toUpperCase(),
+    receiptUrl: link?.receiptUrl,
+    qrDataUrl: link?.qrDataUrl,
   });
   const text = locale === "ar"
     ? [
@@ -726,9 +733,32 @@ function buildTransactionReceiptParts(transaction: Transaction, data: DashboardD
 }
 
 function openTransactionReceipt(transaction: Transaction, data: DashboardData, locale: Locale) {
-  const parts = buildTransactionReceiptParts(transaction, data, locale);
-  void consumePlanQuota("print", locale, parts.spaceId).then((quota) => {
+  const base = buildTransactionReceiptParts(transaction, data, locale);
+  void consumePlanQuota("print", locale, base.spaceId).then(async (quota) => {
     if (!quota.ok) return;
+    let receiptUrl = "";
+    let qrDataUrl = "";
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "createReceiptShare",
+          idempotencyKey: crypto.randomUUID(),
+          transactionId: transaction.id,
+          locale,
+        }),
+      });
+      const result = await response.json() as { notification?: { receiptUrl?: string | null } };
+      receiptUrl = String(result.notification?.receiptUrl ?? "").trim();
+      if (receiptUrl && !receiptUrl.startsWith("blob:")) {
+        qrDataUrl = await buildReceiptQrDataUrl(receiptUrl);
+      }
+    } catch { /* print still works without QR */ }
+    const parts = buildTransactionReceiptParts(transaction, data, locale, {
+      receiptUrl: receiptUrl || undefined,
+      qrDataUrl: qrDataUrl || undefined,
+    });
     void printWazenHtml((logoUrl) => wrapPrintDocument({
       locale,
       title: parts.title,
