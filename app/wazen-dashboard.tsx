@@ -15,6 +15,7 @@ import { isPeriodLocked } from "../lib/accounting-periods";
 import { buildReportHtml, printWazenHtml, buildReceiptBodyHtml, buildReceiptQrDataUrl } from "../lib/reports";
 import { wrapPrintDocument } from "../lib/print-document";
 import { composeWhatsAppPhone, splitPhoneParts, toWhatsAppNumber } from "../lib/phone";
+import { openWhatsAppUrl } from "../lib/receipt-share";
 import { apiFetch } from "../lib/client-api";
 import { buildAccountStatementHtml } from "../lib/account-statement";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
@@ -790,7 +791,7 @@ async function shareTransactionWhatsApp(transaction: Transaction, data: Dashboar
     const result = await response.json() as { error?: string; notification?: { whatsappUrl?: string | null } };
     if (!response.ok) throw new Error(result.error ?? "SHARE_FAILED");
     if (result.notification?.whatsappUrl) {
-      window.open(result.notification.whatsappUrl, "_blank", "noopener,noreferrer");
+      openWhatsAppUrl(result.notification.whatsappUrl);
     }
   } catch {
     window.alert(locale === "ar" ? "تعذر تجهيز رابط الإيصال لواتساب." : "Could not prepare the WhatsApp receipt link.");

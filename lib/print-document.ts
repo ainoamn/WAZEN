@@ -1,4 +1,5 @@
 import { escapeHtml } from "./html.ts";
+import { openWhatsAppUrl, whatsappShareUrl } from "./receipt-share.ts";
 
 const OFFICIAL_LOCKUP = "/brand/wazen-lockup.png";
 /** A4 width at 96dpi — html2canvas capture width so tables scale to a real page, not a cropped browser tab. */
@@ -813,7 +814,7 @@ export type SharePdfResult = "shared" | "downloaded" | "cancelled" | "failed";
 /**
  * Attach a generated PDF with the caption text.
  * Prefer the system share sheet (WhatsApp accepts file + text as caption on mobile).
- * Otherwise download the PDF and open wa.me with the text so the user can attach the file.
+ * Otherwise download the PDF and open WhatsApp (app on mobile, Web on desktop).
  */
 export async function shareWazenPdfWithText(input: {
   buildHtml: (logoUrl: string) => string;
@@ -827,6 +828,10 @@ export async function shareWazenPdfWithText(input: {
   const filename = pdfFilename(input.filename ?? "wazen-receipt");
   const title = input.title ?? "WAZEN";
   const text = String(input.text ?? "").trim();
+  const openChat = () => {
+    if (!text) return;
+    openWhatsAppUrl(whatsappShareUrl(input.phone ?? null, text));
+  };
   try {
     const logoUrl = await resolvePrintLogoUrl();
     const html = input.buildHtml(logoUrl);
@@ -847,29 +852,17 @@ export async function shareWazenPdfWithText(input: {
     if (typeof navigator.canShare === "function" && navigator.canShare(filesOnly) && typeof navigator.share === "function") {
       try {
         await navigator.share(filesOnly);
-        const phone = String(input.phone ?? "").replace(/\D/g, "");
-        const wa = phone
-          ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
-          : `https://wa.me/?text=${encodeURIComponent(text)}`;
-        if (text) window.open(wa, "_blank", "noopener,noreferrer");
+        openChat();
         return "shared";
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return "cancelled";
       }
     }
     triggerBlobDownload(blob, filename);
-    const phone = String(input.phone ?? "").replace(/\D/g, "");
-    const wa = phone
-      ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(wa, "_blank", "noopener,noreferrer");
+    openChat();
     return "downloaded";
   } catch {
-    const phone = String(input.phone ?? "").replace(/\D/g, "");
-    const wa = phone
-      ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(wa, "_blank", "noopener,noreferrer");
+    openChat();
     return "failed";
   }
 }

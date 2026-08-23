@@ -18,6 +18,7 @@ import {
   type InstallmentLike,
 } from "../../lib/installments";
 import { formatMoneyMinor } from "../../lib/money";
+import { openWhatsAppUrl } from "../../lib/receipt-share";
 
 type Locale = "ar" | "en";
 
@@ -618,7 +619,7 @@ export function ReceiptChannelModal({
       const result = await response.json() as { error?: string; notification?: { whatsappUrl?: string | null; emailQueued?: boolean; receiptUrl?: string | null } };
       if (!response.ok) throw new Error(result.error ?? "SEND_FAILED");
       if (result.notification?.whatsappUrl && (channel === "whatsapp" || channel === "both")) {
-        window.open(result.notification.whatsappUrl, "_blank", "noopener,noreferrer");
+        openWhatsAppUrl(result.notification.whatsappUrl);
       }
       onDone(locale === "ar"
         ? (channel === "email"

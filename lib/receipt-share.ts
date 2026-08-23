@@ -109,3 +109,52 @@ export function whatsappShareUrl(phoneDigits: string | null | undefined, text: s
   const encoded = encodeURIComponent(text);
   return phone ? `https://wa.me/${phone}?text=${encoded}` : `https://wa.me/?text=${encoded}`;
 }
+
+/** WhatsApp Web compose URL — better on desktop when the Desktop/Web session is logged in. */
+export function whatsappWebShareUrl(phoneDigits: string | null | undefined, text: string) {
+  const phone = String(phoneDigits ?? "").replace(/\D/g, "");
+  const encoded = encodeURIComponent(text);
+  return phone
+    ? `https://web.whatsapp.com/send?phone=${phone}&text=${encoded}`
+    : `https://web.whatsapp.com/send?text=${encoded}`;
+}
+
+export function isLikelyMobileWhatsAppClient(userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "") {
+  if (/Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)) return true;
+  // iPadOS 13+ may report as Macintosh with touch
+  if (typeof navigator !== "undefined" && navigator.maxTouchPoints > 1 && /Macintosh/i.test(userAgent)) return true;
+  return false;
+}
+
+/** Pick wa.me (app) on phones, web.whatsapp.com/send on desktop. */
+export function toDeviceWhatsAppUrl(url: string) {
+  const raw = String(url ?? "").trim();
+  if (!raw) return raw;
+  try {
+    const parsed = new URL(raw);
+    const host = parsed.hostname.replace(/^www\./, "");
+    let phone = "";
+    let text = parsed.searchParams.get("text") ?? "";
+    if (host === "wa.me" || host === "api.whatsapp.com") {
+      phone = parsed.pathname.replace(/\D/g, "");
+    } else if (host === "web.whatsapp.com") {
+      phone = String(parsed.searchParams.get("phone") ?? "").replace(/\D/g, "");
+    } else {
+      return raw;
+    }
+    if (isLikelyMobileWhatsAppClient()) {
+      return whatsappShareUrl(phone || null, text);
+    }
+    return whatsappWebShareUrl(phone || null, text);
+  } catch {
+    return raw;
+  }
+}
+
+/** Open WhatsApp chat with prefilled text — app on mobile, WhatsApp Web on desktop. */
+export function openWhatsAppUrl(url: string) {
+  if (typeof window === "undefined") return false;
+  const target = toDeviceWhatsAppUrl(url);
+  window.open(target, "_blank", "noopener,noreferrer");
+  return true;
+}
