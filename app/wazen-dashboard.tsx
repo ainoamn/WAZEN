@@ -17,7 +17,7 @@ import { wrapPrintDocument } from "../lib/print-document";
 import { composeWhatsAppPhone, splitPhoneParts, toWhatsAppNumber } from "../lib/phone";
 import { openWhatsAppUrl } from "../lib/receipt-share";
 import { apiFetch } from "../lib/client-api";
-import { buildAccountStatementHtml } from "../lib/account-statement";
+import { buildAccountStatementHtml, type StatementTxnFilter } from "../lib/account-statement";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor, currencyScale, parseMoneyToMinor } from "../lib/money";
 import { memberDisplayCreditMinor, netMemberClaim, pendingSettlementsWithCredit } from "../lib/finance";
@@ -533,10 +533,15 @@ function memberPosition(member: Member, data?: DashboardData, spaceId?: string) 
   return { remainingDue, advance, cashCredit, ...net, debit: net.debitMinor, credit: net.creditMinor };
 }
 
-function printSpaceStatement(space: Space | null, data: DashboardData, locale: Locale, accountId?: string | null) {
-  void consumePlanQuota("print", locale, space?.id).then((quota) => {
-    if (!quota.ok) return;
-    void printWazenHtml((logoUrl) => buildAccountStatementHtml({
+function printSpaceStatement(
+  space: Space | null,
+  data: DashboardData,
+  locale: Locale,
+  accountId?: string | null,
+  txnFilter: StatementTxnFilter = "full",
+) {
+  void consumePlanQuota("print", locale, space?.id);
+  void printWazenHtml((logoUrl) => buildAccountStatementHtml({
     locale,
     logoUrl,
     issuerName: data.user.displayName,
@@ -547,10 +552,74 @@ function printSpaceStatement(space: Space | null, data: DashboardData, locale: L
     occurrences: data.personalOccurrences ?? [],
     spaceId: space?.id ?? null,
     accountId: accountId ?? null,
+    txnFilter,
   }), true).then((opened) => {
     if (!opened) window.alert(locale === "ar" ? "اسمح بالنوافذ المنبثقة أو استخدم زر الطباعة داخل المعاينة." : "Allow pop-ups or use Print inside the preview.");
   });
-  });
+}
+
+const STATEMENT_PRINT_OPTIONS: Array<{ id: StatementTxnFilter; ar: string; en: string }> = [
+  { id: "full", ar: "الكشف الكامل", en: "Full statement" },
+  { id: "valid", ar: "المعاملات الصحيحة", en: "Valid transactions" },
+  { id: "voided", ar: "المعاملات المحذوفة", en: "Deleted transactions" },
+  { id: "all", ar: "كل المعاملات", en: "All transactions" },
+];
+
+function StatementPrintMenu({
+  locale,
+  locked,
+  onPick,
+}: {
+  locale: Locale;
+  locked?: boolean;
+  onPick: (filter: StatementTxnFilter) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (event: MouseEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  return (
+    <div className={`statement-print-menu${locked ? " is-plan-locked" : ""}`} ref={wrapRef}>
+      <button
+        type="button"
+        className={locked ? "is-plan-locked" : ""}
+        aria-expanded={open}
+        onClick={() => {
+          if (locked) { goToPricing(); return; }
+          setOpen((current) => !current);
+        }}
+      >
+        <Printer size={16} />
+        {locale === "ar" ? "كشف حساب" : "Statement"}
+        <ChevronDown size={15} />
+        {locked ? <PlanLockBadge locale={locale} /> : null}
+      </button>
+      {open && !locked && (
+        <div className="statement-print-panel" role="menu">
+          <p>{locale === "ar" ? "اختر نوع الطباعة" : "Choose what to print"}</p>
+          {STATEMENT_PRINT_OPTIONS.map((option) => (
+            <button
+              type="button"
+              key={option.id}
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onPick(option.id);
+              }}
+            >
+              {locale === "ar" ? option.ar : option.en}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function printAccountingPeriod(space: Space, period: NonNullable<DashboardData["periods"]>[number], data: DashboardData, locale: Locale) {
@@ -1766,17 +1835,11 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
         : (locale === "ar" ? "مفتوحة" : "Open");
   return <div className="dashboard-stack">
     <div className="space-toolbar">
-      <button
-        type="button"
-        className={planAllowsStatements(planFeaturesOf(data)) ? "" : "is-plan-locked"}
-        onClick={() => {
-          if (!planAllowsStatements(planFeaturesOf(data))) { goToPricing(); return; }
-          printSpaceStatement(space, data, locale);
-        }}
-      >
-        <Printer size={16} />{locale === "ar" ? "كشف حساب" : "Statement"}
-        {planAllowsStatements(planFeaturesOf(data)) ? null : <PlanLockBadge locale={locale} />}
-      </button>
+      <StatementPrintMenu
+        locale={locale}
+        locked={!planAllowsStatements(planFeaturesOf(data))}
+        onPick={(filter) => printSpaceStatement(space, data, locale, null, filter)}
+      />
       <button type="button" onClick={onAdd}><Plus size={16} />{t.add}</button>
       {["trip", "society", "group"].includes(space.type) && <button type="button" onClick={onInvite}><UserPlus size={16} />{t.invite}</button>}
       <button type="button" onClick={onEditWallet}><Pencil size={16} />{locale === "ar" ? "ضبط المحفظة" : "Wallet setup"}</button>
@@ -2260,7 +2323,7 @@ function SpaceTransactionsPanel({ space, data, locale, onAdd, onTxnChanged }: { 
   return <>
     <FoldWrap id={`${space.id}:transactions`} label={locale === "ar" ? "طي العمليات" : "Fold transactions"}>
     <article className="panel list-panel">
-      <div className="panel-heading"><h2>{t.recent}</h2><div className="section-title-actions"><button type="button" className={`secondary-button${canPrint ? "" : " is-plan-locked"}`} onClick={() => { if (!canPrint) { goToPricing(); return; } printSpaceStatement(space, data, locale); }}><Printer size={15} />{locale === "ar" ? "كشف الحركات" : "Statement"}{canPrint ? null : <PlanLockBadge locale={locale} />}</button><button className="secondary-button" onClick={onAdd}><Plus size={15} />{t.add}</button></div></div>
+      <div className="panel-heading"><h2>{t.recent}</h2><div className="section-title-actions"><StatementPrintMenu locale={locale} locked={!canPrint} onPick={(filter) => printSpaceStatement(space, data, locale, null, filter)} /><button className="secondary-button" onClick={onAdd}><Plus size={15} />{t.add}</button></div></div>
       <div className="transaction-list">
         {paged.rows.length ? paged.rows.map((transaction) => (
           <TransactionRow key={transaction.id} transaction={transaction} data={data} locale={locale} onEdit={setEditing} onVoid={(txn) => { if (!working) void voidTxn(txn); }} />

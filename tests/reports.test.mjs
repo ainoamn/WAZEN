@@ -95,6 +95,7 @@ test("account statement looks like a bank ledger with running balance", () => {
     transactions: [
       { id: "aaaaaaaa", space_id: "s1", member_id: "m1", kind: "contribution", amount_minor: 50_000, description_ar: "إيداع اشتراك", description_en: "Dues", occurred_at: "2026-08-01T08:00:00.000Z", status: "approved" },
       { id: "bbbbbbbb", space_id: "s1", member_id: "m1", kind: "expense", amount_minor: 20_000, description_ar: "تذاكر", description_en: "Tickets", occurred_at: "2026-08-02T12:30:00.000Z", status: "approved" },
+      { id: "cccccccc", space_id: "s1", member_id: "m1", kind: "expense", amount_minor: 5_000, description_ar: "ملغاة", description_en: "Voided", occurred_at: "2026-08-03T12:30:00.000Z", status: "voided" },
     ],
   });
   assert.match(html, /كشف حساب تفصيلي/);
@@ -105,6 +106,35 @@ test("account statement looks like a bank ledger with running balance", () => {
   assert.match(html, /wazen-lockup\.png/);
   assert.match(html, /onclick="window.print\(\)"/);
   assert.match(html, /@page \{ size: A4/);
+});
+
+test("account statement print filters valid voided and all scopes", () => {
+  const base = {
+    locale: "ar",
+    logoUrl: "/brand/wazen-lockup.png",
+    issuerName: "أحمد",
+    spaces: [{ id: "s1", name_ar: "جمعية السفر", name_en: "Trip", type: "trip", currency: "OMR", balance_minor: 30_000 }],
+    members: [{ id: "m1", space_id: "s1", display_name: "ماجد" }],
+    transactions: [
+      { id: "aaaaaaaa", space_id: "s1", member_id: "m1", kind: "contribution", amount_minor: 50_000, description_ar: "إيداع اشتراك", description_en: "Dues", occurred_at: "2026-08-01T08:00:00.000Z", status: "approved" },
+      { id: "bbbbbbbb", space_id: "s1", member_id: "m1", kind: "expense", amount_minor: 5_000, description_ar: "عملية ملغاة", description_en: "Voided", occurred_at: "2026-08-03T12:30:00.000Z", status: "voided" },
+      { id: "dddddddd", space_id: "s1", member_id: "m1", kind: "expense", amount_minor: 1_000, description_ar: "مستبدلة", description_en: "Replaced", occurred_at: "2026-08-04T12:30:00.000Z", status: "superseded" },
+    ],
+    spaceId: "s1",
+  };
+  const valid = buildAccountStatementHtml({ ...base, txnFilter: "valid" });
+  assert.match(valid, /كشف المعاملات الصحيحة/);
+  assert.match(valid, /إيداع اشتراك/);
+  assert.doesNotMatch(valid, /عملية ملغاة/);
+  const voided = buildAccountStatementHtml({ ...base, txnFilter: "voided" });
+  assert.match(voided, /كشف المعاملات المحذوفة/);
+  assert.match(voided, /عملية ملغاة/);
+  assert.doesNotMatch(voided, /إيداع اشتراك/);
+  const all = buildAccountStatementHtml({ ...base, txnFilter: "all" });
+  assert.match(all, /كشف كل المعاملات/);
+  assert.match(all, /إيداع اشتراك/);
+  assert.match(all, /عملية ملغاة/);
+  assert.match(all, /مستبدلة/);
 });
 
 test("print document CSS uses large readable fonts for paper output", async () => {
