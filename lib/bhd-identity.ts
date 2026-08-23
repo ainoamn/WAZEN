@@ -86,13 +86,11 @@ export function identityIssuer() {
   return (configured || DEFAULT_BHD_IDENTITY_ISSUER).replace(/\/$/, "");
 }
 
-/** Host used for browser authorize / end-session. Prefer the Vercel identity origin so Oman can reach it. */
+/** Host used for browser authorize / end-session. Default = Issuer (`id.bhd-om.com`). Override with `BHD_IDENTITY_ENDPOINT` (e.g. `https://one-bhd.vercel.app`) when the canonical host is unreachable. */
 export function identityEndpointBase() {
   const endpoint = process.env.BHD_IDENTITY_ENDPOINT?.trim();
   if (endpoint) return endpoint.replace(/\/$/, "");
-  const configured = process.env.BHD_IDENTITY_ISSUER?.trim().replace(/\/$/, "") || "";
-  if (!configured || configured === DEFAULT_BHD_IDENTITY_ISSUER) return BHD_IDENTITY_VERCEL_ORIGIN;
-  return configured;
+  return identityIssuer();
 }
 
 /**

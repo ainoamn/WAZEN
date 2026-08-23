@@ -21,8 +21,8 @@ test("sessionCookieFromStore reads current and legacy cookie names", () => {
   assert.equal(sessionCookieFromStore({ get: () => undefined }), "");
 });
 
-test("idle cut-off is ten minutes and fails closed on missing timestamps", () => {
-  assert.equal(SESSION_IDLE_MS, 10 * 60 * 1000);
+test("idle cut-off is 48 hours and fails closed on missing timestamps", () => {
+  assert.equal(SESSION_IDLE_MS, 48 * 60 * 60 * 1000);
   const now = Date.parse("2026-08-17T12:00:00.000Z");
   assert.equal(isSessionIdle(new Date(now - SESSION_IDLE_MS + 1_000).toISOString(), now), false);
   assert.equal(isSessionIdle(new Date(now - SESSION_IDLE_MS - 1).toISOString(), now), true);

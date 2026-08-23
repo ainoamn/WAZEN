@@ -10,7 +10,7 @@ Status reflects repository controls, not a certification or a guarantee of zero 
 | Duplicate payments/webhook races | Conditional payment UPDATE by current status; Postgres plpgsql guard on Neon; SQLite RAISE triggers skipped only when non-portable |
 | Public invoice data minimization | No public invoice endpoint exists; E2E asserts unauthenticated path is 404 |
 | Payment-setting SSRF | Exact HTTPS allowlist, no ports/credentials/private hosts; email redirect denial/timeout |
-| Password change/reset/session revocation | Implemented with UI; change/reset revoke sessions and issue one replacement session. Cookies are browser-session (no Expires). Idle > 10 minutes revokes the row and the client signs out |
+| Password change/reset/session revocation | Implemented with UI; change/reset revoke sessions and issue one replacement session. Cookies are browser-session (no Expires). Idle > 48 hours (sliding) revokes the row; `SessionKeepAlive` + `GET /api/auth/me` renew on use |
 | CSRF/TOTP/API keys | Session-bound CSRF; TOTP re-enroll stores a pending secret until confirm; ±1 step/replay prevention; hashed scoped expiring API keys shown once |
 | Encryption rotation | AES-256-GCM envelope, key versions, HKDF purpose separation, multi-key decrypt/rotation helper |
 | Invoice numbering/Decimal | Atomic UPSERT/RETURNING sequence; exact minor-unit parsing with BigInt and basis-point tax |

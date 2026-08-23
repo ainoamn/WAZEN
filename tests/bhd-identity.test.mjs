@@ -70,10 +70,10 @@ test("BHD identity is on with frozen client id; secret is optional for first-par
   process.env.BHD_OAUTH_CLIENT_ID = BHD_OAUTH_CLIENT_ID;
   assert.equal(isBhdIdentityConfigured(), true);
   assert.equal(identityIssuer(), DEFAULT_BHD_IDENTITY_ISSUER);
-  assert.equal(identityEndpointBase(), BHD_IDENTITY_VERCEL_ORIGIN);
+  assert.equal(identityEndpointBase(), DEFAULT_BHD_IDENTITY_ISSUER);
   assert.equal(identityApiBase(), DEFAULT_BHD_IDENTITY_ISSUER);
   process.env.BHD_IDENTITY_ISSUER = DEFAULT_BHD_IDENTITY_ISSUER;
-  assert.equal(identityEndpointBase(), BHD_IDENTITY_VERCEL_ORIGIN);
+  assert.equal(identityEndpointBase(), DEFAULT_BHD_IDENTITY_ISSUER);
   assert.equal(identityApiBase(), DEFAULT_BHD_IDENTITY_ISSUER);
   process.env.BHD_IDENTITY_ENDPOINT = BHD_IDENTITY_VERCEL_ORIGIN;
   process.env.BHD_IDENTITY_ISSUER = "https://id.example.invalid";
@@ -261,6 +261,9 @@ test("Wazen BHD routes follow the product card in the identity spec", () => {
   assert.match(identity, /code_challenge_method/);
   assert.match(callback, /exchangeBhdCode/);
   assert.match(callback, /upsertBhdUser/);
+  const logout = fs.readFileSync(path.join(root, "app/api/auth/bhd/logout/route.ts"), "utf8");
+  assert.match(logout, /revokeSession/);
+  assert.match(logout, /bhdEndSessionUrl/);
   assert.match(runtime, /SCHEMA_VERSION = 13/);
   assert.match(runtime, /bhd_sub/);
   assert.match(runtime, /await ensureBhdSubColumn\(db\)/);

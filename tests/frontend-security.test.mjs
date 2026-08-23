@@ -188,6 +188,10 @@ test("BHD SSO start/callback exist and login can wrap identity", () => {
   assert.match(form, /api\/auth\/bhd\/start/);
   assert.match(form, /الدخول بحساب BHD/);
   assert.match(logout, /endSessionUrl/);
+  assert.match(logout, /\/api\/auth\/bhd\/logout/);
+  assert.match(fs.readFileSync(path.join(root, "app/api/auth/bhd/logout/route.ts"), "utf8"), /bhdEndSessionUrl/);
+  assert.match(fs.readFileSync(path.join(root, "components/auth/SessionKeepAlive.tsx"), "utf8"), /\/api\/auth\/me/);
+  assert.match(fs.readFileSync(path.join(root, "docs/BHD-PRODUCT-SSO-ADMIN.md"), "utf8"), /admin-entry/);
   assert.match(home, /BhdAppSwitcher/);
   assert.match(home, /completeClientLogout/);
   assert.match(dashboard, /BhdAppSwitcher/);
@@ -231,7 +235,9 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   assert.match(guide, /12\.2\.1 استكشاف أعطال الدخول/);
   assert.match(guide, /admin-entry/);
   assert.match(guide, /0\.7/);
-  assert.match(guide, /التطبيق غير نشط/);
+  assert.match(guide, /BHD-PRODUCT-SSO-ADMIN/);
+  assert.match(landing, /www\.bhd-om\.com\/about/);
+  assert.match(landing, /www\.bhd-om\.com\/brand/);
   assert.match(landing, /commerce-footer-top/);
   assert.match(landing, /commerce-footer-bottom/);
   assert.match(home, /window\.location\.replace\(clientSignInPath\("\/home"\)\)/);

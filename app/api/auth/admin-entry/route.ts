@@ -21,6 +21,5 @@ export async function GET(request: Request) {
   const returnTo = adminReturnTo(request);
   return NextResponse.redirect(
     new URL(`/api/auth/bhd/start?returnTo=${encodeURIComponent(returnTo)}`, origin),
-    303,
   );
 }

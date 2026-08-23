@@ -1,7 +1,8 @@
-/** Browser session cookies (no Expires) plus a 10-minute idle cut-off. */
+/** Browser session cookies (no Expires) plus a 48-hour sliding idle cut-off (BHD §0.2). */
 
-export const SESSION_IDLE_MS = 10 * 60 * 1000;
-export const SESSION_MAX_MS = 12 * 60 * 60 * 1000;
+export const SESSION_IDLE_MS = 48 * 60 * 60 * 1000;
+export const SESSION_MAX_MS = 48 * 60 * 60 * 1000;
+export const SESSION_IDLE_MAX_AGE_SEC = Math.floor(SESSION_IDLE_MS / 1000);
 
 export function sessionCookieName() {
   return process.env.NODE_ENV === "production" ? "__Host-wazen_session" : "wazen_session";

@@ -138,7 +138,11 @@ export async function authenticateRequest(db: D1Database, request: Request): Pro
     await db.prepare("DELETE FROM auth_sessions WHERE id=?").bind(row.session_id).run();
     return null;
   }
-  await db.prepare("UPDATE auth_sessions SET last_seen_at=? WHERE id=?").bind(new Date().toISOString(), row.session_id).run();
+  // Sliding idle + absolute expiry renew (BHD §0.2 — 48h window).
+  const touchedAt = new Date();
+  const nextExpiry = new Date(touchedAt.getTime() + SESSION_MAX_MS).toISOString();
+  await db.prepare("UPDATE auth_sessions SET last_seen_at=?, expires_at=? WHERE id=?")
+    .bind(touchedAt.toISOString(), nextExpiry, row.session_id).run();
   return { id: row.id, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url, isDemo: false, authType: "session" };
 }
 

@@ -151,6 +151,8 @@ export default function LandingPage() {
       <div className="commerce-footer-bottom">
         <nav>
           <a href="/about">{l("من نحن", "About")}</a>
+          <a href="https://www.bhd-om.com/about">{l("عن الشركة", "About the company")}</a>
+          <a href="https://www.bhd-om.com/brand">{l("هوية الشركة", "Brand identity")}</a>
           <a href="/pricing">{l("الباقات", "Pricing")}</a>
           <a href="/privacy">{l("الخصوصية", "Privacy")}</a>
           <a href="/terms">{l("الشروط", "Terms")}</a>

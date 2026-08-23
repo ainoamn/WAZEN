@@ -36,5 +36,6 @@ export async function completeClientLogout() {
   clearDashboardCache();
   resetAppPrefetch();
   notifyBrowserSessionChange(null);
-  window.location.assign(endSessionUrl || "/login?local=1");
+  // After product logout: identity end-session, else BHD start (never parallel local admin).
+  window.location.assign(endSessionUrl || "/api/auth/bhd/logout");
 }
