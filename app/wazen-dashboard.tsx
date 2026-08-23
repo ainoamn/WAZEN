@@ -49,6 +49,7 @@ import {
   MessageCircle,
   Globe2,
   HandCoins,
+  History,
   House,
   Landmark,
   LayoutDashboard,
@@ -148,6 +149,8 @@ type Transaction = {
   occurred_at: string;
   account_id?: string | null;
   user_id?: string | null;
+  modified_at?: string | null;
+  edit_count?: number | null;
 };
 type CircleTurn = { id: string; space_id: string; member_id: string; display_name: string; turn_number: number; status: string; amount_minor: number };
 type TripExpense = { id: string; space_id: string; paid_by_member_id: string; paid_by_name: string; amount_minor: number; description: string; occurred_at: string; paid_from?: string };
@@ -448,6 +451,15 @@ function spaceLedger(space: Space, data: DashboardData) {
 
 function isLiveTransaction(transaction: { status?: string }) {
   return (transaction.status ?? "approved") === "approved";
+}
+
+/** Hide edit-replacements from lists; voided rows stay visible as cancelled. */
+function isListedTransaction(transaction: { status?: string }) {
+  return (transaction.status ?? "approved") !== "superseded";
+}
+
+function transactionWasEdited(transaction: { modified_at?: string | null; edit_count?: number | null }) {
+  return Boolean(transaction.modified_at) || Number(transaction.edit_count ?? 0) > 0;
 }
 
 function transactionStatusLabel(status: string | undefined, locale: Locale) {
@@ -1544,7 +1556,7 @@ function RecentTransactions({ data, locale, onView, onChanged }: { data: Dashboa
   const [working, setWorking] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
-  const paged = useMemo(() => pageTransactions(sortTransactionsNewest(data.transactions), page, pageSize), [data.transactions, page, pageSize]);
+  const paged = useMemo(() => pageTransactions(sortTransactionsNewest(data.transactions.filter(isListedTransaction)), page, pageSize), [data.transactions, page, pageSize]);
   const voidTxn = async (transaction: Transaction) => {
     if (working) return;
     if (!window.confirm(locale === "ar" ? "إلغاء هذه العملية؟ تبقى في السجل بحالة ملغاة ويُعكس أثرها على الرصيد." : "Void this transaction? It stays in the ledger as voided and its balance effect is reversed.")) return;
@@ -1572,19 +1584,23 @@ function TransactionRow({ transaction, data, locale, onEdit, onVoid }: { transac
   const space = data.spaces.find((item) => item.id === transaction.space_id);
   const member = data.members.find((item) => item.id === transaction.member_id);
   const locked = isPeriodLocked((data.periods ?? []).filter((period) => period.space_id === transaction.space_id), transaction.occurred_at);
+  const edited = transactionWasEdited(transaction);
+  const [historyOpen, setHistoryOpen] = useState(false);
   return <div className={`transaction-row${isLiveTransaction(transaction) ? "" : " is-inactive"}`}>
     <div className={`transaction-icon ${transaction.kind}`}><Icon size={17} /></div>
     <div className="transaction-main">
-      <strong>{transactionName(transaction, locale)}</strong>
-      <span>{space ? nameOf(space, locale) : "—"}{member ? ` · ${member.display_name}` : ""} · {new Intl.DateTimeFormat(locale === "ar" ? "ar-OM" : "en-GB", { day: "numeric", month: "short" }).format(new Date(transaction.occurred_at))} · {transactionStatusLabel(transaction.status, locale)}{locked ? (locale === "ar" ? " · الفترة مغلقة" : " · period closed") : ""}</span>
+      <strong>{transactionName(transaction, locale)}{edited ? <em className="txn-edited-badge">{locale === "ar" ? "معدّلة" : "Edited"}</em> : null}</strong>
+      <span>{space ? nameOf(space, locale) : "—"}{member ? ` · ${member.display_name}` : ""} · {new Intl.DateTimeFormat(locale === "ar" ? "ar-OM" : "en-GB", { day: "numeric", month: "short" }).format(new Date(transaction.occurred_at))} · {transactionStatusLabel(transaction.status, locale)}{edited && transaction.edit_count ? (locale === "ar" ? ` · ${transaction.edit_count} تعديل` : ` · ${transaction.edit_count} edit${Number(transaction.edit_count) === 1 ? "" : "s"}`) : ""}{locked ? (locale === "ar" ? " · الفترة مغلقة" : " · period closed") : ""}</span>
     </div>
     <strong className={positive ? "amount-positive" : "amount-negative"}>{positive ? "+" : "−"}{formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale)}</strong>
     <div className="transaction-actions">
       <button type="button" title={locale === "ar" ? "إيصال" : "Receipt"} onClick={() => openTransactionReceipt(transaction, data, locale)}><Printer size={15} /></button>
       <button type="button" className={planHasFeature(planFeaturesOf(data), "whatsapp") ? "" : "is-plan-locked"} title="WhatsApp" onClick={() => { void shareTransactionWhatsApp(transaction, data, locale); }}><MessageCircle size={15} />{planHasFeature(planFeaturesOf(data), "whatsapp") ? null : <PlanLockBadge locale={locale} />}</button>
+      {edited && <button type="button" title={locale === "ar" ? "سجل التعديلات" : "Edit history"} onClick={() => setHistoryOpen(true)}><History size={15} /></button>}
       {onEdit && !locked && isLiveTransaction(transaction) && <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => onEdit(transaction)}><Pencil size={15} /></button>}
       {onVoid && !locked && isLiveTransaction(transaction) && <button type="button" className="danger" title={locale === "ar" ? "إلغاء" : "Void"} onClick={() => onVoid(transaction)}><Trash2 size={15} /></button>}
     </div>
+    {historyOpen && <TransactionHistoryModal data={data} locale={locale} transaction={transaction} onClose={() => setHistoryOpen(false)} />}
   </div>;
 }
 
@@ -1820,7 +1836,9 @@ function TransactionsView({ data, locale, onChanged }: { data: DashboardData; lo
   const t = copy[locale];
   const canExport = planHasFeature(planFeaturesOf(data), "exports");
   const rows = useMemo(() => {
-    const filtered = data.transactions.filter((transaction) => transactionName(transaction, locale).toLowerCase().includes(query.toLowerCase()));
+    const filtered = data.transactions
+      .filter(isListedTransaction)
+      .filter((transaction) => transactionName(transaction, locale).toLowerCase().includes(query.toLowerCase()));
     return sortTransactionsNewest(filtered);
   }, [data.transactions, locale, query]);
   const paged = pageTransactions(rows, page, pageSize);
@@ -2116,7 +2134,7 @@ function SpaceTransactionsPanel({ space, data, locale, onAdd, onTxnChanged }: { 
   const [pageSize, setPageSize] = useState(5);
   const canPrint = planAllowsStatements(planFeaturesOf(data)) && quotaRemaining(data.entitlements?.usage?.printsThisMonth ?? 0, data.entitlements?.printLimit ?? 0) > 0;
   const transactions = useMemo(
-    () => sortTransactionsNewest(data.transactions.filter((transaction) => transaction.space_id === space.id)),
+    () => sortTransactionsNewest(data.transactions.filter((transaction) => transaction.space_id === space.id && isListedTransaction(transaction))),
     [data.transactions, space.id],
   );
   const paged = pageTransactions(transactions, page, pageSize);
@@ -2198,6 +2216,9 @@ function EditTransactionModal({ data, locale, transaction, onClose, onSaved }: {
   };
   return <Modal title={locale === "ar" ? "تعديل العملية" : "Edit transaction"} onClose={onClose}>
     <form className="modal-form" onSubmit={submit}>
+      <p className="modal-hint">{locale === "ar"
+        ? "يُحفظ التعديل على نفس العملية مع تسجيل النسخة السابقة في سجل التعديلات."
+        : "Changes update this same transaction and keep the previous version in edit history."}</p>
       <div className="segmented-control">{["expense", "income", "contribution", "reimbursement"].map((item) => <button type="button" key={item} className={kind === item ? "active" : ""} onClick={() => setKind(item)}>{t[item as keyof typeof t] as string}</button>)}</div>
       <div className="form-row">
         <label><span>{t.amount}</span><div className="money-input"><input required min="0.01" step="0.001" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>
@@ -2209,6 +2230,81 @@ function EditTransactionModal({ data, locale, transaction, onClose, onSaved }: {
       {error && <p className="modal-error">{error}</p>}
       <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : t.save}</button></div>
     </form>
+  </Modal>;
+}
+
+type RevisionRow = {
+  id: string;
+  edited_at: string;
+  editor_name: string;
+  kind: string;
+  allocation: string;
+  amount_minor: number;
+  member_id: string | null;
+  description_ar: string;
+  description_en: string;
+  occurred_at: string;
+};
+
+function TransactionHistoryModal({ data, locale, transaction, onClose }: { data: DashboardData; locale: Locale; transaction: Transaction; onClose: () => void }) {
+  const space = data.spaces.find((item) => item.id === transaction.space_id);
+  const [rows, setRows] = useState<RevisionRow[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await apiFetch("/api/dashboard", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action: "listTransactionRevisions",
+            idempotencyKey: crypto.randomUUID(),
+            transactionId: transaction.id,
+          }),
+        });
+        const result = await response.json() as { revisions?: RevisionRow[]; error?: string };
+        if (!response.ok) throw new Error(result.error ?? "HISTORY_FAILED");
+        if (!cancelled) setRows(result.revisions ?? []);
+      } catch (caught) {
+        if (!cancelled) setError(caught instanceof Error ? caught.message : "HISTORY_FAILED");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [transaction.id]);
+  const memberLabel = (id: string | null) => {
+    if (!id) return "—";
+    return data.members.find((member) => member.id === id)?.display_name ?? id.slice(0, 8);
+  };
+  const formatWhen = (value: string) => new Date(value).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB");
+  return <Modal title={locale === "ar" ? "سجل تعديلات العملية" : "Transaction edit history"} onClose={onClose}>
+    <div className="txn-history">
+      <div className="txn-history-current">
+        <strong>{locale === "ar" ? "الحالة الحالية" : "Current version"}</strong>
+        <span>{transactionName(transaction, locale)}</span>
+        <span>{formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale)} · {formatWhen(transaction.occurred_at)}</span>
+        {transaction.modified_at ? <span>{locale === "ar" ? `آخر تعديل: ${formatWhen(transaction.modified_at)}` : `Last edited: ${formatWhen(transaction.modified_at)}`}</span> : null}
+      </div>
+      {!rows && !error && <p className="modal-hint">{locale === "ar" ? "جارٍ تحميل السجل…" : "Loading history…"}</p>}
+      {error && <p className="modal-error">{error}</p>}
+      {rows && !rows.length && <p className="modal-hint">{locale === "ar" ? "لا توجد نسخ سابقة بعد." : "No previous versions yet."}</p>}
+      {rows?.map((row, index) => (
+        <article key={row.id} className="txn-history-item">
+          <header>
+            <strong>{locale === "ar" ? `نسخة سابقة #${rows.length - index}` : `Previous #${rows.length - index}`}</strong>
+            <span>{formatWhen(row.edited_at)} · {row.editor_name}</span>
+          </header>
+          <dl>
+            <div><dt>{locale === "ar" ? "الوصف" : "Description"}</dt><dd>{locale === "ar" ? row.description_ar : row.description_en}</dd></div>
+            <div><dt>{locale === "ar" ? "المبلغ" : "Amount"}</dt><dd>{formatMoney(row.amount_minor, space?.currency ?? "OMR", locale)}</dd></div>
+            <div><dt>{locale === "ar" ? "النوع" : "Type"}</dt><dd>{row.kind}</dd></div>
+            <div><dt>{locale === "ar" ? "العضو" : "Member"}</dt><dd>{memberLabel(row.member_id)}</dd></div>
+            <div><dt>{locale === "ar" ? "التاريخ" : "Date"}</dt><dd>{formatWhen(row.occurred_at)}</dd></div>
+          </dl>
+        </article>
+      ))}
+      <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{locale === "ar" ? "إغلاق" : "Close"}</button></div>
+    </div>
   </Modal>;
 }
 

@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 14;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -220,9 +220,34 @@ async function ensureSchemaPatches(db: D1Database) {
     try { await db.prepare("ALTER TABLE accounting_periods ADD COLUMN reopen_count INTEGER NOT NULL DEFAULT 0").run(); } catch { /* exists */ }
   }
   const txnColumns = await db.prepare("PRAGMA table_info(transactions)").all<{ name: string }>();
-  if (!txnColumns.results.some((column) => column.name === "account_id")) {
+  const txnNames = new Set(txnColumns.results.map((column) => column.name));
+  if (!txnNames.has("account_id")) {
     try { await db.prepare("ALTER TABLE transactions ADD COLUMN account_id TEXT").run(); } catch { /* exists */ }
   }
+  if (!txnNames.has("modified_at")) {
+    try { await db.prepare("ALTER TABLE transactions ADD COLUMN modified_at TEXT").run(); } catch { /* exists */ }
+  }
+  if (!txnNames.has("edit_count")) {
+    try { await db.prepare("ALTER TABLE transactions ADD COLUMN edit_count INTEGER NOT NULL DEFAULT 0").run(); } catch { /* exists */ }
+  }
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS transaction_revisions (
+      id TEXT PRIMARY KEY,
+      transaction_id TEXT NOT NULL,
+      edited_by TEXT NOT NULL,
+      editor_name TEXT NOT NULL,
+      edited_at TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      allocation TEXT NOT NULL,
+      amount_minor INTEGER NOT NULL,
+      member_id TEXT,
+      description_ar TEXT NOT NULL,
+      description_en TEXT NOT NULL,
+      occurred_at TEXT NOT NULL,
+      status TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_transaction_revisions_txn ON transaction_revisions(transaction_id, edited_at)"),
+  ]);
   const personalRuleCols = await db.prepare("PRAGMA table_info(personal_rules)").all<{ name: string }>();
   if (!personalRuleCols.results.some((column) => column.name === "schedule")) {
     try { await db.prepare("ALTER TABLE personal_rules ADD COLUMN schedule TEXT NOT NULL DEFAULT 'monthly'").run(); } catch { /* exists */ }
@@ -365,7 +390,9 @@ async function initializeSchema(db: D1Database) {
       description_en TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'approved',
       occurred_at TEXT NOT NULL,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      modified_at TEXT,
+      edit_count INTEGER NOT NULL DEFAULT 0
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS platform_roles (
       user_id TEXT PRIMARY KEY,

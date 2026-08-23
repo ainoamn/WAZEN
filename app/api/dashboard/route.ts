@@ -65,6 +65,8 @@ type TransactionRow = {
   occurred_at: string;
   created_at: string;
   account_id?: string | null;
+  modified_at?: string | null;
+  edit_count?: number | null;
 };
 
 type PersonalOccurrenceRow = {
@@ -1932,12 +1934,16 @@ export async function POST(request: Request) {
       if (!parsed.success) throw new ApiError(400, "INVALID_TRANSACTION");
       const existing = await db.prepare("SELECT * FROM transactions WHERE id=?").bind(parsed.data.transactionId).first<TransactionRow>();
       if (!existing) throw new ApiError(404, "TRANSACTION_NOT_FOUND");
+      if (existing.status !== "approved") throw new ApiError(409, "TRANSACTION_NOT_EDITABLE");
       const space = await authorizeSpace(db, user, existing.space_id, "transact");
       await assertPeriodWritable(db, existing.space_id, existing.occurred_at);
-      const linkedOccurrence = await db.prepare(`SELECT o.id, o.rule_id, r.kind FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id WHERE o.transaction_id=?`)
+      const occurredAt = parsed.data.occurredAt ?? existing.occurred_at;
+      if (occurredAt !== existing.occurred_at) {
+        await assertPeriodWritable(db, existing.space_id, occurredAt);
+      }
+      const linkedOccurrence = await db.prepare(`SELECT o.id, o.rule_id, r.kind, o.actual_minor FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id WHERE o.transaction_id=?`)
         .bind(existing.id)
-        .first<{ id: string; rule_id: string; kind: string }>();
-      await voidApprovedTransaction(db, existing, user.id, { recordStatus: "superseded", closeOccurrence: false });
+        .first<{ id: string; rule_id: string; kind: string; actual_minor: number | null }>();
 
       let kind = parsed.data.kind ?? existing.kind;
       let allocation = parsed.data.allocation ?? existing.allocation;
@@ -1950,47 +1956,137 @@ export async function POST(request: Request) {
         const member = await db.prepare("SELECT id FROM members WHERE id=? AND space_id=? AND status='active'").bind(memberId, existing.space_id).first();
         if (!member) throw new ApiError(400, "INVALID_MEMBER");
       }
-      const balanceDelta = transactionBalanceDelta(kind, allocation, amountMinor);
+      const oldDelta = transactionBalanceDelta(existing.kind, existing.allocation, Number(existing.amount_minor));
+      const newDelta = transactionBalanceDelta(kind, allocation, amountMinor);
       const refreshed = await db.prepare("SELECT balance_minor FROM spaces WHERE id=?").bind(existing.space_id).first<{ balance_minor: number }>();
-      if (space.type === "personal" && balanceDelta < 0 && Number(refreshed?.balance_minor ?? 0) + balanceDelta < 0) throw new ApiError(409, "INSUFFICIENT_FUNDS");
-      const transactionId = crypto.randomUUID();
-      const occurredAt = parsed.data.occurredAt ?? existing.occurred_at;
-      const createdAt = now();
+      if (space.type === "personal" && Number(refreshed?.balance_minor ?? 0) - oldDelta + newDelta < 0) throw new ApiError(409, "INSUFFICIENT_FUNDS");
+
+      const editedAt = now();
+      const revisionId = crypto.randomUUID();
+      const editCount = Number(existing.edit_count ?? 0) + 1;
       const description = parsed.data.description;
-      const entryId = crypto.randomUUID();
       const reserveWithdrawal = allocation === "personal_reserve" && kind === "reimbursement";
-      const debitAccount = reserveWithdrawal ? "liability:member_reserve" : balanceDelta >= 0 ? "asset:cash" : (kind === "reimbursement" ? "liability:member_payable" : "expense:general");
-      const creditAccount = reserveWithdrawal ? "asset:cash" : balanceDelta >= 0 ? (allocation === "personal_reserve" ? "liability:member_reserve" : "income:general") : "asset:cash";
-      await db.batch([
-        db.prepare("INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)")
-          .bind(transactionId, existing.space_id, user.id, memberId, kind, allocation, amountMinor, description, description, occurredAt, createdAt),
-        db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id = ?").bind(balanceDelta, existing.space_id),
-        db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
-          .bind(entryId, existing.space_id, transactionId, user.id, description, occurredAt, createdAt),
-        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
-          .bind(crypto.randomUUID(), entryId, debitAccount, memberId, amountMinor, 0, createdAt),
-        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
-          .bind(crypto.randomUUID(), entryId, creditAccount, memberId, 0, amountMinor, createdAt),
-        prepareAudit(db, { userId: user.id, action: "transaction.updated", entityType: "transaction", entityId: transactionId, metadata: { replaces: existing.id, spaceId: existing.space_id, kind, allocation, amountMinor, memberId }, createdAt }),
+      const debitAccount = reserveWithdrawal ? "liability:member_reserve" : newDelta >= 0 ? "asset:cash" : (kind === "reimbursement" ? "liability:member_payable" : "expense:general");
+      const creditAccount = reserveWithdrawal ? "asset:cash" : newDelta >= 0 ? (allocation === "personal_reserve" ? "liability:member_reserve" : "income:general") : "asset:cash";
+
+      const statements: ReturnType<D1Database["prepare"]>[] = [
+        db.prepare(`INSERT INTO transaction_revisions (
+          id, transaction_id, edited_by, editor_name, edited_at,
+          kind, allocation, amount_minor, member_id, description_ar, description_en, occurred_at, status
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+          revisionId,
+          existing.id,
+          user.id,
+          user.displayName,
+          editedAt,
+          existing.kind,
+          existing.allocation,
+          Number(existing.amount_minor),
+          existing.member_id,
+          existing.description_ar,
+          existing.description_en,
+          existing.occurred_at,
+          existing.status,
+        ),
+        db.prepare(`UPDATE transactions SET
+          member_id=?, kind=?, allocation=?, amount_minor=?,
+          description_ar=?, description_en=?, occurred_at=?,
+          modified_at=?, edit_count=?
+          WHERE id=? AND status='approved'`)
+          .bind(memberId, kind, allocation, amountMinor, description, description, occurredAt, editedAt, editCount, existing.id),
+        prepareAudit(db, {
+          userId: user.id,
+          action: "transaction.updated",
+          entityType: "transaction",
+          entityId: existing.id,
+          metadata: {
+            revisionId,
+            spaceId: existing.space_id,
+            kind,
+            allocation,
+            amountMinor,
+            memberId,
+            beforeAmount: existing.amount_minor,
+            beforeKind: existing.kind,
+          },
+          createdAt: editedAt,
+        }),
         await periodWriteEvent(db, user, existing.space_id, occurredAt, {
           action: "transaction.updated",
           entityType: "transaction",
-          entityId: transactionId,
-          summaryAr: `${user.displayName} عدّل حركة ${existing.description_ar} ← ${description}`,
-          summaryEn: `${user.displayName} edited ${existing.description_en} → ${description}`,
-          metadata: { replaces: existing.id, beforeAmount: existing.amount_minor, afterAmount: amountMinor, beforeKind: existing.kind, afterKind: kind },
+          entityId: existing.id,
+          summaryAr: `${user.displayName} عدّل حركة «${existing.description_ar}»`,
+          summaryEn: `${user.displayName} edited “${existing.description_en}”`,
+          metadata: {
+            revisionId,
+            beforeAmount: existing.amount_minor,
+            afterAmount: amountMinor,
+            beforeKind: existing.kind,
+            afterKind: kind,
+          },
         }),
-      ]);
+      ];
+
+      const journal = await db.prepare("SELECT id FROM journal_entries WHERE transaction_id=? ORDER BY created_at DESC LIMIT 1")
+        .bind(existing.id)
+        .first<{ id: string }>();
+      if (journal) {
+        statements.push(db.prepare("UPDATE journal_entries SET description=?, occurred_at=? WHERE id=?").bind(description, occurredAt, journal.id));
+        statements.push(db.prepare("DELETE FROM journal_lines WHERE entry_id=?").bind(journal.id));
+        statements.push(db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(crypto.randomUUID(), journal.id, debitAccount, memberId, amountMinor, 0, editedAt));
+        statements.push(db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(crypto.randomUUID(), journal.id, creditAccount, memberId, 0, amountMinor, editedAt));
+      }
+
       if (linkedOccurrence) {
-        await db.batch([
-          db.prepare("UPDATE personal_occurrences SET status='posted', actual_minor=?, transaction_id=? WHERE id=?")
-            .bind(amountMinor, transactionId, linkedOccurrence.id),
-          ...(linkedOccurrence.kind === "expense"
-            ? [db.prepare("UPDATE personal_rules SET paid_minor = paid_minor + ? WHERE id=?").bind(amountMinor, linkedOccurrence.rule_id)]
-            : []),
-        ]);
+        const previousActual = Number(linkedOccurrence.actual_minor ?? existing.amount_minor);
+        statements.push(db.prepare("UPDATE personal_occurrences SET status='posted', actual_minor=? WHERE id=?")
+          .bind(amountMinor, linkedOccurrence.id));
+        if (linkedOccurrence.kind === "expense") {
+          const paidDelta = amountMinor - previousActual;
+          if (paidDelta !== 0) {
+            statements.push(db.prepare("UPDATE personal_rules SET paid_minor = MAX(0, paid_minor + ?) WHERE id=?")
+              .bind(paidDelta, linkedOccurrence.rule_id));
+          }
+        }
+      }
+
+      await db.batch(statements);
+      try {
+        await rebuildSpaceBalance(db, [existing.space_id]);
+      } catch {
+        await writeApprovedCashBalance(db, existing.space_id);
       }
       await reconcileMemberLedgers(db, [existing.space_id]);
+    } else if (action === "listTransactionRevisions") {
+      const parsed = z.object({ transactionId: z.string().min(1).max(120) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_TRANSACTION");
+      const txn = await db.prepare("SELECT id, space_id, status FROM transactions WHERE id=?").bind(parsed.data.transactionId).first<TransactionRow>();
+      if (!txn) throw new ApiError(404, "TRANSACTION_NOT_FOUND");
+      await authorizeSpace(db, user, txn.space_id, "read");
+      const rows = await db.prepare(`SELECT id, transaction_id, edited_by, editor_name, edited_at,
+        kind, allocation, amount_minor, member_id, description_ar, description_en, occurred_at, status
+        FROM transaction_revisions WHERE transaction_id=? ORDER BY edited_at DESC`)
+        .bind(txn.id)
+        .all<{
+          id: string;
+          transaction_id: string;
+          edited_by: string;
+          editor_name: string;
+          edited_at: string;
+          kind: string;
+          allocation: string;
+          amount_minor: number;
+          member_id: string | null;
+          description_ar: string;
+          description_en: string;
+          occurred_at: string;
+          status: string;
+        }>();
+      await completeIdempotency(db, user.id, idempotencyKey, { ok: true });
+      claimed = null;
+      return Response.json({ revisions: rows.results }, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "completeCircleTurn") {
       const parsed = z.object({ turnId: z.string().min(1).max(120) }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_CIRCLE_TURN");
