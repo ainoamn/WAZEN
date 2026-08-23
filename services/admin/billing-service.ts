@@ -40,7 +40,10 @@ export const GATEWAY_CATALOG: GatewaySeed[] = [
   { id: "gw_manual", provider_key: "manual_transfer", name_ar: "تحويل بنكي يدوي", name_en: "Manual bank transfer", scope: "local", countries_json: '["OM","SA","AE"]', methods_json: '["bank_transfer"]', sort_order: 5 },
 ];
 
+let subscriptionAdminColumnsReady = false;
+
 export async function ensureSubscriptionAdminColumns(db: D1Database) {
+  if (subscriptionAdminColumnsReady) return;
   const columns = await db.prepare("PRAGMA table_info(subscriptions)").all<{ name: string }>();
   const names = new Set(columns.results.map((column) => column.name));
   const additions: Array<[string, string]> = [
@@ -70,6 +73,7 @@ export async function ensureSubscriptionAdminColumns(db: D1Database) {
       if (!refreshed.results.some((column) => column.name === name)) throw error;
     }
   }
+  subscriptionAdminColumnsReady = true;
 }
 
 const DEFAULT_PLAN_QUOTAS: Record<string, {
@@ -87,7 +91,10 @@ const DEFAULT_PLAN_QUOTAS: Record<string, {
   business: { transactions: 0, records: 0, users: 9999, dailyTransactions: 0, monthlyTransactions: 0, prints: 0, extraFeatures: ["email", "whatsapp", "downloads"] },
 };
 
+let quotaEventsTableReady = false;
+
 export async function ensureQuotaEventsTable(db: D1Database) {
+  if (quotaEventsTableReady) return;
   await db.prepare(`CREATE TABLE IF NOT EXISTS quota_events (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -95,9 +102,13 @@ export async function ensureQuotaEventsTable(db: D1Database) {
     created_at TEXT NOT NULL
   )`).run();
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_quota_events_user_kind ON quota_events(user_id, kind, created_at)").run();
+  quotaEventsTableReady = true;
 }
 
+let planQuotaColumnsReady = false;
+
 export async function ensurePlanQuotaColumns(db: D1Database) {
+  if (planQuotaColumnsReady) return;
   await ensureQuotaEventsTable(db);
   const columns = await db.prepare("PRAGMA table_info(plans)").all<{ name: string }>();
   const names = new Set(columns.results.map((column) => column.name));
@@ -153,6 +164,7 @@ export async function ensurePlanQuotaColumns(db: D1Database) {
       }
     }
   }
+  planQuotaColumnsReady = true;
 }
 
 let gatewaysBootstrapped = false;
@@ -597,30 +609,34 @@ export async function getUserBillingHistory(db: D1Database, userId: string) {
   };
 }
 
-export async function getActivePlanEntitlements(db: D1Database, userId: string) {
+export async function getActivePlanEntitlements(db: D1Database, userId: string, options?: { skipSideEffects?: boolean }) {
   await ensureSubscriptionAdminColumns(db);
   await ensurePlanQuotaColumns(db);
-  try {
-    const { applyDuePlanChanges } = await import("../../lib/plan-change");
-    await applyDuePlanChanges(db, userId);
-  } catch (error) {
-    console.error(JSON.stringify({
-      level: "error",
-      code: "PLAN_CHANGE_APPLY_FAILED",
-      message: error instanceof Error ? error.message : String(error),
-      at: new Date().toISOString(),
-    }));
+  if (!options?.skipSideEffects) {
+    try {
+      const { applyDuePlanChanges } = await import("../../lib/plan-change");
+      await applyDuePlanChanges(db, userId);
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: "error",
+        code: "PLAN_CHANGE_APPLY_FAILED",
+        message: error instanceof Error ? error.message : String(error),
+        at: new Date().toISOString(),
+      }));
+    }
   }
   const { expireLapsedPaidSubscriptions, readUserGraceSummary, USER_GRACE_DAYS } = await import("../../lib/plan-retention");
-  try {
-    await expireLapsedPaidSubscriptions(db, userId);
-  } catch (error) {
-    console.error(JSON.stringify({
-      level: "error",
-      code: "PLAN_EXPIRE_FAILED",
-      message: error instanceof Error ? error.message : String(error),
-      at: new Date().toISOString(),
-    }));
+  if (!options?.skipSideEffects) {
+    try {
+      await expireLapsedPaidSubscriptions(db, userId);
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: "error",
+        code: "PLAN_EXPIRE_FAILED",
+        message: error instanceof Error ? error.message : String(error),
+        at: new Date().toISOString(),
+      }));
+    }
   }
   const row = await db
     .prepare(

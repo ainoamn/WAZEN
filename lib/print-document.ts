@@ -320,17 +320,6 @@ body.is-receipt .receipt-badge {
   line-height: 1.5;
   letter-spacing: 0;
 }
-.receipt-qr a {
-  display: inline-block;
-  margin-top: 6px;
-  color: var(--green-deep);
-  font-size: 11px;
-  font-weight: 700;
-  word-break: break-all;
-  text-decoration: none;
-  letter-spacing: 0;
-  max-width: 100%;
-}
 body.is-receipt footer.sheet-foot {
   margin-top: 8px;
   padding: 18px 24px 22px;
@@ -482,7 +471,6 @@ export function buildReceiptBodyHtml(input: {
     ? `<div class="receipt-qr">
   <img src="${escapeHtml(input.qrDataUrl)}" width="148" height="148" alt="QR" />
   <p>${escapeHtml(qrHint)}</p>
-  <a href="${escapeHtml(input.receiptUrl)}">${escapeHtml(input.receiptUrl)}</a>
 </div>`
     : "";
   return `<section class="receipt-block">

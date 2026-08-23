@@ -788,7 +788,8 @@ async function deleteSpaceCascade(db: D1Database, spaceId: string, userId: strin
   ]);
 }
 
-async function loadDashboard(db: D1Database, userId: string, options?: { refreshDerived?: boolean; features?: string[] }) {
+async function loadDashboard(db: D1Database, userId: string, options?: { refreshDerived?: boolean; features?: string[]; mode?: "full" | "write" }) {
+  const writeMode = options?.mode === "write";
   const [spaces, contacts] = await Promise.all([
     db
       .prepare(`SELECT s.* FROM spaces s
@@ -798,7 +799,9 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
         ORDER BY s.created_at ASC`)
     .bind(userId, userId)
       .all<SpaceRow>(),
-    db.prepare("SELECT * FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name").bind(userId).all(),
+    writeMode
+      ? Promise.resolve({ results: [] as Array<Record<string, unknown>> })
+      : db.prepare("SELECT * FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name").bind(userId).all(),
   ]);
   const allowed = filterSpacesForPlanAccess(spaces.results ?? [], options?.features ?? []);
   const ids = allowed.map((space) => space.id);
@@ -838,19 +841,27 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     LEFT JOIN members fm ON fm.id=s.from_member_id
       WHERE s.space_id IN (${placeholders}) AND s.status='pending' ORDER BY s.created_at DESC LIMIT 50`).bind(...ids).all(),
     db.prepare(`SELECT * FROM member_installments WHERE space_id IN (${placeholders}) ORDER BY member_id, period_index`).bind(...ids).all(),
-    db.prepare(`SELECT p.*, cu.display_name AS closed_by_name, ru.display_name AS reopened_by_name
+    writeMode
+      ? Promise.resolve({ results: [] as Array<Record<string, unknown>> })
+      : db.prepare(`SELECT p.*, cu.display_name AS closed_by_name, ru.display_name AS reopened_by_name
       FROM accounting_periods p
       LEFT JOIN users cu ON cu.id = p.closed_by
       LEFT JOIN users ru ON ru.id = p.reopened_by
       WHERE p.space_id IN (${placeholders}) ORDER BY p.starts_at DESC`).bind(...ids).all(),
-    db.prepare(`SELECT * FROM period_ledger_events WHERE space_id IN (${placeholders}) ORDER BY created_at DESC LIMIT 200`).bind(...ids).all(),
+    writeMode
+      ? Promise.resolve({ results: [] as Array<Record<string, unknown>> })
+      : db.prepare(`SELECT * FROM period_ledger_events WHERE space_id IN (${placeholders}) ORDER BY created_at DESC LIMIT 200`).bind(...ids).all(),
     db.prepare(`SELECT * FROM personal_accounts WHERE space_id IN (${placeholders}) ORDER BY created_at`).bind(...ids).all<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; status: string; created_at: string }>(),
     db.prepare(`SELECT * FROM personal_rules WHERE space_id IN (${placeholders}) ORDER BY created_at`).bind(...ids).all(),
     db.prepare(`SELECT o.*, r.name AS rule_name, r.kind AS rule_kind, r.amount_mode, r.total_minor, r.paid_minor AS rule_paid_minor
       FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
       WHERE o.space_id IN (${placeholders}) ORDER BY o.due_at DESC, o.created_at DESC`).bind(...ids).all<PersonalOccurrenceRow>(),
-    db.prepare(`SELECT * FROM space_payout_accounts WHERE space_id IN (${placeholders})`).bind(...ids).all(),
-    db.prepare(`SELECT * FROM family_events WHERE space_id IN (${placeholders}) ORDER BY target_at ASC`).bind(...ids).all<{
+    writeMode
+      ? Promise.resolve({ results: [] as Array<Record<string, unknown>> })
+      : db.prepare(`SELECT * FROM space_payout_accounts WHERE space_id IN (${placeholders})`).bind(...ids).all(),
+    writeMode
+      ? Promise.resolve({ results: [] as Array<Record<string, unknown>> })
+      : db.prepare(`SELECT * FROM family_events WHERE space_id IN (${placeholders}) ORDER BY target_at ASC`).bind(...ids).all<{
       id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; notes: string | null; status: string;
     }>(),
   ]);
@@ -903,13 +914,15 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
   ] = packed;
   let spaceLinks = { results: [] as Array<{ id: string; hub_space_id: string; linked_space_id: string; status: string; created_at: string }> };
   let spaceBankLinks = { results: [] as Array<{ id: string; hub_space_id: string; linked_space_id: string; account_id: string; created_at: string }> };
-  try {
-    [spaceLinks, spaceBankLinks] = await Promise.all([
-      db.prepare(`SELECT * FROM space_links WHERE hub_space_id IN (${placeholders}) OR linked_space_id IN (${placeholders})`).bind(...ids, ...ids).all<{ id: string; hub_space_id: string; linked_space_id: string; status: string; created_at: string }>(),
-      db.prepare(`SELECT * FROM space_bank_links WHERE hub_space_id IN (${placeholders}) OR linked_space_id IN (${placeholders})`).bind(...ids, ...ids).all<{ id: string; hub_space_id: string; linked_space_id: string; account_id: string; created_at: string }>(),
-    ]);
-  } catch {
-    /* tables created on next ensureSchema pass */
+  if (!writeMode) {
+    try {
+      [spaceLinks, spaceBankLinks] = await Promise.all([
+        db.prepare(`SELECT * FROM space_links WHERE hub_space_id IN (${placeholders}) OR linked_space_id IN (${placeholders})`).bind(...ids, ...ids).all<{ id: string; hub_space_id: string; linked_space_id: string; status: string; created_at: string }>(),
+        db.prepare(`SELECT * FROM space_bank_links WHERE hub_space_id IN (${placeholders}) OR linked_space_id IN (${placeholders})`).bind(...ids, ...ids).all<{ id: string; hub_space_id: string; linked_space_id: string; account_id: string; created_at: string }>(),
+      ]);
+    } catch {
+      /* tables created on next ensureSchema pass */
+    }
   }
   const personalAccounts = personalAccountsRaw.results.map((account) => ({
     ...account,
@@ -952,19 +965,23 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     unpaidBySpace.set(member.space_id, (unpaidBySpace.get(member.space_id) ?? 0) + Math.max(0, Number(member.due_minor) - Number(member.paid_minor)));
     if (Number(member.due_minor) > 0) contributorCount.set(member.space_id, (contributorCount.get(member.space_id) ?? 0) + 1);
   }
-  const familyEvents = familyEventsRaw.results.map((event) => {
-    const space = refreshedSpaces.results.find((item) => item.id === event.space_id);
-    const plan = planBySpace.get(event.space_id);
-    const monthly = Number(plan?.amount_minor ?? 0) * (contributorCount.get(event.space_id) ?? 0);
-    const forecast = forecastFamilyEvent({
-      balanceMinor: Number(space?.balance_minor ?? 0),
-      expectedCostMinor: Number(event.expected_minor),
-      monthlyInflowMinor: monthly,
-      monthsUntil: monthCountUntil(event.target_at),
-      unpaidDuesMinor: unpaidBySpace.get(event.space_id) ?? 0,
+  const familyEvents = writeMode
+    ? []
+    : (familyEventsRaw.results as Array<{
+      id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; notes: string | null; status: string;
+    }>).map((event) => {
+      const space = refreshedSpaces.results.find((item) => item.id === event.space_id);
+      const plan = planBySpace.get(event.space_id);
+      const monthly = Number(plan?.amount_minor ?? 0) * (contributorCount.get(event.space_id) ?? 0);
+      const forecast = forecastFamilyEvent({
+        balanceMinor: Number(space?.balance_minor ?? 0),
+        expectedCostMinor: Number(event.expected_minor),
+        monthlyInflowMinor: monthly,
+        monthsUntil: monthCountUntil(event.target_at),
+        unpaidDuesMinor: unpaidBySpace.get(event.space_id) ?? 0,
+      });
+      return { ...event, ...forecast };
     });
-    return { ...event, ...forecast };
-  });
 
   const occurrenceRows = personalOccurrences.results as PersonalOccurrenceRow[];
   const txnRows = transactions.results as TransactionRow[];
@@ -2740,6 +2757,9 @@ export async function POST(request: Request) {
         transactionId: txn.id,
         receiptUrl,
       };
+      await completeIdempotency(db, user.id, idempotencyKey, { ok: true, notification });
+      claimed = null;
+      return Response.json({ ok: true, notification }, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "sendReceipt") {
       const parsed = z.object({
         memberId: z.string().min(1).max(120),
@@ -2790,6 +2810,9 @@ export async function POST(request: Request) {
         transactionId: txn.id,
         receiptUrl,
       };
+      await completeIdempotency(db, user.id, idempotencyKey, { ok: true, notification });
+      claimed = null;
+      return Response.json({ ok: true, notification }, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "updateUserProfile") {
       const parsed = z.object({
         displayName: z.string().trim().min(2).max(80),
@@ -2811,12 +2834,13 @@ export async function POST(request: Request) {
 
     const freshUser = await db.prepare("SELECT display_name, avatar_url FROM users WHERE id=?").bind(user.id).first<{ display_name: string; avatar_url: string | null }>();
     const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
-    const entitlements = await getActivePlanEntitlements(db, user.id);
+    // Skip plan apply/expire on write response — already checked during authorize/quota.
+    const entitlements = await getActivePlanEntitlements(db, user.id, { skipSideEffects: true });
     let dashboard: Awaited<ReturnType<typeof loadDashboard>>;
     try {
-      // Writes already updated the affected rows; skip expensive ledger rebuild on the response path
-      // (same pattern as GET / consumeQuota) so create/update finish quickly on Neon cold starts.
-      dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features });
+      // Writes already updated the affected rows; skip expensive ledger rebuild and secondary tables
+      // so create/update/void finish quickly on Neon (client merges into cached dashboard).
+      dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features, mode: "write" });
     } catch (error) {
       console.error(JSON.stringify({
         level: "error",
@@ -2842,12 +2866,24 @@ export async function POST(request: Request) {
         at: new Date().toISOString(),
       }));
     }
+    // Only core write fields — omit periods/contacts/etc. so client merge keeps prior GET data.
     const response = {
       ok: true,
       user: { ...user, role, displayName: freshUser?.display_name ?? user.displayName, avatarUrl: freshUser?.avatar_url ?? user.avatarUrl ?? null },
       entitlements,
       revision,
-      ...dashboard,
+      spaces: dashboard.spaces,
+      members: dashboard.members,
+      transactions: dashboard.transactions,
+      plans: dashboard.plans,
+      circleTurns: dashboard.circleTurns,
+      tripExpenses: dashboard.tripExpenses,
+      expenseSplits: dashboard.expenseSplits,
+      settlements: dashboard.settlements,
+      installments: dashboard.installments,
+      personalAccounts: dashboard.personalAccounts,
+      personalRules: dashboard.personalRules,
+      personalOccurrences: dashboard.personalOccurrences,
       ...(notification ? { notification } : {}),
     };
     await completeIdempotency(db, user.id, idempotencyKey, { ok: true });
