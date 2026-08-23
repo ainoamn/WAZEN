@@ -1474,6 +1474,16 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
 }
 .receipt-share-actions .primary-button,
 .receipt-share-actions .secondary-button { width: 100%; min-height: 48px; }
+.receipt-share-foot {
+  margin: 16px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.55;
+}
 .receipt-share-status, .receipt-share-error { margin: 24px 0; font-weight: 700; text-align: center; }
 .receipt-share-error { color: #b42318; }
 @media (min-width: 421px) {

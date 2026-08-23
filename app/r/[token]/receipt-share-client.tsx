@@ -64,6 +64,7 @@ export default function ReceiptShareClient({ token }: { token: string }) {
         logoUrl,
         subtitle: data.dateLabel,
         bodyHtml: receiptBodyHtml(data),
+        variant: "receipt",
       }), true);
     } finally {
       setBusy(null);
@@ -82,6 +83,7 @@ export default function ReceiptShareClient({ token }: { token: string }) {
         logoUrl,
         subtitle: data.dateLabel,
         bodyHtml: receiptBodyHtml(data),
+        variant: "receipt",
       });
       await downloadReportHtml(html, `wazen-receipt-${data.reference}`);
     } finally {
@@ -122,6 +124,11 @@ export default function ReceiptShareClient({ token }: { token: string }) {
               {busy === "print" ? "…" : (locale === "ar" ? "فتح للطباعة" : "Open to print")}
             </button>
           </div>
+          <p className="receipt-share-foot">
+            {locale === "ar"
+              ? "هذا إيصال إلكتروني طُبع من موقع وازن"
+              : "This is an electronic receipt printed from the Wazen website"}
+          </p>
         </article>
       )}
     </main>

@@ -133,9 +133,13 @@ test("print document CSS uses large readable fonts for paper output", async () =
     logoUrl: "/brand/wazen-lockup.png",
     subtitle: "2026/08/16",
     bodyHtml: body,
+    variant: "receipt",
   });
   assert.match(html, /font-size: 16px/);
   assert.match(html, /إيصال وازن/);
   assert.match(html, /sheet-accent/);
   assert.match(html, /viewport/);
+  assert.match(html, /is-receipt/);
+  assert.match(html, /هذا إيصال إلكتروني طُبع من موقع وازن/);
+  assert.match(html, /receipt-badge/);
 });

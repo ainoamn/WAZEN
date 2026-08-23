@@ -160,64 +160,159 @@ body.page-portrait td:first-child { color: var(--muted); font-weight: 700; width
 .voided td { text-decoration: line-through; color: #5b6b66; }
 .footer-note { margin: 12px 0 0; font-weight: 800; color: var(--green); font-size: 15px; }
 .empty { color: #5b6b66; font-size: 15px; }
-.receipt-block { padding-top: 4px; }
+
+/* —— Receipt document (print / PDF / mobile) —— */
+body.is-receipt {
+  font-size: 17px;
+  line-height: 1.6;
+  letter-spacing: 0;
+}
+body.is-receipt .sheet {
+  max-width: 640px;
+  margin: 20px auto 40px;
+  border-radius: 20px;
+}
+body.is-receipt .brand-bar {
+  padding: 22px 24px 14px;
+  align-items: flex-start;
+}
+body.is-receipt .brand-bar img { height: 44px; max-width: min(200px, 58vw); }
+body.is-receipt .brand-bar small {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+body.is-receipt .brand-bar strong {
+  font-size: 16px;
+  line-height: 1.35;
+  max-width: 16rem;
+}
+body.is-receipt .head {
+  padding: 4px 24px 10px;
+  text-align: center;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+body.is-receipt .head h1 {
+  font-size: 26px;
+  margin: 0 0 8px;
+  letter-spacing: 0;
+}
+body.is-receipt .head p {
+  font-size: 14px;
+  font-weight: 600;
+}
+body.is-receipt .receipt-badge {
+  display: inline-block;
+  margin: 0 0 10px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(13,122,101,.1);
+  color: var(--green-deep);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+.receipt-block { padding: 8px 24px 8px; }
 .receipt-amount {
-  margin: 0 0 18px;
-  padding: 18px 18px 16px;
-  border-radius: 18px;
-  background: linear-gradient(145deg, #0a5c4c 0%, #0d7a65 55%, #1c967c 100%);
+  margin: 12px 0 18px;
+  padding: 20px 16px 18px;
+  border-radius: 16px;
+  background: linear-gradient(160deg, #084c3f 0%, #0d7a65 48%, #18917a 100%);
   color: #fff;
   text-align: center;
-  box-shadow: 0 16px 36px rgba(10,92,76,.22);
+  box-shadow: 0 14px 32px rgba(10,92,76,.18);
 }
 .receipt-amount span {
   display: block;
   font-size: 13px;
   font-weight: 700;
-  opacity: .88;
-  margin-bottom: 6px;
-  letter-spacing: .02em;
+  opacity: .9;
+  margin-bottom: 8px;
+  letter-spacing: .04em;
 }
 .receipt-amount strong {
   display: block;
-  font-size: clamp(28px, 7vw, 40px);
-  line-height: 1.15;
+  font-size: clamp(30px, 8vw, 42px);
+  line-height: 1.12;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   font-variant-numeric: tabular-nums;
+  direction: ltr;
+  unicode-bidi: isolate;
 }
-.receipt-fields { margin: 0; display: grid; gap: 0; }
+.receipt-fields {
+  margin: 0;
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+}
 .receipt-fields > div {
   display: grid;
-  grid-template-columns: minmax(7.5rem, 34%) 1fr;
-  gap: 10px 14px;
-  padding: 13px 4px;
+  grid-template-columns: minmax(6.5rem, 32%) 1fr;
+  gap: 8px 16px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--line);
-  align-items: start;
+  align-items: center;
+  background: #fff;
 }
+.receipt-fields > div:nth-child(even) { background: #f7faf8; }
+.receipt-fields > div:last-child { border-bottom: 0; }
 .receipt-fields dt {
   margin: 0;
   color: var(--muted);
   font-size: 13px;
   font-weight: 700;
+  line-height: 1.4;
 }
 .receipt-fields dd {
   margin: 0;
   color: var(--ink);
   font-size: 16px;
   font-weight: 700;
+  line-height: 1.45;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .receipt-ref {
-  margin: 16px 0 0;
-  padding: 10px 12px;
+  margin: 16px 0 4px;
+  padding: 12px 14px;
   border-radius: 12px;
+  border: 1px dashed rgba(13,122,101,.35);
   background: var(--soft);
-  color: var(--muted);
+  color: var(--green-deep);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+  letter-spacing: .06em;
+  font-variant-numeric: tabular-nums;
+}
+body.is-receipt footer.sheet-foot {
+  margin-top: 8px;
+  padding: 18px 24px 22px;
+  text-align: center;
   font-size: 13px;
   font-weight: 700;
-  text-align: center;
-  letter-spacing: .04em;
+  color: var(--muted);
+  line-height: 1.65;
+  background: linear-gradient(180deg, #fff 0%, #f4f8f6 100%);
+}
+body.is-receipt footer.sheet-foot .foot-mark {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--green-deep);
+  font-size: 14px;
+  font-weight: 800;
+}
+body.is-receipt footer.sheet-foot .foot-site {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6a7a74;
+  letter-spacing: .02em;
 }
 footer.sheet-foot {
   padding: 16px 28px 24px;
@@ -249,23 +344,30 @@ body.page-landscape td.col-desc { min-width: 160px; white-space: normal; overflo
     -webkit-print-color-adjust: exact;
   }
   body.page-landscape { font-size: 11px; }
+  body.is-receipt { font-size: 16px; }
   .print-actions { display: none !important; }
   .sheet { margin: 0; border: 0; border-radius: 0; max-width: none; overflow: visible; box-shadow: none; }
-  .brand-bar, th, .meta, .kpi, .receipt-amount, .sheet-accent { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  body.is-receipt .sheet { max-width: none; margin: 0; }
+  .brand-bar, th, .meta, .kpi, .receipt-amount, .sheet-accent, .receipt-fields > div:nth-child(even) { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .brand-bar small, .meta span, .kpi span, th, body.page-portrait td:first-child, footer.sheet-foot, .receipt-fields dt { color: #222 !important; }
   .brand-bar strong, .meta b, .kpi strong, td, .head p, .receipt-fields dd { color: #000 !important; }
   .head h1 { font-size: 32px; color: #0a5c4c !important; }
+  body.is-receipt .head h1 { font-size: 26px !important; }
+  body.is-receipt .receipt-amount strong { font-size: 36px !important; color: #fff !important; }
+  body.is-receipt .receipt-amount span { color: #fff !important; }
+  body.is-receipt footer.sheet-foot .foot-mark { color: #0a5c4c !important; }
   body.page-landscape .head h1 { font-size: 20px !important; }
   table, td, .num { font-size: 16px; }
   body.page-landscape table, body.page-landscape td, body.page-landscape .num { font-size: 11px; }
   body.page-landscape th, body.page-landscape td.col-date, body.page-landscape td.col-ref { font-size: 10px; }
   th { font-size: 14px; }
   footer.sheet-foot { font-size: 13px; background: #fff; }
+  body.is-receipt footer.sheet-foot { font-size: 13px; }
 }
 @media (max-width: 760px) {
   body { background: #f4f7f5; }
   .print-actions { justify-content: stretch; padding: 10px 12px; }
-  .print-actions button { width: 100%; min-height: 48px; }
+  .print-actions button { width: 100%; min-height: 48px; border-radius: 14px; font-size: 16px; }
   .sheet {
     margin: 0;
     border: 0;
@@ -274,36 +376,47 @@ body.page-landscape td.col-desc { min-width: 160px; white-space: normal; overflo
     max-width: none;
     min-height: 100dvh;
   }
+  body.is-receipt .sheet { margin: 0; max-width: none; border-radius: 0; min-height: 100dvh; }
   .brand-bar {
     flex-direction: column;
     align-items: flex-start;
     gap: 10px;
     padding: 16px 16px 12px;
   }
+  body.is-receipt .brand-bar { padding: 18px 16px 12px; }
   .brand-bar img { height: 40px; max-width: min(180px, 70vw); }
+  body.is-receipt .brand-bar img { height: 38px; }
   .brand-bar strong { font-size: 15px; }
   .head { padding: 4px 16px 8px; }
+  body.is-receipt .head { padding: 8px 16px 12px; }
   .head h1 { font-size: 24px; }
+  body.is-receipt .head h1 { font-size: 22px; }
   .head p { font-size: 13px; }
   .meta, .kpis { grid-template-columns: 1fr; margin: 10px 16px; }
   .kpis { padding: 0 16px 14px; }
   section { padding: 6px 16px 20px; }
+  body.is-receipt .receipt-block { padding: 6px 16px 10px; }
   body.page-portrait td:first-child { width: 38%; font-size: 13px; }
   td { font-size: 15px; }
-  .receipt-amount { margin-bottom: 14px; padding: 16px 14px; border-radius: 16px; }
-  .receipt-amount strong { font-size: clamp(26px, 9vw, 34px); }
+  .receipt-amount { margin: 10px 0 14px; padding: 18px 14px; border-radius: 14px; }
+  .receipt-amount strong { font-size: clamp(28px, 9vw, 36px); }
+  .receipt-fields { border-radius: 12px; }
   .receipt-fields > div {
     grid-template-columns: 1fr;
     gap: 4px;
-    padding: 12px 2px;
+    padding: 12px 14px;
+    align-items: start;
   }
   .receipt-fields dt { font-size: 12px; }
   .receipt-fields dd { font-size: 15px; }
+  .receipt-ref { margin-top: 14px; font-size: 12px; }
   footer.sheet-foot { padding: 14px 16px 22px; font-size: 12px; }
+  body.is-receipt footer.sheet-foot { padding: 16px 16px 28px; font-size: 12px; }
+  body.is-receipt footer.sheet-foot .foot-mark { font-size: 13px; }
 }
 `;
 
-/** Elegant receipt body: amount hero + labeled fields (mobile-friendly). */
+/** Receipt body: amount hero + labeled fields (mobile + print). */
 export function buildReceiptBodyHtml(input: {
   locale: "ar" | "en";
   amountLabel: string;
@@ -325,6 +438,19 @@ export function buildReceiptBodyHtml(input: {
 </section>`;
 }
 
+export function receiptElectronicFooter(locale: "ar" | "en") {
+  if (locale === "ar") {
+    return {
+      mark: "هذا إيصال إلكتروني طُبع من موقع وازن",
+      site: "WAZEN · وازن",
+    };
+  }
+  return {
+    mark: "This is an electronic receipt printed from the Wazen website",
+    site: "WAZEN · وازن",
+  };
+}
+
 export function wrapPrintDocument(options: {
   locale: "ar" | "en";
   title: string;
@@ -336,9 +462,12 @@ export function wrapPrintDocument(options: {
   bodyHtml: string;
   footer?: string;
   orientation?: PrintOrientation;
+  /** Receipt layout: clearer hierarchy + electronic-receipt footer. */
+  variant?: "report" | "receipt";
 }) {
   const dir = options.locale === "ar" ? "rtl" : "ltr";
   const orientation = options.orientation ?? "portrait";
+  const isReceipt = options.variant === "receipt";
   const printLabel = options.locale === "ar" ? "طباعة المستند" : "Print document";
   const metaHtml = (options.meta ?? [])
     .map((item) => `<div><span>${escapeHtml(item.label)}</span><b>${escapeHtml(item.value)}</b></div>`)
@@ -349,15 +478,26 @@ export function wrapPrintDocument(options: {
   const pageRule = orientation === "landscape"
     ? "@page { size: A4 landscape; margin: 8mm; }"
     : "@page { size: A4 portrait; margin: 12mm; }";
+  const receiptFoot = receiptElectronicFooter(options.locale);
+  const footerHtml = isReceipt
+    ? (options.footer
+      ? escapeHtml(options.footer)
+      : `<span class="foot-mark">${escapeHtml(receiptFoot.mark)}</span><span class="foot-site">${escapeHtml(receiptFoot.site)}</span>`)
+    : escapeHtml(options.footer ?? (options.locale === "ar"
+      ? "مستند رسمي من منصة وازن — للاستخدام داخل الجمعية أو المحفظة."
+      : "Official document from Wazen — for the wallet or association."));
+  const badge = isReceipt
+    ? `<span class="receipt-badge">${options.locale === "ar" ? "إيصال إلكتروني" : "Electronic receipt"}</span>`
+    : "";
   return `<!doctype html>
 <html lang="${options.locale}" dir="${dir}" data-orientation="${orientation}">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>${escapeHtml(options.title)} · ${escapeHtml(options.entityName)}</title>
   <style>${PRINT_DOCUMENT_CSS}\n${pageRule}</style>
 </head>
-<body class="page-${orientation}">
+<body class="page-${orientation}${isReceipt ? " is-receipt" : ""}">
   <div class="print-actions"><button type="button" onclick="window.print()">${escapeHtml(printLabel)}</button></div>
   <article class="sheet">
     <div class="sheet-accent" aria-hidden="true"></div>
@@ -369,15 +509,14 @@ export function wrapPrintDocument(options: {
       </div>
     </div>
     <div class="head">
+      ${badge}
       <h1>${escapeHtml(options.title)}</h1>
       ${options.subtitle ? `<p>${escapeHtml(options.subtitle)}</p>` : ""}
     </div>
     ${metaHtml ? `<div class="meta">${metaHtml}</div>` : ""}
     ${kpiHtml ? `<div class="kpis">${kpiHtml}</div>` : ""}
     ${options.bodyHtml}
-    <footer class="sheet-foot">${escapeHtml(options.footer ?? (options.locale === "ar"
-      ? "مستند رسمي من منصة وازن — للاستخدام داخل الجمعية أو المحفظة."
-      : "Official document from Wazen — for the wallet or association."))}</footer>
+    <footer class="sheet-foot">${footerHtml}</footer>
   </article>
 </body>
 </html>`;

@@ -736,6 +736,7 @@ function openTransactionReceipt(transaction: Transaction, data: DashboardData, l
       logoUrl,
       subtitle: parts.subtitle,
       bodyHtml: parts.bodyHtml,
+      variant: "receipt",
     }), true);
   });
 }
