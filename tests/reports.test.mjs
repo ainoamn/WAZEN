@@ -115,7 +115,7 @@ test("print document CSS uses large readable fonts for paper output", async () =
   assert.match(PRINT_DOCUMENT_CSS, /footer\.sheet-foot \{[\s\S]*font-size: 14px;/);
   assert.match(PRINT_DOCUMENT_CSS, /@media print \{[\s\S]*font-size: 16px;/);
   assert.match(PRINT_DOCUMENT_CSS, /\.receipt-amount/);
-  assert.match(PRINT_DOCUMENT_CSS, /@media \(max-width: 760px\)/);
+  assert.match(PRINT_DOCUMENT_CSS, /@media screen and \(max-width: 760px\)/);
   assert.doesNotMatch(PRINT_DOCUMENT_CSS, /table \{[^}]*font-size: 12px;/);
   const body = buildReceiptBodyHtml({
     locale: "ar",

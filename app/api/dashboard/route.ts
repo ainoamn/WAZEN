@@ -546,10 +546,8 @@ async function voidApprovedTransaction(
     await db.batch(statements);
   } catch { /* audit must not block void */ }
   try {
-    await rebuildSpaceBalance(db, [txn.space_id]);
-  } catch {
     await writeApprovedCashBalance(db, txn.space_id);
-  }
+  } catch { /* balance refresh is best-effort */ }
   try {
   await reconcileMemberLedgers(db, [txn.space_id]);
   } catch { /* member ledgers are not used by personal cash */ }
@@ -1159,11 +1157,8 @@ export async function POST(request: Request) {
     const idempotencyKey = String(payload.idempotencyKey ?? request.headers.get("idempotency-key") ?? "");
     const replay = await claimIdempotency(db, user.id, action, idempotencyKey);
     if (replay) {
-      const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
-      const entitlements = await getActivePlanEntitlements(db, user.id);
-      const dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features });
       const body = replay && typeof replay === "object" ? replay : { ok: true };
-      return Response.json({ ...body, user, entitlements, ...dashboard }, { headers: { "Cache-Control": "no-store" } });
+      return Response.json({ ok: true, ...body }, { headers: { "Cache-Control": "no-store" } });
     }
     claimed = { db, userId: user.id, key: idempotencyKey };
 
@@ -2071,10 +2066,8 @@ export async function POST(request: Request) {
 
       await db.batch(statements);
       try {
-        await rebuildSpaceBalance(db, [existing.space_id]);
-      } catch {
         await writeApprovedCashBalance(db, existing.space_id);
-      }
+      } catch { /* balance refresh is best-effort */ }
       await reconcileMemberLedgers(db, [existing.space_id]);
     } else if (action === "listTransactionRevisions") {
       const parsed = z.object({ transactionId: z.string().min(1).max(120) }).safeParse(payload);
@@ -2832,61 +2825,18 @@ export async function POST(request: Request) {
       user.avatarUrl = parsed.data.avatarUrl ?? null;
     } else throw new ApiError(400, "UNSUPPORTED_ACTION");
 
-    const freshUser = await db.prepare("SELECT display_name, avatar_url FROM users WHERE id=?").bind(user.id).first<{ display_name: string; avatar_url: string | null }>();
-    const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
-    // Skip plan apply/expire on write response — already checked during authorize/quota.
-    const entitlements = await getActivePlanEntitlements(db, user.id, { skipSideEffects: true });
-    let dashboard: Awaited<ReturnType<typeof loadDashboard>>;
-    try {
-      // Writes already updated the affected rows; skip expensive ledger rebuild and secondary tables
-      // so create/update/void finish quickly on Neon (client merges into cached dashboard).
-      dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features, mode: "write" });
-    } catch (error) {
-      console.error(JSON.stringify({
-        level: "error",
-        code: "DASHBOARD_LOAD_FAILED",
-        message: error instanceof Error ? error.message : String(error),
-        at: new Date().toISOString(),
-      }));
-      dashboard = {
-        spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [],
-        settlements: [], installments: [], contacts: [], periods: [], periodEvents: [], personalAccounts: [], personalRules: [],
-        personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [],
-      };
-    }
-    const role = await platformRoleOf(db, user.id);
+    // Mutations must return immediately — client already holds the full dashboard from GET
+    // and applies optimistic patches. Never reload the whole board after a write.
     let revision = "";
     try {
       revision = await readDashboardRevision(db, user.id);
-    } catch (error) {
-      console.error(JSON.stringify({
-        level: "error",
-        code: "DASHBOARD_REVISION_FAILED",
-        message: error instanceof Error ? error.message : String(error),
-        at: new Date().toISOString(),
-      }));
-    }
-    // Only core write fields — omit periods/contacts/etc. so client merge keeps prior GET data.
+    } catch { /* optional */ }
     const response = {
       ok: true,
-      user: { ...user, role, displayName: freshUser?.display_name ?? user.displayName, avatarUrl: freshUser?.avatar_url ?? user.avatarUrl ?? null },
-      entitlements,
       revision,
-      spaces: dashboard.spaces,
-      members: dashboard.members,
-      transactions: dashboard.transactions,
-      plans: dashboard.plans,
-      circleTurns: dashboard.circleTurns,
-      tripExpenses: dashboard.tripExpenses,
-      expenseSplits: dashboard.expenseSplits,
-      settlements: dashboard.settlements,
-      installments: dashboard.installments,
-      personalAccounts: dashboard.personalAccounts,
-      personalRules: dashboard.personalRules,
-      personalOccurrences: dashboard.personalOccurrences,
       ...(notification ? { notification } : {}),
     };
-    await completeIdempotency(db, user.id, idempotencyKey, { ok: true });
+    await completeIdempotency(db, user.id, idempotencyKey, response);
     claimed = null;
     return Response.json(response, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

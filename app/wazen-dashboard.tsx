@@ -19,7 +19,7 @@ import { openWhatsAppUrl } from "../lib/receipt-share";
 import { apiFetch } from "../lib/client-api";
 import { buildAccountStatementHtml } from "../lib/account-statement";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
-import { formatMoneyMinor, currencyScale } from "../lib/money";
+import { formatMoneyMinor, currencyScale, parseMoneyToMinor } from "../lib/money";
 import { memberDisplayCreditMinor, netMemberClaim, pendingSettlementsWithCredit } from "../lib/finance";
 import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, quotaRemaining, quotaWarningCopy, upgradeNoticeFor } from "../lib/plan-features";
 import { userGraceWarningCopy } from "../lib/plan-retention-rules";
@@ -735,8 +735,9 @@ function buildTransactionReceiptParts(
 
 function openTransactionReceipt(transaction: Transaction, data: DashboardData, locale: Locale) {
   const base = buildTransactionReceiptParts(transaction, data, locale);
-  void consumePlanQuota("print", locale, base.spaceId).then(async (quota) => {
-    if (!quota.ok) return;
+  // Quota is best-effort and must not block opening the print dialog.
+  void consumePlanQuota("print", locale, base.spaceId);
+  void (async () => {
     let receiptUrl = "";
     let qrDataUrl = "";
     try {
@@ -769,7 +770,7 @@ function openTransactionReceipt(transaction: Transaction, data: DashboardData, l
       bodyHtml: parts.bodyHtml,
       variant: "receipt",
     }), true);
-  });
+  })();
 }
 
 async function shareTransactionWhatsApp(transaction: Transaction, data: DashboardData, locale: Locale) {
@@ -968,6 +969,13 @@ export function WazenDashboard() {
     }
   }, [router]);
 
+  const acceptWrite = (patch: Partial<DashboardData> = {}) => {
+    if (!data) return;
+    const keys = Object.keys(patch).filter((key) => key !== "ok" && key !== "error" && key !== "revision" && key !== "notification");
+    if (keys.length) setData({ ...data, ...patch });
+    void load(true);
+  };
+
   useLiveDashboard(() => { void load(true); }, !loading);
 
   useEffect(() => { void load(); }, [load]);
@@ -1096,12 +1104,12 @@ export function WazenDashboard() {
   const settleReimbursement = async (settlementId: string) => {
     const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "settleReimbursement", idempotencyKey: crypto.randomUUID(), settlementId }) });
     if (!response.ok) { flash(locale === "ar" ? "تعذر اعتماد التسوية" : "Could not settle reimbursement"); return; }
-    setData({ ...data!, ...(await response.json()) }); flash(locale === "ar" ? "تم اعتماد رد المبلغ" : "Reimbursement settled");
+    acceptWrite(await response.json()); flash(locale === "ar" ? "تم اعتماد رد المبلغ" : "Reimbursement settled");
   };
   const completeCircleTurn = async (turnId: string) => {
     const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "completeCircleTurn", idempotencyKey: crypto.randomUUID(), turnId }) });
     if (!response.ok) { flash(locale === "ar" ? "تعذر صرف الدور؛ تحقق من الرصيد والترتيب" : "Could not pay this turn; check balance and order"); return; }
-    setData({ ...data!, ...(await response.json()) }); flash(locale === "ar" ? "تم صرف الدور وتسجيل القيد" : "Turn paid and journaled");
+    acceptWrite(await response.json()); flash(locale === "ar" ? "تم صرف الدور وتسجيل القيد" : "Turn paid and journaled");
   };
 
   const changeView = (view: ViewId, spaceId?: string) => {
@@ -1203,7 +1211,7 @@ export function WazenDashboard() {
 
         <div className="page-content">
           {activeView === "overview" && (
-            <Overview data={data} locale={locale} totals={totals} onView={changeView} onAddWallet={openNewWallet} onTxnChanged={(next) => { setData({ ...data, ...next }); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />
+            <Overview data={data} locale={locale} totals={totals} onView={changeView} onAddWallet={openNewWallet} onTxnChanged={(next) => { acceptWrite(next); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />
           )}
           {viewSpaceType[activeView] && viewLocked && (
             <UpgradeGate
@@ -1237,25 +1245,25 @@ export function WazenDashboard() {
               void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "archiveWallet", idempotencyKey: crypto.randomUUID(), spaceId: activeSpace.id, archived: !archived }) }).then(async (response) => {
                 const result = await response.json() as Partial<DashboardData> & { error?: string };
                 if (!response.ok) throw new Error(dashboardError(result.error ?? "ARCHIVE_FAILED", locale));
-                setData({ ...data, ...result });
+                acceptWrite(result);
                 flash(archived ? (locale === "ar" ? "أُعيدت الجمعية من الأرشيف" : "Association restored") : (locale === "ar" ? "أُرشفت الجمعية" : "Association archived"));
               }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "ARCHIVE_FAILED"));
-            }} onTripExpense={() => { setEditingExpenseId(""); setModal("tripExpense"); }} onEditExpense={(expenseId) => { setEditingExpenseId(expenseId); setModal("tripExpense"); }} onCircleOrder={() => { if (!planHasFeature(planFeatures, "draws")) { showUpgradeNotice("draws", locale === "ar" ? "ترتيب الأدوار" : "Turn order"); return; } setModal("circleOrder"); }} onClonePeriod={() => setModal("clonePeriod")} onReopenPeriod={(periodId) => { if (window.confirm(locale === "ar" ? "إعادة فتح الفترة للتعديل؟ ستُسجَّل باسمك كل عملية فتح أو تعديل لاحقة." : "Reopen this period for corrections? Every reopen and later edit will be logged under your name.")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "reopenAccountingPeriod", idempotencyKey: crypto.randomUUID(), spaceId: activeSpace.id, periodId }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "REOPEN_FAILED"); setData({ ...data, ...result }); flash(locale === "ar" ? "أُعيد فتح الفترة. يمكنك التعديل ثم إغلاقها مجدداً." : "Period reopened. You can edit, then close it again."); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "REOPEN_FAILED")); }} onClosePeriod={() => { if (window.confirm(locale === "ar" ? "إغلاق الفترة؟ لن يُسمح بذلك إن بقي على الأعضاء اشتراك أو تسويات غير مسدّدة." : "Close the period? This is blocked until every member settles dues and pending shares.")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "closeAccountingPeriod", idempotencyKey: crypto.randomUUID(), spaceId: activeSpace.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(dashboardError(result.error ?? "CLOSE_FAILED", locale)); setData({ ...data, ...result }); flash(locale === "ar" ? "أُغلقت الفترة المحاسبية. الجمعية مستمرة حتى نهايتها." : "Accounting period closed. The association continues."); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : dashboardError("CLOSE_FAILED", locale))); }} onSettle={(settlementId) => void settleReimbursement(settlementId)} onCompleteTurn={(turnId) => void completeCircleTurn(turnId)} onOpenMember={(memberId, focus) => { setActiveMemberId(memberId); setMemberLedgerFocus(focus ?? "all"); setModal("memberDetail"); }} onTxnChanged={(next) => { setData({ ...data, ...next }); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />
+            }} onTripExpense={() => { setEditingExpenseId(""); setModal("tripExpense"); }} onEditExpense={(expenseId) => { setEditingExpenseId(expenseId); setModal("tripExpense"); }} onCircleOrder={() => { if (!planHasFeature(planFeatures, "draws")) { showUpgradeNotice("draws", locale === "ar" ? "ترتيب الأدوار" : "Turn order"); return; } setModal("circleOrder"); }} onClonePeriod={() => setModal("clonePeriod")} onReopenPeriod={(periodId) => { if (window.confirm(locale === "ar" ? "إعادة فتح الفترة للتعديل؟ ستُسجَّل باسمك كل عملية فتح أو تعديل لاحقة." : "Reopen this period for corrections? Every reopen and later edit will be logged under your name.")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "reopenAccountingPeriod", idempotencyKey: crypto.randomUUID(), spaceId: activeSpace.id, periodId }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "REOPEN_FAILED"); acceptWrite(result); flash(locale === "ar" ? "أُعيد فتح الفترة. يمكنك التعديل ثم إغلاقها مجدداً." : "Period reopened. You can edit, then close it again."); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "REOPEN_FAILED")); }} onClosePeriod={() => { if (window.confirm(locale === "ar" ? "إغلاق الفترة؟ لن يُسمح بذلك إن بقي على الأعضاء اشتراك أو تسويات غير مسدّدة." : "Close the period? This is blocked until every member settles dues and pending shares.")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "closeAccountingPeriod", idempotencyKey: crypto.randomUUID(), spaceId: activeSpace.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(dashboardError(result.error ?? "CLOSE_FAILED", locale)); acceptWrite(result); flash(locale === "ar" ? "أُغلقت الفترة المحاسبية. الجمعية مستمرة حتى نهايتها." : "Accounting period closed. The association continues."); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : dashboardError("CLOSE_FAILED", locale))); }} onSettle={(settlementId) => void settleReimbursement(settlementId)} onCompleteTurn={(turnId) => void completeCircleTurn(turnId)} onOpenMember={(memberId, focus) => { setActiveMemberId(memberId); setMemberLedgerFocus(focus ?? "all"); setModal("memberDetail"); }} onTxnChanged={(next) => { acceptWrite(next); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />
           )}
           {activeView === "groups" && (viewLocked
             ? <UpgradeGate locale={locale} title={locale === "ar" ? "الأعضاء يستدعون ترقية الباقة" : "Members need a plan upgrade"} text={locale === "ar" ? "إدارة الأعضاء للجمعيات والمجموعات غير مضمّنة في باقتك الحالية." : "Member management for circles and groups is not included in your current plan."} />
             : <MembersView data={data} locale={locale} onInvite={() => setModal("invite")} onOpenPerson={(memberId, focus) => { setActiveMemberId(memberId); setMemberLedgerFocus(focus ?? "all"); setModal("memberProfile"); }} onSmartPay={(memberId) => { if (!planHasFeature(planFeatures, "smart_accountant")) { showUpgradeNotice("smart_accountant", locale === "ar" ? "المحاسب الذكي" : "Smart accountant"); return; } setActiveMemberId(memberId); setModal("smartPay"); }} />)}
-          {activeView === "transactions" && <TransactionsView data={data} locale={locale} onChanged={(next) => { setData({ ...data, ...next }); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />}
+          {activeView === "transactions" && <TransactionsView data={data} locale={locale} onChanged={(next) => { acceptWrite(next); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />}
           {activeView === "reports" && (viewLocked
             ? <UpgradeGate locale={locale} title={locale === "ar" ? "التقارير تستدعي ترقية الباقة" : "Reports need a plan upgrade"} text={locale === "ar" ? "التقارير التفصيلية والتصدير غير مضمّنة في باقتك. رقِّ الباقة لتفعيلها." : "Advanced reports and exports are not on your plan. Upgrade to unlock them."} />
             : <ReportsPanel data={data} locale={locale} totals={totals} />)}
-          {activeView === "settings" && <SettingsView user={data.user} locale={locale} entitlements={data.entitlements} onLogout={() => void logout()} onSaved={(next) => { setData({ ...data, ...next }); flash(locale === "ar" ? "تم حفظ بيانات الحساب" : "Profile saved"); }} />}
+          {activeView === "settings" && <SettingsView user={data.user} locale={locale} entitlements={data.entitlements} onLogout={() => void logout()} onSaved={(next) => { acceptWrite(next); flash(locale === "ar" ? "تم حفظ بيانات الحساب" : "Profile saved"); }} />}
         </div>
       </main>
 
       {modal === "transaction" && (
         <TransactionModal data={data} locale={locale} preferredSpaceId={activeSpace?.id} onClose={() => setModal(null)} onSaved={(next) => {
-          setData({ ...data, ...next });
+          acceptWrite(next);
           setModal(null);
           flash(locale === "ar" ? "تم تسجيل العملية وتحديث بيانات العضو" : "Transaction saved and member ledger updated");
         }} />
@@ -1268,23 +1276,23 @@ export function WazenDashboard() {
             setPickedSpaceId((current) => ({ ...current, [view]: created.id, society: created.id }));
             if (view !== activeView && (created.type === "society" || created.type === "group")) setActiveView("society");
           }
-          setData({ ...data, ...next });
+          acceptWrite(next);
           setModal(null);
           flash(locale === "ar" ? "تم إنشاء المحفظة" : "Wallet created");
         }} />
       )}
       {modal === "editWallet" && activeSpace && (
-        <WalletModal data={data} locale={locale} existing={activeSpace} defaultType={activeSpace.type} lockType onClose={() => setModal(null)} onLiveData={(next) => setData({ ...data, ...next })} onDeleted={(next) => { setData({ ...data, ...next }); setModal(null); flash(locale === "ar" ? "حُذفت المحفظة" : "Wallet deleted"); }} onSaved={(next) => {
-          setData({ ...data, ...next });
+        <WalletModal data={data} locale={locale} existing={activeSpace} defaultType={activeSpace.type} lockType onClose={() => setModal(null)} onLiveData={(next) => setData({ ...data, ...next })} onDeleted={(next) => { acceptWrite(next); setModal(null); flash(locale === "ar" ? "حُذفت المحفظة" : "Wallet deleted"); }} onSaved={(next) => {
+          acceptWrite(next);
           setModal(null);
           flash(activeSpace.type === "personal" ? (locale === "ar" ? "تم حفظ ضبط المحفظة" : "Wallet setup saved") : (locale === "ar" ? "تم تحديث بيانات الجمعية" : "Association details updated"));
         }} />
       )}
       {modal === "invite" && <InviteModal data={data} locale={locale} preferredSpaceId={activeSpace?.id} onClose={() => setModal(null)} onDone={(message) => { setModal(null); flash(message); void load(); }} />}
-      {modal === "tripExpense" && <TripExpenseModal data={data} locale={locale} preferredSpaceId={activeSpace?.id} expenseId={editingExpenseId || undefined} onClose={() => { setModal(null); setEditingExpenseId(""); }} onSaved={(next) => { setData({ ...data, ...next }); setModal(null); setEditingExpenseId(""); flash(locale === "ar" ? "تم حفظ المصروف وتحديث الحصص" : "Expense saved and shares updated"); }} />}
-      {modal === "circleOrder" && activeSpace && <CircleOrderModal data={data} locale={locale} spaceId={activeSpace.id} onClose={() => setModal(null)} onSaved={(next) => { setData({ ...data, ...next }); setModal(null); flash(locale === "ar" ? "تم اعتماد ترتيب الأدوار" : "Turn order saved"); }} />}
-      {modal === "clonePeriod" && activeSpace && <ClonePeriodModal data={data} locale={locale} space={activeSpace} onClose={() => setModal(null)} onSaved={(next) => { setData({ ...data, ...next }); setModal(null); flash(locale === "ar" ? "فُتحت فترة / جمعية جديدة بنفس الشروط" : "A new period was opened with the same terms"); }} />}
-      {modal === "withdrawSurplus" && <SurplusWithdrawModal data={data} locale={locale} memberId={withdrawMemberId} onClose={() => setModal(null)} onSaved={(next) => { setData({ ...data, ...next }); setModal(null); flash(locale === "ar" ? "تم صرف الفائض الشخصي" : "Personal surplus withdrawn"); }} />}
+      {modal === "tripExpense" && <TripExpenseModal data={data} locale={locale} preferredSpaceId={activeSpace?.id} expenseId={editingExpenseId || undefined} onClose={() => { setModal(null); setEditingExpenseId(""); }} onSaved={(next) => { acceptWrite(next); setModal(null); setEditingExpenseId(""); flash(locale === "ar" ? "تم حفظ المصروف وتحديث الحصص" : "Expense saved and shares updated"); }} />}
+      {modal === "circleOrder" && activeSpace && <CircleOrderModal data={data} locale={locale} spaceId={activeSpace.id} onClose={() => setModal(null)} onSaved={(next) => { acceptWrite(next); setModal(null); flash(locale === "ar" ? "تم اعتماد ترتيب الأدوار" : "Turn order saved"); }} />}
+      {modal === "clonePeriod" && activeSpace && <ClonePeriodModal data={data} locale={locale} space={activeSpace} onClose={() => setModal(null)} onSaved={(next) => { acceptWrite(next); setModal(null); flash(locale === "ar" ? "فُتحت فترة / جمعية جديدة بنفس الشروط" : "A new period was opened with the same terms"); }} />}
+      {modal === "withdrawSurplus" && <SurplusWithdrawModal data={data} locale={locale} memberId={withdrawMemberId} onClose={() => setModal(null)} onSaved={(next) => { acceptWrite(next); setModal(null); flash(locale === "ar" ? "تم صرف الفائض الشخصي" : "Personal surplus withdrawn"); }} />}
       {modal === "smartPay" && (
         <SmartAccountantModal
           members={data.members}
@@ -1294,7 +1302,7 @@ export function WazenDashboard() {
           locale={locale}
           preferredMemberId={activeMemberId}
           onClose={() => setModal(null)}
-          onSaved={(next) => { setData({ ...data, ...next }); setModal(null); flash(locale === "ar" ? "تم توزيع السداد على الأشهر الأقدم" : "Payment applied to the oldest months"); }}
+          onSaved={(next) => { acceptWrite(next); setModal(null); flash(locale === "ar" ? "تم توزيع السداد على الأشهر الأقدم" : "Payment applied to the oldest months"); }}
         />
       )}
       {modal === "memberDetail" && (() => {
@@ -1578,6 +1586,64 @@ function TransactionPager({ locale, page, pages, size, total, truncated, onPage,
   );
 }
 
+function txnBalanceDelta(kind: string, allocation: string, amountMinor: number) {
+  if (allocation === "personal_reserve") return 0;
+  if (kind === "income" || kind === "contribution") return amountMinor;
+  if (kind === "expense") return -amountMinor;
+  return 0;
+}
+
+function patchVoidTransaction(data: DashboardData, transaction: Transaction): Partial<DashboardData> {
+  const delta = txnBalanceDelta(transaction.kind, transaction.allocation, Number(transaction.amount_minor));
+  return {
+    transactions: data.transactions.map((row) => (row.id === transaction.id ? { ...row, status: "voided" } : row)),
+    spaces: data.spaces.map((space) => (
+      space.id === transaction.space_id
+        ? { ...space, balance_minor: Number(space.balance_minor) - delta }
+        : space
+    )),
+  };
+}
+
+function patchUpdatedTransaction(
+  data: DashboardData,
+  transaction: Transaction,
+  next: {
+    amountMinor: number;
+    kind: string;
+    allocation: string;
+    memberId: string | null;
+    description: string;
+    occurredAt: string;
+  },
+): Partial<DashboardData> {
+  const oldDelta = txnBalanceDelta(transaction.kind, transaction.allocation, Number(transaction.amount_minor));
+  const newDelta = txnBalanceDelta(next.kind, next.allocation, next.amountMinor);
+  return {
+    transactions: data.transactions.map((row) => (
+      row.id === transaction.id
+        ? {
+          ...row,
+          amount_minor: next.amountMinor,
+          kind: next.kind,
+          allocation: next.allocation,
+          member_id: next.memberId,
+          description_ar: next.description,
+          description_en: next.description,
+          occurred_at: next.occurredAt,
+          edit_count: Number(row.edit_count ?? 0) + 1,
+          modified_at: new Date().toISOString(),
+        }
+        : row
+    )),
+    spaces: data.spaces.map((space) => (
+      space.id === transaction.space_id
+        ? { ...space, balance_minor: Number(space.balance_minor) - oldDelta + newDelta }
+        : space
+    )),
+  };
+}
+
 function sortTransactionsNewest(rows: Transaction[]) {
   return [...rows].sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
 }
@@ -1597,7 +1663,7 @@ function RecentTransactions({ data, locale, onView, onChanged }: { data: Dashboa
       const response = await apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "voidTransaction", idempotencyKey: crypto.randomUUID(), transactionId: transaction.id }) });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
       if (!response.ok) { window.alert(dashboardError(result.error ?? "VOID_FAILED", locale)); return; }
-      onChanged(result.spaces ? result : { transactions: data.transactions.map((row) => row.id === transaction.id ? { ...row, status: "voided" } : row) });
+      onChanged(patchVoidTransaction(data, transaction));
     } finally {
       setWorking(false);
     }
@@ -1886,7 +1952,7 @@ function TransactionsView({ data, locale, onChanged }: { data: DashboardData; lo
       });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
       if (!response.ok) throw new Error(dashboardError(result.error ?? "VOID_FAILED", locale));
-      onChanged(result.spaces ? result : { transactions: data.transactions.map((row) => row.id === transaction.id ? { ...row, status: "voided" } : row) });
+      onChanged(patchVoidTransaction(data, transaction));
     } catch (caught) {
       window.alert(caught instanceof Error ? caught.message : "VOID_FAILED");
     } finally {
@@ -2070,7 +2136,7 @@ function SettingsView({ user, locale, entitlements, onLogout, onSaved }: { user:
       });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
       if (!response.ok) throw new Error(result.error ?? "INVALID_PROFILE");
-      onSaved(result);
+      onSaved({ user: { ...user, displayName, avatarUrl } });
     } catch (caught) {
       setError(dashboardError(caught instanceof Error ? caught.message : "INVALID_PROFILE", locale));
     } finally {
@@ -2182,7 +2248,7 @@ function SpaceTransactionsPanel({ space, data, locale, onAdd, onTxnChanged }: { 
       });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
       if (!response.ok) throw new Error(dashboardError(result.error ?? "VOID_FAILED", locale));
-      onTxnChanged(result.spaces ? result : { transactions: data.transactions.map((row) => row.id === transaction.id ? { ...row, status: "voided" } : row) });
+      onTxnChanged(patchVoidTransaction(data, transaction));
     } catch (caught) {
       window.alert(caught instanceof Error ? caught.message : "VOID_FAILED");
     } finally {
@@ -2222,6 +2288,10 @@ function EditTransactionModal({ data, locale, transaction, onClose, onSaved }: {
     setSaving(true);
     setError("");
     try {
+      const currency = space?.currency ?? "OMR";
+      const amountMinor = parseMoneyToMinor(amount, currency);
+      const bookedAllocation = kind === "contribution" && allocation === "general" ? "mandatory" : allocation;
+      const occurredAt = dateInputToOccurredAt(occurredOn);
       const response = await apiFetch("/api/dashboard", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -2234,12 +2304,19 @@ function EditTransactionModal({ data, locale, transaction, onClose, onSaved }: {
           kind,
           allocation,
           memberId: memberId || null,
-          occurredAt: dateInputToOccurredAt(occurredOn),
+          occurredAt,
         }),
       });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
       if (!response.ok) throw new Error(result.error ?? "SAVE_FAILED");
-      onSaved(result);
+      onSaved(patchUpdatedTransaction(data, transaction, {
+        amountMinor,
+        kind,
+        allocation: bookedAllocation,
+        memberId: memberId || null,
+        description,
+        occurredAt,
+      }));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "SAVE_FAILED");
     } finally {

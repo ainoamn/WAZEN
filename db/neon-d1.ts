@@ -142,7 +142,7 @@ export function getNeonD1(): D1Database {
   if (!global.__wazen_neon_d1__) {
     const url = process.env.DATABASE_URL?.trim() || process.env.NEON_DATABASE_URL?.trim();
     if (!url) throw new Error("DATABASE_NOT_CONFIGURED");
-    global.__wazen_neon_pool__ = new Pool({ connectionString: url, max: 1 });
+    global.__wazen_neon_pool__ = new Pool({ connectionString: url, max: 8 });
     global.__wazen_neon_d1__ = new NeonD1Database(global.__wazen_neon_pool__) as unknown as D1Database;
     // Warm the pool so the first real query doesn't pay connection overhead.
     global.__wazen_neon_pool__.query("SELECT 1").catch(() => {});

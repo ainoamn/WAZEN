@@ -609,7 +609,12 @@ export async function getUserBillingHistory(db: D1Database, userId: string) {
   };
 }
 
-export async function getActivePlanEntitlements(db: D1Database, userId: string, options?: { skipSideEffects?: boolean }) {
+type EntitlementsResult = Awaited<ReturnType<typeof loadActivePlanEntitlements>>;
+
+const entitlementsMemo = new Map<string, { exp: number; promise: Promise<EntitlementsResult> }>();
+const ENTITLEMENTS_MEMO_MS = 8_000;
+
+async function loadActivePlanEntitlements(db: D1Database, userId: string, options?: { skipSideEffects?: boolean; skipUsage?: boolean }) {
   await ensureSubscriptionAdminColumns(db);
   await ensurePlanQuotaColumns(db);
   if (!options?.skipSideEffects) {
@@ -711,22 +716,25 @@ export async function getActivePlanEntitlements(db: D1Database, userId: string, 
       printLimit: 10,
       status: "none",
     });
-  const usage = await getOwnerQuotaUsage(db, userId).catch((error) => {
-    console.error(JSON.stringify({
-      level: "error",
-      code: "PLAN_USAGE_QUERY_FAILED",
-      message: error instanceof Error ? error.message : String(error),
-      at: new Date().toISOString(),
-    }));
-    return { transactionsTotal: 0, transactionsToday: 0, transactionsThisMonth: 0, printsThisMonth: 0 };
-  });
-  const grace = await readUserGraceSummary(db, userId);
+  const emptyUsage = { transactionsTotal: 0, transactionsToday: 0, transactionsThisMonth: 0, printsThisMonth: 0 };
+  const usage = options?.skipUsage
+    ? emptyUsage
+    : await getOwnerQuotaUsage(db, userId).catch((error) => {
+      console.error(JSON.stringify({
+        level: "error",
+        code: "PLAN_USAGE_QUERY_FAILED",
+        message: error instanceof Error ? error.message : String(error),
+        at: new Date().toISOString(),
+      }));
+      return emptyUsage;
+    });
+  const grace = options?.skipUsage ? null : await readUserGraceSummary(db, userId);
   return {
     ...resolved,
     discountPercent: Number(row?.discount_percent ?? 0),
     discountFixedMinor: Number(row?.discount_fixed_minor ?? 0),
     usage,
-    warnings: buildQuotaWarnings(resolved, usage),
+    warnings: options?.skipUsage ? [] : buildQuotaWarnings(resolved, usage),
     retention: grace
       ? {
         graceEndsAt: grace.graceEndsAt,
@@ -736,6 +744,30 @@ export async function getActivePlanEntitlements(db: D1Database, userId: string, 
       }
       : null,
   };
+}
+
+export async function getActivePlanEntitlements(db: D1Database, userId: string, options?: { skipSideEffects?: boolean; skipUsage?: boolean }) {
+  const key = `${userId}:${options?.skipSideEffects ? 1 : 0}:${options?.skipUsage ? 1 : 0}`;
+  const hit = entitlementsMemo.get(key);
+  if (hit && hit.exp > Date.now()) return hit.promise;
+  const promise = loadActivePlanEntitlements(db, userId, options);
+  entitlementsMemo.set(key, { exp: Date.now() + ENTITLEMENTS_MEMO_MS, promise });
+  try {
+    return await promise;
+  } catch (error) {
+    entitlementsMemo.delete(key);
+    throw error;
+  }
+}
+
+export function invalidatePlanEntitlementsCache(userId?: string) {
+  if (!userId) {
+    entitlementsMemo.clear();
+    return;
+  }
+  for (const key of entitlementsMemo.keys()) {
+    if (key.startsWith(`${userId}:`)) entitlementsMemo.delete(key);
+  }
 }
 
 export type PlanQuotaKind = "transaction" | "record" | "user";
@@ -823,8 +855,8 @@ function buildQuotaWarnings(
 }
 
 export async function assertOwnerPlanQuota(db: D1Database, userId: string, kind: PlanQuotaKind, extra = 1) {
-  if (await isPlatformAdminUser(db, userId)) return getActivePlanEntitlements(db, userId);
-  const entitlements = await getActivePlanEntitlements(db, userId);
+  if (await isPlatformAdminUser(db, userId)) return getActivePlanEntitlements(db, userId, { skipSideEffects: true });
+  const entitlements = await getActivePlanEntitlements(db, userId, { skipSideEffects: true });
   if (kind === "transaction") {
     const usage = entitlements.usage;
     if (quotaWouldExceed(usage.transactionsTotal, extra, entitlements.transactionLimit)) throw new ApiError(403, "PLAN_TRANSACTION_LIMIT");
@@ -846,8 +878,10 @@ export async function assertPlanShareFeature(
   feature: "email" | "whatsapp" | "downloads",
   actorUserId = ownerUserId,
 ) {
-  if (await isPlatformAdminUser(db, actorUserId)) return getActivePlanEntitlements(db, ownerUserId);
-  const entitlements = await getActivePlanEntitlements(db, ownerUserId);
+  if (await isPlatformAdminUser(db, actorUserId)) {
+    return getActivePlanEntitlements(db, ownerUserId, { skipSideEffects: true, skipUsage: true });
+  }
+  const entitlements = await getActivePlanEntitlements(db, ownerUserId, { skipSideEffects: true, skipUsage: true });
   if (!planHasFeature(entitlements.features, feature)) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
   return entitlements;
 }
@@ -859,8 +893,10 @@ export async function consumeQuotaEvent(
   actorUserId = ownerUserId,
 ) {
   await ensureQuotaEventsTable(db);
-  if (await isPlatformAdminUser(db, actorUserId)) return getActivePlanEntitlements(db, ownerUserId);
-  const entitlements = await getActivePlanEntitlements(db, ownerUserId);
+  if (await isPlatformAdminUser(db, actorUserId)) {
+    return getActivePlanEntitlements(db, ownerUserId, { skipSideEffects: true });
+  }
+  const entitlements = await getActivePlanEntitlements(db, ownerUserId, { skipSideEffects: true });
   if (kind === "download" && !planHasFeature(entitlements.features, "downloads")) {
     throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
   }
@@ -881,5 +917,14 @@ export async function consumeQuotaEvent(
       at: new Date().toISOString(),
     }));
   }
-  return getActivePlanEntitlements(db, ownerUserId);
+  invalidatePlanEntitlementsCache(ownerUserId);
+  const nextUsage = {
+    ...entitlements.usage,
+    printsThisMonth: kind === "print" ? entitlements.usage.printsThisMonth + 1 : entitlements.usage.printsThisMonth,
+  };
+  return {
+    ...entitlements,
+    usage: nextUsage,
+    warnings: buildQuotaWarnings(entitlements, nextUsage),
+  };
 }

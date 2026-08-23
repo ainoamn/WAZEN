@@ -55,7 +55,8 @@ export async function authorizeSpace(db: D1Database, user: RequestUser, spaceId:
   if (allowedTypes && !allowedTypes.includes(row.type)) throw new ApiError(400, "INVALID_WALLET_TYPE");
   const { getActivePlanEntitlements, planAllowsSpaceType } = await import("../services/admin/billing-service");
   const { spaceInUserGrace } = await import("./plan-retention");
-  const entitlements = await getActivePlanEntitlements(db, user.id);
+  // Auth only needs feature flags — skip plan apply/expire and quota COUNT scans.
+  const entitlements = await getActivePlanEntitlements(db, user.id, { skipSideEffects: true, skipUsage: true });
   if (!planAllowsSpaceType(entitlements.features, row.type) && !spaceInUserGrace(row)) {
     throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
   }

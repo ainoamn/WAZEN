@@ -374,27 +374,49 @@ body.page-landscape td.col-desc { min-width: 160px; white-space: normal; overflo
     -webkit-print-color-adjust: exact;
   }
   body.page-landscape { font-size: 11px; }
-  body.is-receipt { font-size: 16px; }
+  body.is-receipt { font-size: 13px; line-height: 1.35; }
   .print-actions { display: none !important; }
-  .sheet { margin: 0; border: 0; border-radius: 0; max-width: none; overflow: visible; box-shadow: none; }
-  body.is-receipt .sheet { max-width: none; margin: 0; }
+  .sheet { margin: 0; border: 0; border-radius: 0; max-width: none; overflow: visible; box-shadow: none; min-height: 0 !important; }
+  body.is-receipt .sheet { max-width: none; margin: 0; min-height: 0 !important; }
   .brand-bar, th, .meta, .kpi, .receipt-amount, .sheet-accent, .receipt-fields > div:nth-child(even) { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .brand-bar small, .meta span, .kpi span, th, body.page-portrait td:first-child, footer.sheet-foot, .receipt-fields dt { color: #222 !important; }
   .brand-bar strong, .meta b, .kpi strong, td, .head p, .receipt-fields dd { color: #000 !important; }
   .head h1 { font-size: 32px; color: #0a5c4c !important; }
-  body.is-receipt .head h1 { font-size: 26px !important; }
-  body.is-receipt .receipt-amount strong { font-size: 34px !important; color: #fff !important; line-height: 1.4 !important; }
-  body.is-receipt .receipt-amount span { color: #fff !important; letter-spacing: 0 !important; }
-  body.is-receipt footer.sheet-foot .foot-mark { color: #0a5c4c !important; }
+  body.is-receipt .sheet-accent { height: 3px; }
+  body.is-receipt .brand-bar { padding: 8px 14px 6px !important; }
+  body.is-receipt .brand-bar img { height: 28px !important; }
+  body.is-receipt .brand-bar strong { font-size: 13px !important; }
+  body.is-receipt .head { padding: 2px 14px 6px !important; margin-bottom: 0 !important; }
+  body.is-receipt .receipt-badge { margin: 0 0 4px !important; padding: 2px 8px !important; font-size: 10px !important; }
+  body.is-receipt .head h1 { font-size: 18px !important; margin: 0 0 2px !important; }
+  body.is-receipt .head p { font-size: 11px !important; }
+  body.is-receipt .receipt-block { padding: 4px 14px 2px !important; }
+  body.is-receipt .receipt-amount { margin: 6px 0 8px !important; padding: 10px 12px 12px !important; border-radius: 10px !important; box-shadow: none !important; }
+  body.is-receipt .receipt-amount span { margin-bottom: 4px !important; font-size: 11px !important; }
+  body.is-receipt .receipt-amount strong { font-size: 22px !important; color: #fff !important; line-height: 1.25 !important; padding: 0 !important; }
+  body.is-receipt .receipt-fields > div {
+    grid-template-columns: minmax(5.5rem, 30%) 1fr !important;
+    gap: 4px 10px !important;
+    padding: 6px 10px !important;
+    align-items: center !important;
+  }
+  body.is-receipt .receipt-fields dt { font-size: 11px !important; }
+  body.is-receipt .receipt-fields dd { font-size: 12px !important; }
+  body.is-receipt .receipt-ref { margin: 8px 0 2px !important; padding: 6px 8px !important; font-size: 11px !important; }
+  body.is-receipt .receipt-qr { margin: 8px 0 0 !important; padding: 8px 8px !important; }
+  body.is-receipt .receipt-qr img { width: 88px !important; height: 88px !important; margin: 0 auto 4px !important; }
+  body.is-receipt .receipt-qr p { font-size: 10px !important; }
+  body.is-receipt footer.sheet-foot { margin-top: 4px !important; padding: 8px 14px 10px !important; font-size: 10px !important; line-height: 1.4 !important; }
+  body.is-receipt footer.sheet-foot .foot-mark { color: #0a5c4c !important; font-size: 11px !important; margin-bottom: 2px !important; }
+  body.is-receipt footer.sheet-foot .foot-site { font-size: 10px !important; }
   body.page-landscape .head h1 { font-size: 20px !important; }
   table, td, .num { font-size: 16px; }
   body.page-landscape table, body.page-landscape td, body.page-landscape .num { font-size: 11px; }
   body.page-landscape th, body.page-landscape td.col-date, body.page-landscape td.col-ref { font-size: 10px; }
   th { font-size: 14px; }
   footer.sheet-foot { font-size: 13px; background: #fff; }
-  body.is-receipt footer.sheet-foot { font-size: 13px; }
 }
-@media (max-width: 760px) {
+@media screen and (max-width: 760px) {
   body { background: #f4f7f5; }
   .print-actions { justify-content: stretch; padding: 10px 12px; }
   .print-actions button { width: 100%; min-height: 48px; border-radius: 14px; font-size: 16px; }
@@ -533,7 +555,9 @@ export function wrapPrintDocument(options: {
     .join("");
   const pageRule = orientation === "landscape"
     ? "@page { size: A4 landscape; margin: 8mm; }"
-    : "@page { size: A4 portrait; margin: 12mm; }";
+    : isReceipt
+      ? "@page { size: A4 portrait; margin: 8mm; }"
+      : "@page { size: A4 portrait; margin: 12mm; }";
   const receiptFoot = receiptElectronicFooter(options.locale);
   const footerHtml = isReceipt
     ? (options.footer
@@ -685,18 +709,28 @@ async function htmlDocumentToPdfBlob(html: string): Promise<Blob> {
     const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: orientation === "landscape" ? "l" : "p", compress: true });
     const pageW = pdf.internal.pageSize.getWidth();
     const pageH = pdf.internal.pageSize.getHeight();
-    const imgW = pageW;
-    const imgH = (canvas.height * imgW) / canvas.width;
     const imgData = canvas.toDataURL("image/jpeg", 0.92);
-    let heightLeft = imgH;
-    let position = 0;
-    pdf.addImage(imgData, "JPEG", 0, position, imgW, imgH, undefined, "FAST");
-    heightLeft -= pageH;
-    while (heightLeft > 0.4) {
-      position = heightLeft - imgH;
-      pdf.addPage();
+    const isReceiptDoc = /is-receipt/.test(html);
+    let imgW = pageW;
+    let imgH = (canvas.height * imgW) / canvas.width;
+    // Receipts must fit on a single A4 page — scale down instead of slicing.
+    if (isReceiptDoc && imgH > pageH) {
+      const scale = pageH / imgH;
+      imgW *= scale;
+      imgH = pageH;
+      const x = (pageW - imgW) / 2;
+      pdf.addImage(imgData, "JPEG", x, 0, imgW, imgH, undefined, "FAST");
+    } else {
+      let heightLeft = imgH;
+      let position = 0;
       pdf.addImage(imgData, "JPEG", 0, position, imgW, imgH, undefined, "FAST");
       heightLeft -= pageH;
+      while (heightLeft > 0.4) {
+        position = heightLeft - imgH;
+        pdf.addPage();
+        pdf.addImage(imgData, "JPEG", 0, position, imgW, imgH, undefined, "FAST");
+        heightLeft -= pageH;
+      }
     }
     return pdf.output("blob");
   } finally {
