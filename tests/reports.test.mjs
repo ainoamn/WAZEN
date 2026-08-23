@@ -78,7 +78,7 @@ test("branded report html includes logo, wallet name and member scope", () => {
 
   assert.match(html, /wazen-lockup\.png|data:image\//);
   assert.match(html, /onclick="window.print\(\)"/);
-  assert.match(html, /@page \{ size: A4;/);
+  assert.match(html, /@page \{ size: A4/);
   assert.match(html, /جمعية الإخوة/);
   assert.match(html, /عبد الحميد/);
   assert.match(html, /تقرير العميل/);
@@ -104,25 +104,38 @@ test("account statement looks like a bank ledger with running balance", () => {
   assert.match(html, /ماجد/);
   assert.match(html, /wazen-lockup\.png/);
   assert.match(html, /onclick="window.print\(\)"/);
-  assert.match(html, /@page \{ size: A4;/);
+  assert.match(html, /@page \{ size: A4/);
 });
 
 test("print document CSS uses large readable fonts for paper output", async () => {
-  const { PRINT_DOCUMENT_CSS, wrapPrintDocument } = await import("../lib/print-document.ts");
+  const { PRINT_DOCUMENT_CSS, wrapPrintDocument, buildReceiptBodyHtml } = await import("../lib/print-document.ts");
   assert.match(PRINT_DOCUMENT_CSS, /body \{[\s\S]*font-size: 16px;/);
   assert.match(PRINT_DOCUMENT_CSS, /table \{[\s\S]*font-size: 16px;/);
   assert.match(PRINT_DOCUMENT_CSS, /\.head h1 \{[\s\S]*font-size: 30px;/);
   assert.match(PRINT_DOCUMENT_CSS, /footer\.sheet-foot \{[\s\S]*font-size: 14px;/);
   assert.match(PRINT_DOCUMENT_CSS, /@media print \{[\s\S]*font-size: 16px;/);
+  assert.match(PRINT_DOCUMENT_CSS, /\.receipt-amount/);
+  assert.match(PRINT_DOCUMENT_CSS, /@media \(max-width: 760px\)/);
   assert.doesNotMatch(PRINT_DOCUMENT_CSS, /table \{[^}]*font-size: 12px;/);
+  const body = buildReceiptBodyHtml({
+    locale: "ar",
+    amountLabel: "50.000 ر.ع",
+    fields: [{ label: "الوصف", value: "تسوية" }],
+    reference: "ABCD1234",
+  });
+  assert.match(body, /receipt-amount/);
+  assert.match(body, /50\.000 ر\.ع/);
+  assert.match(body, /المرجع/);
   const html = wrapPrintDocument({
     locale: "ar",
     title: "إيصال وازن",
     entityName: "جمعية السفر",
     logoUrl: "/brand/wazen-lockup.png",
     subtitle: "2026/08/16",
-    bodyHtml: "<section><table><tr><td>الوصف</td><td>تسوية</td></tr></table></section>",
+    bodyHtml: body,
   });
   assert.match(html, /font-size: 16px/);
   assert.match(html, /إيصال وازن/);
+  assert.match(html, /sheet-accent/);
+  assert.match(html, /viewport/);
 });

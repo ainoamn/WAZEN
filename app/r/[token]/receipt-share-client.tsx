@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import WazenLogo from "../../../components/brand/WazenLogo";
-import { downloadReportHtml, printWazenHtml, wrapPrintDocument } from "../../../lib/print-document";
-import { escapeHtml } from "../../../lib/html";
+import { buildReceiptBodyHtml, downloadReportHtml, printWazenHtml, wrapPrintDocument } from "../../../lib/print-document";
 
 type ReceiptPayload = {
   locale: "ar" | "en";
@@ -20,14 +19,18 @@ type ReceiptPayload = {
 
 function receiptBodyHtml(data: ReceiptPayload) {
   const l = data.locale;
-  return `<section><h2>${escapeHtml(data.title)}</h2><table>
-    <tr><td>${l === "ar" ? "الوصف" : "Description"}</td><td>${escapeHtml(data.description)}</td></tr>
-    <tr><td>${l === "ar" ? "المحفظة" : "Wallet"}</td><td>${escapeHtml(data.walletName)}</td></tr>
-    <tr><td>${l === "ar" ? "المساهم" : "Member"}</td><td>${escapeHtml(data.memberName)}</td></tr>
-    <tr><td>${l === "ar" ? "المبلغ" : "Amount"}</td><td>${escapeHtml(data.amountLabel)}</td></tr>
-    <tr><td>${l === "ar" ? "التاريخ" : "Date"}</td><td>${escapeHtml(data.dateLabel)}</td></tr>
-    <tr><td>${l === "ar" ? "المرجع" : "Reference"}</td><td>${escapeHtml(data.reference)}</td></tr>
-  </table></section>`;
+  return buildReceiptBodyHtml({
+    locale: l,
+    amountLabel: data.amountLabel,
+    fields: [
+      { label: l === "ar" ? "الوصف" : "Description", value: data.description },
+      { label: l === "ar" ? "المحفظة" : "Wallet", value: data.walletName },
+      { label: l === "ar" ? "المساهم" : "Member", value: data.memberName },
+      { label: l === "ar" ? "التاريخ" : "Date", value: data.dateLabel },
+      { label: l === "ar" ? "النوع" : "Type", value: data.kind },
+    ],
+    reference: data.reference,
+  });
 }
 
 export default function ReceiptShareClient({ token }: { token: string }) {
@@ -97,13 +100,18 @@ export default function ReceiptShareClient({ token }: { token: string }) {
       {error && <p className="receipt-share-error">{locale === "ar" ? "رابط الإيصال غير صالح أو منتهٍ." : "This receipt link is invalid or expired."}</p>}
       {data && (
         <article className="receipt-share-card">
+          <div className="receipt-share-accent" aria-hidden="true" />
+          <p className="receipt-share-eyebrow">{data.walletName}</p>
           <h1>{data.title}</h1>
+          <p className="receipt-share-date">{data.dateLabel}</p>
+          <div className="receipt-share-amount">
+            <span>{locale === "ar" ? "المبلغ" : "Amount"}</span>
+            <strong>{data.amountLabel}</strong>
+          </div>
           <dl>
             <div><dt>{locale === "ar" ? "الوصف" : "Description"}</dt><dd>{data.description}</dd></div>
-            <div><dt>{locale === "ar" ? "المحفظة" : "Wallet"}</dt><dd>{data.walletName}</dd></div>
             <div><dt>{locale === "ar" ? "المساهم" : "Member"}</dt><dd>{data.memberName}</dd></div>
-            <div><dt>{locale === "ar" ? "المبلغ" : "Amount"}</dt><dd>{data.amountLabel}</dd></div>
-            <div><dt>{locale === "ar" ? "التاريخ" : "Date"}</dt><dd>{data.dateLabel}</dd></div>
+            <div><dt>{locale === "ar" ? "النوع" : "Type"}</dt><dd>{data.kind}</dd></div>
             <div><dt>{locale === "ar" ? "المرجع" : "Reference"}</dt><dd>{data.reference}</dd></div>
           </dl>
           <div className="receipt-share-actions">

@@ -12,14 +12,13 @@ import { HouseholdFamilyPanel } from "../components/household/household-family";
 import { WalletForecastPanel } from "../components/forecast/wallet-forecast";
 import { projectCashflow } from "../lib/wallet-forecast";
 import { isPeriodLocked } from "../lib/accounting-periods";
-import { buildReportHtml, printWazenHtml } from "../lib/reports";
+import { buildReportHtml, printWazenHtml, buildReceiptBodyHtml } from "../lib/reports";
 import { wrapPrintDocument } from "../lib/print-document";
 import { composeWhatsAppPhone, splitPhoneParts, toWhatsAppNumber } from "../lib/phone";
 import { apiFetch } from "../lib/client-api";
 import { buildAccountStatementHtml } from "../lib/account-statement";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor, currencyScale } from "../lib/money";
-import { escapeHtml } from "../lib/html";
 import { memberDisplayCreditMinor, netMemberClaim, pendingSettlementsWithCredit } from "../lib/finance";
 import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, quotaRemaining, quotaWarningCopy, upgradeNoticeFor } from "../lib/plan-features";
 import { userGraceWarningCopy } from "../lib/plan-retention-rules";
@@ -658,20 +657,31 @@ function buildTransactionReceiptParts(transaction: Transaction, data: DashboardD
   const delta = actual - expected;
   const title = locale === "ar" ? "إيصال وازن" : "WAZEN receipt";
   const amount = formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale);
-  const extra = occurrence && expected > 0
-    ? `<tr><td>${locale === "ar" ? "الالتزام" : "Commitment"}</td><td>${formatMoney(expected, space?.currency ?? "OMR", locale)}</td></tr>
-    <tr><td>${locale === "ar" ? "المدفوع" : "Paid"}</td><td>${formatMoney(actual, space?.currency ?? "OMR", locale)}</td></tr>
-    <tr><td>${locale === "ar" ? "الفرق" : "Variance"}</td><td>${delta === 0 ? (locale === "ar" ? "مطابق" : "Match") : `${delta > 0 ? (locale === "ar" ? "زيادة" : "Over") : (locale === "ar" ? "نقص" : "Short")} ${formatMoney(Math.abs(delta), space?.currency ?? "OMR", locale)}`}</td></tr>
-    <tr><td>${locale === "ar" ? "الملخص" : "Summary"}</td><td>${escapeHtml(occurrenceVarianceCopy(expected, actual, locale))}</td></tr>`
-    : `<tr><td>${locale === "ar" ? "المبلغ" : "Amount"}</td><td>${amount}</td></tr>`;
-  const bodyHtml = `<section><h2>${escapeHtml(title)}</h2><table>
-    <tr><td>${locale === "ar" ? "الوصف" : "Description"}</td><td>${escapeHtml(transactionName(transaction, locale))}</td></tr>
-    <tr><td>${locale === "ar" ? "المحفظة" : "Wallet"}</td><td>${escapeHtml(space ? nameOf(space, locale) : "—")}</td></tr>
-    <tr><td>${locale === "ar" ? "المساهم" : "Member"}</td><td>${escapeHtml(member?.display_name ?? "—")}</td></tr>
-    <tr><td>${locale === "ar" ? "النوع" : "Type"}</td><td>${escapeHtml(transaction.kind)}</td></tr>
-    ${extra}
-    <tr><td>${locale === "ar" ? "المرجع" : "Reference"}</td><td>${transaction.id.slice(0, 8).toUpperCase()}</td></tr>
-  </table></section>`;
+  const fields: Array<{ label: string; value: string }> = [
+    { label: locale === "ar" ? "الوصف" : "Description", value: transactionName(transaction, locale) },
+    { label: locale === "ar" ? "المحفظة" : "Wallet", value: space ? nameOf(space, locale) : "—" },
+    { label: locale === "ar" ? "المساهم" : "Member", value: member?.display_name ?? "—" },
+    { label: locale === "ar" ? "النوع" : "Type", value: transaction.kind },
+  ];
+  if (occurrence && expected > 0) {
+    fields.push(
+      { label: locale === "ar" ? "الالتزام" : "Commitment", value: formatMoney(expected, space?.currency ?? "OMR", locale) },
+      { label: locale === "ar" ? "المدفوع" : "Paid", value: formatMoney(actual, space?.currency ?? "OMR", locale) },
+      {
+        label: locale === "ar" ? "الفرق" : "Variance",
+        value: delta === 0
+          ? (locale === "ar" ? "مطابق" : "Match")
+          : `${delta > 0 ? (locale === "ar" ? "زيادة" : "Over") : (locale === "ar" ? "نقص" : "Short")} ${formatMoney(Math.abs(delta), space?.currency ?? "OMR", locale)}`,
+      },
+      { label: locale === "ar" ? "الملخص" : "Summary", value: occurrenceVarianceCopy(expected, actual, locale) },
+    );
+  }
+  const bodyHtml = buildReceiptBodyHtml({
+    locale,
+    amountLabel: amount,
+    fields,
+    reference: transaction.id.slice(0, 8).toUpperCase(),
+  });
   const text = locale === "ar"
     ? [
         "إيصال وازن",

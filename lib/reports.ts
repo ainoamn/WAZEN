@@ -2,7 +2,7 @@
 
 import { wrapPrintDocument } from "./print-document.ts";
 
-export { downloadReportHtml, openReportPreview, resolvePrintLogoUrl, printWazenHtml, shareWazenPdfWithText } from "./print-document.ts";
+export { downloadReportHtml, openReportPreview, resolvePrintLogoUrl, printWazenHtml, shareWazenPdfWithText, buildReceiptBodyHtml, wrapPrintDocument } from "./print-document.ts";
 
 export type ReportLocale = "ar" | "en";
 
