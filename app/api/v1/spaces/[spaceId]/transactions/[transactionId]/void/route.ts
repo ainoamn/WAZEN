@@ -6,6 +6,7 @@ import { errorResponse, ApiError, claimIdempotency, completeIdempotency, enforce
 import { voidApprovedTransaction } from "../../../../../../../../lib/ledger-void";
 import { enqueueIntegrationEvent } from "../../../../../../../../lib/integration-webhooks";
 import { coveringPeriod } from "../../../../../../../../lib/accounting-periods";
+import { enforceV1RateLimit } from "../../../../../../../../lib/v1-rate-limit";
 import { withRequestTiming } from "../../../../../../../../lib/request-timing";
 
 export const runtime = "nodejs";
@@ -31,6 +32,7 @@ export async function POST(
         idempotencyKey = String(request.headers.get("idempotency-key") ?? "");
       }
       return await runWithDbUser(user.id, async () => {
+        await enforceV1RateLimit(db, request, user, "write");
         assertApiScope(user, "wallets:write");
         const space = await authorizeSpace(db, user, spaceId, "transact");
         const txn = await db.prepare("SELECT * FROM transactions WHERE id=? AND space_id=?").bind(transactionId, spaceId).first<{

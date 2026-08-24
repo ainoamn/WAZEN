@@ -7,6 +7,7 @@ import { errorResponse, ApiError, claimIdempotency, completeIdempotency, enforce
 import { formatMoneyMinor } from "../../../../../../lib/money";
 import { createV1Transaction } from "../../../../../../lib/v1-transactions";
 import { enqueueIntegrationEvent } from "../../../../../../lib/integration-webhooks";
+import { enforceV1RateLimit } from "../../../../../../lib/v1-rate-limit";
 import { withRequestTiming } from "../../../../../../lib/request-timing";
 
 export const runtime = "nodejs";
@@ -25,6 +26,7 @@ export async function GET(
     const url = new URL(request.url);
     const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") ?? 50) || 50));
     return await runWithDbUser(user.id, async () => {
+      await enforceV1RateLimit(db, request, user, "read");
       assertApiScope(user, "wallets:read");
       const space = await authorizeSpace(db, user, spaceId, "read");
       const rows = await db.prepare(`
@@ -76,6 +78,7 @@ export async function POST(
     const payload = (await request.json()) as Record<string, unknown>;
     const idempotencyKey = String(payload.idempotencyKey ?? request.headers.get("idempotency-key") ?? "");
     return await runWithDbUser(user.id, async () => {
+      await enforceV1RateLimit(db, request, user, "write");
       assertApiScope(user, "wallets:write");
       const space = await authorizeSpace(db, user, spaceId, "transact");
       const parsed = z.object({

@@ -20,6 +20,8 @@ const DEFAULT_EVENTS = [
   "document.created",
   "settlement.settled",
   "period.closed",
+  "period.reopened",
+  "contribution_plan.updated",
 ];
 
 export function SecurityClient() {

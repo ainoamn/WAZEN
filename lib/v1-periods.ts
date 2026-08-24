@@ -96,3 +96,36 @@ export async function closeV1Period(
     closedAt: createdAt,
   };
 }
+
+export async function reopenV1Period(
+  db: D1Database,
+  user: RequestUser,
+  space: { id: string },
+  periodId: string,
+  options?: { reason?: string },
+) {
+  const period = await db.prepare(
+    "SELECT id,status,label FROM accounting_periods WHERE id=? AND space_id=?",
+  ).bind(periodId, space.id).first<{ id: string; status: string; label: string }>();
+  if (!period) throw new ApiError(404, "PERIOD_NOT_FOUND");
+  if (period.status !== "closed") throw new ApiError(409, "PERIOD_NOT_CLOSED");
+  const createdAt = new Date().toISOString();
+  await db.prepare(
+    "UPDATE accounting_periods SET status='reopened', reopened_at=?, reopened_by=?, reopen_count=COALESCE(reopen_count,0)+1 WHERE id=?",
+  ).bind(createdAt, user.id, period.id).run();
+  await prepareAudit(db, {
+    userId: user.id,
+    action: "period.reopened",
+    entityType: "accounting_period",
+    entityId: period.id,
+    metadata: { spaceId: space.id, reason: options?.reason ?? "", label: period.label, via: "api.v1" },
+    createdAt,
+  }).run();
+  return {
+    id: period.id,
+    spaceId: space.id,
+    status: "reopened" as const,
+    reopenedAt: createdAt,
+    label: period.label,
+  };
+}

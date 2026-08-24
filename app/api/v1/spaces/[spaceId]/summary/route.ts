@@ -4,6 +4,7 @@ import { assertApiScope, authorizeSpace } from "../../../../../../lib/authorizat
 import { runWithDbUser } from "../../../../../../lib/db-request-context";
 import { errorResponse, ApiError } from "../../../../../../lib/security";
 import { buildV1SpaceSummary } from "../../../../../../lib/v1-summary";
+import { enforceV1RateLimit } from "../../../../../../lib/v1-rate-limit";
 import { withRequestTiming } from "../../../../../../lib/request-timing";
 
 export const runtime = "nodejs";
@@ -20,6 +21,7 @@ export async function GET(
       const user = await authenticateRequest(db, request);
       if (!user) throw new ApiError(401, "AUTHENTICATION_REQUIRED");
       return await runWithDbUser(user.id, async () => {
+        await enforceV1RateLimit(db, request, user, "read");
         assertApiScope(user, "wallets:read");
         const space = await authorizeSpace(db, user, spaceId, "read");
         const summary = await buildV1SpaceSummary(db, space);

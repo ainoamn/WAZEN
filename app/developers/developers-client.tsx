@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Brand, useCommerceLocale } from "../commercial-kit";
 
 const endpoints = [
+  { method: "GET", path: "/api/v1/me", ar: "هوية المفتاح الحالي", en: "Current API principal" },
   { method: "GET", path: "/api/v1/spaces", ar: "قائمة المحافظ المتاحة للمفتاح", en: "List wallets visible to the key" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}", ar: "تفاصيل محفظة واحدة", en: "Single wallet summary" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/transactions?limit=50", ar: "حركات المحفظة", en: "Wallet transactions" },
@@ -16,7 +17,10 @@ const endpoints = [
   { method: "POST", path: "/api/v1/spaces/{spaceId}/surplus/withdraw", ar: "سحب فائض عضو", en: "Withdraw member surplus" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/summary", ar: "ملخص أرصدة ومستحقات", en: "Balances and dues summary" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/contributions", ar: "تسجيل مساهمة مع تقسيم فائض", en: "Record contribution with surplus split" },
+  { method: "GET", path: "/api/v1/spaces/{spaceId}/contribution-plan", ar: "خطة المساهمة", en: "Contribution plan" },
+  { method: "PUT", path: "/api/v1/spaces/{spaceId}/contribution-plan", ar: "تحديث خطة المساهمة", en: "Update contribution plan" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/installments", ar: "جدول الأقساط", en: "Installment schedule" },
+  { method: "GET", path: "/api/v1/spaces/{spaceId}/expenses", ar: "مصروفات الرحلة/المجموعة", en: "Trip/group expenses" },
   { method: "PATCH", path: "/api/v1/spaces/{spaceId}/members/{memberId}", ar: "تحديث دور/حالة عضو", en: "Update member role/status" },
   { method: "GET", path: "/api/v1/documents", ar: "قائمة المستندات", en: "List documents" },
   { method: "POST", path: "/api/v1/documents", ar: "إنشاء مستند", en: "Create a document" },
@@ -24,6 +28,7 @@ const endpoints = [
   { method: "POST", path: "/api/v1/spaces/{spaceId}/settlements/{settlementId}/settle", ar: "تنفيذ تسوية", en: "Settle a settlement" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/periods", ar: "الفترات المحاسبية", en: "Accounting periods" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/periods", ar: "إغلاق الفترة المحاسبية", en: "Close accounting period" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/periods/{periodId}/reopen", ar: "إعادة فتح فترة مغلقة", en: "Reopen closed period" },
   { method: "GET", path: "/api/v1/openapi", ar: "مواصفات OpenAPI", en: "OpenAPI snapshot" },
 ] as const;
 
@@ -42,7 +47,7 @@ export default function DevelopersPage() {
         <button type="button" onClick={() => setLocale(ar ? "en" : "ar")}>{ar ? "EN" : "عربي"}</button>
       </header>
       <article>
-        <small>WAZEN API · v1 · 2026-08-24 · phase 14</small>
+        <small>WAZEN API · v1 · 2026-08-24 · phase 15</small>
         <h1>{ar ? "واجهة برمجة المؤسسات" : "Business API"}</h1>
         <p className="lead">
           {ar
@@ -64,7 +69,7 @@ export default function DevelopersPage() {
           <h2>{ar ? "المسارات" : "Endpoints"}</h2>
           <ul className="developers-endpoints">
             {endpoints.map((item) => (
-              <li key={item.path}>
+              <li key={`${item.method} ${item.path}`}>
                 <code>{item.method}</code>
                 <strong>{item.path}</strong>
                 <span>{ar ? item.ar : item.en}</span>

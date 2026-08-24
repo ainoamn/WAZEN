@@ -4,6 +4,8 @@ import { assertApiScope, authorizeSpace } from "../../../../../lib/authorization
 import { runWithDbUser } from "../../../../../lib/db-request-context";
 import { errorResponse, ApiError } from "../../../../../lib/security";
 import { formatMoneyMinor } from "../../../../../lib/money";
+import { enforceV1RateLimit } from "../../../../../lib/v1-rate-limit";
+import { withRequestTiming } from "../../../../../lib/request-timing";
 
 export const runtime = "nodejs";
 
@@ -11,6 +13,7 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ spaceId: string }> },
 ) {
+  return withRequestTiming("v1.spaces.get", async () => {
   try {
     const { spaceId } = await context.params;
     const db = getRawDb();
@@ -18,6 +21,7 @@ export async function GET(
     const user = await authenticateRequest(db, request);
     if (!user) throw new ApiError(401, "AUTHENTICATION_REQUIRED");
     return await runWithDbUser(user.id, async () => {
+      await enforceV1RateLimit(db, request, user, "read");
       assertApiScope(user, "wallets:read");
       const space = await authorizeSpace(db, user, spaceId, "read");
       const memberCount = await db.prepare("SELECT COUNT(*) AS count FROM members WHERE space_id=? AND status='active'")
@@ -41,4 +45,5 @@ export async function GET(
   } catch (error) {
     return errorResponse(error);
   }
+  });
 }

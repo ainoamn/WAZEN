@@ -4,6 +4,8 @@ import { assertApiScope } from "../../../../lib/authorization";
 import { runWithDbUser } from "../../../../lib/db-request-context";
 import { errorResponse, ApiError } from "../../../../lib/security";
 import { formatMoneyMinor } from "../../../../lib/money";
+import { enforceV1RateLimit } from "../../../../lib/v1-rate-limit";
+import { withRequestTiming } from "../../../../lib/request-timing";
 
 export const runtime = "nodejs";
 
@@ -29,9 +31,11 @@ function json(data: unknown, status = 200) {
 }
 
 export async function GET(request: Request) {
+  return withRequestTiming("v1.spaces.list", async () => {
   try {
     const { db, user } = await requireApiUser(request);
     return await runWithDbUser(user.id, async () => {
+      await enforceV1RateLimit(db, request, user, "read");
       assertApiScope(user, "wallets:read");
       const spaces = await db.prepare(`
         SELECT id, name_ar, name_en, type, currency, balance_minor, goal_minor, status, created_at
@@ -60,4 +64,5 @@ export async function GET(request: Request) {
   } catch (error) {
     return errorResponse(error);
   }
+  });
 }

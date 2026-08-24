@@ -7,6 +7,7 @@ import { errorResponse, ApiError, claimIdempotency, completeIdempotency, enforce
 import { appOrigin } from "../../../../../../lib/app-origin";
 import { createV1Invite } from "../../../../../../lib/v1-invites";
 import { enqueueIntegrationEvent } from "../../../../../../lib/integration-webhooks";
+import { enforceV1RateLimit } from "../../../../../../lib/v1-rate-limit";
 import { withRequestTiming } from "../../../../../../lib/request-timing";
 
 export const runtime = "nodejs";
@@ -27,6 +28,7 @@ export async function POST(
       const payload = (await request.json()) as Record<string, unknown>;
       const idempotencyKey = String(payload.idempotencyKey ?? request.headers.get("idempotency-key") ?? "");
       return await runWithDbUser(user.id, async () => {
+        await enforceV1RateLimit(db, request, user, "write");
         assertApiScope(user, "members:write");
         const space = await authorizeSpace(db, user, spaceId, "members:write", ["household", "trip", "society", "group"]);
         const parsed = z.object({
