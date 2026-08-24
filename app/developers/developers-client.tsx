@@ -6,7 +6,10 @@ import { Brand, useCommerceLocale } from "../commercial-kit";
 const endpoints = [
   { method: "GET", path: "/api/v1/me", ar: "هوية المفتاح الحالي", en: "Current API principal" },
   { method: "GET", path: "/api/v1/spaces", ar: "قائمة المحافظ المتاحة للمفتاح", en: "List wallets visible to the key" },
+  { method: "POST", path: "/api/v1/spaces", ar: "إنشاء محفظة", en: "Create a wallet" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}", ar: "تفاصيل محفظة واحدة", en: "Single wallet summary" },
+  { method: "PATCH", path: "/api/v1/spaces/{spaceId}", ar: "تحديث محفظة", en: "Update a wallet" },
+  { method: "GET", path: "/api/v1/spaces/{spaceId}/export?kind=transactions", ar: "تصدير CSV للحركات/الأعضاء", en: "Export transactions/members CSV" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/transactions?limit=50", ar: "حركات المحفظة", en: "Wallet transactions" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/transactions", ar: "إنشاء دخل/مصروف/مساهمة", en: "Create income/expense/contribution" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/members", ar: "أعضاء الجمعية/المحفظة", en: "Wallet members" },
@@ -21,6 +24,8 @@ const endpoints = [
   { method: "PUT", path: "/api/v1/spaces/{spaceId}/contribution-plan", ar: "تحديث خطة المساهمة", en: "Update contribution plan" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/installments", ar: "جدول الأقساط", en: "Installment schedule" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/expenses", ar: "مصروفات الرحلة/المجموعة", en: "Trip/group expenses" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/expenses", ar: "إنشاء مصروف جماعي", en: "Create trip/group expense" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/expenses/{expenseId}/void", ar: "إلغاء مصروف جماعي", en: "Void trip/group expense" },
   { method: "PATCH", path: "/api/v1/spaces/{spaceId}/members/{memberId}", ar: "تحديث دور/حالة عضو", en: "Update member role/status" },
   { method: "GET", path: "/api/v1/documents", ar: "قائمة المستندات", en: "List documents" },
   { method: "POST", path: "/api/v1/documents", ar: "إنشاء مستند", en: "Create a document" },
@@ -47,7 +52,7 @@ export default function DevelopersPage() {
         <button type="button" onClick={() => setLocale(ar ? "en" : "ar")}>{ar ? "EN" : "عربي"}</button>
       </header>
       <article>
-        <small>WAZEN API · v1 · 2026-08-24 · phase 15</small>
+        <small>WAZEN API · v1 · 2026-08-24 · phase 16</small>
         <h1>{ar ? "واجهة برمجة المؤسسات" : "Business API"}</h1>
         <p className="lead">
           {ar

@@ -22,6 +22,10 @@ const DEFAULT_EVENTS = [
   "period.closed",
   "period.reopened",
   "contribution_plan.updated",
+  "expense.created",
+  "expense.voided",
+  "space.created",
+  "space.updated",
 ];
 
 export function SecurityClient() {

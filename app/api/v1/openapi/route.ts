@@ -6,15 +6,22 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Wazen Business API",
-    version: "1.0.0-phase15",
-    description: "Scoped Bearer API (wzn_…) for wallets, members, contributions, settlements, periods, expenses, contribution plans, and documents.",
+    version: "1.0.0-phase16",
+    description: "Scoped Bearer API (wzn_…) for wallets, members, contributions, settlements, periods, expenses, exports, and documents.",
   },
   servers: [{ url: "https://wazen.bhd-om.com" }],
   paths: {
     "/api/v1/me": { get: { summary: "Current API principal", security: [{ bearerAuth: [] }] } },
-    "/api/v1/spaces": { get: { summary: "List wallets", security: [{ bearerAuth: [] }] } },
-    "/api/v1/spaces/{spaceId}": { get: { summary: "Wallet detail", security: [{ bearerAuth: [] }] } },
+    "/api/v1/spaces": {
+      get: { summary: "List wallets", security: [{ bearerAuth: [] }] },
+      post: { summary: "Create wallet", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}": {
+      get: { summary: "Wallet detail", security: [{ bearerAuth: [] }] },
+      patch: { summary: "Update wallet", security: [{ bearerAuth: [] }] },
+    },
     "/api/v1/spaces/{spaceId}/summary": { get: { summary: "Wallet KPIs", security: [{ bearerAuth: [] }] } },
+    "/api/v1/spaces/{spaceId}/export": { get: { summary: "Export transactions or members CSV", security: [{ bearerAuth: [] }] } },
     "/api/v1/spaces/{spaceId}/transactions": {
       get: { summary: "List transactions", security: [{ bearerAuth: [] }] },
       post: { summary: "Create transaction", security: [{ bearerAuth: [] }] },
@@ -37,7 +44,13 @@ const spec = {
     },
     "/api/v1/spaces/{spaceId}/surplus/withdraw": { post: { summary: "Withdraw surplus", security: [{ bearerAuth: [] }] } },
     "/api/v1/spaces/{spaceId}/installments": { get: { summary: "Installment schedule", security: [{ bearerAuth: [] }] } },
-    "/api/v1/spaces/{spaceId}/expenses": { get: { summary: "List trip/group expenses", security: [{ bearerAuth: [] }] } },
+    "/api/v1/spaces/{spaceId}/expenses": {
+      get: { summary: "List trip/group expenses", security: [{ bearerAuth: [] }] },
+      post: { summary: "Create trip/group expense", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/expenses/{expenseId}/void": {
+      post: { summary: "Void trip/group expense", security: [{ bearerAuth: [] }] },
+    },
     "/api/v1/spaces/{spaceId}/settlements": { get: { summary: "List settlements", security: [{ bearerAuth: [] }] } },
     "/api/v1/spaces/{spaceId}/settlements/{settlementId}/settle": {
       post: { summary: "Settle reimbursement/share", security: [{ bearerAuth: [] }] },

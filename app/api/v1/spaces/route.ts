@@ -1,9 +1,12 @@
+import { z } from "zod";
 import { ensureSchema, getRawDb } from "../../../../db/runtime";
 import { authenticateRequest } from "../../../../lib/auth";
 import { assertApiScope } from "../../../../lib/authorization";
 import { runWithDbUser } from "../../../../lib/db-request-context";
-import { errorResponse, ApiError } from "../../../../lib/security";
+import { errorResponse, ApiError, claimIdempotency, completeIdempotency, enforceWriteRequest, releaseIdempotency } from "../../../../lib/security";
 import { formatMoneyMinor } from "../../../../lib/money";
+import { createV1Space } from "../../../../lib/v1-spaces";
+import { enqueueIntegrationEvent } from "../../../../lib/integration-webhooks";
 import { enforceV1RateLimit } from "../../../../lib/v1-rate-limit";
 import { withRequestTiming } from "../../../../lib/request-timing";
 
@@ -64,5 +67,53 @@ export async function GET(request: Request) {
   } catch (error) {
     return errorResponse(error);
   }
+  });
+}
+
+export async function POST(request: Request) {
+  return withRequestTiming("v1.spaces.post", async () => {
+    const claimRef: { current: { db: D1Database; userId: string; key: string } | null } = { current: null };
+    try {
+      enforceWriteRequest(request);
+      const { db, user } = await requireApiUser(request);
+      const payload = (await request.json()) as Record<string, unknown>;
+      const idempotencyKey = String(payload.idempotencyKey ?? request.headers.get("idempotency-key") ?? "");
+      return await runWithDbUser(user.id, async () => {
+        await enforceV1RateLimit(db, request, user, "write");
+        assertApiScope(user, "wallets:write");
+        const parsed = z.object({
+          name: z.string().trim().min(2).max(80),
+          type: z.enum(["personal", "household", "trip", "society", "group"]),
+          goal: z.union([z.string(), z.number()]).optional(),
+          monthlyContribution: z.union([z.string(), z.number()]).optional(),
+          durationMonths: z.number().int().min(1).max(120).optional(),
+          dueDay: z.number().int().min(1).max(28).optional(),
+          startsAt: z.string().min(8).max(40).optional(),
+        }).safeParse(payload);
+        if (!parsed.success) throw new ApiError(400, "INVALID_WALLET");
+
+        const replay = await claimIdempotency(db, user.id, "v1.createSpace", idempotencyKey);
+        if (replay) {
+          const body = replay && typeof replay === "object" ? replay : { ok: true };
+          return json({ ok: true, ...body });
+        }
+        claimRef.current = { db, userId: user.id, key: idempotencyKey };
+
+        const space = await createV1Space(db, user, parsed.data);
+        const response = { api: "wazen.v1", ok: true, space };
+        await enqueueIntegrationEvent(db, user.id, "space.created", {
+          spaceId: space.id,
+          type: space.type,
+        }).catch(() => {});
+        await completeIdempotency(db, user.id, idempotencyKey, response);
+        claimRef.current = null;
+        return json(response);
+      });
+    } catch (error) {
+      if (claimRef.current) {
+        try { await releaseIdempotency(claimRef.current.db, claimRef.current.userId, claimRef.current.key); } catch { /* ignore */ }
+      }
+      return errorResponse(error);
+    }
   });
 }
