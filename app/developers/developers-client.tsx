@@ -19,6 +19,10 @@ const endpoints = [
   { method: "GET", path: "/api/v1/spaces/{spaceId}/links", ar: "المحافظ المرتبطة", en: "Linked wallets" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/links", ar: "ربط محفظة بالشخصية", en: "Link wallet to personal hub" },
   { method: "DELETE", path: "/api/v1/spaces/{spaceId}/links", ar: "فك ربط محفظة", en: "Unlink wallet from hub" },
+  { method: "PUT", path: "/api/v1/spaces/{spaceId}/links/bank", ar: "ربط حساب بنكي لمحفظة مرتبطة", en: "Set bank account for linked wallet" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/links/transfer", ar: "تحويل بين الشخصية والمرتبطة", en: "Transfer between hub and linked wallet" },
+  { method: "GET", path: "/api/v1/spaces/{spaceId}/accounts", ar: "حسابات المحفظة الشخصية", en: "Personal wallet accounts" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/accounts", ar: "إنشاء حساب بنكي/نقدي", en: "Create personal account" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/export?kind=transactions", ar: "تصدير CSV للحركات/الأعضاء", en: "Export transactions/members CSV" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/circle", ar: "دورة الجمعية والأدوار", en: "Circle config and turns" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/circle/order", ar: "تعيين ترتيب أدوار الجمعية", en: "Set circle payout order" },
@@ -74,7 +78,7 @@ export default function DevelopersPage() {
         <button type="button" onClick={() => setLocale(ar ? "en" : "ar")}>{ar ? "EN" : "عربي"}</button>
       </header>
       <article>
-        <small>WAZEN API · v1 · 2026-08-24 · phase 20</small>
+        <small>WAZEN API · v1 · 2026-08-24 · phase 21</small>
         <h1>{ar ? "واجهة برمجة المؤسسات" : "Business API"}</h1>
         <p className="lead">
           {ar

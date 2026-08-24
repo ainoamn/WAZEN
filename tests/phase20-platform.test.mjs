@@ -25,10 +25,10 @@ test("phase 20 webhook management under Business API v1", () => {
   assert.match(hooks, /enqueueWebhookTest/);
   assert.match(platform, /webhooks:read/);
   assert.match(platform, /webhooks:write/);
-  assert.match(openapi, /phase20/);
+  assert.match(openapi, /1\.0\.0-phase\d+/);
   assert.match(openapi, /\/api\/v1\/webhooks/);
   assert.match(openapi, /\/webhooks\/\{webhookId\}\/test/);
-  assert.match(developers, /phase 20/);
+  assert.match(developers, /phase \d+/);
   assert.match(developers, /\/api\/v1\/webhooks/);
   assert.match(developers, /webhooks:write/);
   assert.match(security, /webhooks:read/);

@@ -36,6 +36,10 @@ const DEFAULT_EVENTS = [
   "expense.resplit",
   "space.linked",
   "space.unlinked",
+  "space.bank_linked",
+  "space.bank_unlinked",
+  "space.transferred",
+  "account.created",
 ];
 
 export function SecurityClient() {

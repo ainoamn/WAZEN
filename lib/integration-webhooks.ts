@@ -31,6 +31,10 @@ export const INTEGRATION_WEBHOOK_EVENTS = [
   "expense.resplit",
   "space.linked",
   "space.unlinked",
+  "space.bank_linked",
+  "space.bank_unlinked",
+  "space.transferred",
+  "account.created",
 ] as const;
 
 export type IntegrationWebhookEvent = (typeof INTEGRATION_WEBHOOK_EVENTS)[number];

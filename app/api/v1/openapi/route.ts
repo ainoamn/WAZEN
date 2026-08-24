@@ -6,8 +6,8 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Wazen Business API",
-    version: "1.0.0-phase20",
-    description: "Scoped Bearer API (wzn_…) for wallets, links, members, circles, shares, notifications, webhooks, contributions, settlements, periods, expenses, exports, and documents.",
+    version: "1.0.0-phase21",
+    description: "Scoped Bearer API (wzn_…) for wallets, accounts, links, transfers, members, circles, shares, notifications, webhooks, contributions, settlements, periods, expenses, exports, and documents.",
   },
   servers: [{ url: "https://wazen.bhd-om.com" }],
   paths: {
@@ -33,10 +33,20 @@ const spec = {
       patch: { summary: "Update wallet", security: [{ bearerAuth: [] }] },
     },
     "/api/v1/spaces/{spaceId}/archive": { post: { summary: "Archive or restore wallet", security: [{ bearerAuth: [] }] } },
+    "/api/v1/spaces/{spaceId}/accounts": {
+      get: { summary: "List personal accounts (banks/cash)", security: [{ bearerAuth: [] }] },
+      post: { summary: "Create personal account", security: [{ bearerAuth: [] }] },
+    },
     "/api/v1/spaces/{spaceId}/links": {
       get: { summary: "List linked wallets (personal hub)", security: [{ bearerAuth: [] }] },
       post: { summary: "Link a wallet to personal hub", security: [{ bearerAuth: [] }] },
       delete: { summary: "Unlink a wallet from personal hub", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/links/bank": {
+      put: { summary: "Set or clear bank account for a linked wallet", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/links/transfer": {
+      post: { summary: "Transfer funds between hub and linked wallet", security: [{ bearerAuth: [] }] },
     },
     "/api/v1/spaces/{spaceId}/summary": { get: { summary: "Wallet KPIs", security: [{ bearerAuth: [] }] } },
     "/api/v1/spaces/{spaceId}/export": { get: { summary: "Export transactions or members CSV", security: [{ bearerAuth: [] }] } },
