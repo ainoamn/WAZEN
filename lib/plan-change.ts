@@ -376,12 +376,33 @@ export async function selectCustomerPlan(db: D1Database, user: RequestUser, inpu
     );
   }
   await db.batch(statements);
+  const origin = (process.env.WAZEN_APP_ORIGIN ?? "").replace(/\/$/, "") || "https://wazen.bhd-om.com";
+  let checkout: Awaited<ReturnType<typeof import("./payment-checkout").createCheckoutSession>> | null = null;
+  try {
+    const { createCheckoutSession } = await import("./payment-checkout");
+    checkout = await createCheckoutSession({
+      paymentId,
+      invoiceId,
+      reference,
+      amountMinor: total,
+      currency,
+      customerEmail: user.email,
+      successUrl: `${origin}/billing?paid=1&invoice=${encodeURIComponent(invoiceId)}`,
+      cancelUrl: `${origin}/pricing?cancelled=1`,
+    });
+  } catch {
+    checkout = { mode: "manual", provider: "manual_transfer" };
+  }
+  if (checkout.mode === "redirect") {
+    await db.prepare("UPDATE payments SET method=? WHERE id=?").bind("card", paymentId).run();
+  }
   return {
     ok: true,
     change: "upgrade_pending_payment" as const,
     planId: plan.id,
     cycle: input.cycle,
     paymentId,
+    checkout,
     invoice: {
       id: invoiceId,
       reference,

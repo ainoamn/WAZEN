@@ -41,6 +41,7 @@ type SelectResult = {
   effectiveAt?: string;
   paymentId?: string;
   planId?: string;
+  checkout?: { mode?: string; provider?: string; checkoutUrl?: string };
   invoice?: InvoiceResult | null;
 };
 
@@ -85,6 +86,10 @@ export function PricingClient() {
       }
       clearDashboardCache();
       notifyLiveRefresh();
+      if (payload.checkout?.mode === "redirect" && payload.checkout.checkoutUrl) {
+        window.location.assign(payload.checkout.checkoutUrl);
+        return;
+      }
       setResult(payload);
     } catch {
       setError(errorLabel("INTERNAL_ERROR", locale));

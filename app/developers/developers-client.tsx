@@ -7,6 +7,7 @@ const endpoints = [
   { method: "GET", path: "/api/v1/spaces", ar: "قائمة المحافظ المتاحة للمفتاح", en: "List wallets visible to the key" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}", ar: "تفاصيل محفظة واحدة", en: "Single wallet summary" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/transactions?limit=50", ar: "حركات المحفظة", en: "Wallet transactions" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/transactions", ar: "إنشاء دخل/مصروف/مساهمة", en: "Create income/expense/contribution" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/members", ar: "أعضاء الجمعية/المحفظة", en: "Wallet members" },
 ] as const;
 
@@ -25,7 +26,7 @@ export default function DevelopersPage() {
         <button type="button" onClick={() => setLocale(ar ? "en" : "ar")}>{ar ? "EN" : "عربي"}</button>
       </header>
       <article>
-        <small>WAZEN API · v1 · 2026-08-24</small>
+        <small>WAZEN API · v1 · 2026-08-24 · phase 6</small>
         <h1>{ar ? "واجهة برمجة المؤسسات" : "Business API"}</h1>
         <p className="lead">
           {ar
@@ -58,8 +59,11 @@ export default function DevelopersPage() {
 
         <section>
           <h2>{ar ? "مثال" : "Example"}</h2>
-          <pre className="developers-code">{`curl -H "Authorization: Bearer wzn_YOUR_KEY" \\
-  https://wazen.bhd-om.com/api/v1/spaces`}</pre>
+          <pre className="developers-code">{`curl -X POST -H "Authorization: Bearer wzn_YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
+  -H "Idempotency-Key: $(uuidgen)" \\
+  -d '{"kind":"expense","amount":"1.500","description":"قرطاسية"}' \\
+  https://wazen.bhd-om.com/api/v1/spaces/SPACE_ID/transactions`}</pre>
         </section>
 
         <section>

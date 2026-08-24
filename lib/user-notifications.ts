@@ -1,5 +1,7 @@
 /** In-app notification feed helpers. */
 
+import { enqueuePushOutbox } from "./web-push";
+
 export type UserNotificationRow = {
   id: string;
   user_id: string;
@@ -47,6 +49,26 @@ export async function upsertUserNotifications(
       ),
   );
   await db.batch(statements);
+
+  // Device push only for warning/danger, deduped so dashboard polls do not spam.
+  for (const alert of alerts.slice(0, 12)) {
+    if (alert.severity === "info") continue;
+    try {
+      await enqueuePushOutbox(
+        db,
+        userId,
+        {
+          title: alert.ar.slice(0, 80),
+          body: alert.en.slice(0, 160),
+          url: alert.href || "/home",
+          tag: alert.id.slice(0, 80),
+        },
+        `alert:${alert.id}`,
+      );
+    } catch {
+      /* outbox is best-effort */
+    }
+  }
 }
 
 export async function listUserNotifications(db: D1Database, userId: string, limit = 30) {
