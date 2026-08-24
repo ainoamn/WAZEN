@@ -29,6 +29,7 @@ import {
   upsertAdminPlan,
   assertOwnerPlanQuota,
 } from "../../../services/admin/billing-service";
+import { listPrivacyRequests, loadPrivacyArtifact } from "../../../lib/privacy-requests";
 
 const isoNow = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
@@ -416,6 +417,30 @@ export async function GET(request: Request) {
       responseHeaders.set("Content-Type", "application/json; charset=utf-8");
       responseHeaders.set("Content-Disposition", `attachment; filename="wazen-backup-${stamp}.json"`);
       return new Response(JSON.stringify(exportData, null, 2), { headers: responseHeaders });
+    }
+    if (view === "privacyRequests") {
+      if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
+      const requests = await listPrivacyRequests(db, user.id);
+      return Response.json({
+        requests: requests.map((row) => ({
+          id: row.id,
+          type: row.type,
+          status: row.status,
+          requestedAt: row.requested_at,
+          completedAt: row.completed_at,
+          downloadable: row.status === "completed" && row.type === "export" && Boolean(row.artifact_id),
+        })),
+      }, { headers: responseHeaders });
+    }
+    if (view === "privacyExport") {
+      if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
+      const requestId = String(url.searchParams.get("requestId") ?? "").trim();
+      if (!requestId) throw new ApiError(400, "INVALID_REQUEST");
+      const artifact = await loadPrivacyArtifact(db, user.id, requestId);
+      if (!artifact) throw new ApiError(404, "EXPORT_NOT_FOUND");
+      responseHeaders.set("Content-Type", "application/json; charset=utf-8");
+      responseHeaders.set("Content-Disposition", `attachment; filename="wazen-privacy-export-${requestId.slice(0, 8)}.json"`);
+      return new Response(artifact.payload_json, { headers: responseHeaders });
     }
     if (view === "admin") {
       if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
@@ -913,8 +938,15 @@ export async function POST(request: Request) {
       const detail = await getAdminUserDetail(db, targetUserId);
       return respond({ ok: true, detail });
     } else if (action === "requestDataExport" || action === "requestDeletion") {
+      if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
       const type = action === "requestDataExport" ? "export" : "deletion";
-      const requestId = id(); await db.prepare("INSERT INTO data_requests (id,user_id,type,status,requested_at) VALUES (?,?,?,'pending',?)").bind(requestId, user.id, type, isoNow()).run();
+      const existing = await db.prepare(
+        "SELECT id FROM data_requests WHERE user_id=? AND type=? AND status='pending' LIMIT 1",
+      ).bind(user.id, type).first<{ id: string }>();
+      if (existing) return respond({ ok: true, requestId: existing.id, status: "pending", reused: true });
+      const requestId = id();
+      await db.prepare("INSERT INTO data_requests (id,user_id,type,status,requested_at) VALUES (?,?,?,'pending',?)")
+        .bind(requestId, user.id, type, isoNow()).run();
       await writeAudit(db, { userId: user.id, action: `privacy.${type}_requested`, entityType: "data_request", entityId: requestId });
       return respond({ ok: true, requestId, status: "pending" });
     } else {

@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 19;
+const SCHEMA_VERSION = 20;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -360,7 +360,21 @@ async function ensureSchemaPatches(db: D1Database) {
       UNIQUE(user_id, digest_day)
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_dues_digest_day ON dues_digest_log(digest_day)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS privacy_artifacts (
+      id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL UNIQUE,
+      user_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_privacy_artifacts_user ON privacy_artifacts(user_id, expires_at)"),
   ]);
+  const dataRequestCols = await db.prepare("PRAGMA table_info(data_requests)").all<{ name: string }>();
+  if (!dataRequestCols.results.some((column) => column.name === "artifact_id")) {
+    try { await db.prepare("ALTER TABLE data_requests ADD COLUMN artifact_id TEXT").run(); } catch { /* exists */ }
+  }
   await applyPostgresRls(db);
   const personalRuleCols = await db.prepare("PRAGMA table_info(personal_rules)").all<{ name: string }>();
   if (!personalRuleCols.results.some((column) => column.name === "schedule")) {
@@ -832,7 +846,8 @@ async function initializeSchema(db: D1Database) {
       type TEXT NOT NULL CHECK(type IN ('export','deletion')),
       status TEXT NOT NULL DEFAULT 'pending',
       requested_at TEXT NOT NULL,
-      completed_at TEXT
+      completed_at TEXT,
+      artifact_id TEXT
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS tenants (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL DEFAULT 'OM', currency TEXT NOT NULL DEFAULT 'OMR',

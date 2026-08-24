@@ -10,6 +10,7 @@ const endpoints = [
   { method: "POST", path: "/api/v1/spaces/{spaceId}/transactions", ar: "إنشاء دخل/مصروف/مساهمة", en: "Create income/expense/contribution" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/members", ar: "أعضاء الجمعية/المحفظة", en: "Wallet members" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/members", ar: "إضافة عضو", en: "Create a member" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/invites", ar: "دعوة عضو بالبريد", en: "Invite a member by email" },
 ] as const;
 
 export default function DevelopersPage() {

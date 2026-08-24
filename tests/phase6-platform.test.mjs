@@ -29,7 +29,7 @@ test("phase 6 routes and schema markers exist", () => {
   const runtime = fs.readFileSync(path.join(root, "db/runtime.ts"), "utf8");
   const pushJob = fs.readFileSync(path.join(root, "app/api/jobs/push/route.ts"), "utf8");
   const txnRoute = fs.readFileSync(path.join(root, "app/api/v1/spaces/[spaceId]/transactions/route.ts"), "utf8");
-  assert.match(runtime, /SCHEMA_VERSION = 19/);
+  assert.match(runtime, /SCHEMA_VERSION = 20/);
   assert.match(runtime, /push_outbox/);
   assert.match(runtime, /job_runs/);
   assert.match(runtime, /dues_digest_log/);

@@ -2269,6 +2269,9 @@ function SettingsView({ user, locale, entitlements, spaces, onLogout, onSaved }:
   const [auditRows, setAuditRows] = useState<Array<{ id: string; action: string; entityType: string; entityId: string; createdAt: string }>>([]);
   const [auditBusy, setAuditBusy] = useState(false);
   const [auditQuery, setAuditQuery] = useState("");
+  const [privacyRows, setPrivacyRows] = useState<Array<{ id: string; type: string; status: string; requestedAt: string; completedAt: string | null; downloadable: boolean }>>([]);
+  const [privacyBusy, setPrivacyBusy] = useState(false);
+  const [privacyMsg, setPrivacyMsg] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const features = entitlements?.features?.length ? entitlements.features : ["personal"];
   const canExport = planHasFeature(features, "exports");
@@ -2299,6 +2302,68 @@ function SettingsView({ user, locale, entitlements, spaces, onLogout, onSaved }:
     } finally {
       setAuditBusy(false);
     }
+  };
+  const loadPrivacy = async () => {
+    setPrivacyBusy(true);
+    try {
+      const response = await fetch("/api/platform?view=privacyRequests", { cache: "no-store" });
+      if (!response.ok) {
+        setPrivacyRows([]);
+        return;
+      }
+      const data = await response.json() as { requests?: Array<{ id: string; type: string; status: string; requestedAt: string; completedAt: string | null; downloadable: boolean }> };
+      setPrivacyRows(data.requests ?? []);
+    } catch {
+      setPrivacyRows([]);
+    } finally {
+      setPrivacyBusy(false);
+    }
+  };
+  useEffect(() => { void loadPrivacy(); }, []);
+  const requestPrivacy = async (action: "requestDataExport" | "requestDeletion") => {
+    if (action === "requestDeletion") {
+      const ok = window.confirm(
+        locale === "ar"
+          ? "طلب إغلاق الحساب؟ ستُلغى الجلسات ومفاتيح API بعد المعالجة. السجلات المالية تُحفظ وفق مدة الاحتفاظ."
+          : "Request account closure? Sessions and API keys will be revoked after processing. Ledgers are retained per retention rules.",
+      );
+      if (!ok) return;
+    }
+    setPrivacyMsg("");
+    setPrivacyBusy(true);
+    try {
+      const response = await apiFetch("/api/platform", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, idempotencyKey: crypto.randomUUID() }),
+      });
+      const result = await response.json() as { error?: string; status?: string };
+      if (!response.ok) throw new Error(result.error ?? "PRIVACY_REQUEST_FAILED");
+      setPrivacyMsg(
+        locale === "ar"
+          ? (action === "requestDataExport" ? "طُلب التصدير — يُعالَج خلال ساعات عبر مهمة الخصوصية." : "طُلب إغلاق الحساب — يُعالَج قريباً.")
+          : (action === "requestDataExport" ? "Export queued — processed within hours by the privacy job." : "Account closure queued — processed soon."),
+      );
+      await loadPrivacy();
+    } catch (caught) {
+      setPrivacyMsg(dashboardError(caught instanceof Error ? caught.message : "PRIVACY_REQUEST_FAILED", locale));
+    } finally {
+      setPrivacyBusy(false);
+    }
+  };
+  const downloadPrivacyExport = async (requestId: string) => {
+    const response = await fetch(`/api/platform?view=privacyExport&requestId=${encodeURIComponent(requestId)}`, { cache: "no-store" });
+    if (!response.ok) {
+      setPrivacyMsg(locale === "ar" ? "الملف غير متاح أو انتهت صلاحيته." : "File unavailable or expired.");
+      return;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `wazen-privacy-export-${requestId.slice(0, 8)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
   const downloadExport = async (query: string, fallbackName: string) => {
     if (!canExport) { goToPricing(); return; }
@@ -2451,6 +2516,46 @@ function SettingsView({ user, locale, entitlements, spaces, onLogout, onSaved }:
           />
         </label>
       </div>
+    </article>
+    <article className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>{locale === "ar" ? "طلبات الخصوصية" : "Privacy requests"}</h2>
+          <p className="modal-note">
+            {locale === "ar"
+              ? "تصدير بياناتك أو طلب إغلاق الحساب. المعالجة تتم تلقائياً عبر مهمة الخصوصية (حوالي 03:00 UTC)."
+              : "Export your data or request account closure. Fulfilled automatically by the privacy job (~03:00 UTC)."}
+          </p>
+        </div>
+        <button type="button" className="secondary-button" disabled={privacyBusy} onClick={() => void loadPrivacy()}>
+          {privacyBusy ? "…" : (locale === "ar" ? "تحديث" : "Refresh")}
+        </button>
+      </div>
+      <div className="section-title-actions" style={{ flexWrap: "wrap", gap: 8 }}>
+        <button type="button" className="secondary-button" disabled={privacyBusy} onClick={() => void requestPrivacy("requestDataExport")}>
+          {locale === "ar" ? "طلب تصدير بيانات" : "Request data export"}
+        </button>
+        <button type="button" className="secondary-button" disabled={privacyBusy} onClick={() => void requestPrivacy("requestDeletion")}>
+          {locale === "ar" ? "طلب إغلاق الحساب" : "Request account closure"}
+        </button>
+      </div>
+      {privacyMsg ? <p className="modal-note" role="status">{privacyMsg}</p> : null}
+      <ul className="audit-log-list">
+        {privacyRows.length ? privacyRows.map((row) => (
+          <li key={row.id}>
+            <strong>{row.type === "export" ? (locale === "ar" ? "تصدير" : "Export") : (locale === "ar" ? "إغلاق" : "Deletion")}</strong>
+            <span>{row.status}</span>
+            <em>{new Date(row.requestedAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</em>
+            {row.downloadable ? (
+              <button type="button" className="text-link" onClick={() => void downloadPrivacyExport(row.id)}>
+                {locale === "ar" ? "تنزيل" : "Download"}
+              </button>
+            ) : null}
+          </li>
+        )) : (
+          <li className="muted">{locale === "ar" ? "لا توجد طلبات خصوصية بعد." : "No privacy requests yet."}</li>
+        )}
+      </ul>
     </article>
     <article className="panel">
       <div className="panel-heading">
