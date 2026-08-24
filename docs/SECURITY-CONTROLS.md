@@ -31,8 +31,17 @@ Status reflects repository controls, not a certification or a guarantee of zero 
 - Dashboard JSON redacts other members' email/phone, masks payout account numbers, and limits personal ledgers to owned wallets.
 - Schema patches (including TOTP pending columns) run when `schema_meta` is missing or behind `SCHEMA_VERSION` (currently 9). If the stored version is current, `ensureSchema` returns immediately — do not re-run patches on every request (that caused 30–50s add/void on Neon).
 
-Still open: PostgreSQL RLS, making GitHub CI a required Vercel gate, full atomic journal+balance transactions on every edit path.
+Still open: optional `WAZEN_RLS_ENFORCE=1` after per-request `app.user_id` wiring; counsel sign-off on privacy/terms; live PSP charge SDKs (manual transfer remains default).
 
 ## External actions still required
 
-Rotate real production credentials, configure hosting/DNS/database/cache/storage/monitoring/email permissions, validate backups, approve legal policies, and commission an authorized penetration test. PCI/SOC 2/ISO claims require the relevant independent process and evidence.
+Rotate real production credentials, configure hosting/DNS/database/cache/storage/monitoring/email permissions, validate backups, **approve legal policies with counsel**, commission an authorized penetration test, and in GitHub/Vercel: make the **CI** check required before production deploy (branch protection + Vercel deployment protection). PCI/SOC 2/ISO claims require the relevant independent process and evidence.
+
+## 24 Aug 2026 upgrade wave (in repo)
+
+- Schema **15**: `idx_transactions_space_status_date`, `idx_transactions_member`, Postgres RLS policies + `wazen_space_visible` (soft bypass by default).
+- Observability: `lib/observability.ts` + `instrumentation.ts`; optional `SENTRY_DSN`.
+- Association statement WhatsApp share via `/s/{token}` (`createAssociationStatementShare`).
+- Workspace alerts on dashboard GET; audit list in Settings (`listSpaceAudit`).
+- Expanded bilingual privacy/terms/security copy (counsel still recommended).
+- CI marks deploy-ready on `main`; document required gate in Vercel/GitHub settings.

@@ -4,15 +4,17 @@ import { authenticateRequest, clearCsrfCookie, clearSessionCookie, csrfCookie, i
 import { buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
 import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf } from "../../../lib/authorization";
-import { prepareAudit } from "../../../lib/audit";
+import { prepareAudit, writeAudit } from "../../../lib/audit";
 import { formatMoneyMinor, multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
 import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, periodKeyFromDate, type InstallmentLike } from "../../../lib/installments";
 import { coveringPeriod } from "../../../lib/accounting-periods";
 import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
 import { appOrigin } from "../../../lib/app-origin";
 import { buildReceiptWhatsAppMessage, signReceiptShareToken, whatsappShareUrl } from "../../../lib/receipt-share";
-import { buildMemberStatementWhatsAppMessage, signMemberStatementToken } from "../../../lib/statement-share";
+import { buildMemberStatementWhatsAppMessage, buildAssociationStatementWhatsAppMessage, signMemberStatementToken, signAssociationStatementToken } from "../../../lib/statement-share";
 import type { MemberLedgerFocus } from "../../../lib/member-ledger";
+import type { StatementTxnFilter } from "../../../lib/account-statement";
+import { computeWorkspaceAlerts } from "../../../lib/workspace-alerts";
 import { accountLiveBalance, dueAtForPeriod, monthKeysForRule, occurrenceLedgerStatus } from "../../../lib/personal-finance";
 import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-forecast";
 import { filterSpacesByPlan } from "../../../lib/plan-features";
@@ -1136,7 +1138,19 @@ export async function GET(request: Request) {
     } catch {
       revision = "";
     }
-    return Response.json({ user: { ...user, role }, entitlements, revision, ...dashboard }, { headers });
+    return Response.json({
+      user: { ...user, role },
+      entitlements,
+      revision,
+      workspaceAlerts: computeWorkspaceAlerts({
+        spaces: dashboard.spaces,
+        members: dashboard.members,
+        periods: (dashboard.periods ?? []) as Array<{ space_id: string; status: string; label: string }>,
+        planStatus: entitlements.status,
+        graceEndsAt: entitlements.retention?.graceEndsAt ?? null,
+      }),
+      ...dashboard,
+    }, { headers });
   } catch (error) {
     return errorResponse(error);
   }
@@ -2808,6 +2822,101 @@ export async function POST(request: Request) {
       await completeIdempotency(db, user.id, idempotencyKey, { ok: true, notification });
       claimed = null;
       return Response.json({ ok: true, notification }, { headers: { "Cache-Control": "no-store" } });
+    } else if (action === "createAssociationStatementShare") {
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        filter: z.enum(["full", "valid", "voided", "all"]).optional(),
+        locale: z.enum(["ar", "en"]).optional(),
+        phone: z.string().max(40).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_STATEMENT");
+      const locale = parsed.data.locale ?? "ar";
+      const filter = (parsed.data.filter ?? "full") as StatementTxnFilter;
+      const spaceAuth = await authorizeSpace(db, user, parsed.data.spaceId, "read");
+      const { assertPlanShareFeature } = await import("../../../services/admin/billing-service");
+      await assertPlanShareFeature(db, spaceAuth.owner_user_id, "whatsapp", user.id);
+      const space = await db.prepare("SELECT id,name_ar,name_en,currency,balance_minor FROM spaces WHERE id=?")
+        .bind(parsed.data.spaceId)
+        .first<{ id: string; name_ar: string; name_en: string; currency: string; balance_minor: number }>();
+      if (!space) throw new ApiError(404, "WALLET_NOT_FOUND");
+      const shareToken = signAssociationStatementToken({
+        spaceId: space.id,
+        filter,
+        locale,
+      });
+      const statementUrl = `${appOrigin(request)}/s/${encodeURIComponent(shareToken)}`;
+      const filterLabel = ({
+        full: locale === "ar" ? "الكشف الكامل" : "Full statement",
+        valid: locale === "ar" ? "المعاملات الصحيحة" : "Valid transactions",
+        voided: locale === "ar" ? "المعاملات المحذوفة" : "Deleted transactions",
+        all: locale === "ar" ? "كل المعاملات" : "All transactions",
+      })[filter];
+      const txnCount = await db.prepare("SELECT COUNT(*) AS count FROM transactions WHERE space_id=?").bind(space.id).first<{ count: number }>();
+      const message = buildAssociationStatementWhatsAppMessage({
+        locale,
+        walletName: locale === "ar" ? space.name_ar : space.name_en,
+        filterLabel,
+        balanceLabel: formatMoneyMinor(Number(space.balance_minor) || 0, space.currency || "OMR", locale),
+        movementsLabel: String(Number(txnCount?.count ?? 0)),
+        statementUrl,
+      });
+      const whatsappNumber = parsed.data.phone ? toWhatsAppNumber(parsed.data.phone) : "";
+      notification = {
+        emailQueued: false,
+        whatsappUrl: whatsappShareUrl(whatsappNumber || null, message),
+        transactionId: space.id,
+        receiptUrl: statementUrl,
+      };
+      await writeAudit(db, {
+        userId: user.id,
+        action: "statement.association_share",
+        entityType: "space",
+        entityId: space.id,
+        metadata: { spaceId: space.id, filter, locale },
+      }).catch(() => {});
+      await completeIdempotency(db, user.id, idempotencyKey, { ok: true, notification });
+      claimed = null;
+      return Response.json({ ok: true, notification }, { headers: { "Cache-Control": "no-store" } });
+    } else if (action === "listSpaceAudit") {
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        limit: z.number().int().min(1).max(100).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_AUDIT");
+      await authorizeSpace(db, user, parsed.data.spaceId, "read");
+      const limit = parsed.data.limit ?? 40;
+      const rows = await db.prepare(`
+        SELECT id, user_id, action, entity_type, entity_id, metadata_json, created_at
+        FROM audit_logs
+        WHERE entity_id=? OR metadata_json LIKE ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      `).bind(parsed.data.spaceId, `%"spaceId":"${parsed.data.spaceId}"%`, limit).all<{
+        id: string;
+        user_id: string;
+        action: string;
+        entity_type: string;
+        entity_id: string;
+        metadata_json: string | null;
+        created_at: string;
+      }>();
+      const response = {
+        ok: true,
+        audit: (rows.results ?? []).map((row) => ({
+          id: row.id,
+          userId: row.user_id,
+          action: row.action,
+          entityType: row.entity_type,
+          entityId: row.entity_id,
+          createdAt: row.created_at,
+          metadata: (() => {
+            try { return JSON.parse(row.metadata_json || "{}"); } catch { return {}; }
+          })(),
+        })),
+      };
+      await completeIdempotency(db, user.id, idempotencyKey, response);
+      claimed = null;
+      return Response.json(response, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "sendReceipt") {
       const parsed = z.object({
         memberId: z.string().min(1).max(120),

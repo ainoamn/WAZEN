@@ -132,6 +132,107 @@ function formatStatementWhen(iso: string, locale: StatementLocale) {
   });
 }
 
+export type AccountStatementLine = {
+  at: string;
+  ref: string;
+  description: string;
+  item: string;
+  flow: string;
+  userName: string;
+  depositMinor: number;
+  withdrawMinor: number;
+  balanceMinor: number | null;
+  status: string;
+  live: boolean;
+};
+
+export function buildAccountStatementModel(input: {
+  locale: StatementLocale;
+  issuerName: string;
+  spaces: StatementSpace[];
+  members: StatementMember[];
+  accounts?: StatementAccount[];
+  transactions: StatementTransaction[];
+  occurrences?: StatementOccurrence[];
+  spaceId?: string | null;
+  accountId?: string | null;
+  txnFilter?: StatementTxnFilter;
+}) {
+  const locale = input.locale;
+  const txnFilter = input.txnFilter ?? "full";
+  const space = input.spaceId ? input.spaces.find((item) => item.id === input.spaceId) ?? null : null;
+  const account = input.accountId ? (input.accounts ?? []).find((item) => item.id === input.accountId) ?? null : null;
+  const currency = space?.currency ?? input.spaces[0]?.currency ?? "OMR";
+
+  const scopedSpaces = space ? [space] : input.spaces;
+  const spaceIds = new Set(scopedSpaces.map((item) => item.id));
+  let rows = input.transactions.filter((txn) => spaceIds.has(txn.space_id));
+  if (account) rows = rows.filter((txn) => txn.account_id === account.id);
+  rows = filterStatementTransactions(rows, txnFilter);
+  rows = [...rows].sort((a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime());
+
+  const liveSigned = rows.filter(isLive).reduce((sum, txn) => sum + signedMinor(txn), 0);
+  const closing = account
+    ? Number(account.balance_minor ?? account.opening_minor + liveSigned)
+    : space
+      ? Number(space.balance_minor)
+      : scopedSpaces.reduce((sum, item) => sum + Number(item.balance_minor), 0);
+  const opening = txnFilter === "voided" ? 0 : closing - liveSigned;
+  const entityName = account
+    ? `${account.name} · ${space ? spaceName(space, locale) : ""}`.trim()
+    : space
+      ? spaceName(space, locale)
+      : t(locale, "كل المحافظ", "All wallets");
+
+  let running = opening;
+  const occurrenceByTxn = new Map((input.occurrences ?? []).filter((row) => row.transaction_id).map((row) => [String(row.transaction_id), row]));
+  const lines: AccountStatementLine[] = rows.map((txn) => {
+    const live = isLive(txn);
+    const signed = live ? signedMinor(txn) : 0;
+    if (live) running += signed;
+    const member = input.members.find((item) => item.id === txn.member_id);
+    const txnSpace = input.spaces.find((item) => item.id === txn.space_id);
+    const txnAccount = (input.accounts ?? []).find((item) => item.id === txn.account_id);
+    const occ = occurrenceByTxn.get(txn.id);
+    const item = occ?.rule_name || kindLabel(txn.kind, locale);
+    const place = txnAccount?.name
+      || (txn.allocation === "personal_reserve" ? t(locale, "احتياطي شخصي", "Personal reserve") : t(locale, "صندوق المحفظة", "Wallet fund"));
+    const dest = spaceName(txnSpace ?? scopedSpaces[0], locale);
+    const amountShown = live ? signed : (["expense", "reimbursement"].includes(txn.kind) ? -(Number(txn.amount_minor) || 0) : (Number(txn.amount_minor) || 0));
+    return {
+      at: txn.occurred_at,
+      ref: txn.id.slice(0, 8).toUpperCase(),
+      description: locale === "ar" ? txn.description_ar : txn.description_en,
+      item,
+      flow: `${place} → ${dest}`,
+      userName: member?.display_name || input.issuerName,
+      depositMinor: amountShown > 0 ? amountShown : 0,
+      withdrawMinor: amountShown < 0 ? -amountShown : 0,
+      balanceMinor: live && txnFilter !== "voided" ? running : null,
+      status: statusLabel(txn, locale),
+      live,
+    };
+  });
+
+  const totalIn = lines.reduce((sum, line) => sum + line.depositMinor, 0);
+  const totalOut = lines.reduce((sum, line) => sum + line.withdrawMinor, 0);
+
+  return {
+    locale,
+    txnFilter,
+    currency,
+    entityName,
+    title: filterTitle(txnFilter, locale),
+    subtitle: filterSubtitle(txnFilter, locale),
+    openingMinor: opening,
+    closingMinor: closing,
+    totalInMinor: totalIn,
+    totalOutMinor: totalOut,
+    movementCount: lines.length,
+    lines,
+  };
+}
+
 export function buildAccountStatementHtml(input: {
   locale: StatementLocale;
   logoUrl: string;
@@ -147,39 +248,16 @@ export function buildAccountStatementHtml(input: {
   txnFilter?: StatementTxnFilter;
 }) {
   const locale = input.locale;
-  const txnFilter = input.txnFilter ?? "full";
-  const space = input.spaceId ? input.spaces.find((item) => item.id === input.spaceId) ?? null : null;
-  const account = input.accountId ? (input.accounts ?? []).find((item) => item.id === input.accountId) ?? null : null;
-  const currency = space?.currency ?? input.spaces[0]?.currency ?? "OMR";
+  const model = buildAccountStatementModel(input);
+  const txnFilter = model.txnFilter;
+  const currency = model.currency;
   const money = (minor: number) => formatMoneyMinor(minor, currency, locale);
-
-  const scopedSpaces = space ? [space] : input.spaces;
-  const spaceIds = new Set(scopedSpaces.map((item) => item.id));
-  let rows = input.transactions.filter((txn) => spaceIds.has(txn.space_id));
-  if (account) rows = rows.filter((txn) => txn.account_id === account.id);
-  rows = filterStatementTransactions(rows, txnFilter);
-
-  rows = [...rows].sort((a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime());
-
-  const liveSigned = rows.filter(isLive).reduce((sum, txn) => sum + signedMinor(txn), 0);
-  const closing = account
-    ? Number(account.balance_minor ?? account.opening_minor + liveSigned)
-    : space
-      ? Number(space.balance_minor)
-      : scopedSpaces.reduce((sum, item) => sum + Number(item.balance_minor), 0);
-  const opening = txnFilter === "voided" ? 0 : closing - liveSigned;
-
-  const entityName = account
-    ? `${account.name} · ${space ? spaceName(space, locale) : ""}`.trim()
-    : space
-      ? spaceName(space, locale)
-      : t(locale, "كل المحافظ", "All wallets");
-
-  const title = filterTitle(txnFilter, locale);
-  const subtitle = filterSubtitle(txnFilter, locale);
-
-  let running = opening;
-  const occurrenceByTxn = new Map((input.occurrences ?? []).filter((row) => row.transaction_id).map((row) => [String(row.transaction_id), row]));
+  const opening = model.openingMinor;
+  const closing = model.closingMinor;
+  const entityName = model.entityName;
+  const title = model.title;
+  const subtitle = model.subtitle;
+  const rows = model.lines;
 
   const head = [
     t(locale, "التاريخ والوقت", "Date & time"),
@@ -194,38 +272,21 @@ export function buildAccountStatementHtml(input: {
     t(locale, "الحالة", "Status"),
   ];
 
-  const body = rows.map((txn) => {
-    const live = isLive(txn);
-    const signed = live ? signedMinor(txn) : 0;
-    if (live) running += signed;
-    const member = input.members.find((item) => item.id === txn.member_id);
-    const txnSpace = input.spaces.find((item) => item.id === txn.space_id);
-    const txnAccount = (input.accounts ?? []).find((item) => item.id === txn.account_id);
-    const occ = occurrenceByTxn.get(txn.id);
-    const item = occ?.rule_name || kindLabel(txn.kind, locale);
-    const place = txnAccount?.name
-      || (txn.allocation === "personal_reserve" ? t(locale, "احتياطي شخصي", "Personal reserve") : t(locale, "صندوق المحفظة", "Wallet fund"));
-    const dest = spaceName(txnSpace ?? scopedSpaces[0], locale);
-    const userName = member?.display_name || input.issuerName;
-    const amountShown = live ? signed : (["expense", "reimbursement"].includes(txn.kind) ? -(Number(txn.amount_minor) || 0) : (Number(txn.amount_minor) || 0));
-    const deposit = amountShown > 0 ? money(amountShown) : "—";
-    const withdraw = amountShown < 0 ? money(-amountShown) : "—";
-    const status = statusLabel(txn, locale);
-    const when = formatStatementWhen(txn.occurred_at, locale);
-    const desc = locale === "ar" ? txn.description_ar : txn.description_en;
-    return { live, cells: [
-      { text: when, cls: "col-date" },
-      { text: txn.id.slice(0, 8).toUpperCase(), cls: "col-ref" },
-      { text: desc, cls: "col-desc" },
-      { text: item, cls: "col-item" },
-      { text: `${place} → ${dest}`, cls: "col-flow" },
-      { text: userName, cls: "col-user" },
-      { text: deposit, cls: "num" },
-      { text: withdraw, cls: "num" },
-      { text: live && txnFilter !== "voided" ? money(running) : "—", cls: "num" },
-      { text: status, cls: "col-status" },
-    ] };
-  });
+  const body = rows.map((line) => ({
+    live: line.live,
+    cells: [
+      { text: formatStatementWhen(line.at, locale), cls: "col-date" },
+      { text: line.ref, cls: "col-ref" },
+      { text: line.description, cls: "col-desc" },
+      { text: line.item, cls: "col-item" },
+      { text: line.flow, cls: "col-flow" },
+      { text: line.userName, cls: "col-user" },
+      { text: line.depositMinor > 0 ? money(line.depositMinor) : "—", cls: "num" },
+      { text: line.withdrawMinor > 0 ? money(line.withdrawMinor) : "—", cls: "num" },
+      { text: line.balanceMinor != null ? money(line.balanceMinor) : "—", cls: "num" },
+      { text: line.status, cls: "col-status" },
+    ],
+  }));
 
   const table = `<section><h2>${escapeHtml(t(locale, "الحركات", "Movements"))}</h2>
     <table>
@@ -264,14 +325,14 @@ export function buildAccountStatementHtml(input: {
     kpis: txnFilter === "voided"
       ? [
           { label: t(locale, "عدد الملغاة", "Voided count"), value: String(rows.length) },
-          { label: t(locale, "إجمالي المبالغ", "Total amounts"), value: money(rows.reduce((sum, txn) => sum + Math.abs(Number(txn.amount_minor) || 0), 0)) },
+          { label: t(locale, "إجمالي المبالغ", "Total amounts"), value: money(rows.reduce((sum, line) => sum + line.depositMinor + line.withdrawMinor, 0)) },
           { label: t(locale, "المحفظة", "Wallet"), value: entityName },
           { label: t(locale, "الرصيد الحالي", "Current balance"), value: money(closing) },
         ]
       : [
           { label: t(locale, "رصيد أول المدة", "Opening"), value: money(opening) },
-          { label: t(locale, "إجمالي الإيداع", "Total in"), value: money(rows.filter((txn) => isLive(txn) && signedMinor(txn) > 0).reduce((sum, txn) => sum + signedMinor(txn), 0)) },
-          { label: t(locale, "إجمالي السحب", "Total out"), value: money(-rows.filter((txn) => isLive(txn) && signedMinor(txn) < 0).reduce((sum, txn) => sum + signedMinor(txn), 0)) },
+          { label: t(locale, "إجمالي الإيداع", "Total in"), value: money(model.totalInMinor) },
+          { label: t(locale, "إجمالي السحب", "Total out"), value: money(model.totalOutMinor) },
           { label: t(locale, "رصيد آخر المدة", "Closing"), value: money(closing) },
         ],
     bodyHtml: table,

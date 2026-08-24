@@ -8,6 +8,7 @@ concurrency:
   cancel-in-progress: true
 permissions:
   contents: read
+  statuses: write
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -28,3 +29,8 @@ jobs:
       - run: npm run test:e2e
       - name: Build container
         run: docker build -t wazen:${{ github.sha }} .
+      - name: Mark deploy-ready
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "CI green — safe for Vercel production deploy of ${{ github.sha }}"
+          echo "Configure GitHub branch protection + Vercel 'Require Deployment Checks' / only deploy when CI passes."

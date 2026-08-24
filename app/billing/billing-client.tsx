@@ -227,6 +227,12 @@ export function BillingClient() {
                 {canExport ? null : <em className="plan-lock-badge">{locale === "ar" ? "ترقية" : "Upgrade"}</em>}
               </button>
             </div>
+            <p className="modal-note">
+              {l(
+                "للترقية: أنشئ فاتورة من الباقات، حوّل يدوياً، ثم اضغط «تأكيد الدفع». الاعتماد من لوحة الإدارة أو مزود دفع لاحقاً.",
+                "To upgrade: create an invoice from Pricing, transfer manually, then tap Confirm payment. Ops approve in Admin, or enable a live PSP later.",
+              )}
+            </p>
             <div className="table-scroll">
               <table>
                 <thead>

@@ -1,20 +1,16 @@
 import { ensureSchema, getRawDb } from "../../../../db/runtime";
-import { verifyMemberStatementToken } from "../../../../lib/statement-share";
+import {
+  verifyAnyStatementToken,
+  type AssociationStatementSharePayload,
+  type MemberStatementSharePayload,
+} from "../../../../lib/statement-share";
 import { buildMemberLedger, filterMemberLedgerLines, type MemberLedgerFocus } from "../../../../lib/member-ledger";
+import { buildAccountStatementModel, type StatementTxnFilter } from "../../../../lib/account-statement";
 import { formatMoneyMinor } from "../../../../lib/money";
 
 export const runtime = "nodejs";
 
-export async function GET(
-  _request: Request,
-  context: { params: Promise<{ token: string }> },
-) {
-  const { token } = await context.params;
-  const payload = verifyMemberStatementToken(token);
-  if (!payload) {
-    return Response.json({ error: "STATEMENT_LINK_INVALID" }, { status: 404, headers: { "Cache-Control": "no-store" } });
-  }
-
+async function memberStatementJson(payload: MemberStatementSharePayload) {
   const db = await getRawDb();
   await ensureSchema(db);
 
@@ -36,16 +32,12 @@ export async function GET(
     avatar: string;
     joined_at: string | null;
   }>();
-  if (!member) {
-    return Response.json({ error: "STATEMENT_NOT_FOUND" }, { status: 404, headers: { "Cache-Control": "no-store" } });
-  }
+  if (!member) return null;
 
   const space = await db.prepare(`
     SELECT id, name_ar, name_en, type, currency FROM spaces WHERE id=? LIMIT 1
   `).bind(payload.spaceId).first<{ id: string; name_ar: string; name_en: string; type: string; currency: string }>();
-  if (!space) {
-    return Response.json({ error: "STATEMENT_NOT_FOUND" }, { status: 404, headers: { "Cache-Control": "no-store" } });
-  }
+  if (!space) return null;
 
   const [plan, installments, transactions, settlements, tripExpenses, expenseSplits] = await Promise.all([
     db.prepare("SELECT space_id, amount_minor, duration_months, starts_at FROM contribution_plans WHERE space_id=? LIMIT 1")
@@ -122,7 +114,8 @@ export async function GET(
     credit: locale === "ar" ? "له" : "Credit",
   })[focus];
 
-  return Response.json({
+  return {
+    kind: "member_statement" as const,
     locale,
     focus,
     focusLabel,
@@ -142,7 +135,100 @@ export async function GET(
     owesMinor: ledger.owesMinor,
     creditMinor: ledger.creditMinor,
     lines,
-  }, {
+  };
+}
+
+async function associationStatementJson(payload: AssociationStatementSharePayload) {
+  const db = await getRawDb();
+  await ensureSchema(db);
+
+  const space = await db.prepare(`
+    SELECT id, name_ar, name_en, type, currency, balance_minor FROM spaces WHERE id=? LIMIT 1
+  `).bind(payload.spaceId).first<{
+    id: string;
+    name_ar: string;
+    name_en: string;
+    type: string;
+    currency: string;
+    balance_minor: number;
+  }>();
+  if (!space) return null;
+
+  const [members, transactions] = await Promise.all([
+    db.prepare("SELECT id, space_id, display_name FROM members WHERE space_id=?")
+      .bind(payload.spaceId)
+      .all<{ id: string; space_id: string; display_name: string }>(),
+    db.prepare("SELECT * FROM transactions WHERE space_id=? ORDER BY occurred_at ASC LIMIT 500")
+      .bind(payload.spaceId)
+      .all(),
+  ]);
+
+  const locale = payload.locale;
+  const filter = payload.filter as StatementTxnFilter;
+  const model = buildAccountStatementModel({
+    locale,
+    issuerName: "WAZEN",
+    spaces: [space],
+    members: members.results ?? [],
+    transactions: (transactions.results ?? []) as never[],
+    spaceId: space.id,
+    txnFilter: filter,
+  });
+  const money = (minor: number) => formatMoneyMinor(minor, model.currency, locale);
+
+  return {
+    kind: "association_statement" as const,
+    locale,
+    filter,
+    filterLabel: model.title,
+    title: model.title,
+    subtitle: model.subtitle,
+    walletName: model.entityName,
+    currency: model.currency,
+    openingLabel: money(model.openingMinor),
+    closingLabel: money(model.closingMinor),
+    totalInLabel: money(model.totalInMinor),
+    totalOutLabel: money(model.totalOutMinor),
+    openingMinor: model.openingMinor,
+    closingMinor: model.closingMinor,
+    totalInMinor: model.totalInMinor,
+    totalOutMinor: model.totalOutMinor,
+    movementCount: model.movementCount,
+    lines: model.lines.map((line) => ({
+      at: line.at,
+      ref: line.ref,
+      description: line.description,
+      item: line.item,
+      flow: line.flow,
+      userName: line.userName,
+      depositMinor: line.depositMinor,
+      withdrawMinor: line.withdrawMinor,
+      balanceMinor: line.balanceMinor,
+      status: line.status,
+      live: line.live,
+    })),
+  };
+}
+
+export async function GET(
+  _request: Request,
+  context: { params: Promise<{ token: string }> },
+) {
+  const { token } = await context.params;
+  const payload = verifyAnyStatementToken(token);
+  if (!payload) {
+    return Response.json({ error: "STATEMENT_LINK_INVALID" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
+
+  const data = payload.kind === "member_statement"
+    ? await memberStatementJson(payload)
+    : await associationStatementJson(payload);
+
+  if (!data) {
+    return Response.json({ error: "STATEMENT_NOT_FOUND" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
+
+  return Response.json(data, {
     headers: { "Cache-Control": "public, max-age=120" },
   });
 }

@@ -78,13 +78,17 @@ export function errorResponse(error: unknown) {
   if (error instanceof ApiError) return Response.json({ error: error.code }, { status: error.status });
   const message = error instanceof Error ? error.message : String(error);
   const code = message === "DATABASE_NOT_CONFIGURED" ? "DATABASE_NOT_CONFIGURED" : "INTERNAL_ERROR";
-  console.error(JSON.stringify({
-    level: "error",
-    code,
-    message,
-    stack: error instanceof Error ? error.stack?.split("\n").slice(0, 8) : undefined,
-    at: new Date().toISOString(),
-  }));
+  void import("./observability").then(({ reportEvent }) => {
+    reportEvent({ level: "error", code, message, error });
+  }).catch(() => {
+    console.error(JSON.stringify({
+      level: "error",
+      code,
+      message,
+      stack: error instanceof Error ? error.stack?.split("\n").slice(0, 8) : undefined,
+      at: new Date().toISOString(),
+    }));
+  });
   const diagnostic = process.env.NODE_ENV !== "production" ? { detail: message } : {};
   return Response.json({ error: code, ...diagnostic }, { status: code === "DATABASE_NOT_CONFIGURED" ? 503 : 500 });
 }

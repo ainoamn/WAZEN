@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -94,6 +94,62 @@ $fn$ LANGUAGE plpgsql`).run();
     BEFORE UPDATE OF status ON payments
     FOR EACH ROW
     EXECUTE FUNCTION wazen_payment_status_guard()`).run();
+}
+
+/** Defense-in-depth RLS on Neon. Default session sets app.bypass_rls=1 (see neon-d1).
+ *  Set WAZEN_RLS_ENFORCE=1 and app.user_id per request to enforce membership policies. */
+async function applyPostgresRls(db: D1Database) {
+  if (!hasNeonDatabaseUrl()) return;
+  const tables = [
+    "spaces", "members", "member_installments", "contribution_plans", "transactions",
+    "transaction_revisions", "documents", "invites", "journal_entries", "circle_configs",
+    "circle_turns", "trip_expenses", "expense_splits", "settlements", "accounting_periods",
+    "period_ledger_events", "personal_accounts", "personal_rules", "personal_occurrences",
+    "space_payout_accounts", "family_events", "space_links", "space_bank_links",
+  ];
+  await db.prepare(`CREATE OR REPLACE FUNCTION wazen_space_visible(p_space_id text) RETURNS boolean AS $fn$
+DECLARE
+  uid text := nullif(current_setting('app.user_id', true), '');
+BEGIN
+  IF current_setting('app.bypass_rls', true) IS DISTINCT FROM '0' THEN
+    RETURN true;
+  END IF;
+  IF uid IS NULL THEN
+    RETURN false;
+  END IF;
+  RETURN EXISTS (
+    SELECT 1 FROM spaces s
+    WHERE s.id = p_space_id AND (s.owner_user_id = uid OR EXISTS (
+      SELECT 1 FROM members m WHERE m.space_id = s.id AND m.user_id = uid AND m.status = 'active'
+    ))
+  );
+END;
+$fn$ LANGUAGE plpgsql STABLE`).run();
+
+  for (const table of tables) {
+    try {
+      await db.prepare(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`).run();
+    } catch { /* table may not exist on partial DBs */ }
+    try {
+      await db.prepare(`DROP POLICY IF EXISTS wazen_tenant_all ON ${table}`).run();
+    } catch { /* ignore */ }
+  }
+
+  const spaceIdExpr: Record<string, string> = {
+    spaces: "id",
+    transaction_revisions: `(SELECT t.space_id FROM transactions t WHERE t.id = transaction_revisions.transaction_id)`,
+    expense_splits: `(SELECT te.space_id FROM trip_expenses te WHERE te.id = expense_splits.expense_id)`,
+  };
+
+  for (const table of tables) {
+    const spaceExpr = spaceIdExpr[table] ?? "space_id";
+    try {
+      await db.prepare(`CREATE POLICY wazen_tenant_all ON ${table}
+        FOR ALL
+        USING (wazen_space_visible(${spaceExpr}))
+        WITH CHECK (wazen_space_visible(${spaceExpr}))`).run();
+    } catch { /* table missing or policy already valid */ }
+  }
 }
 
 async function ensureBhdSubColumn(db: D1Database) {
@@ -247,7 +303,10 @@ async function ensureSchemaPatches(db: D1Database) {
       status TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_transaction_revisions_txn ON transaction_revisions(transaction_id, edited_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_transactions_space_status_date ON transactions(space_id, status, occurred_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_transactions_member ON transactions(member_id, occurred_at)"),
   ]);
+  await applyPostgresRls(db);
   const personalRuleCols = await db.prepare("PRAGMA table_info(personal_rules)").all<{ name: string }>();
   if (!personalRuleCols.results.some((column) => column.name === "schedule")) {
     try { await db.prepare("ALTER TABLE personal_rules ADD COLUMN schedule TEXT NOT NULL DEFAULT 'monthly'").run(); } catch { /* exists */ }
@@ -307,6 +366,7 @@ async function initializeSchema(db: D1Database) {
     await db.prepare(`CREATE TABLE IF NOT EXISTS schema_meta (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)`).run();
     await ensureSchemaPatches(db);
     await applyPostgresPaymentGuard(db);
+    await applyPostgresRls(db);
     await db.prepare("INSERT INTO schema_meta (id, version) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET version=excluded.version").bind(SCHEMA_VERSION).run();
     await markSchemaReady();
     return;
@@ -908,6 +968,7 @@ async function initializeSchema(db: D1Database) {
   ]);
   await ensureSchemaPatches(db);
   await applyPostgresPaymentGuard(db);
+  await applyPostgresRls(db);
   await db.prepare("INSERT INTO schema_meta (id, version) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET version=excluded.version").bind(SCHEMA_VERSION).run();
   await markSchemaReady();
 }

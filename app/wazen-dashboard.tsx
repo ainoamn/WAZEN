@@ -157,7 +157,7 @@ type CircleTurn = { id: string; space_id: string; member_id: string; display_nam
 type TripExpense = { id: string; space_id: string; paid_by_member_id: string; paid_by_name: string; amount_minor: number; description: string; occurred_at: string; paid_from?: string };
 type ExpenseSplit = { id: string; expense_id: string; member_id: string; display_name: string; share_minor: number };
 type Settlement = { id: string; space_id: string; from_member_id: string; to_member_id: string; from_member_name: string | null; to_member_name: string | null; amount_minor: number; status: string };
-type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; dailyTransactionLimit?: number; monthlyTransactionLimit?: number; printLimit?: number; status: string; usage?: { transactionsTotal: number; transactionsToday: number; transactionsThisMonth: number; printsThisMonth: number }; warnings?: Array<{ kind: string; used: number; limit: number }>; retention?: { graceEndsAt: string; spaceCount: number; spaceTypes: string[]; userVisibleDays: number } | null }; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
+type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; workspaceAlerts?: Array<{ id: string; severity: "info" | "warning" | "danger"; href?: string; ar: string; en: string }>; entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; dailyTransactionLimit?: number; monthlyTransactionLimit?: number; printLimit?: number; status: string; usage?: { transactionsTotal: number; transactionsToday: number; transactionsThisMonth: number; printsThisMonth: number }; warnings?: Array<{ kind: string; used: number; limit: number }>; retention?: { graceEndsAt: string; spaceCount: number; spaceTypes: string[]; userVisibleDays: number } | null }; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
 
 const copy = {
   ar: {
@@ -568,11 +568,15 @@ const STATEMENT_PRINT_OPTIONS: Array<{ id: StatementTxnFilter; ar: string; en: s
 function StatementPrintMenu({
   locale,
   locked,
+  canShare,
   onPick,
+  onShare,
 }: {
   locale: Locale;
   locked?: boolean;
+  canShare?: boolean;
   onPick: (filter: StatementTxnFilter) => void;
+  onShare?: (filter: StatementTxnFilter) => void;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -602,24 +606,73 @@ function StatementPrintMenu({
       </button>
       {open && !locked && (
         <div className="statement-print-panel" role="menu">
-          <p>{locale === "ar" ? "اختر نوع الطباعة" : "Choose what to print"}</p>
+          <p>{locale === "ar" ? "طباعة" : "Print"}</p>
           {STATEMENT_PRINT_OPTIONS.map((option) => (
             <button
               type="button"
-              key={option.id}
+              key={`print-${option.id}`}
               role="menuitem"
               onClick={() => {
                 setOpen(false);
                 onPick(option.id);
               }}
             >
+              <Printer size={14} />
               {locale === "ar" ? option.ar : option.en}
             </button>
           ))}
+          {onShare ? (
+            <>
+              <p>{locale === "ar" ? "إرسال للجوال (واتساب)" : "Send to phone (WhatsApp)"}</p>
+              {STATEMENT_PRINT_OPTIONS.map((option) => (
+                <button
+                  type="button"
+                  key={`share-${option.id}`}
+                  role="menuitem"
+                  className={canShare === false ? "is-plan-locked" : ""}
+                  onClick={() => {
+                    if (canShare === false) { goToPricing(); return; }
+                    setOpen(false);
+                    onShare(option.id);
+                  }}
+                >
+                  <MessageCircle size={14} />
+                  {locale === "ar" ? `إرسال · ${option.ar}` : `Send · ${option.en}`}
+                  {canShare === false ? <PlanLockBadge locale={locale} /> : null}
+                </button>
+              ))}
+            </>
+          ) : null}
         </div>
       )}
     </div>
   );
+}
+
+async function shareSpaceStatement(space: Space, locale: Locale, filter: StatementTxnFilter, canShare: boolean) {
+  if (!canShare) {
+    goToPricing();
+    return;
+  }
+  try {
+    const response = await apiFetch("/api/dashboard", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "createAssociationStatementShare",
+        idempotencyKey: crypto.randomUUID(),
+        spaceId: space.id,
+        filter,
+        locale,
+      }),
+    });
+    const result = await response.json() as { error?: string; notification?: { whatsappUrl?: string | null; receiptUrl?: string | null } };
+    if (!response.ok) throw new Error(result.error ?? "SHARE_FAILED");
+    if (result.notification?.whatsappUrl) openWhatsAppUrl(result.notification.whatsappUrl);
+    else if (result.notification?.receiptUrl) window.open(result.notification.receiptUrl, "_blank", "noopener,noreferrer");
+  } catch {
+    window.alert(locale === "ar" ? "تعذر تجهيز رابط كشف الجمعية." : "Could not prepare the association statement link.");
+  }
 }
 
 function printAccountingPeriod(space: Space, period: NonNullable<DashboardData["periods"]>[number], data: DashboardData, locale: Locale) {
@@ -1278,6 +1331,17 @@ export function WazenDashboard() {
           </div>
         ) : null}
 
+        {data.workspaceAlerts?.length ? (
+          <div className="workspace-alerts" role="status">
+            {data.workspaceAlerts.map((alert) => (
+              <div key={alert.id} className={`workspace-alert is-${alert.severity}`}>
+                <p>{locale === "ar" ? alert.ar : alert.en}</p>
+                {alert.href ? <a href={alert.href}>{locale === "ar" ? "فتح" : "Open"}</a> : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
         <div className="page-content">
           {activeView === "overview" && (
             <Overview data={data} locale={locale} totals={totals} onView={changeView} onAddWallet={openNewWallet} onTxnChanged={(next) => { acceptWrite(next); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />
@@ -1326,7 +1390,7 @@ export function WazenDashboard() {
           {activeView === "reports" && (viewLocked
             ? <UpgradeGate locale={locale} title={locale === "ar" ? "التقارير تستدعي ترقية الباقة" : "Reports need a plan upgrade"} text={locale === "ar" ? "التقارير التفصيلية والتصدير غير مضمّنة في باقتك. رقِّ الباقة لتفعيلها." : "Advanced reports and exports are not on your plan. Upgrade to unlock them."} />
             : <ReportsPanel data={data} locale={locale} totals={totals} />)}
-          {activeView === "settings" && <SettingsView user={data.user} locale={locale} entitlements={data.entitlements} onLogout={() => void logout()} onSaved={(next) => { acceptWrite(next); flash(locale === "ar" ? "تم حفظ بيانات الحساب" : "Profile saved"); }} />}
+          {activeView === "settings" && <SettingsView user={data.user} locale={locale} entitlements={data.entitlements} spaces={data.spaces} onLogout={() => void logout()} onSaved={(next) => { acceptWrite(next); flash(locale === "ar" ? "تم حفظ بيانات الحساب" : "Profile saved"); }} />}
         </div>
       </main>
 
@@ -1838,7 +1902,9 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
       <StatementPrintMenu
         locale={locale}
         locked={!planAllowsStatements(planFeaturesOf(data))}
+        canShare={planHasFeature(planFeaturesOf(data), "whatsapp")}
         onPick={(filter) => printSpaceStatement(space, data, locale, null, filter)}
+        onShare={(filter) => void shareSpaceStatement(space, locale, filter, planHasFeature(planFeaturesOf(data), "whatsapp"))}
       />
       <button type="button" onClick={onAdd}><Plus size={16} />{t.add}</button>
       {["trip", "society", "group"].includes(space.type) && <button type="button" onClick={onInvite}><UserPlus size={16} />{t.invite}</button>}
@@ -2153,13 +2219,16 @@ function PasswordChangeCard({ locale }: { locale: Locale }) {
   );
 }
 
-function SettingsView({ user, locale, entitlements, onLogout, onSaved }: { user: User; locale: Locale; entitlements?: DashboardData["entitlements"]; onLogout: () => void; onSaved: (next: Partial<DashboardData>) => void }) {
+function SettingsView({ user, locale, entitlements, spaces, onLogout, onSaved }: { user: User; locale: Locale; entitlements?: DashboardData["entitlements"]; spaces: Space[]; onLogout: () => void; onSaved: (next: Partial<DashboardData>) => void }) {
   const router = useRouter();
   const t = copy[locale];
   const [displayName, setDisplayName] = useState(user.displayName);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(user.avatarUrl ?? null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [auditSpaceId, setAuditSpaceId] = useState(spaces.find((space) => ["society", "group"].includes(space.type))?.id ?? spaces[0]?.id ?? "");
+  const [auditRows, setAuditRows] = useState<Array<{ id: string; action: string; entityType: string; entityId: string; createdAt: string }>>([]);
+  const [auditBusy, setAuditBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const features = entitlements?.features?.length ? entitlements.features : ["personal"];
   const canExport = planHasFeature(features, "exports");
@@ -2167,6 +2236,24 @@ function SettingsView({ user, locale, entitlements, onLogout, onSaved }: { user:
     setDisplayName(user.displayName);
     setAvatarUrl(user.avatarUrl ?? null);
   }, [user.displayName, user.avatarUrl]);
+  const loadAudit = async (spaceId = auditSpaceId) => {
+    if (!spaceId) return;
+    setAuditBusy(true);
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "listSpaceAudit", idempotencyKey: crypto.randomUUID(), spaceId, limit: 30 }),
+      });
+      const result = await response.json() as { error?: string; audit?: Array<{ id: string; action: string; entityType: string; entityId: string; createdAt: string }> };
+      if (!response.ok) throw new Error(result.error ?? "AUDIT_FAILED");
+      setAuditRows(result.audit ?? []);
+    } catch {
+      setAuditRows([]);
+    } finally {
+      setAuditBusy(false);
+    }
+  };
   const exportData = async () => {
     if (!canExport) { goToPricing(); return; }
     const response = await fetch("/api/platform?view=export", { cache: "no-store" });
@@ -2230,7 +2317,46 @@ function SettingsView({ user, locale, entitlements, onLogout, onSaved }: { user:
     </form>
     <PasswordChangeCard locale={locale} />
     <PlanFeaturesPanel locale={locale} entitlements={entitlements} />
-    <section className="settings-grid"><InfoPanel locale={locale} icon={<Download />} title={locale === "ar" ? "تنزيل بياناتي" : "Export my data"} text={canExport ? (locale === "ar" ? "نسخة JSON كاملة من محافظك وحركاتك ومستنداتك." : "A complete JSON copy of your wallets, entries and documents.") : (locale === "ar" ? "التصدير يحتاج ترقية الباقة." : "Data export needs a plan upgrade.")} onClick={() => void exportData()} locked={!canExport} /><InfoPanel locale={locale} icon={<ShieldCheck />} title={locale === "ar" ? "أمان الحساب" : "Account security"} text={locale === "ar" ? "كلمة المرور والمصادقة الثنائية ومفاتيح API." : "Password, two-factor authentication and API keys."} onClick={() => router.push("/account/security")} /><InfoPanel locale={locale} icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} onClick={() => router.push("/privacy")} /><InfoPanel locale={locale} icon={<Users />} title={t.access} text={t.accessText} /><InfoPanel locale={locale} icon={<Globe2 />} title={locale === "ar" ? "اللغة والمنطقة" : "Language & region"} text={locale === "ar" ? "العربية، الريال العماني، والمنطقة الزمنية لمسقط." : "English, Omani rial and Muscat time zone."} /><InfoPanel locale={locale} icon={<Bell />} title={locale === "ar" ? "التنبيهات" : "Notifications"} text={locale === "ar" ? "تذكير قبل الاستحقاق، إشعارات الدفع وطلبات الاسترداد." : "Due reminders, payment updates and withdrawal requests."} /></section>
+    <article className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>{locale === "ar" ? "سجل التدقيق" : "Audit log"}</h2>
+          <p className="modal-note">{locale === "ar" ? "آخر العمليات المسجّلة لهذه المحفظة (تعديل، مشاركة، فترات…)." : "Recent logged actions for this wallet (edits, shares, periods…)."}</p>
+        </div>
+        <button type="button" className="secondary-button" disabled={auditBusy || !auditSpaceId} onClick={() => void loadAudit()}>
+          {auditBusy ? "…" : (locale === "ar" ? "تحديث" : "Refresh")}
+        </button>
+      </div>
+      {spaces.length ? (
+        <label>
+          <span>{locale === "ar" ? "المحفظة" : "Wallet"}</span>
+          <select
+            value={auditSpaceId}
+            onChange={(event) => {
+              const next = event.target.value;
+              setAuditSpaceId(next);
+              void loadAudit(next);
+            }}
+          >
+            {spaces.map((space) => (
+              <option key={space.id} value={space.id}>{locale === "ar" ? space.name_ar : space.name_en}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <ul className="audit-log-list">
+        {auditRows.length ? auditRows.map((row) => (
+          <li key={row.id}>
+            <strong>{row.action}</strong>
+            <span>{row.entityType}:{row.entityId.slice(0, 8)}</span>
+            <em>{new Date(row.createdAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</em>
+          </li>
+        )) : (
+          <li className="muted">{locale === "ar" ? "لا توجد سجلات بعد لهذه المحفظة." : "No audit rows for this wallet yet."}</li>
+        )}
+      </ul>
+    </article>
+    <section className="settings-grid"><InfoPanel locale={locale} icon={<Download />} title={locale === "ar" ? "تنزيل بياناتي" : "Export my data"} text={canExport ? (locale === "ar" ? "نسخة JSON كاملة من محافظك وحركاتك ومستنداتك." : "A complete JSON copy of your wallets, entries and documents.") : (locale === "ar" ? "التصدير يحتاج ترقية الباقة." : "Data export needs a plan upgrade.")} onClick={() => void exportData()} locked={!canExport} /><InfoPanel locale={locale} icon={<ShieldCheck />} title={locale === "ar" ? "أمان الحساب" : "Account security"} text={locale === "ar" ? "كلمة المرور والمصادقة الثنائية ومفاتيح API." : "Password, two-factor authentication and API keys."} onClick={() => router.push("/account/security")} /><InfoPanel locale={locale} icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} onClick={() => router.push("/privacy")} /><InfoPanel locale={locale} icon={<Users />} title={t.access} text={t.accessText} /><InfoPanel locale={locale} icon={<Globe2 />} title={locale === "ar" ? "اللغة والمنطقة" : "Language & region"} text={locale === "ar" ? "العربية، الريال العماني، والمنطقة الزمنية لمسقط." : "English, Omani rial and Muscat time zone."} /><InfoPanel locale={locale} icon={<Bell />} title={locale === "ar" ? "التنبيهات" : "Notifications"} text={locale === "ar" ? "تنبيهات المستحقات والرصيد وفترة السماح تظهر أعلى اللوحة." : "Dues, balance and grace alerts appear at the top of the dashboard."} /></section>
   </div>;
 }
 
@@ -2323,7 +2449,7 @@ function SpaceTransactionsPanel({ space, data, locale, onAdd, onTxnChanged }: { 
   return <>
     <FoldWrap id={`${space.id}:transactions`} label={locale === "ar" ? "طي العمليات" : "Fold transactions"}>
     <article className="panel list-panel">
-      <div className="panel-heading"><h2>{t.recent}</h2><div className="section-title-actions"><StatementPrintMenu locale={locale} locked={!canPrint} onPick={(filter) => printSpaceStatement(space, data, locale, null, filter)} /><button className="secondary-button" onClick={onAdd}><Plus size={15} />{t.add}</button></div></div>
+      <div className="panel-heading"><h2>{t.recent}</h2><div className="section-title-actions"><StatementPrintMenu locale={locale} locked={!canPrint} canShare={planHasFeature(planFeaturesOf(data), "whatsapp")} onPick={(filter) => printSpaceStatement(space, data, locale, null, filter)} onShare={(filter) => void shareSpaceStatement(space, locale, filter, planHasFeature(planFeaturesOf(data), "whatsapp"))} /><button className="secondary-button" onClick={onAdd}><Plus size={15} />{t.add}</button></div></div>
       <div className="transaction-list">
         {paged.rows.length ? paged.rows.map((transaction) => (
           <TransactionRow key={transaction.id} transaction={transaction} data={data} locale={locale} onEdit={setEditing} onVoid={(txn) => { if (!working) void voidTxn(txn); }} />

@@ -143,6 +143,11 @@ export function getNeonD1(): D1Database {
     const url = process.env.DATABASE_URL?.trim() || process.env.NEON_DATABASE_URL?.trim();
     if (!url) throw new Error("DATABASE_NOT_CONFIGURED");
     global.__wazen_neon_pool__ = new Pool({ connectionString: url, max: 8 });
+    global.__wazen_neon_pool__.on("connect", (client: { query: (sql: string, params?: unknown[]) => Promise<unknown> }) => {
+      // Soft RLS: policies allow when bypass != '0'. Enforce mode sets bypass=0 + app.user_id.
+      const enforce = process.env.WAZEN_RLS_ENFORCE?.trim() === "1";
+      void client.query("SELECT set_config('app.bypass_rls', $1, false)", [enforce ? "0" : "1"]).catch(() => {});
+    });
     global.__wazen_neon_d1__ = new NeonD1Database(global.__wazen_neon_pool__) as unknown as D1Database;
     // Warm the pool so the first real query doesn't pay connection overhead.
     global.__wazen_neon_pool__.query("SELECT 1").catch(() => {});
