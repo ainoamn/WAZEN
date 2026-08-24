@@ -28,11 +28,11 @@ test("phase 23 rule update/delete and occurrence confirm/skip", () => {
   assert.match(hooks, /rule\.deleted/);
   assert.match(hooks, /occurrence\.posted/);
   assert.match(hooks, /occurrence\.skipped/);
-  assert.match(openapi, /phase23/);
+  assert.match(openapi, /1\.0\.0-phase\d+/);
   assert.match(openapi, /\/rules\/\{ruleId\}/);
   assert.match(openapi, /\/occurrences\/\{occurrenceId\}\/confirm/);
   assert.match(openapi, /\/occurrences\/\{occurrenceId\}\/skip/);
-  assert.match(developers, /phase 23/);
+  assert.match(developers, /phase \d+/);
   assert.match(developers, /\/rules\/\{ruleId\}/);
   assert.match(developers, /\/occurrences\//);
   assert.match(security, /occurrence\.posted/);

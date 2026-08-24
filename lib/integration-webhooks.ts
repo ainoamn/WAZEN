@@ -42,6 +42,9 @@ export const INTEGRATION_WEBHOOK_EVENTS = [
   "rule.deleted",
   "occurrence.posted",
   "occurrence.skipped",
+  "occurrence.queued",
+  "occurrence.updated",
+  "occurrence.deferred",
 ] as const;
 
 export type IntegrationWebhookEvent = (typeof INTEGRATION_WEBHOOK_EVENTS)[number];

@@ -47,6 +47,9 @@ const DEFAULT_EVENTS = [
   "rule.deleted",
   "occurrence.posted",
   "occurrence.skipped",
+  "occurrence.queued",
+  "occurrence.updated",
+  "occurrence.deferred",
 ];
 
 export function SecurityClient() {
