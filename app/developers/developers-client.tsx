@@ -7,6 +7,10 @@ const endpoints = [
   { method: "GET", path: "/api/v1/me", ar: "هوية المفتاح الحالي", en: "Current API principal" },
   { method: "GET", path: "/api/v1/notifications", ar: "إشعارات الحساب", en: "In-app notifications" },
   { method: "POST", path: "/api/v1/notifications/read", ar: "تعليم الإشعارات كمقروءة", en: "Mark notifications read" },
+  { method: "GET", path: "/api/v1/webhooks?deliveries=1", ar: "قائمة webhooks والتسليمات", en: "List webhooks and deliveries" },
+  { method: "POST", path: "/api/v1/webhooks", ar: "إنشاء webhook تكامل", en: "Create integration webhook" },
+  { method: "DELETE", path: "/api/v1/webhooks/{webhookId}", ar: "إلغاء webhook", en: "Revoke webhook" },
+  { method: "POST", path: "/api/v1/webhooks/{webhookId}/test", ar: "اختبار webhook", en: "Test webhook delivery" },
   { method: "GET", path: "/api/v1/spaces", ar: "قائمة المحافظ المتاحة للمفتاح", en: "List wallets visible to the key" },
   { method: "POST", path: "/api/v1/spaces", ar: "إنشاء محفظة", en: "Create a wallet" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}", ar: "تفاصيل محفظة واحدة", en: "Single wallet summary" },
@@ -70,7 +74,7 @@ export default function DevelopersPage() {
         <button type="button" onClick={() => setLocale(ar ? "en" : "ar")}>{ar ? "EN" : "عربي"}</button>
       </header>
       <article>
-        <small>WAZEN API · v1 · 2026-08-24 · phase 19</small>
+        <small>WAZEN API · v1 · 2026-08-24 · phase 20</small>
         <h1>{ar ? "واجهة برمجة المؤسسات" : "Business API"}</h1>
         <p className="lead">
           {ar
@@ -83,8 +87,8 @@ export default function DevelopersPage() {
           <pre className="developers-code">{`Authorization: Bearer wzn_...`}</pre>
           <p>
             {ar
-              ? "النطاقات الشائعة: wallets:read للقراءة. الكتابة تحتاج wallets:write أو members:write أو settlements:write أو circles:write. Webhooks من أمان الحساب."
-              : "Common scopes: wallets:read for reads. Writes need wallets:write, members:write, settlements:write, or circles:write. Configure webhooks under Account security."}
+              ? "النطاقات الشائعة: wallets:read للقراءة. الكتابة تحتاج wallets:write أو members:write أو settlements:write أو circles:write. إدارة Webhooks تحتاج webhooks:read / webhooks:write."
+              : "Common scopes: wallets:read for reads. Writes need wallets:write, members:write, settlements:write, or circles:write. Webhook management needs webhooks:read / webhooks:write."}
           </p>
         </section>
 

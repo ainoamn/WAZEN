@@ -111,8 +111,8 @@ export function SecurityClient() {
 
   const createKey = async (mode: "read" | "write") => {
     const scopes = mode === "write"
-      ? ["wallets:read", "wallets:write", "members:write", "settlements:write", "documents:read"]
-      : ["wallets:read", "documents:read"];
+      ? ["wallets:read", "wallets:write", "members:write", "settlements:write", "documents:read", "webhooks:read", "webhooks:write"]
+      : ["wallets:read", "documents:read", "webhooks:read"];
     const response = await apiFetch("/api/platform", {
       method: "POST",
       headers: { "content-type": "application/json" },

@@ -6,14 +6,24 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Wazen Business API",
-    version: "1.0.0-phase19",
-    description: "Scoped Bearer API (wzn_…) for wallets, links, members, circles, shares, notifications, contributions, settlements, periods, expenses, exports, and documents.",
+    version: "1.0.0-phase20",
+    description: "Scoped Bearer API (wzn_…) for wallets, links, members, circles, shares, notifications, webhooks, contributions, settlements, periods, expenses, exports, and documents.",
   },
   servers: [{ url: "https://wazen.bhd-om.com" }],
   paths: {
     "/api/v1/me": { get: { summary: "Current API principal", security: [{ bearerAuth: [] }] } },
     "/api/v1/notifications": { get: { summary: "List in-app notifications", security: [{ bearerAuth: [] }] } },
     "/api/v1/notifications/read": { post: { summary: "Mark notifications read", security: [{ bearerAuth: [] }] } },
+    "/api/v1/webhooks": {
+      get: { summary: "List integration webhooks (optional ?deliveries=1)", security: [{ bearerAuth: [] }] },
+      post: { summary: "Create integration webhook", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/webhooks/{webhookId}": {
+      delete: { summary: "Revoke integration webhook", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/webhooks/{webhookId}/test": {
+      post: { summary: "Enqueue webhook test delivery", security: [{ bearerAuth: [] }] },
+    },
     "/api/v1/spaces": {
       get: { summary: "List wallets", security: [{ bearerAuth: [] }] },
       post: { summary: "Create wallet", security: [{ bearerAuth: [] }] },

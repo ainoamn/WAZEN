@@ -691,8 +691,8 @@ export async function POST(request: Request) {
 
     if (action === "createApiKey") {
       if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
-      const allowedScopes = ["wallets:read", "wallets:write", "members:write", "circles:write", "settlements:write", "documents:read", "documents:write", "billing:read", "data:export"] as const;
-      const parsed = z.object({ name: z.string().trim().min(2).max(80), scopes: z.array(z.enum(allowedScopes)).min(1).max(9), expiresInDays: z.number().int().min(1).max(365).default(90) }).safeParse(payload);
+      const allowedScopes = ["wallets:read", "wallets:write", "members:write", "circles:write", "settlements:write", "documents:read", "documents:write", "billing:read", "data:export", "webhooks:read", "webhooks:write"] as const;
+      const parsed = z.object({ name: z.string().trim().min(2).max(80), scopes: z.array(z.enum(allowedScopes)).min(1).max(11), expiresInDays: z.number().int().min(1).max(365).default(90) }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_API_KEY");
       const count = await db.prepare("SELECT COUNT(*) AS count FROM api_keys WHERE user_id=? AND revoked_at IS NULL").bind(user.id).first<{ count: number }>();
       if (Number(count?.count ?? 0) >= 10) throw new ApiError(409, "API_KEY_LIMIT");

@@ -34,10 +34,10 @@ test("phase 19 transaction update, expense update/resplit, wallet links", () => 
   assert.match(hooks, /expense\.resplit/);
   assert.match(hooks, /space\.linked/);
   assert.match(hooks, /space\.unlinked/);
-  assert.match(openapi, /phase19/);
+  assert.match(openapi, /1\.0\.0-phase\d+/);
   assert.match(openapi, /\/links/);
   assert.match(openapi, /\/expenses\/resplit/);
-  assert.match(developers, /phase 19/);
+  assert.match(developers, /phase \d+/);
   assert.match(developers, /\/links/);
   assert.match(developers, /\/expenses\/resplit/);
   assert.match(security, /transaction\.updated/);
