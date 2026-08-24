@@ -43,6 +43,10 @@ const DEFAULT_EVENTS = [
   "account.updated",
   "account.deleted",
   "rule.created",
+  "rule.updated",
+  "rule.deleted",
+  "occurrence.posted",
+  "occurrence.skipped",
 ];
 
 export function SecurityClient() {

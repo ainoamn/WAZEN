@@ -6,8 +6,8 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Wazen Business API",
-    version: "1.0.0-phase22",
-    description: "Scoped Bearer API (wzn_…) for wallets, accounts, rules, links, transfers, members, circles, shares, notifications, webhooks, contributions, settlements, periods, expenses, exports, and documents.",
+    version: "1.0.0-phase23",
+    description: "Scoped Bearer API (wzn_…) for wallets, accounts, rules, occurrences, links, transfers, members, circles, shares, notifications, webhooks, contributions, settlements, periods, expenses, exports, and documents.",
   },
   servers: [{ url: "https://wazen.bhd-om.com" }],
   paths: {
@@ -44,6 +44,16 @@ const spec = {
     "/api/v1/spaces/{spaceId}/rules": {
       get: { summary: "List personal income/expense rules and pending occurrences", security: [{ bearerAuth: [] }] },
       post: { summary: "Create personal income/expense rule", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/rules/{ruleId}": {
+      patch: { summary: "Update personal rule", security: [{ bearerAuth: [] }] },
+      delete: { summary: "Delete personal rule", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/occurrences/{occurrenceId}/confirm": {
+      post: { summary: "Confirm pending personal occurrence (posts transaction)", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/occurrences/{occurrenceId}/skip": {
+      post: { summary: "Skip pending personal occurrence", security: [{ bearerAuth: [] }] },
     },
     "/api/v1/spaces/{spaceId}/links": {
       get: { summary: "List linked wallets (personal hub)", security: [{ bearerAuth: [] }] },

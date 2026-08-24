@@ -233,3 +233,152 @@ export async function createV1PersonalRule(
     created_at: createdAt,
   });
 }
+
+export async function updateV1PersonalRule(
+  db: D1Database,
+  user: RequestUser,
+  space: { id: string; currency: string },
+  ruleId: string,
+  input: {
+    accountId?: string | null;
+    name?: string;
+    amountMode?: "fixed" | "variable";
+    schedule?: "monthly" | "once" | "unscheduled";
+    amount?: string | number;
+    dueDay?: number;
+    startsAt?: string;
+    endsAt?: string | null;
+    total?: string | number;
+    durationMonths?: number;
+    status?: "active" | "paused" | "archived";
+  },
+) {
+  const rule = await db.prepare("SELECT * FROM personal_rules WHERE id=? AND space_id=?")
+    .bind(ruleId, space.id).first<PersonalRuleRow>();
+  if (!rule) throw new ApiError(404, "RULE_NOT_FOUND");
+
+  if (input.status && input.status !== rule.status
+    && input.name === undefined
+    && input.amount === undefined
+    && input.schedule === undefined
+    && input.amountMode === undefined
+    && input.startsAt === undefined
+    && input.endsAt === undefined
+    && input.total === undefined
+    && input.durationMonths === undefined
+    && input.dueDay === undefined
+    && input.accountId === undefined) {
+    const createdAt = new Date().toISOString();
+    await db.batch([
+      db.prepare("UPDATE personal_rules SET status=? WHERE id=?").bind(input.status, rule.id),
+      db.prepare("DELETE FROM personal_occurrences WHERE rule_id=? AND status='pending'").bind(rule.id),
+      prepareAudit(db, {
+        userId: user.id,
+        action: "personal.rule_status",
+        entityType: "personal_rule",
+        entityId: rule.id,
+        metadata: { status: input.status, via: "api.v1" },
+        createdAt,
+      }),
+    ]);
+    if (input.status === "active") await generateV1PersonalOccurrences(db, [space.id]);
+    return mapRule({ ...rule, status: input.status });
+  }
+
+  const name = (input.name ?? rule.name).trim();
+  if (name.length < 2 || name.length > 80) throw new ApiError(400, "INVALID_RULE");
+  const amountMode = input.amountMode ?? (rule.amount_mode as "fixed" | "variable");
+  const schedule = input.schedule ?? ((rule.schedule || "monthly") as "monthly" | "once" | "unscheduled");
+  let amountMinor = Number(rule.amount_minor) || 0;
+  let totalMinor = Number(rule.total_minor) || 0;
+  try {
+    if (input.amount !== undefined && input.amount !== "") {
+      amountMinor = parseMoneyToMinor(input.amount, space.currency);
+    }
+    if (input.total !== undefined && input.total !== "") {
+      totalMinor = parseNonNegativeMoneyToMinor(input.total, space.currency);
+    }
+  } catch {
+    throw new ApiError(400, "INVALID_AMOUNT");
+  }
+  const duration = input.durationMonths ?? (Number(rule.duration_months) || 0);
+  if (totalMinor > 0 && duration > 0 && amountMinor <= 0) {
+    amountMinor = Math.round(totalMinor / duration);
+  }
+  if (schedule !== "unscheduled" && amountMode === "fixed" && amountMinor <= 0) {
+    throw new ApiError(400, "INVALID_AMOUNT");
+  }
+  if (schedule === "unscheduled" && amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
+
+  const accountId = input.accountId === undefined ? rule.account_id : input.accountId;
+  if (accountId) {
+    const account = await db.prepare(
+      "SELECT id FROM personal_accounts WHERE id=? AND space_id=? AND status='active'",
+    ).bind(accountId, space.id).first();
+    if (!account) throw new ApiError(400, "INVALID_ACCOUNT");
+  }
+
+  const startsAt = input.startsAt ? parseStartDate(input.startsAt) : rule.starts_at;
+  const endsAt = schedule === "once"
+    ? startsAt
+    : (input.endsAt === undefined ? rule.ends_at : (input.endsAt ? parseStartDate(input.endsAt) : null));
+  const dueDay = Math.min(28, Math.max(1, input.dueDay ?? (Number(rule.due_day) || 1)));
+  const status = input.status ?? rule.status;
+  const createdAt = new Date().toISOString();
+
+  await db.batch([
+    db.prepare(
+      "UPDATE personal_rules SET account_id=?, name=?, amount_mode=?, schedule=?, amount_minor=?, due_day=?, starts_at=?, ends_at=?, total_minor=?, duration_months=?, status=? WHERE id=?",
+    ).bind(accountId, name, amountMode, schedule, amountMinor, dueDay, startsAt, endsAt, totalMinor, duration, status, rule.id),
+    db.prepare("DELETE FROM personal_occurrences WHERE rule_id=? AND status='pending'").bind(rule.id),
+    prepareAudit(db, {
+      userId: user.id,
+      action: "personal.rule_updated",
+      entityType: "personal_rule",
+      entityId: rule.id,
+      metadata: { name, status, via: "api.v1" },
+      createdAt,
+    }),
+  ]);
+  if (status === "active") await generateV1PersonalOccurrences(db, [space.id]);
+
+  return mapRule({
+    ...rule,
+    account_id: accountId,
+    name,
+    amount_mode: amountMode,
+    schedule,
+    amount_minor: amountMinor,
+    due_day: dueDay,
+    starts_at: startsAt,
+    ends_at: endsAt,
+    total_minor: totalMinor,
+    duration_months: duration,
+    status,
+  });
+}
+
+export async function deleteV1PersonalRule(
+  db: D1Database,
+  user: RequestUser,
+  spaceId: string,
+  ruleId: string,
+) {
+  const rule = await db.prepare("SELECT id,space_id FROM personal_rules WHERE id=? AND space_id=?")
+    .bind(ruleId, spaceId).first<{ id: string; space_id: string }>();
+  if (!rule) throw new ApiError(404, "RULE_NOT_FOUND");
+  const createdAt = new Date().toISOString();
+  await db.batch([
+    db.prepare("DELETE FROM personal_occurrences WHERE rule_id=? AND status='pending'").bind(rule.id),
+    db.prepare("DELETE FROM personal_rules WHERE id=?").bind(rule.id),
+    prepareAudit(db, {
+      userId: user.id,
+      action: "personal.rule_deleted",
+      entityType: "personal_rule",
+      entityId: rule.id,
+      metadata: { via: "api.v1" },
+      createdAt,
+    }),
+  ]);
+  return { id: rule.id, spaceId, status: "deleted" as const, deletedAt: createdAt };
+}

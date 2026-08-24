@@ -27,10 +27,10 @@ test("phase 22 account update/delete and personal rules", () => {
   assert.match(hooks, /account\.updated/);
   assert.match(hooks, /account\.deleted/);
   assert.match(hooks, /rule\.created/);
-  assert.match(openapi, /phase22/);
+  assert.match(openapi, /1\.0\.0-phase\d+/);
   assert.match(openapi, /\/accounts\/\{accountId\}/);
   assert.match(openapi, /\/rules/);
-  assert.match(developers, /phase 22/);
+  assert.match(developers, /phase \d+/);
   assert.match(developers, /\/accounts\/\{accountId\}/);
   assert.match(developers, /\/rules/);
   assert.match(security, /account\.updated/);

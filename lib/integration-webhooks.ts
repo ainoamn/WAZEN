@@ -38,6 +38,10 @@ export const INTEGRATION_WEBHOOK_EVENTS = [
   "account.updated",
   "account.deleted",
   "rule.created",
+  "rule.updated",
+  "rule.deleted",
+  "occurrence.posted",
+  "occurrence.skipped",
 ] as const;
 
 export type IntegrationWebhookEvent = (typeof INTEGRATION_WEBHOOK_EVENTS)[number];
