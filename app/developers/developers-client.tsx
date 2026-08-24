@@ -16,6 +16,10 @@ const endpoints = [
   { method: "POST", path: "/api/v1/spaces/{spaceId}/surplus/withdraw", ar: "سحب فائض عضو", en: "Withdraw member surplus" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/summary", ar: "ملخص أرصدة ومستحقات", en: "Balances and dues summary" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/contributions", ar: "تسجيل مساهمة مع تقسيم فائض", en: "Record contribution with surplus split" },
+  { method: "GET", path: "/api/v1/spaces/{spaceId}/installments", ar: "جدول الأقساط", en: "Installment schedule" },
+  { method: "PATCH", path: "/api/v1/spaces/{spaceId}/members/{memberId}", ar: "تحديث دور/حالة عضو", en: "Update member role/status" },
+  { method: "GET", path: "/api/v1/documents", ar: "قائمة المستندات", en: "List documents" },
+  { method: "GET", path: "/api/v1/openapi", ar: "مواصفات OpenAPI", en: "OpenAPI snapshot" },
 ] as const;
 
 export default function DevelopersPage() {
@@ -33,7 +37,7 @@ export default function DevelopersPage() {
         <button type="button" onClick={() => setLocale(ar ? "en" : "ar")}>{ar ? "EN" : "عربي"}</button>
       </header>
       <article>
-        <small>WAZEN API · v1 · 2026-08-24 · phase 12</small>
+        <small>WAZEN API · v1 · 2026-08-24 · phase 13</small>
         <h1>{ar ? "واجهة برمجة المؤسسات" : "Business API"}</h1>
         <p className="lead">
           {ar

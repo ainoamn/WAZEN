@@ -8,6 +8,7 @@ import { errorLabel } from "../../../lib/admin-labels";
 
 type ApiKeyRow = { id: string; name: string; key_prefix: string; scopes: string[]; expires_at: string; revoked_at: string | null };
 type WebhookRow = { id: string; url: string; events: string[]; status: string; createdAt: string; revokedAt: string | null };
+type DeliveryRow = { id: string; webhookId: string; event: string; status: string; attempts: number; lastError: string | null; createdAt: string; sentAt: string | null };
 
 const DEFAULT_EVENTS = [
   "transaction.created",
@@ -15,6 +16,7 @@ const DEFAULT_EVENTS = [
   "member.invited",
   "surplus.withdrawn",
   "contribution.recorded",
+  "member.updated",
 ];
 
 export function SecurityClient() {
@@ -28,6 +30,7 @@ export function SecurityClient() {
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [rawKey, setRawKey] = useState("");
   const [webhooks, setWebhooks] = useState<WebhookRow[]>([]);
+  const [deliveries, setDeliveries] = useState<DeliveryRow[]>([]);
   const [webhookUrl, setWebhookUrl] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
   const [eventOptions, setEventOptions] = useState<string[]>(DEFAULT_EVENTS);
@@ -41,8 +44,9 @@ export function SecurityClient() {
   const refreshWebhooks = () =>
     fetch("/api/platform?view=webhooks", { cache: "no-store" })
       .then(async (response) => (response.ok ? response.json() : Promise.reject()))
-      .then((data: { webhooks: WebhookRow[]; events?: string[] }) => {
+      .then((data: { webhooks: WebhookRow[]; deliveries?: DeliveryRow[]; events?: string[] }) => {
         setWebhooks(data.webhooks ?? []);
+        setDeliveries(data.deliveries ?? []);
         if (data.events?.length) setEventOptions(data.events);
       })
       .catch(() => undefined);
@@ -151,6 +155,20 @@ export function SecurityClient() {
     await refreshWebhooks();
   };
 
+  const testWebhook = async (webhookId: string) => {
+    setMessage("");
+    const response = await apiFetch("/api/platform", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "testWebhook", idempotencyKey: crypto.randomUUID(), webhookId }),
+    });
+    const result = await response.json() as { error?: string };
+    setMessage(response.ok
+      ? l("طُلب اختبار — يُسلَّم مع دورة tick التالية.", "Test queued — delivered on the next tick cycle.")
+      : errorLabel(result.error ?? "INVALID_WEBHOOK", locale));
+    await refreshWebhooks();
+  };
+
   return (
     <main className="auth-page">
       <AccountHeader locale={locale} setLocale={setLocale} />
@@ -220,9 +238,23 @@ export function SecurityClient() {
               <code>{hook.url}</code>
               <small> · {hook.events.join(", ")}</small>
               {" "}
+              <button type="button" onClick={() => void testWebhook(hook.id)}>{l("اختبار", "Test")}</button>
+              {" "}
               <button type="button" onClick={() => void revokeWebhook(hook.id)}>{l("إلغاء", "Revoke")}</button>
             </li>
           ))}</ul>
+          {deliveries.length ? (
+            <>
+              <h3>{l("آخر التسليمات", "Recent deliveries")}</h3>
+              <ul>{deliveries.slice(0, 12).map((row) => (
+                <li key={row.id}>
+                  <strong>{row.event}</strong> · {row.status}
+                  <small> · {new Date(row.createdAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</small>
+                  {row.lastError ? <em> · {row.lastError}</em> : null}
+                </li>
+              ))}</ul>
+            </>
+          ) : null}
         </section>
 
         <footer><Link href="/dashboard">{l("العودة إلى لوحة التحكم", "Back to dashboard")}</Link></footer>

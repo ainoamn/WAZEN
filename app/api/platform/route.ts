@@ -34,6 +34,8 @@ import {
   createIntegrationWebhook,
   listIntegrationWebhooks,
   revokeIntegrationWebhook,
+  listWebhookDeliveries,
+  enqueueWebhookTest,
   INTEGRATION_WEBHOOK_EVENTS,
 } from "../../../lib/integration-webhooks";
 
@@ -450,9 +452,13 @@ export async function GET(request: Request) {
     }
     if (view === "webhooks") {
       if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
-      const webhooks = await listIntegrationWebhooks(db, user.id);
+      const [webhooks, deliveries] = await Promise.all([
+        listIntegrationWebhooks(db, user.id),
+        listWebhookDeliveries(db, user.id, { limit: 25 }),
+      ]);
       return Response.json({
         webhooks,
+        deliveries,
         events: INTEGRATION_WEBHOOK_EVENTS,
       }, { headers: responseHeaders });
     }
@@ -978,6 +984,12 @@ export async function POST(request: Request) {
       if (!webhookId) throw new ApiError(400, "INVALID_WEBHOOK");
       await revokeIntegrationWebhook(db, user.id, webhookId);
       return respond({ ok: true, webhookId });
+    } else if (action === "testWebhook") {
+      if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
+      const webhookId = String(payload.webhookId ?? "").trim();
+      if (!webhookId) throw new ApiError(400, "INVALID_WEBHOOK");
+      const result = await enqueueWebhookTest(db, user.id, webhookId);
+      return respond({ ok: true, deliveryId: result.deliveryId, event: result.event });
     } else {
       throw new ApiError(400, "UNSUPPORTED_ACTION");
     }

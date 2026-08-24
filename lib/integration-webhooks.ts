@@ -11,6 +11,7 @@ export const INTEGRATION_WEBHOOK_EVENTS = [
   "member.invited",
   "surplus.withdrawn",
   "contribution.recorded",
+  "member.updated",
 ] as const;
 
 export type IntegrationWebhookEvent = (typeof INTEGRATION_WEBHOOK_EVENTS)[number];
@@ -87,6 +88,49 @@ export async function revokeIntegrationWebhook(db: D1Database, userId: string, w
     createdAt: now,
   }).run();
   return { ok: true as const, id: webhookId };
+}
+
+export async function listWebhookDeliveries(db: D1Database, userId: string, options?: { limit?: number }) {
+  const limit = Math.min(50, Math.max(1, options?.limit ?? 20));
+  const rows = await db.prepare(`
+    SELECT id, webhook_id, event, status, attempts, last_error, created_at, sent_at
+    FROM webhook_outbox WHERE user_id=?
+    ORDER BY created_at DESC LIMIT ?
+  `).bind(userId, limit).all<{
+    id: string; webhook_id: string; event: string; status: string; attempts: number;
+    last_error: string | null; created_at: string; sent_at: string | null;
+  }>();
+  return (rows.results ?? []).map((row) => ({
+    id: row.id,
+    webhookId: row.webhook_id,
+    event: row.event,
+    status: row.status,
+    attempts: Number(row.attempts) || 0,
+    lastError: row.last_error,
+    createdAt: row.created_at,
+    sentAt: row.sent_at,
+  }));
+}
+
+/** Queue a one-off test delivery for a specific webhook (ignores events_json filter). */
+export async function enqueueWebhookTest(db: D1Database, userId: string, webhookId: string) {
+  const hook = await db.prepare(
+    "SELECT id,status FROM integration_webhooks WHERE id=? AND user_id=? LIMIT 1",
+  ).bind(webhookId, userId).first<{ id: string; status: string }>();
+  if (!hook || hook.status !== "active") throw new ApiError(404, "WEBHOOK_NOT_FOUND");
+  const now = isoNow();
+  const body = JSON.stringify({
+    api: "wazen.v1",
+    event: "webhook.test",
+    occurredAt: now,
+    data: { ok: true, message: "Wazen webhook test ping" },
+  });
+  const id = crypto.randomUUID();
+  await db.prepare(`
+    INSERT INTO webhook_outbox (id,webhook_id,user_id,event,payload_json,status,attempts,created_at)
+    VALUES (?,?,?,?,?,'pending',0,?)
+  `).bind(id, webhookId, userId, "webhook.test", body, now).run();
+  return { ok: true as const, deliveryId: id, event: "webhook.test" as const };
 }
 
 export async function enqueueIntegrationEvent(
