@@ -15,6 +15,27 @@ export function validateOutboundHttpsUrl(raw: string, allowedHosts: string[]) {
   return url;
 }
 
+/** User-configured integration webhooks: HTTPS + no private hosts (no allowlist). */
+export function validatePublicHttpsWebhookUrl(raw: string) {
+  let url: URL;
+  try { url = new URL(raw); } catch { throw new ApiError(400, "INVALID_WEBHOOK_URL"); }
+  const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
+  if (
+    url.protocol !== "https:"
+    || url.username
+    || url.password
+    || url.port
+    || hostname === "localhost"
+    || hostname.endsWith(".localhost")
+    || hostname === "[::1]"
+    || privateIpv4.test(hostname)
+  ) {
+    throw new ApiError(400, "INVALID_WEBHOOK_URL");
+  }
+  url.hash = "";
+  return url;
+}
+
 export function configuredAllowedHosts(name: "email" | "payment") {
   const key = name === "email" ? "WAZEN_EMAIL_PROVIDER_HOSTS" : "WAZEN_PAYMENT_PROVIDER_HOSTS";
   return (process.env[key] ?? "").split(",");

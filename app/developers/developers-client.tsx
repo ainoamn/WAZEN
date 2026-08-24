@@ -14,6 +14,8 @@ const endpoints = [
   { method: "POST", path: "/api/v1/spaces/{spaceId}/transactions/{transactionId}/void", ar: "إلغاء حركة معتمدة", en: "Void an approved transaction" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/audit?limit=40", ar: "سجل تدقيق المحفظة", en: "Wallet audit log" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/surplus/withdraw", ar: "سحب فائض عضو", en: "Withdraw member surplus" },
+  { method: "GET", path: "/api/v1/spaces/{spaceId}/summary", ar: "ملخص أرصدة ومستحقات", en: "Balances and dues summary" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/contributions", ar: "تسجيل مساهمة مع تقسيم فائض", en: "Record contribution with surplus split" },
 ] as const;
 
 export default function DevelopersPage() {
@@ -31,7 +33,7 @@ export default function DevelopersPage() {
         <button type="button" onClick={() => setLocale(ar ? "en" : "ar")}>{ar ? "EN" : "عربي"}</button>
       </header>
       <article>
-        <small>WAZEN API · v1 · 2026-08-24 · phase 11</small>
+        <small>WAZEN API · v1 · 2026-08-24 · phase 12</small>
         <h1>{ar ? "واجهة برمجة المؤسسات" : "Business API"}</h1>
         <p className="lead">
           {ar
@@ -44,8 +46,8 @@ export default function DevelopersPage() {
           <pre className="developers-code">{`Authorization: Bearer wzn_...`}</pre>
           <p>
             {ar
-              ? "النطاقات الشائعة: wallets:read للقراءة. الكتابة تحتاج wallets:write أو members:write حسب العملية."
-              : "Common scopes: wallets:read for reads. Writes need wallets:write or members:write depending on the action."}
+              ? "النطاقات الشائعة: wallets:read للقراءة. الكتابة تحتاج wallets:write أو members:write أو settlements:write. Webhooks من أمان الحساب."
+              : "Common scopes: wallets:read for reads. Writes need wallets:write, members:write, or settlements:write. Configure webhooks under Account security."}
           </p>
         </section>
 

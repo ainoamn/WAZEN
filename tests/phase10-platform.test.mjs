@@ -15,7 +15,7 @@ test("phase 10 privacy fulfillment and v1 invites markers", () => {
   const ui = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
   const developers = fs.readFileSync(path.join(root, "app/developers/developers-client.tsx"), "utf8");
 
-  assert.match(runtime, /SCHEMA_VERSION = 20/);
+  assert.match(runtime, /SCHEMA_VERSION = 2\d/);
   assert.match(runtime, /privacy_artifacts/);
   assert.match(runtime, /artifact_id TEXT/);
   assert.match(privacy, /processPrivacyRequests/);

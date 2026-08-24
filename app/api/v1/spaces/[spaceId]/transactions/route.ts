@@ -6,6 +6,7 @@ import { runWithDbUser } from "../../../../../../lib/db-request-context";
 import { errorResponse, ApiError, claimIdempotency, completeIdempotency, enforceWriteRequest, releaseIdempotency } from "../../../../../../lib/security";
 import { formatMoneyMinor } from "../../../../../../lib/money";
 import { createV1Transaction } from "../../../../../../lib/v1-transactions";
+import { enqueueIntegrationEvent } from "../../../../../../lib/integration-webhooks";
 import { withRequestTiming } from "../../../../../../lib/request-timing";
 
 export const runtime = "nodejs";
@@ -108,6 +109,13 @@ export async function POST(
           amountLabel: formatMoneyMinor(transaction.amountMinor, space.currency || "OMR", "en"),
         },
       };
+      await enqueueIntegrationEvent(db, space.owner_user_id, "transaction.created", {
+        spaceId,
+        transactionId: transaction.id,
+        kind: transaction.kind,
+        amountMinor: transaction.amountMinor,
+        memberId: transaction.memberId ?? null,
+      }).catch(() => {});
       await completeIdempotency(db, user.id, idempotencyKey, response);
       claimRef.current = null;
       return Response.json(response, { headers: { "Cache-Control": "no-store", "X-Wazen-Api": "v1" } });

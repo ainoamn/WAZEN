@@ -30,6 +30,12 @@ import {
   assertOwnerPlanQuota,
 } from "../../../services/admin/billing-service";
 import { listPrivacyRequests, loadPrivacyArtifact } from "../../../lib/privacy-requests";
+import {
+  createIntegrationWebhook,
+  listIntegrationWebhooks,
+  revokeIntegrationWebhook,
+  INTEGRATION_WEBHOOK_EVENTS,
+} from "../../../lib/integration-webhooks";
 
 const isoNow = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
@@ -441,6 +447,14 @@ export async function GET(request: Request) {
       responseHeaders.set("Content-Type", "application/json; charset=utf-8");
       responseHeaders.set("Content-Disposition", `attachment; filename="wazen-privacy-export-${requestId.slice(0, 8)}.json"`);
       return new Response(artifact.payload_json, { headers: responseHeaders });
+    }
+    if (view === "webhooks") {
+      if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
+      const webhooks = await listIntegrationWebhooks(db, user.id);
+      return Response.json({
+        webhooks,
+        events: INTEGRATION_WEBHOOK_EVENTS,
+      }, { headers: responseHeaders });
     }
     if (view === "admin") {
       if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
@@ -949,6 +963,21 @@ export async function POST(request: Request) {
         .bind(requestId, user.id, type, isoNow()).run();
       await writeAudit(db, { userId: user.id, action: `privacy.${type}_requested`, entityType: "data_request", entityId: requestId });
       return respond({ ok: true, requestId, status: "pending" });
+    } else if (action === "createWebhook") {
+      if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
+      const parsed = z.object({
+        url: z.string().url().max(500),
+        events: z.array(z.string()).min(1).max(10),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_WEBHOOK");
+      const webhook = await createIntegrationWebhook(db, user.id, parsed.data);
+      return respond({ ok: true, webhook });
+    } else if (action === "revokeWebhook") {
+      if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
+      const webhookId = String(payload.webhookId ?? "").trim();
+      if (!webhookId) throw new ApiError(400, "INVALID_WEBHOOK");
+      await revokeIntegrationWebhook(db, user.id, webhookId);
+      return respond({ ok: true, webhookId });
     } else {
       throw new ApiError(400, "UNSUPPORTED_ACTION");
     }

@@ -4,8 +4,8 @@ import { authenticateRequest } from "../../../../../../lib/auth";
 import { assertApiScope, authorizeSpace } from "../../../../../../lib/authorization";
 import { runWithDbUser } from "../../../../../../lib/db-request-context";
 import { errorResponse, ApiError, claimIdempotency, completeIdempotency, enforceWriteRequest, releaseIdempotency } from "../../../../../../lib/security";
-import { appOrigin } from "../../../../../../lib/app-origin";
-import { createV1Invite } from "../../../../../../lib/v1-invites";
+import { formatMoneyMinor } from "../../../../../../lib/money";
+import { recordV1Contribution } from "../../../../../../lib/v1-contributions";
 import { enqueueIntegrationEvent } from "../../../../../../lib/integration-webhooks";
 import { withRequestTiming } from "../../../../../../lib/request-timing";
 
@@ -15,7 +15,7 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ spaceId: string }> },
 ) {
-  return withRequestTiming("v1.invites.post", async () => {
+  return withRequestTiming("v1.contributions.post", async () => {
     const claimRef: { current: { db: D1Database; userId: string; key: string } | null } = { current: null };
     try {
       enforceWriteRequest(request);
@@ -27,36 +27,37 @@ export async function POST(
       const payload = (await request.json()) as Record<string, unknown>;
       const idempotencyKey = String(payload.idempotencyKey ?? request.headers.get("idempotency-key") ?? "");
       return await runWithDbUser(user.id, async () => {
-        assertApiScope(user, "members:write");
-        const space = await authorizeSpace(db, user, spaceId, "members:write", ["household", "trip", "society", "group"]);
+        assertApiScope(user, "wallets:write");
+        const space = await authorizeSpace(db, user, spaceId, "transact", ["household", "trip", "society", "group"]);
         const parsed = z.object({
-          email: z.string().email().max(254),
-          role: z.enum(["member", "treasurer", "manager", "auditor", "viewer"]).optional(),
+          memberId: z.string().min(1).max(120),
+          amount: z.union([z.string(), z.number()]),
+          description: z.string().trim().min(2).max(300).optional(),
+          extraPolicy: z.enum(["personal_reserve", "voluntary_to_fund", "advance_credit"]).optional(),
+          occurredAt: z.iso.datetime().optional(),
         }).safeParse(payload);
-        if (!parsed.success) throw new ApiError(400, "INVALID_INVITATION");
+        if (!parsed.success) throw new ApiError(400, "INVALID_CONTRIBUTION_PAYMENT");
 
-        const replay = await claimIdempotency(db, user.id, "v1.createInvite", idempotencyKey);
+        const replay = await claimIdempotency(db, user.id, "v1.recordContribution", idempotencyKey);
         if (replay) {
           const body = replay && typeof replay === "object" ? replay : { ok: true };
           return Response.json({ ok: true, ...body }, { headers: { "Cache-Control": "no-store", "X-Wazen-Api": "v1" } });
         }
         claimRef.current = { db, userId: user.id, key: idempotencyKey };
 
-        const invitation = await createV1Invite(db, user, space, {
-          email: parsed.data.email,
-          role: parsed.data.role,
-          origin: appOrigin(request),
-        });
+        const result = await recordV1Contribution(db, user, space, parsed.data);
+        const currency = space.currency || "OMR";
         const response = {
           api: "wazen.v1",
           ok: true,
-          invitation,
+          ...result,
+          amountLabel: formatMoneyMinor(result.amountMinor, currency, "en"),
+          mandatoryLabel: formatMoneyMinor(result.mandatoryMinor, currency, "en"),
+          surplusLabel: formatMoneyMinor(result.surplusMinor, currency, "en"),
         };
-        await enqueueIntegrationEvent(db, space.owner_user_id, "member.invited", {
+        await enqueueIntegrationEvent(db, space.owner_user_id, "contribution.recorded", {
           spaceId,
-          invitationId: invitation.id,
-          email: invitation.email,
-          role: invitation.role,
+          ...result,
         }).catch(() => {});
         await completeIdempotency(db, user.id, idempotencyKey, response);
         claimRef.current = null;
@@ -64,9 +65,7 @@ export async function POST(
       });
     } catch (error) {
       if (claimRef.current) {
-        try {
-          await releaseIdempotency(claimRef.current.db, claimRef.current.userId, claimRef.current.key);
-        } catch { /* ignore */ }
+        try { await releaseIdempotency(claimRef.current.db, claimRef.current.userId, claimRef.current.key); } catch { /* ignore */ }
       }
       return errorResponse(error);
     }

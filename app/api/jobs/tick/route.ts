@@ -6,6 +6,7 @@ import { configuredAllowedHosts, validateOutboundHttpsUrl } from "../../../../li
 import { runMaintenanceJob } from "../../../../lib/jobs-maintenance";
 import { runDuesDigest } from "../../../../lib/dues-digest";
 import { processPrivacyRequests } from "../../../../lib/privacy-requests";
+import { processWebhookOutbox } from "../../../../lib/integration-webhooks";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -44,8 +45,8 @@ async function drainEmail(db: D1Database) {
 
 /**
  * Unified cron tick for Vercel Cron / external schedulers.
- * GET or POST /api/jobs/tick?tasks=email,push,maintenance,privacy,dues
- * Default: email + push every run; privacy at 03:00 UTC; dues digest at 06:00 UTC; maintenance at 02:00 UTC when tasks omitted.
+ * GET or POST /api/jobs/tick?tasks=email,push,maintenance,privacy,dues,webhooks
+ * Default: email + push + webhooks every run; privacy at 03:00 UTC; dues digest at 06:00 UTC; maintenance at 02:00 UTC when tasks omitted.
  */
 export async function GET(request: Request) {
   return runTick(request);
@@ -68,6 +69,7 @@ async function runTick(request: Request) {
     const hour = new Date().getUTCHours();
     const runEmail = !requested.length || requested.includes("email");
     const runPush = !requested.length || requested.includes("push");
+    const runWebhooks = !requested.length || requested.includes("webhooks");
     const runPrivacy = requested.includes("privacy") || (!requested.length && hour === 3);
     const runDues = requested.includes("dues") || (!requested.length && hour === 6);
     const runMaintenance = requested.includes("maintenance") || (!requested.length && hour === 2);
@@ -83,6 +85,11 @@ async function runTick(request: Request) {
       const push = await processPushOutbox(db, { limit: 25 });
       result.push = { ...push, vapidConfigured: isWebPushConfigured() };
       await recordJobRun(db, "push", push.configured ? "ok" : "skipped", push as unknown as Record<string, unknown>);
+    }
+    if (runWebhooks) {
+      const webhooks = await processWebhookOutbox(db);
+      result.webhooks = webhooks;
+      await recordJobRun(db, "webhooks", "ok", webhooks);
     }
     if (runPrivacy) {
       const privacy = await processPrivacyRequests(db);

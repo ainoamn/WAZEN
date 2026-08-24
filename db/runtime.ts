@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 20;
+const SCHEMA_VERSION = 21;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -370,6 +370,30 @@ async function ensureSchemaPatches(db: D1Database) {
       expires_at TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_privacy_artifacts_user ON privacy_artifacts(user_id, expires_at)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS integration_webhooks (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      url TEXT NOT NULL,
+      secret TEXT NOT NULL,
+      events_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      revoked_at TEXT
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_integration_webhooks_user ON integration_webhooks(user_id, status)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS webhook_outbox (
+      id TEXT PRIMARY KEY,
+      webhook_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      event TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      sent_at TEXT
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_webhook_outbox_pending ON webhook_outbox(status, created_at)"),
   ]);
   const dataRequestCols = await db.prepare("PRAGMA table_info(data_requests)").all<{ name: string }>();
   if (!dataRequestCols.results.some((column) => column.name === "artifact_id")) {

@@ -4,6 +4,7 @@ import { assertApiScope, authorizeSpace } from "../../../../../../../../lib/auth
 import { runWithDbUser } from "../../../../../../../../lib/db-request-context";
 import { errorResponse, ApiError, claimIdempotency, completeIdempotency, enforceWriteRequest, releaseIdempotency } from "../../../../../../../../lib/security";
 import { voidApprovedTransaction } from "../../../../../../../../lib/ledger-void";
+import { enqueueIntegrationEvent } from "../../../../../../../../lib/integration-webhooks";
 import { coveringPeriod } from "../../../../../../../../lib/accounting-periods";
 import { withRequestTiming } from "../../../../../../../../lib/request-timing";
 
@@ -31,7 +32,7 @@ export async function POST(
       }
       return await runWithDbUser(user.id, async () => {
         assertApiScope(user, "wallets:write");
-        await authorizeSpace(db, user, spaceId, "transact");
+        const space = await authorizeSpace(db, user, spaceId, "transact");
         const txn = await db.prepare("SELECT * FROM transactions WHERE id=? AND space_id=?").bind(transactionId, spaceId).first<{
           id: string; space_id: string; member_id: string | null; kind: string; allocation: string;
           amount_minor: number; status: string; occurred_at: string; description_ar: string;
@@ -54,6 +55,12 @@ export async function POST(
           await voidApprovedTransaction(db, txn, user.id, { recordStatus: "voided", closeOccurrence: true, via: "api.v1" });
         }
         const response = { api: "wazen.v1", ok: true, transactionId: txn.id, status: "voided" };
+        await enqueueIntegrationEvent(db, space.owner_user_id, "transaction.voided", {
+          spaceId,
+          transactionId: txn.id,
+          kind: txn.kind,
+          amountMinor: Number(txn.amount_minor) || 0,
+        }).catch(() => {});
         await completeIdempotency(db, user.id, idempotencyKey, response);
         claimRef.current = null;
         return Response.json(response, { headers: { "Cache-Control": "no-store", "X-Wazen-Api": "v1" } });

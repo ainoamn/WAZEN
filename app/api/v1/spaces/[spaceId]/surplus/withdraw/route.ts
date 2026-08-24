@@ -6,6 +6,7 @@ import { runWithDbUser } from "../../../../../../../lib/db-request-context";
 import { errorResponse, ApiError, claimIdempotency, completeIdempotency, enforceWriteRequest, releaseIdempotency } from "../../../../../../../lib/security";
 import { formatMoneyMinor } from "../../../../../../../lib/money";
 import { withdrawV1Surplus } from "../../../../../../../lib/v1-surplus";
+import { enqueueIntegrationEvent } from "../../../../../../../lib/integration-webhooks";
 import { withRequestTiming } from "../../../../../../../lib/request-timing";
 
 export const runtime = "nodejs";
@@ -51,6 +52,10 @@ export async function POST(
           amountLabel: formatMoneyMinor(result.amountMinor, currency, "en"),
           remainingExtraLabel: formatMoneyMinor(result.remainingExtraMinor, currency, "en"),
         };
+        await enqueueIntegrationEvent(db, space.owner_user_id, "surplus.withdrawn", {
+          spaceId,
+          ...result,
+        }).catch(() => {});
         await completeIdempotency(db, user.id, idempotencyKey, response);
         claimRef.current = null;
         return Response.json(response, { headers: { "Cache-Control": "no-store", "X-Wazen-Api": "v1" } });
