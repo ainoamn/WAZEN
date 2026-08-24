@@ -33,4 +33,7 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |
           echo "CI green — safe for Vercel production deploy of ${{ github.sha }}"
-          echo "Configure GitHub branch protection + Vercel 'Require Deployment Checks' / only deploy when CI passes."
+          echo "Required checks (manual once):"
+          echo "  1) GitHub → Settings → Branches → Protect main → Require status check 'verify'"
+          echo "  2) Vercel → Project → Deployment Protection / only deploy when checks pass"
+          echo "  3) Ensure CRON_SECRET + WAZEN_JOB_SECRET are set for /api/jobs/tick"

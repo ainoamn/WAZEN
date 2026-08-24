@@ -122,17 +122,28 @@ WAZEN_EMAIL_PROVIDER_HOSTS=provider.example
 WAZEN_PAYMENT_PROVIDER_HOSTS=api.payment-provider.example
 ```
 
-شغّل `POST /api/jobs/email` كل دقيقة و`POST /api/jobs/maintenance` يومياً مع `Authorization: Bearer WAZEN_JOB_SECRET`. يستقبل مزود البريد `{ to, template, data }`. مهمة الصيانة أيضاً تنقل المحافظ منتهية مهلة الـ 15 يوماً إلى أرشيف الإدارة لمدة 60 يوماً ثم تصفّي الأرشيف المنتهي.
+شغّل المهام عبر Vercel Cron على `/api/jobs/tick` كل 5 دقائق (انظر `vercel.json`)، أو يدوياً:
+
+```text
+POST /api/jobs/tick
+Authorization: Bearer $WAZEN_JOB_SECRET
+# أو Bearer $CRON_SECRET (Vercel Cron)
+# اختياري: ?tasks=email,push,maintenance
+```
+
+المسارات المنفردة ما زالت متاحة: `POST /api/jobs/email` · `POST /api/jobs/push` · `POST /api/jobs/maintenance`.  
+يستقبل مزود البريد `{ to, template, data }`. مهمة الصيانة تنقل المحافظ منتهية مهلة الـ 15 يوماً إلى أرشيف الإدارة لمدة 60 يوماً ثم تصفّي الأرشيف المنتهي.
 
 ## الدفع
 
-اربط مزود الدفع بإرسال JSON إلى `/api/webhooks/payment`:
+اربط مزود الدفع بإرسال JSON إلى `/api/webhooks/payment` (أو `/api/webhooks/payment/thawani` / `omannet`):
 
 ```json
 { "id": "provider-event-id", "paymentId": "wazen-payment-id", "status": "succeeded" }
 ```
 
-ضع HMAC-SHA-256 للـ body الخام بصيغة hex في `x-wazen-signature`. واجهة الاشتراك تُنشئ فاتورة محلية، لكن Checkout المستضاف لدى مزود الدفع يجب إعداده قبل تحصيل أموال حقيقية.
+ضع HMAC-SHA-256 للـ body الخام بصيغة hex في `x-wazen-signature`.  
+Checkout المستضاف: ثواني عبر `WAZEN_THAWANI_*` أو عمان نت عبر `WAZEN_OMANNET_*`؛ بدونها يبقى التحويل اليدوي.
 
 ## فحوص الإصدار
 

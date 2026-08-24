@@ -3,5 +3,11 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build",
   "regions": ["iad1"],
-  "ignoreCommand": "git log -1 --pretty=%s | grep -q '^docs:'"
+  "ignoreCommand": "git log -1 --pretty=%s | grep -q '^docs:'",
+  "crons": [
+    {
+      "path": "/api/jobs/tick",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }

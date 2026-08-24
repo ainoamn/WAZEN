@@ -42,6 +42,6 @@ WAZEN_PAYMENT_PROVIDER_HOSTS=checkout.thawani.om,uatcheckout.thawani.om
 ```
 
 ### ما يبقى لاحقاً
-- جدولة cron لـ `/api/jobs/push` و`/api/jobs/email` على Vercel.
-- عمان نت / مزودات أخرى بنفس نمط المحوّل.
-- اعتماد قانوني نهائي + Required CI على GitHub/Vercel.
+- ~~جدولة cron لـ `/api/jobs/push` و`/api/jobs/email`~~ → مرحلة 7 (`/api/jobs/tick` + vercel.json).
+- ~~عمان نت~~ → مرحلة 7.
+- اعتماد قانوني نهائي + Required CI على GitHub/Vercel (خطوات يدوية موثّقة في مرحلة 7).
