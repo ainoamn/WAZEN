@@ -209,6 +209,34 @@ export function ReportsPanel({
             <Printer size={16} />
             {locale === "ar" ? "كشف حساب بنكي" : "Bank statement"}
           </button>
+          <button
+            type="button"
+            className={`secondary-button${canDownload ? "" : " is-plan-locked"}`}
+            onClick={() => {
+              if (!canDownload) {
+                window.location.assign("/pricing");
+                return;
+              }
+              void (async () => {
+                const response = await fetch(`/api/platform?view=export&format=csv&kind=transactions&locale=${locale}`, { cache: "no-store" });
+                if (response.status === 403) {
+                  window.location.assign("/pricing");
+                  return;
+                }
+                if (!response.ok) return;
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = `wazen-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+                link.click();
+                URL.revokeObjectURL(url);
+              })();
+            }}
+          >
+            <Download size={16} />
+            {locale === "ar" ? "تصدير CSV" : "Export CSV"}
+          </button>
           <button type="button" className="secondary-button" disabled={!canGenerate} onClick={printReport}>
             <Printer size={16} />
             {locale === "ar" ? "معاينة / طباعة PDF" : "Preview / Print PDF"}

@@ -41,6 +41,8 @@ export function proxy(request: NextRequest) {
     "img-src 'self' data: blob: https://*.googleusercontent.com https://accounts.google.com",
     "font-src 'self' data:",
     "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com",
+    "worker-src 'self'",
+    "manifest-src 'self'",
     "frame-src https://accounts.google.com",
     "object-src 'none'",
     "base-uri 'self'",

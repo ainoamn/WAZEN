@@ -18,6 +18,8 @@ import { composeWhatsAppPhone, splitPhoneParts, toWhatsAppNumber } from "../lib/
 import { openWhatsAppUrl } from "../lib/receipt-share";
 import { apiFetch } from "../lib/client-api";
 import { buildAccountStatementHtml, type StatementTxnFilter } from "../lib/account-statement";
+import { mapBankCsvRow, parseBankCsv } from "../lib/ledger-csv";
+import { PwaInstallCard } from "../components/pwa/PwaInstallCard";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor, currencyScale, parseMoneyToMinor } from "../lib/money";
 import { memberDisplayCreditMinor, netMemberClaim, pendingSettlementsWithCredit } from "../lib/finance";
@@ -43,6 +45,7 @@ import {
   CircleDollarSign,
   Clock3,
   Download,
+  FileSpreadsheet,
   Printer,
   Trash2,
   Palette,
@@ -70,6 +73,7 @@ import {
   TrendingDown,
   TrendingUp,
   Unlock,
+  Upload,
   UserPlus,
   Users,
   WalletCards,
@@ -2254,18 +2258,68 @@ function SettingsView({ user, locale, entitlements, spaces, onLogout, onSaved }:
       setAuditBusy(false);
     }
   };
-  const exportData = async () => {
+  const downloadExport = async (query: string, fallbackName: string) => {
     if (!canExport) { goToPricing(); return; }
-    const response = await fetch("/api/platform?view=export", { cache: "no-store" });
+    const response = await fetch(`/api/platform?view=export&${query}`, { cache: "no-store" });
     if (response.status === 403) { goToPricing(); return; }
     if (!response.ok) return;
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "wazen-data.json";
+    const disposition = response.headers.get("content-disposition") ?? "";
+    const match = /filename="([^"]+)"/.exec(disposition);
+    link.download = match?.[1] ?? fallbackName;
     link.click();
     URL.revokeObjectURL(url);
+  };
+  const importBankCsv = async (file: File | undefined) => {
+    if (!file || !canExport) {
+      if (!canExport) goToPricing();
+      return;
+    }
+    const spaceId = auditSpaceId || spaces[0]?.id;
+    if (!spaceId) {
+      window.alert(locale === "ar" ? "أنشئ محفظة أولاً قبل الاستيراد." : "Create a wallet before importing.");
+      return;
+    }
+    const text = await file.text();
+    const parsed = parseBankCsv(text);
+    const mapped = parsed.rows.map(mapBankCsvRow).filter((row) => row.amountMajor > 0 && row.description.length >= 2);
+    if (!mapped.length) {
+      window.alert(locale === "ar" ? "لم يُعثر على صفوف صالحة في الملف." : "No valid rows found in the file.");
+      return;
+    }
+    const preview = mapped.slice(0, 5).map((row) => `${row.occurredAt.slice(0, 10)} · ${row.kind} · ${row.amountMajor} · ${row.description}`).join("\n");
+    const ok = window.confirm(
+      locale === "ar"
+        ? `استيراد ${mapped.length} حركة إلى المحفظة المحددة؟\n\nعيّنة:\n${preview}`
+        : `Import ${mapped.length} movements into the selected wallet?\n\nSample:\n${preview}`,
+    );
+    if (!ok) return;
+    let done = 0;
+    for (const row of mapped.slice(0, 200)) {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "addTransaction",
+          idempotencyKey: crypto.randomUUID(),
+          spaceId,
+          kind: row.kind,
+          allocation: "general",
+          description: row.description,
+          amount: row.amountMajor.toFixed(3),
+          occurredAt: row.occurredAt,
+        }),
+      });
+      if (response.ok) done += 1;
+    }
+    window.alert(locale === "ar" ? `تم استيراد ${done} من ${Math.min(mapped.length, 200)} حركة.` : `Imported ${done} of ${Math.min(mapped.length, 200)} movements.`);
+    onSaved({});
+  };
+  const exportData = async () => {
+    await downloadExport("format=json", "wazen-backup.json");
   };
   const pickPhoto = async (file: File | undefined) => {
     if (!file) return;
@@ -2316,7 +2370,45 @@ function SettingsView({ user, locale, entitlements, spaces, onLogout, onSaved }:
       <div className="modal-actions"><button className="primary-button" disabled={saving}>{saving ? t.saving : (locale === "ar" ? "حفظ البيانات" : "Save profile")}</button></div>
     </form>
     <PasswordChangeCard locale={locale} />
+    <PwaInstallCard locale={locale} />
     <PlanFeaturesPanel locale={locale} entitlements={entitlements} />
+    <article className={`panel${canExport ? "" : " is-plan-locked"}`}>
+      <div className="panel-heading">
+        <div>
+          <h2>{locale === "ar" ? "النسخ والتصدير" : "Backup & export"}</h2>
+          <p className="modal-note">
+            {canExport
+              ? (locale === "ar" ? "نسخة احتياطية JSON كاملة، أو جداول CSV لإكسل، أو استيراد كشف بنكي بسيط." : "Full JSON backup, Excel-ready CSV tables, or a simple bank CSV import.")
+              : (locale === "ar" ? "التصدير والاستيراد يحتاجان ترقية الباقة." : "Export and import need a plan upgrade.")}
+          </p>
+        </div>
+      </div>
+      <div className="section-title-actions" style={{ flexWrap: "wrap", gap: 8 }}>
+        <button type="button" className="primary-button" disabled={!canExport} onClick={() => void exportData()}>
+          <Download size={16} />{locale === "ar" ? "نسخة احتياطية JSON" : "JSON backup"}
+        </button>
+        <button type="button" className="secondary-button" disabled={!canExport} onClick={() => void downloadExport(`format=csv&kind=transactions&locale=${locale}`, "wazen-transactions.csv")}>
+          <FileSpreadsheet size={16} />{locale === "ar" ? "CSV العمليات" : "Transactions CSV"}
+        </button>
+        <button type="button" className="secondary-button" disabled={!canExport} onClick={() => void downloadExport(`format=csv&kind=members&locale=${locale}`, "wazen-members.csv")}>
+          <FileSpreadsheet size={16} />{locale === "ar" ? "CSV الأعضاء" : "Members CSV"}
+        </button>
+        <label className={`secondary-button${canExport ? "" : " is-plan-locked"}`} style={{ cursor: canExport ? "pointer" : "not-allowed" }}>
+          <Upload size={16} />{locale === "ar" ? "استيراد CSV بنكي" : "Import bank CSV"}
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            hidden
+            disabled={!canExport}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              void importBankCsv(file);
+            }}
+          />
+        </label>
+      </div>
+    </article>
     <article className="panel">
       <div className="panel-heading">
         <div>
@@ -2356,7 +2448,7 @@ function SettingsView({ user, locale, entitlements, spaces, onLogout, onSaved }:
         )}
       </ul>
     </article>
-    <section className="settings-grid"><InfoPanel locale={locale} icon={<Download />} title={locale === "ar" ? "تنزيل بياناتي" : "Export my data"} text={canExport ? (locale === "ar" ? "نسخة JSON كاملة من محافظك وحركاتك ومستنداتك." : "A complete JSON copy of your wallets, entries and documents.") : (locale === "ar" ? "التصدير يحتاج ترقية الباقة." : "Data export needs a plan upgrade.")} onClick={() => void exportData()} locked={!canExport} /><InfoPanel locale={locale} icon={<ShieldCheck />} title={locale === "ar" ? "أمان الحساب" : "Account security"} text={locale === "ar" ? "كلمة المرور والمصادقة الثنائية ومفاتيح API." : "Password, two-factor authentication and API keys."} onClick={() => router.push("/account/security")} /><InfoPanel locale={locale} icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} onClick={() => router.push("/privacy")} /><InfoPanel locale={locale} icon={<Users />} title={t.access} text={t.accessText} /><InfoPanel locale={locale} icon={<Globe2 />} title={locale === "ar" ? "اللغة والمنطقة" : "Language & region"} text={locale === "ar" ? "العربية، الريال العماني، والمنطقة الزمنية لمسقط." : "English, Omani rial and Muscat time zone."} /><InfoPanel locale={locale} icon={<Bell />} title={locale === "ar" ? "التنبيهات" : "Notifications"} text={locale === "ar" ? "تنبيهات المستحقات والرصيد وفترة السماح تظهر أعلى اللوحة." : "Dues, balance and grace alerts appear at the top of the dashboard."} /></section>
+    <section className="settings-grid"><InfoPanel locale={locale} icon={<ShieldCheck />} title={locale === "ar" ? "أمان الحساب" : "Account security"} text={locale === "ar" ? "كلمة المرور والمصادقة الثنائية ومفاتيح API." : "Password, two-factor authentication and API keys."} onClick={() => router.push("/account/security")} /><InfoPanel locale={locale} icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} onClick={() => router.push("/privacy")} /><InfoPanel locale={locale} icon={<Users />} title={t.access} text={t.accessText} /><InfoPanel locale={locale} icon={<Globe2 />} title={locale === "ar" ? "اللغة والمنطقة" : "Language & region"} text={locale === "ar" ? "العربية، الريال العماني، والمنطقة الزمنية لمسقط." : "English, Omani rial and Muscat time zone."} /><InfoPanel locale={locale} icon={<Bell />} title={locale === "ar" ? "التنبيهات" : "Notifications"} text={locale === "ar" ? "تنبيهات المستحقات والرصيد وفترة السماح تظهر أعلى اللوحة." : "Dues, balance and grace alerts appear at the top of the dashboard."} /></section>
   </div>;
 }
 

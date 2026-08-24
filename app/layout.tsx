@@ -24,6 +24,10 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#0f766e" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
+  ],
 };
 
 export function generateMetadata(): Metadata {
@@ -42,6 +46,14 @@ export function generateMetadata(): Metadata {
     },
     description:
       "منصة مالية عربية وعالمية لإدارة المحافظ الشخصية والمنزلية والجمعيات والرحلات.",
+    applicationName: "وازن",
+    manifest: "/manifest.webmanifest",
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "default",
+      title: "وازن",
+    },
+    formatDetection: { telephone: false },
     icons: {
       icon: [
         { url: "/favicon.ico", sizes: "48x48" },

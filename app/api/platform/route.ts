@@ -343,25 +343,75 @@ export async function GET(request: Request) {
       assertApiScope(user, "data:export");
       const entitlements = await getActivePlanEntitlements(db, user.id);
       if (!planHasFeature(entitlements.features, "exports")) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
+      const format = (url.searchParams.get("format") ?? "json").toLowerCase();
+      const kind = (url.searchParams.get("kind") ?? "backup").toLowerCase();
+      const locale = url.searchParams.get("locale") === "en" ? "en" : "ar";
       const spaces = await db.prepare("SELECT * FROM spaces WHERE owner_user_id=? ORDER BY created_at").bind(user.id).all<Record<string, unknown>>();
       const allowedSpaces = filterSpacesForPlanAccess(
         (spaces.results ?? []).map((space) => ({ ...space, id: String(space.id ?? ""), type: String(space.type ?? ""), grace_until: space.grace_until == null ? null : String(space.grace_until), status: space.status == null ? null : String(space.status) })),
         entitlements.features,
       );
       const ids = allowedSpaces.map((space) => space.id); const placeholders = ids.map(() => "?").join(",");
-      const [members, transactions, documents, subscriptions, invoices, payments] = await Promise.all([
+      const [members, transactions, documents, subscriptions, invoices, payments, installments, periods, settlements] = await Promise.all([
         ids.length ? db.prepare(`SELECT * FROM members WHERE space_id IN (${placeholders})`).bind(...ids).all() : Promise.resolve({ results: [] }),
         ids.length ? db.prepare(`SELECT * FROM transactions WHERE space_id IN (${placeholders}) ORDER BY occurred_at`).bind(...ids).all() : Promise.resolve({ results: [] }),
         db.prepare("SELECT * FROM documents WHERE owner_user_id=? ORDER BY issued_at").bind(user.id).all<{ space_id?: string | null }>(),
         db.prepare("SELECT * FROM subscriptions WHERE user_id=? ORDER BY created_at").bind(user.id).all(),
         db.prepare("SELECT * FROM invoices WHERE user_id=? ORDER BY created_at").bind(user.id).all(),
         db.prepare("SELECT * FROM payments WHERE user_id=? ORDER BY occurred_at").bind(user.id).all(),
+        ids.length ? db.prepare(`SELECT * FROM member_installments WHERE space_id IN (${placeholders})`).bind(...ids).all() : Promise.resolve({ results: [] }),
+        ids.length ? db.prepare(`SELECT * FROM accounting_periods WHERE space_id IN (${placeholders})`).bind(...ids).all() : Promise.resolve({ results: [] }),
+        ids.length ? db.prepare(`SELECT * FROM settlements WHERE space_id IN (${placeholders})`).bind(...ids).all() : Promise.resolve({ results: [] }),
       ]);
       const allowedIds = new Set(ids);
       const allowedDocs = (documents.results ?? []).filter((doc) => !doc.space_id || allowedIds.has(String(doc.space_id)));
-      const exportData = { exportedAt: isoNow(), user, spaces: allowedSpaces, members: members.results, transactions: transactions.results, documents: allowedDocs, subscriptions: subscriptions.results, invoices: invoices.results, payments: payments.results };
+      const stamp = new Date().toISOString().slice(0, 10);
+
+      if (format === "csv") {
+        const { membersToCsv, transactionsToCsv } = await import("../../../lib/ledger-csv");
+        const spaceRows = allowedSpaces.map((space) => {
+          const raw = space as Record<string, unknown>;
+          return {
+            id: String(space.id),
+            name_ar: String(raw.name_ar ?? ""),
+            name_en: String(raw.name_en ?? ""),
+            currency: String(raw.currency ?? "OMR"),
+          };
+        });
+        const memberRows = (members.results ?? []) as Array<{
+          id: string; space_id: string; display_name: string; email?: string | null; phone?: string | null;
+          role?: string; due_minor?: number; paid_minor?: number; extra_minor?: number; status?: string | null;
+        }>;
+        const txnRows = (transactions.results ?? []) as Array<{
+          id: string; space_id: string; member_id?: string | null; kind: string; allocation?: string;
+          amount_minor: number; description_ar: string; description_en: string; status?: string; occurred_at: string;
+        }>;
+        const csv = kind === "members"
+          ? membersToCsv({ locale, spaces: spaceRows, members: memberRows })
+          : transactionsToCsv({ locale, spaces: spaceRows, members: memberRows, transactions: txnRows });
+        const filename = kind === "members" ? `wazen-members-${stamp}.csv` : `wazen-transactions-${stamp}.csv`;
+        responseHeaders.set("Content-Type", "text/csv; charset=utf-8");
+        responseHeaders.set("Content-Disposition", `attachment; filename="${filename}"`);
+        return new Response(csv, { headers: responseHeaders });
+      }
+
+      const exportData = {
+        schemaHint: "wazen-backup.v2",
+        exportedAt: isoNow(),
+        user,
+        spaces: allowedSpaces,
+        members: members.results,
+        transactions: transactions.results,
+        installments: installments.results,
+        periods: periods.results,
+        settlements: settlements.results,
+        documents: allowedDocs,
+        subscriptions: subscriptions.results,
+        invoices: invoices.results,
+        payments: payments.results,
+      };
       responseHeaders.set("Content-Type", "application/json; charset=utf-8");
-      responseHeaders.set("Content-Disposition", `attachment; filename="wazen-export-${new Date().toISOString().slice(0, 10)}.json"`);
+      responseHeaders.set("Content-Disposition", `attachment; filename="wazen-backup-${stamp}.json"`);
       return new Response(JSON.stringify(exportData, null, 2), { headers: responseHeaders });
     }
     if (view === "admin") {
