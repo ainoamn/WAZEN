@@ -11,6 +11,9 @@ const endpoints = [
   { method: "GET", path: "/api/v1/spaces/{spaceId}/members", ar: "أعضاء الجمعية/المحفظة", en: "Wallet members" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/members", ar: "إضافة عضو", en: "Create a member" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/invites", ar: "دعوة عضو بالبريد", en: "Invite a member by email" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/transactions/{transactionId}/void", ar: "إلغاء حركة معتمدة", en: "Void an approved transaction" },
+  { method: "GET", path: "/api/v1/spaces/{spaceId}/audit?limit=40", ar: "سجل تدقيق المحفظة", en: "Wallet audit log" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/surplus/withdraw", ar: "سحب فائض عضو", en: "Withdraw member surplus" },
 ] as const;
 
 export default function DevelopersPage() {
@@ -28,7 +31,7 @@ export default function DevelopersPage() {
         <button type="button" onClick={() => setLocale(ar ? "en" : "ar")}>{ar ? "EN" : "عربي"}</button>
       </header>
       <article>
-        <small>WAZEN API · v1 · 2026-08-24 · phase 6</small>
+        <small>WAZEN API · v1 · 2026-08-24 · phase 11</small>
         <h1>{ar ? "واجهة برمجة المؤسسات" : "Business API"}</h1>
         <p className="lead">
           {ar
