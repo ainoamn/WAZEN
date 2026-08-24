@@ -32,5 +32,5 @@ test("phase 12 webhooks, summary, contributions markers", () => {
   assert.match(security, /createWebhook/);
   assert.match(developers, /\/summary/);
   assert.match(developers, /\/contributions/);
-  assert.match(developers, /phase 12/);
+  assert.match(developers, /phase \d+/);
 });

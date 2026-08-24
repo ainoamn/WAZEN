@@ -6,8 +6,8 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Wazen Business API",
-    version: "1.0.0-phase18",
-    description: "Scoped Bearer API (wzn_…) for wallets, members, circles, shares, notifications, contributions, settlements, periods, expenses, exports, and documents.",
+    version: "1.0.0-phase19",
+    description: "Scoped Bearer API (wzn_…) for wallets, links, members, circles, shares, notifications, contributions, settlements, periods, expenses, exports, and documents.",
   },
   servers: [{ url: "https://wazen.bhd-om.com" }],
   paths: {
@@ -23,6 +23,11 @@ const spec = {
       patch: { summary: "Update wallet", security: [{ bearerAuth: [] }] },
     },
     "/api/v1/spaces/{spaceId}/archive": { post: { summary: "Archive or restore wallet", security: [{ bearerAuth: [] }] } },
+    "/api/v1/spaces/{spaceId}/links": {
+      get: { summary: "List linked wallets (personal hub)", security: [{ bearerAuth: [] }] },
+      post: { summary: "Link a wallet to personal hub", security: [{ bearerAuth: [] }] },
+      delete: { summary: "Unlink a wallet from personal hub", security: [{ bearerAuth: [] }] },
+    },
     "/api/v1/spaces/{spaceId}/summary": { get: { summary: "Wallet KPIs", security: [{ bearerAuth: [] }] } },
     "/api/v1/spaces/{spaceId}/export": { get: { summary: "Export transactions or members CSV", security: [{ bearerAuth: [] }] } },
     "/api/v1/spaces/{spaceId}/circle": { get: { summary: "Circle config and turns", security: [{ bearerAuth: [] }] } },
@@ -39,6 +44,7 @@ const spec = {
     },
     "/api/v1/spaces/{spaceId}/transactions/{transactionId}": {
       get: { summary: "Get transaction", security: [{ bearerAuth: [] }] },
+      patch: { summary: "Update transaction", security: [{ bearerAuth: [] }] },
     },
     "/api/v1/spaces/{spaceId}/transactions/{transactionId}/revisions": {
       get: { summary: "Transaction edit history", security: [{ bearerAuth: [] }] },
@@ -64,6 +70,12 @@ const spec = {
     "/api/v1/spaces/{spaceId}/expenses": {
       get: { summary: "List trip/group expenses", security: [{ bearerAuth: [] }] },
       post: { summary: "Create trip/group expense", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/expenses/resplit": {
+      post: { summary: "Resplit unsettled trip expenses", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/expenses/{expenseId}": {
+      patch: { summary: "Update trip/group expense", security: [{ bearerAuth: [] }] },
     },
     "/api/v1/spaces/{spaceId}/expenses/{expenseId}/void": {
       post: { summary: "Void trip/group expense", security: [{ bearerAuth: [] }] },

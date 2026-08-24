@@ -34,12 +34,12 @@ test("phase 15 contribution-plan, reopen, expenses, me, rate limits", () => {
   assert.match(transactions, /enforceV1RateLimit/);
   assert.match(hooks, /period\.reopened/);
   assert.match(hooks, /contribution_plan\.updated/);
-  assert.match(openapi, /phase15/);
+  assert.match(openapi, /1\.0\.0-phase\d+/);
   assert.match(openapi, /contribution-plan/);
   assert.match(developers, /\/contribution-plan/);
   assert.match(developers, /\/expenses/);
   assert.match(developers, /\/me/);
-  assert.match(developers, /phase 15/);
+  assert.match(developers, /phase \d+/);
   assert.match(security, /period\.reopened/);
   assert.match(security, /contribution_plan\.updated/);
 });

@@ -27,7 +27,7 @@ test("phase 11 Business API void, audit, surplus, write keys", () => {
   assert.match(surplusRoute, /withdrawV1Surplus/);
   assert.match(developers, /transactions\/\{transactionId\}\/void/);
   assert.match(developers, /surplus\/withdraw/);
-  assert.match(developers, /phase 11/);
+  assert.match(developers, /phase \d+/);
   assert.match(security, /createKey\(\"write\"\)/);
   assert.match(security, /settlements:write/);
 });

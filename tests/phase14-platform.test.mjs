@@ -30,8 +30,8 @@ test("phase 14 documents write, settlements, periods markers", () => {
   assert.match(hooks, /document\.created/);
   assert.match(hooks, /settlement\.settled/);
   assert.match(hooks, /period\.closed/);
-  assert.match(openapi, /phase14/);
+  assert.match(openapi, /1\.0\.0-phase\d+/);
   assert.match(developers, /\/settlements/);
   assert.match(developers, /\/periods/);
-  assert.match(developers, /phase 14/);
+  assert.match(developers, /phase \d+/);
 });

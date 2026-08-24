@@ -31,6 +31,11 @@ const DEFAULT_EVENTS = [
   "circle.turn_paid",
   "settlement.voided",
   "share.created",
+  "transaction.updated",
+  "expense.updated",
+  "expense.resplit",
+  "space.linked",
+  "space.unlinked",
 ];
 
 export function SecurityClient() {

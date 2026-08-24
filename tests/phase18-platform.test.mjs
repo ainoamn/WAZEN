@@ -33,10 +33,10 @@ test("phase 18 shares, transaction detail/revisions, notifications", () => {
   assert.match(notifications, /listUserNotifications/);
   assert.match(notificationsRead, /markNotificationsRead/);
   assert.match(hooks, /share\.created/);
-  assert.match(openapi, /phase18/);
+  assert.match(openapi, /1\.0\.0-phase\d+/);
   assert.match(openapi, /\/shares\/receipt/);
   assert.match(openapi, /\/notifications/);
-  assert.match(developers, /phase 18/);
+  assert.match(developers, /phase \d+/);
   assert.match(developers, /\/shares\//);
   assert.match(developers, /\/notifications/);
   assert.match(security, /share\.created/);

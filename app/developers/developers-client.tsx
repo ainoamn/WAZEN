@@ -12,6 +12,9 @@ const endpoints = [
   { method: "GET", path: "/api/v1/spaces/{spaceId}", ar: "تفاصيل محفظة واحدة", en: "Single wallet summary" },
   { method: "PATCH", path: "/api/v1/spaces/{spaceId}", ar: "تحديث محفظة", en: "Update a wallet" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/archive", ar: "أرشفة/استعادة محفظة", en: "Archive or restore wallet" },
+  { method: "GET", path: "/api/v1/spaces/{spaceId}/links", ar: "المحافظ المرتبطة", en: "Linked wallets" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/links", ar: "ربط محفظة بالشخصية", en: "Link wallet to personal hub" },
+  { method: "DELETE", path: "/api/v1/spaces/{spaceId}/links", ar: "فك ربط محفظة", en: "Unlink wallet from hub" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/export?kind=transactions", ar: "تصدير CSV للحركات/الأعضاء", en: "Export transactions/members CSV" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/circle", ar: "دورة الجمعية والأدوار", en: "Circle config and turns" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/circle/order", ar: "تعيين ترتيب أدوار الجمعية", en: "Set circle payout order" },
@@ -22,6 +25,7 @@ const endpoints = [
   { method: "GET", path: "/api/v1/spaces/{spaceId}/transactions?limit=50", ar: "حركات المحفظة", en: "Wallet transactions" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/transactions", ar: "إنشاء دخل/مصروف/مساهمة", en: "Create income/expense/contribution" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/transactions/{transactionId}", ar: "تفاصيل حركة", en: "Get transaction" },
+  { method: "PATCH", path: "/api/v1/spaces/{spaceId}/transactions/{transactionId}", ar: "تعديل حركة", en: "Update transaction" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/transactions/{transactionId}/revisions", ar: "سجل تعديلات الحركة", en: "Transaction revisions" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/members", ar: "أعضاء الجمعية/المحفظة", en: "Wallet members" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/members", ar: "إضافة عضو", en: "Create a member" },
@@ -36,6 +40,8 @@ const endpoints = [
   { method: "GET", path: "/api/v1/spaces/{spaceId}/installments", ar: "جدول الأقساط", en: "Installment schedule" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/expenses", ar: "مصروفات الرحلة/المجموعة", en: "Trip/group expenses" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/expenses", ar: "إنشاء مصروف جماعي", en: "Create trip/group expense" },
+  { method: "PATCH", path: "/api/v1/spaces/{spaceId}/expenses/{expenseId}", ar: "تعديل مصروف جماعي", en: "Update trip/group expense" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/expenses/resplit", ar: "إعادة تقسيم المصروفات", en: "Resplit unsettled expenses" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/expenses/{expenseId}/void", ar: "إلغاء مصروف جماعي", en: "Void trip/group expense" },
   { method: "PATCH", path: "/api/v1/spaces/{spaceId}/members/{memberId}", ar: "تحديث دور/حالة عضو", en: "Update member role/status" },
   { method: "GET", path: "/api/v1/documents", ar: "قائمة المستندات", en: "List documents" },
@@ -64,7 +70,7 @@ export default function DevelopersPage() {
         <button type="button" onClick={() => setLocale(ar ? "en" : "ar")}>{ar ? "EN" : "عربي"}</button>
       </header>
       <article>
-        <small>WAZEN API · v1 · 2026-08-24 · phase 18</small>
+        <small>WAZEN API · v1 · 2026-08-24 · phase 19</small>
         <h1>{ar ? "واجهة برمجة المؤسسات" : "Business API"}</h1>
         <p className="lead">
           {ar

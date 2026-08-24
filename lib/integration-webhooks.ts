@@ -26,6 +26,11 @@ export const INTEGRATION_WEBHOOK_EVENTS = [
   "circle.turn_paid",
   "settlement.voided",
   "share.created",
+  "transaction.updated",
+  "expense.updated",
+  "expense.resplit",
+  "space.linked",
+  "space.unlinked",
 ] as const;
 
 export type IntegrationWebhookEvent = (typeof INTEGRATION_WEBHOOK_EVENTS)[number];

@@ -32,5 +32,5 @@ test("phase 13 documents, installments, member patch, webhook test, openapi", ()
   assert.match(security, /deliveries/);
   assert.match(developers, /\/installments/);
   assert.match(developers, /\/documents/);
-  assert.match(developers, /phase 13/);
+  assert.match(developers, /phase \d+/);
 });

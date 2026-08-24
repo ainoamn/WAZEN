@@ -33,9 +33,9 @@ test("phase 16 expenses write, spaces create/update, export CSV", () => {
   assert.match(hooks, /expense\.voided/);
   assert.match(hooks, /space\.created/);
   assert.match(hooks, /space\.updated/);
-  assert.match(openapi, /phase16/);
+  assert.match(openapi, /1\.0\.0-phase\d+/);
   assert.match(openapi, /\/export/);
-  assert.match(developers, /phase 16/);
+  assert.match(developers, /phase \d+/);
   assert.match(developers, /POST.*\/expenses/);
   assert.match(security, /expense\.created/);
   assert.match(security, /space\.created/);

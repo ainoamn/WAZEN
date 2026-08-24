@@ -236,3 +236,174 @@ export async function voidV1Expense(
 
   return { id: expense.id, spaceId: space.id, status: "voided" as const, voidedAt: createdAt };
 }
+
+type TripExpenseRecord = {
+  id: string;
+  space_id: string;
+  paid_by_member_id: string;
+  amount_minor: number;
+  description: string;
+  occurred_at?: string | null;
+  created_at: string;
+  transaction_id?: string | null;
+  status?: string | null;
+  paid_from?: string | null;
+};
+
+async function rebuildV1ExpenseShares(
+  db: D1Database,
+  userId: string,
+  expense: TripExpenseRecord,
+  next: { amountMinor: number; description: string; paidByMemberId: string },
+) {
+  if ((expense.status ?? "posted") === "voided") throw new ApiError(409, "EXPENSE_VOIDED");
+  const settled = await db.prepare("SELECT COUNT(*) AS count FROM settlements WHERE expense_id=? AND status='settled'")
+    .bind(expense.id).first<{ count: number }>();
+  if (Number(settled?.count ?? 0) > 0) throw new ApiError(409, "EXPENSE_ALREADY_SETTLED");
+
+  const members = await db.prepare("SELECT id FROM members WHERE space_id=? AND status='active' ORDER BY joined_at")
+    .bind(expense.space_id).all<{ id: string }>();
+  if (!members.results?.length) throw new ApiError(400, "NO_ACTIVE_MEMBERS");
+
+  const linked = expense.transaction_id
+    ? await db.prepare("SELECT * FROM transactions WHERE id=?").bind(expense.transaction_id).first<{
+      id: string; kind: string; status: string; amount_minor: number;
+    }>()
+    : null;
+  const paidFromFund = linked?.kind === "expense" || expense.paid_from === "common_fund";
+  if (!paidFromFund && !members.results.some((member) => member.id === next.paidByMemberId)) {
+    throw new ApiError(400, "INVALID_PAYER");
+  }
+
+  const splits = splitEvenly(next.amountMinor, members.results.map((member) => member.id));
+  const createdAt = new Date().toISOString();
+  const statements: D1PreparedStatement[] = [
+    db.prepare("UPDATE trip_expenses SET paid_by_member_id=?, amount_minor=?, description=? WHERE id=?")
+      .bind(paidFromFund ? expense.paid_by_member_id : next.paidByMemberId, next.amountMinor, next.description, expense.id),
+    db.prepare("DELETE FROM expense_splits WHERE expense_id=?").bind(expense.id),
+    db.prepare("UPDATE settlements SET status='voided' WHERE expense_id=? AND status='pending'").bind(expense.id),
+  ];
+  if (linked && linked.status === "approved") {
+    statements.push(
+      db.prepare("UPDATE transactions SET amount_minor=?, description_ar=?, description_en=?, member_id=? WHERE id=?")
+        .bind(next.amountMinor, next.description, next.description, paidFromFund ? null : next.paidByMemberId, linked.id),
+    );
+    if (paidFromFund) {
+      const delta = next.amountMinor - Number(expense.amount_minor);
+      if (delta !== 0) {
+        statements.push(db.prepare("UPDATE spaces SET balance_minor = balance_minor - ? WHERE id=?")
+          .bind(delta, expense.space_id));
+      }
+    }
+  }
+  for (const split of splits) {
+    statements.push(
+      db.prepare("INSERT INTO expense_splits (id,expense_id,member_id,share_minor) VALUES (?,?,?,?)")
+        .bind(crypto.randomUUID(), expense.id, split.memberId, split.shareMinor),
+    );
+  }
+  if (!paidFromFund) {
+    const balances = members.results.map((member) => {
+      const share = splits.find((item) => item.memberId === member.id)?.shareMinor ?? 0;
+      const paid = member.id === next.paidByMemberId ? next.amountMinor : 0;
+      return { memberId: member.id, balanceMinor: paid - share };
+    });
+    for (const settlement of minimizeSettlements(balances)) {
+      statements.push(
+        db.prepare("INSERT INTO settlements (id,space_id,from_member_id,to_member_id,amount_minor,status,created_at,expense_id) VALUES (?,?,?,?,?,'pending',?,?)")
+          .bind(crypto.randomUUID(), expense.space_id, settlement.fromMemberId, settlement.toMemberId, settlement.amountMinor, createdAt, expense.id),
+      );
+    }
+  }
+  statements.push(prepareAudit(db, {
+    userId,
+    action: "trip.expense_resplit",
+    entityType: "trip_expense",
+    entityId: expense.id,
+    metadata: {
+      amountMinor: next.amountMinor,
+      paidByMemberId: next.paidByMemberId,
+      memberCount: members.results.length,
+      via: "api.v1",
+    },
+    createdAt,
+  }));
+  await db.batch(statements);
+  try { await writeApprovedCashBalance(db, expense.space_id); } catch { /* best-effort */ }
+}
+
+export async function updateV1Expense(
+  db: D1Database,
+  user: RequestUser,
+  space: { id: string; currency: string },
+  expenseId: string,
+  input: {
+    amount?: string | number;
+    description?: string;
+    paidByMemberId?: string;
+  },
+) {
+  const expense = await db.prepare("SELECT * FROM trip_expenses WHERE id=? AND space_id=?")
+    .bind(expenseId, space.id).first<TripExpenseRecord>();
+  if (!expense) throw new ApiError(404, "EXPENSE_NOT_FOUND");
+
+  const occurredAt = expense.occurred_at || expense.created_at;
+  const periods = await db.prepare("SELECT id,space_id,starts_at,ends_at,closed_at,status FROM accounting_periods WHERE space_id=?")
+    .bind(space.id).all<{ id: string; space_id: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; status: string }>();
+  if (coveringPeriod(periods.results ?? [], occurredAt)?.status === "closed") {
+    throw new ApiError(409, "PERIOD_CLOSED");
+  }
+
+  let amountMinor = Number(expense.amount_minor);
+  if (input.amount !== undefined) {
+    try {
+      amountMinor = parseMoneyToMinor(input.amount, space.currency);
+    } catch {
+      throw new ApiError(400, "INVALID_AMOUNT");
+    }
+    if (amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
+  }
+  const description = (input.description ?? expense.description).trim();
+  if (description.length < 2) throw new ApiError(400, "INVALID_TRIP_EXPENSE");
+
+  await rebuildV1ExpenseShares(db, user.id, expense, {
+    amountMinor,
+    description,
+    paidByMemberId: input.paidByMemberId ?? expense.paid_by_member_id,
+  });
+
+  const expenses = await listV1Expenses(db, space, { limit: 200 });
+  return expenses.find((row) => row.id === expenseId) ?? { id: expenseId, spaceId: space.id };
+}
+
+export async function resplitV1Expenses(
+  db: D1Database,
+  user: RequestUser,
+  space: { id: string },
+  expenseId?: string,
+) {
+  const expenses = expenseId
+    ? await db.prepare("SELECT * FROM trip_expenses WHERE id=? AND space_id=?")
+      .bind(expenseId, space.id).all<TripExpenseRecord>()
+    : await db.prepare("SELECT * FROM trip_expenses WHERE space_id=? AND COALESCE(status,'posted')<>'voided' ORDER BY occurred_at")
+      .bind(space.id).all<TripExpenseRecord>();
+  if (!expenses.results?.length) throw new ApiError(404, "EXPENSE_NOT_FOUND");
+
+  let updated = 0;
+  let skipped = 0;
+  for (const expense of expenses.results) {
+    const settled = await db.prepare("SELECT COUNT(*) AS count FROM settlements WHERE expense_id=? AND status='settled'")
+      .bind(expense.id).first<{ count: number }>();
+    if (Number(settled?.count ?? 0) > 0) {
+      skipped += 1;
+      continue;
+    }
+    await rebuildV1ExpenseShares(db, user.id, expense, {
+      amountMinor: Number(expense.amount_minor),
+      description: expense.description,
+      paidByMemberId: expense.paid_by_member_id,
+    });
+    updated += 1;
+  }
+  return { spaceId: space.id, updated, skipped };
+}

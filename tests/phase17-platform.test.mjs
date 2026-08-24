@@ -32,9 +32,9 @@ test("phase 17 circle, archive wallet, void settlement", () => {
   assert.match(hooks, /circle\.turn_paid/);
   assert.match(hooks, /space\.archived/);
   assert.match(hooks, /settlement\.voided/);
-  assert.match(openapi, /phase17/);
+  assert.match(openapi, /1\.0\.0-phase\d+/);
   assert.match(openapi, /\/circle\/order/);
-  assert.match(developers, /phase 17/);
+  assert.match(developers, /phase \d+/);
   assert.match(developers, /\/circle/);
   assert.match(developers, /circles:write/);
   assert.match(security, /circle\.order_set/);
