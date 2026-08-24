@@ -6,8 +6,8 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Wazen Business API",
-    version: "1.0.0-phase16",
-    description: "Scoped Bearer API (wzn_…) for wallets, members, contributions, settlements, periods, expenses, exports, and documents.",
+    version: "1.0.0-phase17",
+    description: "Scoped Bearer API (wzn_…) for wallets, members, circles, contributions, settlements, periods, expenses, exports, and documents.",
   },
   servers: [{ url: "https://wazen.bhd-om.com" }],
   paths: {
@@ -20,8 +20,14 @@ const spec = {
       get: { summary: "Wallet detail", security: [{ bearerAuth: [] }] },
       patch: { summary: "Update wallet", security: [{ bearerAuth: [] }] },
     },
+    "/api/v1/spaces/{spaceId}/archive": { post: { summary: "Archive or restore wallet", security: [{ bearerAuth: [] }] } },
     "/api/v1/spaces/{spaceId}/summary": { get: { summary: "Wallet KPIs", security: [{ bearerAuth: [] }] } },
     "/api/v1/spaces/{spaceId}/export": { get: { summary: "Export transactions or members CSV", security: [{ bearerAuth: [] }] } },
+    "/api/v1/spaces/{spaceId}/circle": { get: { summary: "Circle config and turns", security: [{ bearerAuth: [] }] } },
+    "/api/v1/spaces/{spaceId}/circle/order": { post: { summary: "Set circle payout order", security: [{ bearerAuth: [] }] } },
+    "/api/v1/spaces/{spaceId}/circle/turns/{turnId}/complete": {
+      post: { summary: "Complete current circle turn payout", security: [{ bearerAuth: [] }] },
+    },
     "/api/v1/spaces/{spaceId}/transactions": {
       get: { summary: "List transactions", security: [{ bearerAuth: [] }] },
       post: { summary: "Create transaction", security: [{ bearerAuth: [] }] },
@@ -54,6 +60,9 @@ const spec = {
     "/api/v1/spaces/{spaceId}/settlements": { get: { summary: "List settlements", security: [{ bearerAuth: [] }] } },
     "/api/v1/spaces/{spaceId}/settlements/{settlementId}/settle": {
       post: { summary: "Settle reimbursement/share", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/settlements/{settlementId}/void": {
+      post: { summary: "Void pending settlement", security: [{ bearerAuth: [] }] },
     },
     "/api/v1/spaces/{spaceId}/periods": {
       get: { summary: "List accounting periods", security: [{ bearerAuth: [] }] },

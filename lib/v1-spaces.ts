@@ -210,3 +210,26 @@ export async function updateV1Space(
     startsAt: row.starts_at ?? null,
   };
 }
+
+export async function archiveV1Space(
+  db: D1Database,
+  user: RequestUser,
+  space: { id: string; owner_user_id: string },
+  archived = true,
+) {
+  if (space.owner_user_id !== user.id) throw new ApiError(403, "FORBIDDEN");
+  const status = archived ? "archived" : "active";
+  const createdAt = new Date().toISOString();
+  await db.batch([
+    db.prepare("UPDATE spaces SET status=? WHERE id=?").bind(status, space.id),
+    prepareAudit(db, {
+      userId: user.id,
+      action: archived ? "wallet.archived" : "wallet.unarchived",
+      entityType: "space",
+      entityId: space.id,
+      metadata: { status, via: "api.v1" },
+      createdAt,
+    }),
+  ]);
+  return { id: space.id, status, archivedAt: archived ? createdAt : null, updatedAt: createdAt };
+}

@@ -9,7 +9,11 @@ const endpoints = [
   { method: "POST", path: "/api/v1/spaces", ar: "إنشاء محفظة", en: "Create a wallet" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}", ar: "تفاصيل محفظة واحدة", en: "Single wallet summary" },
   { method: "PATCH", path: "/api/v1/spaces/{spaceId}", ar: "تحديث محفظة", en: "Update a wallet" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/archive", ar: "أرشفة/استعادة محفظة", en: "Archive or restore wallet" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/export?kind=transactions", ar: "تصدير CSV للحركات/الأعضاء", en: "Export transactions/members CSV" },
+  { method: "GET", path: "/api/v1/spaces/{spaceId}/circle", ar: "دورة الجمعية والأدوار", en: "Circle config and turns" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/circle/order", ar: "تعيين ترتيب أدوار الجمعية", en: "Set circle payout order" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/circle/turns/{turnId}/complete", ar: "صرف دور الجمعية الحالي", en: "Complete current circle turn" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/transactions?limit=50", ar: "حركات المحفظة", en: "Wallet transactions" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/transactions", ar: "إنشاء دخل/مصروف/مساهمة", en: "Create income/expense/contribution" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/members", ar: "أعضاء الجمعية/المحفظة", en: "Wallet members" },
@@ -31,6 +35,7 @@ const endpoints = [
   { method: "POST", path: "/api/v1/documents", ar: "إنشاء مستند", en: "Create a document" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/settlements", ar: "قائمة التسويات", en: "List settlements" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/settlements/{settlementId}/settle", ar: "تنفيذ تسوية", en: "Settle a settlement" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/settlements/{settlementId}/void", ar: "إلغاء تسوية معلّقة", en: "Void pending settlement" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/periods", ar: "الفترات المحاسبية", en: "Accounting periods" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/periods", ar: "إغلاق الفترة المحاسبية", en: "Close accounting period" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/periods/{periodId}/reopen", ar: "إعادة فتح فترة مغلقة", en: "Reopen closed period" },
@@ -52,7 +57,7 @@ export default function DevelopersPage() {
         <button type="button" onClick={() => setLocale(ar ? "en" : "ar")}>{ar ? "EN" : "عربي"}</button>
       </header>
       <article>
-        <small>WAZEN API · v1 · 2026-08-24 · phase 16</small>
+        <small>WAZEN API · v1 · 2026-08-24 · phase 17</small>
         <h1>{ar ? "واجهة برمجة المؤسسات" : "Business API"}</h1>
         <p className="lead">
           {ar
@@ -65,8 +70,8 @@ export default function DevelopersPage() {
           <pre className="developers-code">{`Authorization: Bearer wzn_...`}</pre>
           <p>
             {ar
-              ? "النطاقات الشائعة: wallets:read للقراءة. الكتابة تحتاج wallets:write أو members:write أو settlements:write. Webhooks من أمان الحساب."
-              : "Common scopes: wallets:read for reads. Writes need wallets:write, members:write, or settlements:write. Configure webhooks under Account security."}
+              ? "النطاقات الشائعة: wallets:read للقراءة. الكتابة تحتاج wallets:write أو members:write أو settlements:write أو circles:write. Webhooks من أمان الحساب."
+              : "Common scopes: wallets:read for reads. Writes need wallets:write, members:write, settlements:write, or circles:write. Configure webhooks under Account security."}
           </p>
         </section>
 

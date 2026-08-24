@@ -174,3 +174,29 @@ export async function settleV1Settlement(
     ownerUserId: settlement.owner_user_id,
   };
 }
+
+export async function voidV1Settlement(
+  db: D1Database,
+  user: RequestUser,
+  spaceId: string,
+  settlementId: string,
+) {
+  const settlement = await db.prepare("SELECT id,space_id,status FROM settlements WHERE id=? AND space_id=?")
+    .bind(settlementId, spaceId)
+    .first<{ id: string; space_id: string; status: string }>();
+  if (!settlement) throw new ApiError(404, "SETTLEMENT_NOT_FOUND");
+  if (settlement.status !== "pending") throw new ApiError(409, "SETTLEMENT_NOT_PENDING");
+  const createdAt = new Date().toISOString();
+  const result = await db.prepare("UPDATE settlements SET status='voided' WHERE id=? AND status='pending'")
+    .bind(settlement.id).run();
+  if (!result.meta.changes) throw new ApiError(409, "SETTLEMENT_NOT_PENDING");
+  await prepareAudit(db, {
+    userId: user.id,
+    action: "settlement.voided",
+    entityType: "settlement",
+    entityId: settlement.id,
+    metadata: { spaceId: settlement.space_id, via: "api.v1" },
+    createdAt,
+  }).run();
+  return { id: settlement.id, spaceId: settlement.space_id, status: "voided" as const, voidedAt: createdAt };
+}
