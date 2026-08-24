@@ -40,6 +40,6 @@ WAZEN_OMANNET_WEBHOOK_SECRET=
 ```
 
 ### ما يبقى خارج المستودع
-- اعتماد قانوني نهائي للنصوص.
+- ~~اعتماد قانوني نهائي للنصوص~~ → قائمة اعتماد في الصفحات القانونية + علم `WAZEN_LEGAL_COUNSEL_SIGNED` (التوقيع نفسه يدوي).
 - تفعيل حماية الفرع وRequired checks يدوياً (لا يمكن من الكود وحده).
-- ضبط `SENTRY_DSN` و`WAZEN_RLS_ENFORCE=1` بعد اختبار Staging.
+- ضبط `SENTRY_DSN` و`WAZEN_RLS_ENFORCE=1` بعد اختبار Staging — أدوات الجاهزية في مرحلة 8.

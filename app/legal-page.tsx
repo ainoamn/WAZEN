@@ -62,7 +62,7 @@ export function LegalPage({ kind }: { kind: keyof typeof content }) {
         <button type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "EN" : "عربي"}</button>
       </header>
       <article>
-        <small>WAZEN · 2026-08-24 · {locale === "ar" ? "مراجعة تشغيلية — يُفضّل اعتماد محامٍ" : "Operational review — counsel adoption recommended"}</small>
+        <small>WAZEN · 2026-08-24 · v0.2.0-legal · {locale === "ar" ? "مراجعة تشغيلية — يُفضّل اعتماد محامٍ" : "Operational review — counsel adoption recommended"}</small>
         <h1>{page.title[index]}</h1>
         <p className="lead">{page.intro[index]}</p>
         {page.sections.map((section) => (
@@ -71,6 +71,14 @@ export function LegalPage({ kind }: { kind: keyof typeof content }) {
             <p>{section[index + 2]}</p>
           </section>
         ))}
+        <section>
+          <h2>{locale === "ar" ? "قائمة اعتماد قانوني" : "Counsel adoption checklist"}</h2>
+          <p>
+            {locale === "ar"
+              ? "قبل الاعتماد النهائي: مراجعة محامٍ محلي للدول المستهدفة، مواءمة نصوص الاحتفاظ والحذف مع قانون حماية البيانات، وتوثيق مزودي المعالجة (استضافة، بريد، دفع). بعد التوقيع اضبط WAZEN_LEGAL_COUNSEL_SIGNED=1 في بيئة الإنتاج."
+              : "Before final adoption: local counsel review for target countries, align retention/deletion with data-protection law, and document processors (hosting, email, payments). After sign-off set WAZEN_LEGAL_COUNSEL_SIGNED=1 in production."}
+          </p>
+        </section>
       </article>
     </main>
   );

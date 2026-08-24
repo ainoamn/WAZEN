@@ -1,0 +1,34 @@
+# Launch checklist — WAZEN
+
+Operational go-live list. Code ships readiness signals; several steps stay manual in GitHub/Vercel/counsel.
+
+## Required (blocks “ready” score)
+
+1. `DATABASE_URL` (Neon) linked  
+2. `WAZEN_APP_ORIGIN` clean HTTPS origin  
+3. `WAZEN_ENCRYPTION_KEYRING`  
+4. Demo / trust-headers / Node SQLite **off** in production  
+5. `WAZEN_JOB_SECRET` (≥32) and/or `CRON_SECRET`  
+6. `WAZEN_PAYMENT_WEBHOOK_SECRET`  
+
+Verify: `GET /api/health` with `Authorization: Bearer $WAZEN_JOB_SECRET` → `readiness.ready === true`.
+
+## Recommended before public traffic
+
+| Item | Action |
+|------|--------|
+| Sentry | Set `SENTRY_DSN` |
+| Email | `WAZEN_EMAIL_WEBHOOK_*` + cron tick |
+| Web Push | `WAZEN_VAPID_*` |
+| Card pay | Thawani or OmanNet env (manual transfer OK) |
+| RLS | Staging with `WAZEN_RLS_DRY_RUN=1`, then `WAZEN_RLS_ENFORCE=1` |
+| CI gate | Protect `main` → require check `verify` |
+| Legal | Counsel review → `WAZEN_LEGAL_COUNSEL_SIGNED=1` |
+
+## Ops surfaces
+
+- Admin overview: launch readiness + recent `job_runs`  
+- `GET /api/platform?view=admin&scope=ops`  
+- Cron: `/api/jobs/tick` every 5 minutes (`vercel.json`)  
+
+Handoff: [HANDOFF-2026-08-24-phase8.md](./HANDOFF-2026-08-24-phase8.md)

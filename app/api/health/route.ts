@@ -62,6 +62,7 @@ export async function GET(request: Request) {
       risks,
       setup,
       setupPending: setupPending.map((item) => item.id),
+      readiness: (await import("../../../lib/launch-readiness")).computeLaunchReadiness(),
       checkedAt: new Date().toISOString(),
     }, { status: setupPending.length ? 503 : 200, headers: publicHeaders });
   } catch {

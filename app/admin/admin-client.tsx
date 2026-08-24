@@ -21,6 +21,15 @@ type CouponRow = Row & { id: string; code: string; value: number; used_count: nu
 type PlanRow = Row & { id: string; name_ar: string; name_en: string; monthly_minor: number };
 type RoleRow = Row & { user_id: string; role: string; display_name: string | null; email: string | null };
 type LogRow = Row & { id: string; action: string; display_name: string | null; user_id: string; entity_type: string; created_at: string };
+type JobRunRow = { id: string; job: string; status: string; detail_json: string | null; created_at: string };
+type ReadinessPayload = {
+  ready: boolean;
+  score: number;
+  requiredPending: string[];
+  checkoutProvider: string;
+  rlsEnforce: boolean;
+  items: Array<{ id: string; ok: boolean; required: boolean; labelAr: string; labelEn: string; hint?: string }>;
+};
 type AdminData = {
   user: Row;
   role: string;
@@ -33,6 +42,8 @@ type AdminData = {
   roles: RoleRow[];
   logs: LogRow[];
   alerts?: AlertRow[];
+  jobRuns?: JobRunRow[];
+  readiness?: ReadinessPayload;
   platform?: { spaces: number; members: number; transactions: number; countries: number; monthlyRevenue?: Array<{ month: string; total: number }> };
 };
 
@@ -208,6 +219,60 @@ export function AdminOverview() {
         text={l("مؤشرات المنصة ومفاصل التحكم في أعمدة واضحة: حسابات، محافظ، تحصيل، ثم الكوبونات والتدقيق.", "Platform metrics and controls in clear columns: accounts, wallets, collections, then coupons and audit.")}
       />
       {data.alerts?.length ? <AdminAlerts alerts={data.alerts} locale={locale} l={l} /> : null}
+      {data.readiness ? (
+        <section className="admin-panel admin-alerts">
+          <div className="admin-panel-head">
+            <div>
+              <h2>{l("جاهزية الإطلاق", "Launch readiness")}</h2>
+              <p>
+                {l("درجة", "Score")} {data.readiness.score}%
+                {" · "}
+                {data.readiness.ready ? l("المتطلبات الأساسية مكتملة", "Required items complete") : l("ينقص إعداد مطلوب", "Required setup pending")}
+                {" · "}
+                {data.readiness.checkoutProvider}
+                {data.readiness.rlsEnforce ? " · RLS" : ""}
+              </p>
+            </div>
+            <ShieldCheck />
+          </div>
+          <div className="admin-alert-list">
+            {data.readiness.items.filter((item) => !item.ok).slice(0, 8).map((item) => (
+              <div key={item.id} className={`admin-alert is-${item.required ? "warning" : "info"}`}>
+                <AlertTriangle />
+                <span>{locale === "ar" ? item.labelAr : item.labelEn}{item.hint ? ` — ${item.hint}` : ""}</span>
+              </div>
+            ))}
+            {!data.readiness.items.some((item) => !item.ok) ? (
+              <div className="admin-alert is-info">
+                <CheckCircle2 />
+                <span>{l("لا توجد فجوات ظاهرة في قائمة الجاهزية", "No gaps on the readiness checklist")}</span>
+              </div>
+            ) : null}
+          </div>
+          {data.jobRuns?.length ? (
+            <div className="admin-table-wrap" style={{ marginTop: "1rem" }}>
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>{l("مهمة", "Job")}</th>
+                    <th>{l("الحالة", "Status")}</th>
+                    <th>{l("الوقت", "When")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.jobRuns.slice(0, 8).map((run) => (
+                    <tr key={run.id}>
+                      <td>{run.job}</td>
+                      <td><Status value={run.status === "ok" ? "active" : run.status === "skipped" ? "pending" : "closed"} locale={locale} /></td>
+                      <td>{formatAdminDate(run.created_at, locale)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
       <div className="admin-kpis">
         <Kpi icon={<Users />} label={l("الحسابات", "Accounts")} value={String(data.users.length)} note={`${active} ${l("اشتراك نشط", "active plans")}`} />
         <Kpi icon={<WalletCards />} label={l("المحافظ", "Wallets")} value={String(plat.spaces)} note={`${plat.members} ${l("عضو نشط", "active members")}`} />

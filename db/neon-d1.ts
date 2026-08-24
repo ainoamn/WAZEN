@@ -1,7 +1,7 @@
 import { neonConfig, Pool, type QueryResultRow } from "@neondatabase/serverless";
 import ws from "ws";
 import { isSkippedSqliteTrigger, translateSqliteToPostgres } from "./sql-translate";
-import { getDbRequestUserId, isRlsEnforceEnabled } from "../lib/db-request-context";
+import { getDbRequestUserId, isRlsEnforceEnabled, markRlsMissingUserWarned } from "../lib/db-request-context";
 
 // Vercel/Node serverless needs an explicit WebSocket constructor for Neon Pool.
 neonConfig.webSocketConstructor = ws;
@@ -19,9 +19,24 @@ type PoolClientLike = {
   release: () => void;
 };
 
+async function noteMissingRlsUser() {
+  if (!isRlsEnforceEnabled()) return;
+  if (getDbRequestUserId()) return;
+  if (markRlsMissingUserWarned()) return;
+  try {
+    const { reportEvent } = await import("../lib/observability");
+    reportEvent({
+      level: "warning",
+      code: "RLS_MISSING_USER_CONTEXT",
+      message: "RLS enforce query without runWithDbUser — bypass left on",
+    });
+  } catch { /* never block */ }
+}
+
 async function applyRequestRls(client: PoolClientLike) {
   if (!isRlsEnforceEnabled()) return;
   const userId = getDbRequestUserId();
+  if (!userId) await noteMissingRlsUser();
   await client.query("SELECT set_config('app.bypass_rls', $1, true)", [userId ? "0" : "1"]);
   if (userId) {
     await client.query("SELECT set_config('app.user_id', $1, true)", [userId]);
@@ -66,6 +81,7 @@ class NeonPreparedStatement {
       return { rows: [] as QueryResultRow[], rowCount: 0 };
     }
     if (!isRlsEnforceEnabled() || !getDbRequestUserId()) {
+      if (isRlsEnforceEnabled()) await noteMissingRlsUser();
       return this.pool.query(sql, this.args);
     }
     const client = await this.pool.connect() as unknown as PoolClientLike;

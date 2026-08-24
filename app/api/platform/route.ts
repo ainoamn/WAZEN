@@ -11,6 +11,8 @@ import { nextReference } from "../../../lib/reference";
 import { encryptSecret, loadKeyring } from "../../../lib/encryption";
 import { configuredAllowedHosts, validateOutboundHttpsUrl } from "../../../lib/outbound";
 import { ensureBootstrapPlatformRole } from "../../../lib/platform-role-bootstrap";
+import { runWithDbUser } from "../../../lib/db-request-context";
+import { computeLaunchReadiness } from "../../../lib/launch-readiness";
 import { listAdminUsers, getAdminUserDetail, adminVerifyUserEmail, adminUpdateUserProfile } from "../../../services/admin/users-service";
 import { computeAdminAlerts } from "../../../services/admin/alerts-service";
 import { blockIpByHash, unblockIpByHash, trustIpByHash, IP_BLOCK_HOURS } from "../../../lib/ip-security";
@@ -292,6 +294,7 @@ export async function GET(request: Request) {
 
     const user = await authenticateRequest(db, request);
     if (!user) return Response.json({ error: "AUTHENTICATION_REQUIRED" }, { status: 401 });
+    return await runWithDbUser(user.id, async () => {
     await seedCommercialData(db, user);
     const role = await roleOf(db, user.id);
     const responseHeaders = new Headers({ "Cache-Control": "no-store" });
@@ -419,12 +422,36 @@ export async function GET(request: Request) {
       const scope = url.searchParams.get("scope") ?? "overview";
       if (scope === "console") {
         if (!["super_admin", "admin"].includes(role)) throw new ApiError(403, "FORBIDDEN");
-        const [core, gateways, tenantsPage] = await Promise.all([
+        const [core, gateways, tenantsPage, jobRuns] = await Promise.all([
           scopedAdminData(db, role, "overview"),
           listGatewaysWithPlans(db),
           listAdminTenants(db, { page: 1, pageSize: 25 }),
+          db.prepare("SELECT id,job,status,detail_json,created_at FROM job_runs ORDER BY created_at DESC LIMIT 25")
+            .all<{ id: string; job: string; status: string; detail_json: string | null; created_at: string }>()
+            .catch(() => ({ results: [] as Array<{ id: string; job: string; status: string; detail_json: string | null; created_at: string }> })),
         ]);
-        return Response.json({ user, role, ...core, gateways, tenantsPage }, { headers: responseHeaders });
+        const readiness = computeLaunchReadiness();
+        return Response.json({
+          user,
+          role,
+          ...core,
+          gateways,
+          tenantsPage,
+          jobRuns: jobRuns.results ?? [],
+          readiness,
+        }, { headers: responseHeaders });
+      }
+      if (scope === "ops") {
+        if (!["super_admin", "admin"].includes(role)) throw new ApiError(403, "FORBIDDEN");
+        const jobRuns = await db.prepare("SELECT id,job,status,detail_json,created_at FROM job_runs ORDER BY created_at DESC LIMIT 50")
+          .all<{ id: string; job: string; status: string; detail_json: string | null; created_at: string }>()
+          .catch(() => ({ results: [] as Array<{ id: string; job: string; status: string; detail_json: string | null; created_at: string }> }));
+        return Response.json({
+          user,
+          role,
+          readiness: computeLaunchReadiness(),
+          jobRuns: jobRuns.results ?? [],
+        }, { headers: responseHeaders });
       }
       if (scope === "overview" && !["super_admin", "admin"].includes(role)) throw new ApiError(403, "FORBIDDEN");
       if (scope === "users") {
@@ -479,6 +506,7 @@ export async function GET(request: Request) {
       return Response.json({ user, role, ...(await scopedAdminData(db, role, scope)) }, { headers: responseHeaders });
     }
     return Response.json({ user, role }, { headers: responseHeaders });
+    });
   } catch (error) { return errorResponse(error); }
 }
 
@@ -488,7 +516,7 @@ const documentPrefixes: Record<string, string> = {
 };
 
 export async function POST(request: Request) {
-  let claimed: { db: D1Database; userId: string; key: string } | null = null;
+  const claimRef: { current: { db: D1Database; userId: string; key: string } | null } = { current: null };
   try {
     enforceWriteRequest(request);
     const db = getRawDb(); await ensureSchema(db); await seedPlans(db);
@@ -507,15 +535,16 @@ export async function POST(request: Request) {
 
     const user = await authenticateRequest(db, request);
     if (!user) return Response.json({ error: "AUTHENTICATION_REQUIRED" }, { status: 401 });
+    return await runWithDbUser(user.id, async () => {
     if (user.authType === "session") await enforceCsrf(db, request);
     await seedCommercialData(db, user);
     const idempotencyKey = String(payload.idempotencyKey ?? request.headers.get("idempotency-key") ?? "");
     const replay = await claimIdempotency(db, user.id, action, idempotencyKey);
     if (replay) return Response.json(replay);
-    claimed = { db, userId: user.id, key: idempotencyKey };
+    claimRef.current = { db, userId: user.id, key: idempotencyKey };
     const respond = async (body: Record<string, unknown>) => {
       await completeIdempotency(db, user.id, idempotencyKey, body);
-      claimed = null;
+      claimRef.current = null;
       return Response.json(body, { headers: { "Cache-Control": "no-store" } });
     };
 
@@ -630,7 +659,7 @@ export async function POST(request: Request) {
         prepareAudit(db, { userId: user.id, action: "security.api_key_created", entityType: "api_key", entityId: keyId, metadata: { name: parsed.data.name, scopes: parsed.data.scopes, expiresAt }, createdAt: now }),
       ]);
       const replayBody = { ok: true, apiKey: { id: keyId, name: parsed.data.name, prefix, scopes: parsed.data.scopes, expiresAt, replayed: true } };
-      await completeIdempotency(db, user.id, idempotencyKey, replayBody); claimed = null;
+      await completeIdempotency(db, user.id, idempotencyKey, replayBody); claimRef.current = null;
       return Response.json({ ok: true, apiKey: { id: keyId, name: parsed.data.name, prefix, scopes: parsed.data.scopes, expiresAt, token: rawToken } }, { headers: { "Cache-Control": "no-store" } });
     }
 
@@ -897,9 +926,10 @@ export async function POST(request: Request) {
       : ["upsertPlan"].includes(action) ? "plans"
       : "overview";
     return respond({ ok: true, ...(await scopedAdminData(db, actorRole, scope)) });
+    });
   } catch (error) {
-    if (claimed) {
-      try { await releaseIdempotency(claimed.db, claimed.userId, claimed.key); } catch { /* maintenance job will clean stale claims */ }
+    if (claimRef.current) {
+      try { await releaseIdempotency(claimRef.current.db, claimRef.current.userId, claimRef.current.key); } catch { /* maintenance job will clean stale claims */ }
     }
     return errorResponse(error);
   }
