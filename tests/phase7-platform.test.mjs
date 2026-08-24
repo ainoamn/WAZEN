@@ -32,6 +32,7 @@ test("phase 7 cron tick and vercel crons exist", () => {
   assert.match(tick, /runMaintenanceJob/);
   assert.match(tick, /processPushOutbox/);
   assert.match(tick, /drainEmail|EMAIL_PROVIDER/);
+  assert.match(tick, /runDuesDigest/);
   assert.match(vercel, /"\/api\/jobs\/tick"/);
   assert.match(vercel, /"\*\/5 \* \* \* \*"/);
   assert.match(maintenance, /expireLapsedPaidSubscriptions/);

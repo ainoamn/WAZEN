@@ -2268,6 +2268,7 @@ function SettingsView({ user, locale, entitlements, spaces, onLogout, onSaved }:
   const [auditSpaceId, setAuditSpaceId] = useState(spaces.find((space) => ["society", "group"].includes(space.type))?.id ?? spaces[0]?.id ?? "");
   const [auditRows, setAuditRows] = useState<Array<{ id: string; action: string; entityType: string; entityId: string; createdAt: string }>>([]);
   const [auditBusy, setAuditBusy] = useState(false);
+  const [auditQuery, setAuditQuery] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const features = entitlements?.features?.length ? entitlements.features : ["personal"];
   const canExport = planHasFeature(features, "exports");
@@ -2282,7 +2283,13 @@ function SettingsView({ user, locale, entitlements, spaces, onLogout, onSaved }:
       const response = await apiFetch("/api/dashboard", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "listSpaceAudit", idempotencyKey: crypto.randomUUID(), spaceId, limit: 30 }),
+        body: JSON.stringify({
+          action: "listSpaceAudit",
+          idempotencyKey: crypto.randomUUID(),
+          spaceId,
+          limit: 30,
+          ...(auditQuery.trim() ? { q: auditQuery.trim() } : {}),
+        }),
       });
       const result = await response.json() as { error?: string; audit?: Array<{ id: string; action: string; entityType: string; entityId: string; createdAt: string }> };
       if (!response.ok) throw new Error(result.error ?? "AUDIT_FAILED");
@@ -2472,6 +2479,20 @@ function SettingsView({ user, locale, entitlements, spaces, onLogout, onSaved }:
           </select>
         </label>
       ) : null}
+      <label>
+        <span>{locale === "ar" ? "بحث في السجل" : "Search audit"}</span>
+        <input
+          value={auditQuery}
+          onChange={(event) => setAuditQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void loadAudit();
+            }
+          }}
+          placeholder={locale === "ar" ? "مثل: transaction أو member" : "e.g. transaction or member"}
+        />
+      </label>
       <ul className="audit-log-list">
         {auditRows.length ? auditRows.map((row) => (
           <li key={row.id}>

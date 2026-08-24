@@ -29,6 +29,6 @@ Verify: `GET /api/health` with `Authorization: Bearer $WAZEN_JOB_SECRET` → `re
 
 - Admin overview: launch readiness + recent `job_runs`  
 - `GET /api/platform?view=admin&scope=ops`  
-- Cron: `/api/jobs/tick` every 5 minutes (`vercel.json`)  
+- Cron: `/api/jobs/tick` every 5 minutes (`vercel.json`) — email/push; dues at 06:00 UTC; maintenance at 02:00 UTC  
 
-Handoff: [HANDOFF-2026-08-24-phase8.md](./HANDOFF-2026-08-24-phase8.md)
+Handoff: [HANDOFF-2026-08-24-phase9.md](./HANDOFF-2026-08-24-phase9.md)

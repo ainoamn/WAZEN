@@ -4,6 +4,7 @@ import { assertJobAuthorized, recordJobRun } from "../../../../lib/job-auth";
 import { processPushOutbox, isWebPushConfigured } from "../../../../lib/web-push";
 import { configuredAllowedHosts, validateOutboundHttpsUrl } from "../../../../lib/outbound";
 import { runMaintenanceJob } from "../../../../lib/jobs-maintenance";
+import { runDuesDigest } from "../../../../lib/dues-digest";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -43,7 +44,7 @@ async function drainEmail(db: D1Database) {
 /**
  * Unified cron tick for Vercel Cron / external schedulers.
  * GET or POST /api/jobs/tick?tasks=email,push,maintenance
- * Default: email + push every run; maintenance at 02:00 UTC when tasks omitted.
+ * Default: email + push every run; dues digest at 06:00 UTC; maintenance at 02:00 UTC when tasks omitted.
  */
 export async function GET(request: Request) {
   return runTick(request);
@@ -66,6 +67,7 @@ async function runTick(request: Request) {
     const hour = new Date().getUTCHours();
     const runEmail = !requested.length || requested.includes("email");
     const runPush = !requested.length || requested.includes("push");
+    const runDues = requested.includes("dues") || (!requested.length && hour === 6);
     const runMaintenance = requested.includes("maintenance") || (!requested.length && hour === 2);
 
     const result: Record<string, unknown> = { ok: true, at: new Date().toISOString() };
@@ -79,6 +81,11 @@ async function runTick(request: Request) {
       const push = await processPushOutbox(db, { limit: 25 });
       result.push = { ...push, vapidConfigured: isWebPushConfigured() };
       await recordJobRun(db, "push", push.configured ? "ok" : "skipped", push as unknown as Record<string, unknown>);
+    }
+    if (runDues) {
+      const dues = await runDuesDigest(db);
+      result.dues = dues;
+      await recordJobRun(db, "dues", "ok", dues);
     }
     if (runMaintenance) {
       const maintenance = await runMaintenanceJob(db);

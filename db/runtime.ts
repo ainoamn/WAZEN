@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 18;
+const SCHEMA_VERSION = 19;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -351,6 +351,15 @@ async function ensureSchemaPatches(db: D1Database) {
       created_at TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_job_runs_created ON job_runs(created_at)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS dues_digest_log (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      digest_day TEXT NOT NULL,
+      overdue_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      UNIQUE(user_id, digest_day)
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_dues_digest_day ON dues_digest_log(digest_day)"),
   ]);
   await applyPostgresRls(db);
   const personalRuleCols = await db.prepare("PRAGMA table_info(personal_rules)").all<{ name: string }>();

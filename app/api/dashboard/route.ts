@@ -2905,25 +2905,53 @@ export async function POST(request: Request) {
       const parsed = z.object({
         spaceId: z.string().min(1).max(120),
         limit: z.number().int().min(1).max(100).optional(),
+        q: z.string().trim().max(80).optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_AUDIT");
       await authorizeSpace(db, user, parsed.data.spaceId, "read");
       const limit = parsed.data.limit ?? 40;
-      const rows = await db.prepare(`
-        SELECT id, user_id, action, entity_type, entity_id, metadata_json, created_at
-        FROM audit_logs
-        WHERE entity_id=? OR metadata_json LIKE ?
-        ORDER BY created_at DESC
-        LIMIT ?
-      `).bind(parsed.data.spaceId, `%"spaceId":"${parsed.data.spaceId}"%`, limit).all<{
-        id: string;
-        user_id: string;
-        action: string;
-        entity_type: string;
-        entity_id: string;
-        metadata_json: string | null;
-        created_at: string;
-      }>();
+      const q = parsed.data.q?.trim() ?? "";
+      const likeSpace = `%"spaceId":"${parsed.data.spaceId}"%`;
+      const rows = q
+        ? await db.prepare(`
+            SELECT id, user_id, action, entity_type, entity_id, metadata_json, created_at
+            FROM audit_logs
+            WHERE (entity_id=? OR metadata_json LIKE ?)
+              AND (action LIKE ? OR entity_type LIKE ? OR entity_id LIKE ? OR COALESCE(metadata_json,'') LIKE ?)
+            ORDER BY created_at DESC
+            LIMIT ?
+          `).bind(
+            parsed.data.spaceId,
+            likeSpace,
+            `%${q}%`,
+            `%${q}%`,
+            `%${q}%`,
+            `%${q}%`,
+            limit,
+          ).all<{
+            id: string;
+            user_id: string;
+            action: string;
+            entity_type: string;
+            entity_id: string;
+            metadata_json: string | null;
+            created_at: string;
+          }>()
+        : await db.prepare(`
+            SELECT id, user_id, action, entity_type, entity_id, metadata_json, created_at
+            FROM audit_logs
+            WHERE entity_id=? OR metadata_json LIKE ?
+            ORDER BY created_at DESC
+            LIMIT ?
+          `).bind(parsed.data.spaceId, likeSpace, limit).all<{
+            id: string;
+            user_id: string;
+            action: string;
+            entity_type: string;
+            entity_id: string;
+            metadata_json: string | null;
+            created_at: string;
+          }>();
       const response = {
         ok: true,
         audit: (rows.results ?? []).map((row) => ({
@@ -2937,6 +2965,7 @@ export async function POST(request: Request) {
             try { return JSON.parse(row.metadata_json || "{}"); } catch { return {}; }
           })(),
         })),
+        q: q || null,
       };
       await completeIdempotency(db, user.id, idempotencyKey, response);
       claimRef.current = null;

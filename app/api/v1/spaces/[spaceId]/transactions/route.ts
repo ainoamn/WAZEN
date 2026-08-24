@@ -6,6 +6,7 @@ import { runWithDbUser } from "../../../../../../lib/db-request-context";
 import { errorResponse, ApiError, claimIdempotency, completeIdempotency, enforceWriteRequest, releaseIdempotency } from "../../../../../../lib/security";
 import { formatMoneyMinor } from "../../../../../../lib/money";
 import { createV1Transaction } from "../../../../../../lib/v1-transactions";
+import { withRequestTiming } from "../../../../../../lib/request-timing";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,7 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ spaceId: string }> },
 ) {
+  return withRequestTiming("v1.transactions.get", async () => {
   try {
     const { spaceId } = await context.params;
     const db = getRawDb();
@@ -54,12 +56,14 @@ export async function GET(
   } catch (error) {
     return errorResponse(error);
   }
+  });
 }
 
 export async function POST(
   request: Request,
   context: { params: Promise<{ spaceId: string }> },
 ) {
+  return withRequestTiming("v1.transactions.post", async () => {
   const claimRef: { current: { db: D1Database; userId: string; key: string } | null } = { current: null };
   try {
     enforceWriteRequest(request);
@@ -116,4 +120,5 @@ export async function POST(
     }
     return errorResponse(error);
   }
+  });
 }
