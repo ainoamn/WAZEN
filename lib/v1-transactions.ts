@@ -4,7 +4,7 @@ import type { RequestUser } from "../db/runtime";
 import { prepareAudit } from "./audit";
 import { coveringPeriod } from "./accounting-periods";
 import { ApiError } from "./security";
-import { parseMoneyToMinor } from "./money";
+import { formatMoneyMinor, parseMoneyToMinor } from "./money";
 
 export type V1CreateTransactionInput = {
   kind: "income" | "expense" | "contribution";
@@ -128,4 +128,69 @@ export async function createV1Transaction(
     occurredAt,
     createdAt,
   };
+}
+
+export async function getV1Transaction(
+  db: D1Database,
+  space: { id: string; currency: string },
+  transactionId: string,
+) {
+  const txn = await db.prepare(`
+    SELECT id, kind, allocation, amount_minor, description_ar, description_en, member_id, status, occurred_at, created_at
+    FROM transactions WHERE id=? AND space_id=? AND COALESCE(status,'approved')<>'superseded'
+  `).bind(transactionId, space.id).first<{
+    id: string; kind: string; allocation: string; amount_minor: number;
+    description_ar: string; description_en: string; member_id: string | null;
+    status: string | null; occurred_at: string; created_at: string;
+  }>();
+  if (!txn) throw new ApiError(404, "TRANSACTION_NOT_FOUND");
+  const currency = space.currency || "OMR";
+  return {
+    id: txn.id,
+    spaceId: space.id,
+    kind: txn.kind,
+    allocation: txn.allocation,
+    amountMinor: Number(txn.amount_minor) || 0,
+    amountLabel: formatMoneyMinor(Number(txn.amount_minor) || 0, currency, "en"),
+    descriptionAr: txn.description_ar,
+    descriptionEn: txn.description_en,
+    memberId: txn.member_id,
+    status: txn.status ?? "approved",
+    occurredAt: txn.occurred_at,
+    createdAt: txn.created_at,
+  };
+}
+
+export async function listV1TransactionRevisions(
+  db: D1Database,
+  spaceId: string,
+  transactionId: string,
+) {
+  const txn = await db.prepare("SELECT id FROM transactions WHERE id=? AND space_id=?")
+    .bind(transactionId, spaceId).first<{ id: string }>();
+  if (!txn) throw new ApiError(404, "TRANSACTION_NOT_FOUND");
+  const rows = await db.prepare(`
+    SELECT id, transaction_id, edited_by, editor_name, edited_at,
+      kind, allocation, amount_minor, member_id, description_ar, description_en, occurred_at, status
+    FROM transaction_revisions WHERE transaction_id=? ORDER BY edited_at DESC
+  `).bind(txn.id).all<{
+    id: string; transaction_id: string; edited_by: string; editor_name: string; edited_at: string;
+    kind: string; allocation: string; amount_minor: number; member_id: string | null;
+    description_ar: string; description_en: string; occurred_at: string; status: string;
+  }>();
+  return (rows.results ?? []).map((row) => ({
+    id: row.id,
+    transactionId: row.transaction_id,
+    editedBy: row.edited_by,
+    editorName: row.editor_name,
+    editedAt: row.edited_at,
+    kind: row.kind,
+    allocation: row.allocation,
+    amountMinor: Number(row.amount_minor) || 0,
+    memberId: row.member_id,
+    descriptionAr: row.description_ar,
+    descriptionEn: row.description_en,
+    occurredAt: row.occurred_at,
+    status: row.status,
+  }));
 }

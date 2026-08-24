@@ -30,6 +30,7 @@ const DEFAULT_EVENTS = [
   "circle.order_set",
   "circle.turn_paid",
   "settlement.voided",
+  "share.created",
 ];
 
 export function SecurityClient() {

@@ -6,12 +6,14 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Wazen Business API",
-    version: "1.0.0-phase17",
-    description: "Scoped Bearer API (wzn_…) for wallets, members, circles, contributions, settlements, periods, expenses, exports, and documents.",
+    version: "1.0.0-phase18",
+    description: "Scoped Bearer API (wzn_…) for wallets, members, circles, shares, notifications, contributions, settlements, periods, expenses, exports, and documents.",
   },
   servers: [{ url: "https://wazen.bhd-om.com" }],
   paths: {
     "/api/v1/me": { get: { summary: "Current API principal", security: [{ bearerAuth: [] }] } },
+    "/api/v1/notifications": { get: { summary: "List in-app notifications", security: [{ bearerAuth: [] }] } },
+    "/api/v1/notifications/read": { post: { summary: "Mark notifications read", security: [{ bearerAuth: [] }] } },
     "/api/v1/spaces": {
       get: { summary: "List wallets", security: [{ bearerAuth: [] }] },
       post: { summary: "Create wallet", security: [{ bearerAuth: [] }] },
@@ -28,9 +30,18 @@ const spec = {
     "/api/v1/spaces/{spaceId}/circle/turns/{turnId}/complete": {
       post: { summary: "Complete current circle turn payout", security: [{ bearerAuth: [] }] },
     },
+    "/api/v1/spaces/{spaceId}/shares/receipt": { post: { summary: "Create receipt share link", security: [{ bearerAuth: [] }] } },
+    "/api/v1/spaces/{spaceId}/shares/member-statement": { post: { summary: "Create member statement share", security: [{ bearerAuth: [] }] } },
+    "/api/v1/spaces/{spaceId}/shares/statement": { post: { summary: "Create association statement share", security: [{ bearerAuth: [] }] } },
     "/api/v1/spaces/{spaceId}/transactions": {
       get: { summary: "List transactions", security: [{ bearerAuth: [] }] },
       post: { summary: "Create transaction", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/transactions/{transactionId}": {
+      get: { summary: "Get transaction", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/transactions/{transactionId}/revisions": {
+      get: { summary: "Transaction edit history", security: [{ bearerAuth: [] }] },
     },
     "/api/v1/spaces/{spaceId}/transactions/{transactionId}/void": {
       post: { summary: "Void transaction", security: [{ bearerAuth: [] }] },

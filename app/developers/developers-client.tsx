@@ -5,6 +5,8 @@ import { Brand, useCommerceLocale } from "../commercial-kit";
 
 const endpoints = [
   { method: "GET", path: "/api/v1/me", ar: "هوية المفتاح الحالي", en: "Current API principal" },
+  { method: "GET", path: "/api/v1/notifications", ar: "إشعارات الحساب", en: "In-app notifications" },
+  { method: "POST", path: "/api/v1/notifications/read", ar: "تعليم الإشعارات كمقروءة", en: "Mark notifications read" },
   { method: "GET", path: "/api/v1/spaces", ar: "قائمة المحافظ المتاحة للمفتاح", en: "List wallets visible to the key" },
   { method: "POST", path: "/api/v1/spaces", ar: "إنشاء محفظة", en: "Create a wallet" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}", ar: "تفاصيل محفظة واحدة", en: "Single wallet summary" },
@@ -14,8 +16,13 @@ const endpoints = [
   { method: "GET", path: "/api/v1/spaces/{spaceId}/circle", ar: "دورة الجمعية والأدوار", en: "Circle config and turns" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/circle/order", ar: "تعيين ترتيب أدوار الجمعية", en: "Set circle payout order" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/circle/turns/{turnId}/complete", ar: "صرف دور الجمعية الحالي", en: "Complete current circle turn" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/shares/receipt", ar: "رابط مشاركة إيصال", en: "Create receipt share link" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/shares/member-statement", ar: "مشاركة كشف عضو", en: "Share member statement" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/shares/statement", ar: "مشاركة كشف الجمعية", en: "Share association statement" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/transactions?limit=50", ar: "حركات المحفظة", en: "Wallet transactions" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/transactions", ar: "إنشاء دخل/مصروف/مساهمة", en: "Create income/expense/contribution" },
+  { method: "GET", path: "/api/v1/spaces/{spaceId}/transactions/{transactionId}", ar: "تفاصيل حركة", en: "Get transaction" },
+  { method: "GET", path: "/api/v1/spaces/{spaceId}/transactions/{transactionId}/revisions", ar: "سجل تعديلات الحركة", en: "Transaction revisions" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/members", ar: "أعضاء الجمعية/المحفظة", en: "Wallet members" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/members", ar: "إضافة عضو", en: "Create a member" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/invites", ar: "دعوة عضو بالبريد", en: "Invite a member by email" },
@@ -57,7 +64,7 @@ export default function DevelopersPage() {
         <button type="button" onClick={() => setLocale(ar ? "en" : "ar")}>{ar ? "EN" : "عربي"}</button>
       </header>
       <article>
-        <small>WAZEN API · v1 · 2026-08-24 · phase 17</small>
+        <small>WAZEN API · v1 · 2026-08-24 · phase 18</small>
         <h1>{ar ? "واجهة برمجة المؤسسات" : "Business API"}</h1>
         <p className="lead">
           {ar
