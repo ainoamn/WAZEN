@@ -30,11 +30,11 @@ test("phase 21 personal accounts, bank link, and linked transfer", () => {
   assert.match(hooks, /space\.bank_unlinked/);
   assert.match(hooks, /space\.transferred/);
   assert.match(hooks, /account\.created/);
-  assert.match(openapi, /phase21/);
+  assert.match(openapi, /1\.0\.0-phase\d+/);
   assert.match(openapi, /\/accounts/);
   assert.match(openapi, /\/links\/bank/);
   assert.match(openapi, /\/links\/transfer/);
-  assert.match(developers, /phase 21/);
+  assert.match(developers, /phase \d+/);
   assert.match(developers, /\/accounts/);
   assert.match(developers, /\/links\/transfer/);
   assert.match(security, /space\.transferred/);

@@ -40,6 +40,9 @@ const DEFAULT_EVENTS = [
   "space.bank_unlinked",
   "space.transferred",
   "account.created",
+  "account.updated",
+  "account.deleted",
+  "rule.created",
 ];
 
 export function SecurityClient() {

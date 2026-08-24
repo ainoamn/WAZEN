@@ -35,6 +35,9 @@ export const INTEGRATION_WEBHOOK_EVENTS = [
   "space.bank_unlinked",
   "space.transferred",
   "account.created",
+  "account.updated",
+  "account.deleted",
+  "rule.created",
 ] as const;
 
 export type IntegrationWebhookEvent = (typeof INTEGRATION_WEBHOOK_EVENTS)[number];
