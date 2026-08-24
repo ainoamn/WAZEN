@@ -332,12 +332,14 @@ test("dashboard GET skips ledger rebuild; current schema skips oauth/bhd patches
   const postStart = dashboard.indexOf("export async function POST");
   const loadFn = dashboard.slice(loadStart, getStart);
   const getFn = dashboard.slice(getStart, postStart);
-  const postTail = dashboard.slice(dashboard.lastIndexOf("const freshUser"));
   assert.match(loadFn, /if \(options\?\.refreshDerived !== false\)/);
   assert.match(loadFn, /await reconcileMemberLedgers\(db, ids\)/);
   assert.match(getFn, /refreshDerived: false/);
-  assert.match(postTail, /refreshDerived: false/);
-  assert.match(postTail, /DASHBOARD_REVISION_FAILED/);
+  // POST returns revision only — client keeps optimistic dashboard state after writes.
+  const postFn = dashboard.slice(postStart);
+  assert.match(postFn, /readDashboardRevision/);
+  assert.match(postFn, /Mutations must return immediately/);
+  assert.doesNotMatch(postFn, /loadDashboard\(/);
   const revisionFn = dashboard.slice(
     dashboard.indexOf("async function readDashboardRevision"),
     dashboard.indexOf("function unauthenticatedResponse"),

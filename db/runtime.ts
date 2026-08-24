@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -305,6 +305,32 @@ async function ensureSchemaPatches(db: D1Database) {
     db.prepare("CREATE INDEX IF NOT EXISTS idx_transaction_revisions_txn ON transaction_revisions(transaction_id, edited_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_transactions_space_status_date ON transactions(space_id, status, occurred_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_transactions_member ON transactions(member_id, occurred_at)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS user_notifications (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      severity TEXT NOT NULL DEFAULT 'info',
+      title_ar TEXT NOT NULL,
+      title_en TEXT NOT NULL,
+      body_ar TEXT NOT NULL,
+      body_en TEXT NOT NULL,
+      href TEXT,
+      read_at TEXT,
+      created_at TEXT NOT NULL,
+      dedupe_key TEXT NOT NULL,
+      UNIQUE(user_id, dedupe_key)
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_user_notifications_user ON user_notifications(user_id, created_at)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      user_agent TEXT,
+      created_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id)"),
   ]);
   await applyPostgresRls(db);
   const personalRuleCols = await db.prepare("PRAGMA table_info(personal_rules)").all<{ name: string }>();

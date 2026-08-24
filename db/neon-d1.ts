@@ -1,6 +1,7 @@
 import { neonConfig, Pool, type QueryResultRow } from "@neondatabase/serverless";
 import ws from "ws";
 import { isSkippedSqliteTrigger, translateSqliteToPostgres } from "./sql-translate";
+import { getDbRequestUserId, isRlsEnforceEnabled } from "../lib/db-request-context";
 
 // Vercel/Node serverless needs an explicit WebSocket constructor for Neon Pool.
 neonConfig.webSocketConstructor = ws;
@@ -12,6 +13,20 @@ type D1Result<T> = {
 };
 
 type SqlArg = string | number | bigint | boolean | null | Uint8Array;
+
+type PoolClientLike = {
+  query: (sql: string, params?: unknown[]) => Promise<{ rows: QueryResultRow[]; rowCount: number | null }>;
+  release: () => void;
+};
+
+async function applyRequestRls(client: PoolClientLike) {
+  if (!isRlsEnforceEnabled()) return;
+  const userId = getDbRequestUserId();
+  await client.query("SELECT set_config('app.bypass_rls', $1, true)", [userId ? "0" : "1"]);
+  if (userId) {
+    await client.query("SELECT set_config('app.user_id', $1, true)", [userId]);
+  }
+}
 
 function normalizeArgs(values: unknown[]): SqlArg[] {
   return values.map((value): SqlArg => {
@@ -50,7 +65,22 @@ class NeonPreparedStatement {
     if (isSkippedSqliteTrigger(sql)) {
       return { rows: [] as QueryResultRow[], rowCount: 0 };
     }
-    return this.pool.query(sql, this.args);
+    if (!isRlsEnforceEnabled() || !getDbRequestUserId()) {
+      return this.pool.query(sql, this.args);
+    }
+    const client = await this.pool.connect() as unknown as PoolClientLike;
+    try {
+      await client.query("BEGIN");
+      await applyRequestRls(client);
+      const result = await client.query(sql, this.args);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch { /* ignore */ }
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async first<T = Record<string, unknown>>(column?: string): Promise<T | null> {
@@ -87,9 +117,10 @@ class NeonD1Database {
   }
 
   async batch<T = unknown>(statements: NeonPreparedStatement[]) {
-    const client = await this.pool.connect();
+    const client = await this.pool.connect() as unknown as PoolClientLike;
     try {
       await client.query("BEGIN");
+      await applyRequestRls(client);
       const results: D1Result<T>[] = [];
       for (const statement of statements) {
         const sql = translateSqliteToPostgres(statement.originalSql);

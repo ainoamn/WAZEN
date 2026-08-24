@@ -457,6 +457,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .audit-log-list li span, .audit-log-list li em { opacity: 0.72; font-style: normal; }
 .pwa-install-card .primary-button { margin-top: 8px; }
 label.secondary-button { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: white; color: var(--ink); font-size: 13px; font-weight: 700; }
+.notification-item.is-unread strong { font-weight: 850; }
+.developers-code { direction: ltr; text-align: left; background: #0f172a; color: #e2e8f0; padding: 14px 16px; border-radius: 12px; overflow: auto; font-size: 13px; }
+.developers-endpoints { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.developers-endpoints li { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.developers-endpoints code { width: fit-content; padding: 2px 8px; border-radius: 999px; background: #ecfdf5; color: #065f46; font-weight: 800; font-size: 12px; }
+.developers-endpoints strong { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; }
 .plan-feature-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
 .plan-quota-summary { margin: 14px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
 .plan-quota-summary > div { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #f8faf8; }

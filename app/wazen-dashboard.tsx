@@ -20,6 +20,7 @@ import { apiFetch } from "../lib/client-api";
 import { buildAccountStatementHtml, type StatementTxnFilter } from "../lib/account-statement";
 import { mapBankCsvRow, parseBankCsv } from "../lib/ledger-csv";
 import { PwaInstallCard } from "../components/pwa/PwaInstallCard";
+import { PushNotifyCard } from "../components/pwa/PushNotifyCard";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor, currencyScale, parseMoneyToMinor } from "../lib/money";
 import { memberDisplayCreditMinor, netMemberClaim, pendingSettlementsWithCredit } from "../lib/finance";
@@ -161,7 +162,7 @@ type CircleTurn = { id: string; space_id: string; member_id: string; display_nam
 type TripExpense = { id: string; space_id: string; paid_by_member_id: string; paid_by_name: string; amount_minor: number; description: string; occurred_at: string; paid_from?: string };
 type ExpenseSplit = { id: string; expense_id: string; member_id: string; display_name: string; share_minor: number };
 type Settlement = { id: string; space_id: string; from_member_id: string; to_member_id: string; from_member_name: string | null; to_member_name: string | null; amount_minor: number; status: string };
-type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; workspaceAlerts?: Array<{ id: string; severity: "info" | "warning" | "danger"; href?: string; ar: string; en: string }>; entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; dailyTransactionLimit?: number; monthlyTransactionLimit?: number; printLimit?: number; status: string; usage?: { transactionsTotal: number; transactionsToday: number; transactionsThisMonth: number; printsThisMonth: number }; warnings?: Array<{ kind: string; used: number; limit: number }>; retention?: { graceEndsAt: string; spaceCount: number; spaceTypes: string[]; userVisibleDays: number } | null }; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
+type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; workspaceAlerts?: Array<{ id: string; severity: "info" | "warning" | "danger"; href?: string; ar: string; en: string }>; notifications?: Array<{ id: string; severity: "info" | "warning" | "danger"; titleAr: string; titleEn: string; bodyAr: string; bodyEn: string; href?: string | null; readAt?: string | null; createdAt: string }>; entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; dailyTransactionLimit?: number; monthlyTransactionLimit?: number; printLimit?: number; status: string; usage?: { transactionsTotal: number; transactionsToday: number; transactionsThisMonth: number; printsThisMonth: number }; warnings?: Array<{ kind: string; used: number; limit: number }>; retention?: { graceEndsAt: string; spaceCount: number; spaceTypes: string[]; userVisibleDays: number } | null }; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
 
 const copy = {
   ar: {
@@ -937,7 +938,26 @@ function NotificationBell({ data, locale, onOpen }: { data: DashboardData; local
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const items = useMemo(() => {
-    const rows: Array<{ id: string; title: string; detail: string; view: ViewId; spaceId: string }> = [];
+    const rows: Array<{ id: string; title: string; detail: string; view?: ViewId; spaceId?: string; href?: string | null; unread?: boolean }> = [];
+    for (const note of data.notifications ?? []) {
+      rows.push({
+        id: `note:${note.id}`,
+        title: locale === "ar" ? note.titleAr : note.titleEn,
+        detail: locale === "ar" ? note.bodyAr : note.bodyEn,
+        href: note.href,
+        unread: !note.readAt,
+      });
+    }
+    for (const alert of data.workspaceAlerts ?? []) {
+      if (rows.some((row) => row.id === `alert:${alert.id}` || row.id === `note:${alert.id}`)) continue;
+      rows.push({
+        id: `alert:${alert.id}`,
+        title: locale === "ar" ? alert.ar : alert.en,
+        detail: "",
+        href: alert.href,
+        unread: true,
+      });
+    }
     for (const space of data.spaces) {
       if (space.balance_minor >= 0) continue;
       rows.push({
@@ -1002,8 +1022,10 @@ function NotificationBell({ data, locale, onOpen }: { data: DashboardData; local
         spaceId: space.id,
       });
     }
-    return rows;
+    return rows.slice(0, 40);
   }, [data, locale]);
+
+  const unread = items.filter((item) => item.unread).length || items.length;
 
   useEffect(() => {
     if (!open) return;
@@ -1014,11 +1036,20 @@ function NotificationBell({ data, locale, onOpen }: { data: DashboardData; local
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    void apiFetch("/api/push", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "markRead" }),
+    }).catch(() => {});
+  }, [open]);
+
   return (
     <div className="notification-wrap" ref={wrapRef}>
       <button type="button" className="icon-button notification-button" aria-label={locale === "ar" ? "التنبيهات" : "Notifications"} onClick={() => setOpen((current) => !current)}>
         <Bell size={19} />
-        {items.length > 0 && <i />}
+        {unread > 0 && <i />}
       </button>
       {open && (
         <div className="notification-panel" role="menu">
@@ -1027,15 +1058,19 @@ function NotificationBell({ data, locale, onOpen }: { data: DashboardData; local
           {items.map((item) => (
             <button
               type="button"
-              className="notification-item"
+              className={`notification-item${item.unread ? " is-unread" : ""}`}
               key={item.id}
               onClick={() => {
-                onOpen(item.view, item.spaceId);
+                if (item.href) {
+                  window.location.assign(item.href);
+                  return;
+                }
+                if (item.view && item.spaceId) onOpen(item.view, item.spaceId);
                 setOpen(false);
               }}
             >
               <strong>{item.title}</strong>
-              <span>{item.detail}</span>
+              {item.detail ? <span>{item.detail}</span> : null}
             </button>
           ))}
         </div>
@@ -2371,6 +2406,7 @@ function SettingsView({ user, locale, entitlements, spaces, onLogout, onSaved }:
     </form>
     <PasswordChangeCard locale={locale} />
     <PwaInstallCard locale={locale} />
+    <PushNotifyCard locale={locale} />
     <PlanFeaturesPanel locale={locale} entitlements={entitlements} />
     <article className={`panel${canExport ? "" : " is-plan-locked"}`}>
       <div className="panel-heading">

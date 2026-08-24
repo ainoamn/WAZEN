@@ -1,0 +1,55 @@
+import { ensureSchema, getRawDb } from "../../../../../../db/runtime";
+import { authenticateRequest } from "../../../../../../lib/auth";
+import { assertApiScope, authorizeSpace } from "../../../../../../lib/authorization";
+import { runWithDbUser } from "../../../../../../lib/db-request-context";
+import { errorResponse, ApiError } from "../../../../../../lib/security";
+import { formatMoneyMinor } from "../../../../../../lib/money";
+
+export const runtime = "nodejs";
+
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ spaceId: string }> },
+) {
+  try {
+    const { spaceId } = await context.params;
+    const db = getRawDb();
+    await ensureSchema(db);
+    const user = await authenticateRequest(db, request);
+    if (!user) throw new ApiError(401, "AUTHENTICATION_REQUIRED");
+    const url = new URL(request.url);
+    const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") ?? 50) || 50));
+    return await runWithDbUser(user.id, async () => {
+      assertApiScope(user, "wallets:read");
+      const space = await authorizeSpace(db, user, spaceId, "read");
+      const rows = await db.prepare(`
+        SELECT id, kind, allocation, amount_minor, description_ar, description_en, member_id, status, occurred_at
+        FROM transactions WHERE space_id=? AND COALESCE(status,'approved')<>'superseded'
+        ORDER BY occurred_at DESC LIMIT ?
+      `).bind(spaceId, limit).all<{
+        id: string; kind: string; allocation: string; amount_minor: number;
+        description_ar: string; description_en: string; member_id: string | null;
+        status: string | null; occurred_at: string;
+      }>();
+      const currency = space.currency || "OMR";
+      return Response.json({
+        api: "wazen.v1",
+        spaceId,
+        transactions: (rows.results ?? []).map((txn) => ({
+          id: txn.id,
+          kind: txn.kind,
+          allocation: txn.allocation,
+          amountMinor: Number(txn.amount_minor) || 0,
+          amountLabel: formatMoneyMinor(Number(txn.amount_minor) || 0, currency, "en"),
+          descriptionAr: txn.description_ar,
+          descriptionEn: txn.description_en,
+          memberId: txn.member_id,
+          status: txn.status ?? "approved",
+          occurredAt: txn.occurred_at,
+        })),
+      }, { headers: { "Cache-Control": "no-store", "X-Wazen-Api": "v1" } });
+    });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}

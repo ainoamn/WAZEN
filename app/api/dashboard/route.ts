@@ -15,6 +15,8 @@ import { buildMemberStatementWhatsAppMessage, buildAssociationStatementWhatsAppM
 import type { MemberLedgerFocus } from "../../../lib/member-ledger";
 import type { StatementTxnFilter } from "../../../lib/account-statement";
 import { computeWorkspaceAlerts } from "../../../lib/workspace-alerts";
+import { upsertUserNotifications, listUserNotifications } from "../../../lib/user-notifications";
+import { runWithDbUser } from "../../../lib/db-request-context";
 import { accountLiveBalance, dueAtForPeriod, monthKeysForRule, occurrenceLedgerStatus } from "../../../lib/personal-finance";
 import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-forecast";
 import { filterSpacesByPlan } from "../../../lib/plan-features";
@@ -1094,70 +1096,91 @@ export async function GET(request: Request) {
     await ensureSchema(db);
     const user = await authenticateRequest(db, request);
     if (!user) return unauthenticatedResponse();
-    assertApiScope(user, "wallets:read");
-    const url = new URL(request.url);
-    if (url.searchParams.get("view") === "revision") {
-      const revision = await readDashboardRevision(db, user.id);
-      return Response.json({ revision }, { headers: { "Cache-Control": "no-store" } });
-    }
-    await ensureUser(db, user);
-    const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
-    const entitlements = await getActivePlanEntitlements(db, user.id);
-    let dashboard: Awaited<ReturnType<typeof loadDashboard>>;
-    try {
-      dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features });
-    } catch (error) {
-      console.error(JSON.stringify({
-        level: "error",
-        code: "DASHBOARD_LOAD_FAILED",
-        message: error instanceof Error ? error.message : String(error),
-        at: new Date().toISOString(),
-      }));
-      dashboard = {
-        spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [],
-        settlements: [], installments: [], contacts: [], periods: [], periodEvents: [], personalAccounts: [], personalRules: [],
-        personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [],
-      };
-    }
-    const role = await platformRoleOf(db, user.id);
-    let issued: { csrfToken: string; expiresAt: Date } | null = null;
-    try {
-      issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
-    } catch (error) {
-      console.error(JSON.stringify({
-        level: "error",
-        code: "CSRF_ISSUE_FAILED",
-        message: error instanceof Error ? error.message : String(error),
-        at: new Date().toISOString(),
-      }));
-    }
-    const headers = new Headers({ "Cache-Control": "no-store" }); if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
-    let revision = "";
-    try {
-      revision = await readDashboardRevision(db, user.id);
-    } catch {
-      revision = "";
-    }
-    return Response.json({
-      user: { ...user, role },
-      entitlements,
-      revision,
-      workspaceAlerts: computeWorkspaceAlerts({
+    return await runWithDbUser(user.id, async () => {
+      assertApiScope(user, "wallets:read");
+      const url = new URL(request.url);
+      if (url.searchParams.get("view") === "revision") {
+        const revision = await readDashboardRevision(db, user.id);
+        return Response.json({ revision }, { headers: { "Cache-Control": "no-store" } });
+      }
+      await ensureUser(db, user);
+      const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
+      const entitlements = await getActivePlanEntitlements(db, user.id);
+      let dashboard: Awaited<ReturnType<typeof loadDashboard>>;
+      try {
+        dashboard = await loadDashboard(db, user.id, { refreshDerived: false, features: entitlements.features });
+      } catch (error) {
+        console.error(JSON.stringify({
+          level: "error",
+          code: "DASHBOARD_LOAD_FAILED",
+          message: error instanceof Error ? error.message : String(error),
+          at: new Date().toISOString(),
+        }));
+        dashboard = {
+          spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [],
+          settlements: [], installments: [], contacts: [], periods: [], periodEvents: [], personalAccounts: [], personalRules: [],
+          personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [],
+        };
+      }
+      const role = await platformRoleOf(db, user.id);
+      let issued: { csrfToken: string; expiresAt: Date } | null = null;
+      try {
+        issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
+      } catch (error) {
+        console.error(JSON.stringify({
+          level: "error",
+          code: "CSRF_ISSUE_FAILED",
+          message: error instanceof Error ? error.message : String(error),
+          at: new Date().toISOString(),
+        }));
+      }
+      const headers = new Headers({ "Cache-Control": "no-store" }); if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
+      let revision = "";
+      try {
+        revision = await readDashboardRevision(db, user.id);
+      } catch {
+        revision = "";
+      }
+      const workspaceAlerts = computeWorkspaceAlerts({
         spaces: dashboard.spaces,
         members: dashboard.members,
         periods: (dashboard.periods ?? []) as Array<{ space_id: string; status: string; label: string }>,
         planStatus: entitlements.status,
         graceEndsAt: entitlements.retention?.graceEndsAt ?? null,
-      }),
-      ...dashboard,
-    }, { headers });
+      });
+      try {
+        await upsertUserNotifications(db, user.id, workspaceAlerts);
+      } catch { /* notifications are best-effort */ }
+      let notifications: Awaited<ReturnType<typeof listUserNotifications>> = [];
+      try {
+        notifications = await listUserNotifications(db, user.id, 20);
+      } catch { /* optional */ }
+      return Response.json({
+        user: { ...user, role },
+        entitlements,
+        revision,
+        workspaceAlerts,
+        notifications: notifications.map((row) => ({
+          id: row.id,
+          severity: row.severity,
+          titleAr: row.title_ar,
+          titleEn: row.title_en,
+          bodyAr: row.body_ar,
+          bodyEn: row.body_en,
+          href: row.href,
+          readAt: row.read_at,
+          createdAt: row.created_at,
+        })),
+        ...dashboard,
+      }, { headers });
+    });
   } catch (error) {
     return errorResponse(error);
   }
 }
 
 export async function POST(request: Request) {
-  let claimed: { db: D1Database; userId: string; key: string } | null = null;
+  const claimRef: { current: { db: D1Database; userId: string; key: string } | null } = { current: null };
   let notification: { emailQueued: boolean; whatsappUrl: string | null; transactionId: string; receiptUrl?: string | null } | undefined;
   try {
     enforceWriteRequest(request);
@@ -1166,6 +1189,7 @@ export async function POST(request: Request) {
     await rateLimit(db, request, "dashboard-write", 120, 60);
     const user = await authenticateRequest(db, request);
     if (!user) return unauthenticatedResponse();
+    return await runWithDbUser(user.id, async () => {
     if (user.authType === "session") await enforceCsrf(db, request);
     await ensureUser(db, user);
     const payload = (await request.json()) as Record<string, unknown>;
@@ -1176,7 +1200,7 @@ export async function POST(request: Request) {
       const body = replay && typeof replay === "object" ? replay : { ok: true };
       return Response.json({ ok: true, ...body }, { headers: { "Cache-Control": "no-store" } });
     }
-    claimed = { db, userId: user.id, key: idempotencyKey };
+    claimRef.current = { db, userId: user.id, key: idempotencyKey };
 
     if (action === "linkWallet") {
       const parsed = z.object({ hubSpaceId: z.string().min(1).max(120), linkedSpaceId: z.string().min(1).max(120) }).safeParse(payload);
@@ -2111,7 +2135,7 @@ export async function POST(request: Request) {
           status: string;
         }>();
       await completeIdempotency(db, user.id, idempotencyKey, { ok: true });
-      claimed = null;
+      claimRef.current = null;
       return Response.json({ revisions: rows.results }, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "completeCircleTurn") {
       const parsed = z.object({ turnId: z.string().min(1).max(120) }).safeParse(payload);
@@ -2728,7 +2752,7 @@ export async function POST(request: Request) {
         entitlements = await getActivePlanEntitlements(db, user.id);
       }
       await completeIdempotency(db, user.id, idempotencyKey, { ok: true });
-      claimed = null;
+      claimRef.current = null;
       return Response.json({ ok: true, entitlements }, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "createReceiptShare") {
       const parsed = z.object({
@@ -2767,7 +2791,7 @@ export async function POST(request: Request) {
         receiptUrl,
       };
       await completeIdempotency(db, user.id, idempotencyKey, { ok: true, notification });
-      claimed = null;
+      claimRef.current = null;
       return Response.json({ ok: true, notification }, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "createMemberStatementShare") {
       const parsed = z.object({
@@ -2820,7 +2844,7 @@ export async function POST(request: Request) {
         receiptUrl: statementUrl,
       };
       await completeIdempotency(db, user.id, idempotencyKey, { ok: true, notification });
-      claimed = null;
+      claimRef.current = null;
       return Response.json({ ok: true, notification }, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "createAssociationStatementShare") {
       const parsed = z.object({
@@ -2875,7 +2899,7 @@ export async function POST(request: Request) {
         metadata: { spaceId: space.id, filter, locale },
       }).catch(() => {});
       await completeIdempotency(db, user.id, idempotencyKey, { ok: true, notification });
-      claimed = null;
+      claimRef.current = null;
       return Response.json({ ok: true, notification }, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "listSpaceAudit") {
       const parsed = z.object({
@@ -2915,7 +2939,7 @@ export async function POST(request: Request) {
         })),
       };
       await completeIdempotency(db, user.id, idempotencyKey, response);
-      claimed = null;
+      claimRef.current = null;
       return Response.json(response, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "sendReceipt") {
       const parsed = z.object({
@@ -2968,7 +2992,7 @@ export async function POST(request: Request) {
         receiptUrl,
       };
       await completeIdempotency(db, user.id, idempotencyKey, { ok: true, notification });
-      claimed = null;
+      claimRef.current = null;
       return Response.json({ ok: true, notification }, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "updateUserProfile") {
       const parsed = z.object({
@@ -3001,11 +3025,12 @@ export async function POST(request: Request) {
       ...(notification ? { notification } : {}),
     };
     await completeIdempotency(db, user.id, idempotencyKey, response);
-    claimed = null;
+    claimRef.current = null;
     return Response.json(response, { headers: { "Cache-Control": "no-store" } });
+    });
   } catch (error) {
-    if (claimed) {
-      try { await releaseIdempotency(claimed.db, claimed.userId, claimed.key); } catch { /* maintenance job will clean stale claims */ }
+    if (claimRef.current) {
+      try { await releaseIdempotency(claimRef.current.db, claimRef.current.userId, claimRef.current.key); } catch { /* maintenance job will clean stale claims */ }
     }
     return errorResponse(error);
   }

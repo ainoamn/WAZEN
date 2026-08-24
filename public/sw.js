@@ -62,3 +62,40 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+self.addEventListener("push", (event) => {
+  let title = "WAZEN";
+  let body = "";
+  let url = "/home";
+  try {
+    const data = event.data ? event.data.json() : {};
+    title = String(data.title || title);
+    body = String(data.body || "");
+    url = String(data.url || url);
+  } catch {
+    body = event.data ? event.data.text() : "";
+  }
+  event.waitUntil(self.registration.showNotification(title, {
+    body,
+    icon: "/brand/favicon-192.png",
+    badge: "/brand/favicon-192.png",
+    data: { url },
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = event.notification.data?.url || "/home";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("focus" in client) {
+          void client.navigate?.(target);
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(target);
+      return undefined;
+    }),
+  );
+});
