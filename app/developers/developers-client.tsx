@@ -19,6 +19,11 @@ const endpoints = [
   { method: "GET", path: "/api/v1/spaces/{spaceId}/installments", ar: "جدول الأقساط", en: "Installment schedule" },
   { method: "PATCH", path: "/api/v1/spaces/{spaceId}/members/{memberId}", ar: "تحديث دور/حالة عضو", en: "Update member role/status" },
   { method: "GET", path: "/api/v1/documents", ar: "قائمة المستندات", en: "List documents" },
+  { method: "POST", path: "/api/v1/documents", ar: "إنشاء مستند", en: "Create a document" },
+  { method: "GET", path: "/api/v1/spaces/{spaceId}/settlements", ar: "قائمة التسويات", en: "List settlements" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/settlements/{settlementId}/settle", ar: "تنفيذ تسوية", en: "Settle a settlement" },
+  { method: "GET", path: "/api/v1/spaces/{spaceId}/periods", ar: "الفترات المحاسبية", en: "Accounting periods" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/periods", ar: "إغلاق الفترة المحاسبية", en: "Close accounting period" },
   { method: "GET", path: "/api/v1/openapi", ar: "مواصفات OpenAPI", en: "OpenAPI snapshot" },
 ] as const;
 
@@ -37,7 +42,7 @@ export default function DevelopersPage() {
         <button type="button" onClick={() => setLocale(ar ? "en" : "ar")}>{ar ? "EN" : "عربي"}</button>
       </header>
       <article>
-        <small>WAZEN API · v1 · 2026-08-24 · phase 13</small>
+        <small>WAZEN API · v1 · 2026-08-24 · phase 14</small>
         <h1>{ar ? "واجهة برمجة المؤسسات" : "Business API"}</h1>
         <p className="lead">
           {ar

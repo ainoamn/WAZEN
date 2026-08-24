@@ -6,8 +6,8 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Wazen Business API",
-    version: "1.0.0-phase13",
-    description: "Scoped Bearer API (wzn_…) for wallets, members, contributions, and webhooks.",
+    version: "1.0.0-phase14",
+    description: "Scoped Bearer API (wzn_…) for wallets, members, contributions, settlements, periods, and documents.",
   },
   servers: [{ url: "https://wazen.bhd-om.com" }],
   paths: {
@@ -32,8 +32,19 @@ const spec = {
     "/api/v1/spaces/{spaceId}/contributions": { post: { summary: "Record contribution", security: [{ bearerAuth: [] }] } },
     "/api/v1/spaces/{spaceId}/surplus/withdraw": { post: { summary: "Withdraw surplus", security: [{ bearerAuth: [] }] } },
     "/api/v1/spaces/{spaceId}/installments": { get: { summary: "Installment schedule", security: [{ bearerAuth: [] }] } },
+    "/api/v1/spaces/{spaceId}/settlements": { get: { summary: "List settlements", security: [{ bearerAuth: [] }] } },
+    "/api/v1/spaces/{spaceId}/settlements/{settlementId}/settle": {
+      post: { summary: "Settle reimbursement/share", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/periods": {
+      get: { summary: "List accounting periods", security: [{ bearerAuth: [] }] },
+      post: { summary: "Close accounting period", security: [{ bearerAuth: [] }] },
+    },
     "/api/v1/spaces/{spaceId}/audit": { get: { summary: "Audit log", security: [{ bearerAuth: [] }] } },
-    "/api/v1/documents": { get: { summary: "List documents", security: [{ bearerAuth: [] }] } },
+    "/api/v1/documents": {
+      get: { summary: "List documents", security: [{ bearerAuth: [] }] },
+      post: { summary: "Create document", security: [{ bearerAuth: [] }] },
+    },
   },
   components: {
     securitySchemes: {

@@ -17,6 +17,9 @@ const DEFAULT_EVENTS = [
   "surplus.withdrawn",
   "contribution.recorded",
   "member.updated",
+  "document.created",
+  "settlement.settled",
+  "period.closed",
 ];
 
 export function SecurityClient() {

@@ -12,6 +12,9 @@ export const INTEGRATION_WEBHOOK_EVENTS = [
   "surplus.withdrawn",
   "contribution.recorded",
   "member.updated",
+  "document.created",
+  "settlement.settled",
+  "period.closed",
 ] as const;
 
 export type IntegrationWebhookEvent = (typeof INTEGRATION_WEBHOOK_EVENTS)[number];
