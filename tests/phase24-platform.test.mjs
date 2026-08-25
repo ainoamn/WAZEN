@@ -25,11 +25,11 @@ test("phase 24 occurrence queue, assign account, and defer", () => {
   assert.match(hooks, /occurrence\.queued/);
   assert.match(hooks, /occurrence\.updated/);
   assert.match(hooks, /occurrence\.deferred/);
-  assert.match(openapi, /phase24/);
+  assert.match(openapi, /1\.0\.0-phase\d+/);
   assert.match(openapi, /\/occurrences\"/);
   assert.match(openapi, /\/occurrences\/\{occurrenceId\}/);
   assert.match(openapi, /\/defer/);
-  assert.match(developers, /phase 24/);
+  assert.match(developers, /phase \d+/);
   assert.match(developers, /\/occurrences\"/);
   assert.match(developers, /\/defer/);
   assert.match(security, /occurrence\.queued/);

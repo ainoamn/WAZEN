@@ -63,6 +63,9 @@ const endpoints = [
   { method: "POST", path: "/api/v1/spaces/{spaceId}/expenses/resplit", ar: "إعادة تقسيم المصروفات", en: "Resplit unsettled expenses" },
   { method: "POST", path: "/api/v1/spaces/{spaceId}/expenses/{expenseId}/void", ar: "إلغاء مصروف جماعي", en: "Void trip/group expense" },
   { method: "PATCH", path: "/api/v1/spaces/{spaceId}/members/{memberId}", ar: "تحديث دور/حالة عضو", en: "Update member role/status" },
+  { method: "GET", path: "/api/v1/spaces/{spaceId}/members/{memberId}/ledger", ar: "سجل/كشف العضو", en: "Member live ledger" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/members/{memberId}/pay/preview", ar: "معاينة توزيع الدفع الذكي", en: "Preview smart pay allocation" },
+  { method: "POST", path: "/api/v1/spaces/{spaceId}/members/{memberId}/smart-pay", ar: "تنفيذ المحاسب الذكي", en: "Apply smart pay" },
   { method: "GET", path: "/api/v1/documents", ar: "قائمة المستندات", en: "List documents" },
   { method: "POST", path: "/api/v1/documents", ar: "إنشاء مستند", en: "Create a document" },
   { method: "GET", path: "/api/v1/spaces/{spaceId}/settlements", ar: "قائمة التسويات", en: "List settlements" },
@@ -89,7 +92,7 @@ export default function DevelopersPage() {
         <button type="button" onClick={() => setLocale(ar ? "en" : "ar")}>{ar ? "EN" : "عربي"}</button>
       </header>
       <article>
-        <small>WAZEN API · v1 · 2026-08-24 · phase 24</small>
+        <small>WAZEN API · v1 · 2026-08-25 · phase 25</small>
         <h1>{ar ? "واجهة برمجة المؤسسات" : "Business API"}</h1>
         <p className="lead">
           {ar

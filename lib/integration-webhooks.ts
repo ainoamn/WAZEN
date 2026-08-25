@@ -45,6 +45,7 @@ export const INTEGRATION_WEBHOOK_EVENTS = [
   "occurrence.queued",
   "occurrence.updated",
   "occurrence.deferred",
+  "smart_pay.applied",
 ] as const;
 
 export type IntegrationWebhookEvent = (typeof INTEGRATION_WEBHOOK_EVENTS)[number];

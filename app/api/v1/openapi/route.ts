@@ -6,8 +6,8 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Wazen Business API",
-    version: "1.0.0-phase24",
-    description: "Scoped Bearer API (wzn_…) for wallets, accounts, rules, occurrences, links, transfers, members, circles, shares, notifications, webhooks, contributions, settlements, periods, expenses, exports, and documents.",
+    version: "1.0.0-phase25",
+    description: "Scoped Bearer API (wzn_…) for wallets, accounts, rules, occurrences, smart pay, member ledger, links, transfers, members, circles, shares, notifications, webhooks, contributions, settlements, periods, expenses, exports, and documents.",
   },
   servers: [{ url: "https://wazen.bhd-om.com" }],
   paths: {
@@ -105,6 +105,15 @@ const spec = {
     },
     "/api/v1/spaces/{spaceId}/members/{memberId}": {
       patch: { summary: "Update member role/status", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/members/{memberId}/ledger": {
+      get: { summary: "Member live ledger / statement lines", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/members/{memberId}/pay/preview": {
+      post: { summary: "Preview smart pay allocations", security: [{ bearerAuth: [] }] },
+    },
+    "/api/v1/spaces/{spaceId}/members/{memberId}/smart-pay": {
+      post: { summary: "Apply smart pay with installment allocation", security: [{ bearerAuth: [] }] },
     },
     "/api/v1/spaces/{spaceId}/invites": { post: { summary: "Invite member", security: [{ bearerAuth: [] }] } },
     "/api/v1/spaces/{spaceId}/contributions": { post: { summary: "Record contribution", security: [{ bearerAuth: [] }] } },

@@ -50,6 +50,7 @@ const DEFAULT_EVENTS = [
   "occurrence.queued",
   "occurrence.updated",
   "occurrence.deferred",
+  "smart_pay.applied",
 ];
 
 export function SecurityClient() {
