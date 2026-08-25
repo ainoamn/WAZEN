@@ -355,6 +355,36 @@ function planFeaturesOf(data?: DashboardData | null) {
   return data?.entitlements?.features?.length ? data.entitlements.features : ["personal"];
 }
 
+const DISMISSED_ALERTS_KEY = "wazen-dismissed-workspace-alerts";
+
+function readDismissedWorkspaceAlerts(): Record<string, string> {
+  try {
+    const raw = window.localStorage.getItem(DISMISSED_ALERTS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function writeDismissedWorkspaceAlerts(next: Record<string, string>) {
+  try {
+    window.localStorage.setItem(DISMISSED_ALERTS_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
+}
+
+function alertDismissFingerprint(alert: { id: string; ar: string; en: string }) {
+  return `${alert.id}::${alert.ar}::${alert.en}`;
+}
+
 function graceSpaceTypesOf(data?: DashboardData | null) {
   return data?.entitlements?.retention?.spaceTypes ?? [];
 }
@@ -1101,7 +1131,26 @@ export function WazenDashboard() {
   const [editingExpenseId, setEditingExpenseId] = useState("");
   const [toast, setToast] = useState("");
   const [upgradeNotice, setUpgradeNotice] = useState<{ title: string; text: string } | null>(null);
+  const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, string>>({});
   const t = copy[locale];
+
+  useEffect(() => {
+    setDismissedAlerts(readDismissedWorkspaceAlerts());
+  }, []);
+
+  const visibleWorkspaceAlerts = useMemo(() => {
+    const alerts = data?.workspaceAlerts ?? [];
+    if (!alerts.length) return [];
+    return alerts.filter((alert) => dismissedAlerts[alert.id] !== alertDismissFingerprint(alert));
+  }, [data?.workspaceAlerts, dismissedAlerts]);
+
+  const dismissWorkspaceAlert = (alert: { id: string; ar: string; en: string }) => {
+    setDismissedAlerts((current) => {
+      const next = { ...current, [alert.id]: alertDismissFingerprint(alert) };
+      writeDismissedWorkspaceAlerts(next);
+      return next;
+    });
+  };
 
   const setData = (next: DashboardData) => {
     writeDashboardCache(next);
@@ -1370,12 +1419,22 @@ export function WazenDashboard() {
           </div>
         ) : null}
 
-        {data.workspaceAlerts?.length ? (
+        {visibleWorkspaceAlerts.length ? (
           <div className="workspace-alerts" role="status">
-            {data.workspaceAlerts.map((alert) => (
+            {visibleWorkspaceAlerts.map((alert) => (
               <div key={alert.id} className={`workspace-alert is-${alert.severity}`}>
                 <p>{locale === "ar" ? alert.ar : alert.en}</p>
-                {alert.href ? <a href={alert.href}>{locale === "ar" ? "فتح" : "Open"}</a> : null}
+                <div className="workspace-alert-actions">
+                  {alert.href ? <a href={alert.href}>{locale === "ar" ? "فتح" : "Open"}</a> : null}
+                  <button
+                    type="button"
+                    className="workspace-alert-dismiss"
+                    aria-label={locale === "ar" ? "إغلاق الملاحظة" : "Dismiss alert"}
+                    onClick={() => dismissWorkspaceAlert(alert)}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
