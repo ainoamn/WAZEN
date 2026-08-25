@@ -83,7 +83,8 @@ import {
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { FormEvent, ReactNode, CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, startTransition } from "react";
+import { createPortal } from "react-dom";
 import { prefetchAppRoutes, warmAppCaches } from "../lib/app-prefetch";
 import { completeClientLogout } from "../lib/client-logout";
 import { clientSignInPath } from "../lib/client-sign-in";
@@ -162,7 +163,7 @@ type CircleTurn = { id: string; space_id: string; member_id: string; display_nam
 type TripExpense = { id: string; space_id: string; paid_by_member_id: string; paid_by_name: string; amount_minor: number; description: string; occurred_at: string; paid_from?: string };
 type ExpenseSplit = { id: string; expense_id: string; member_id: string; display_name: string; share_minor: number };
 type Settlement = { id: string; space_id: string; from_member_id: string; to_member_id: string; from_member_name: string | null; to_member_name: string | null; amount_minor: number; status: string };
-type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; workspaceAlerts?: Array<{ id: string; severity: "info" | "warning" | "danger"; href?: string; ar: string; en: string }>; notifications?: Array<{ id: string; severity: "info" | "warning" | "danger"; titleAr: string; titleEn: string; bodyAr: string; bodyEn: string; href?: string | null; readAt?: string | null; createdAt: string }>; entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; dailyTransactionLimit?: number; monthlyTransactionLimit?: number; printLimit?: number; status: string; usage?: { transactionsTotal: number; transactionsToday: number; transactionsThisMonth: number; printsThisMonth: number }; warnings?: Array<{ kind: string; used: number; limit: number }>; retention?: { graceEndsAt: string; spaceCount: number; spaceTypes: string[]; userVisibleDays: number } | null }; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
+type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; workspaceAlerts?: Array<{ id: string; severity: "info" | "warning" | "danger"; href?: string; ar: string; en: string }>; notifications?: Array<{ id: string; severity: "info" | "warning" | "danger"; titleAr: string; titleEn: string; bodyAr: string; bodyEn: string; href?: string | null; readAt?: string | null; createdAt: string; dedupeKey?: string | null }>; entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; dailyTransactionLimit?: number; monthlyTransactionLimit?: number; printLimit?: number; status: string; usage?: { transactionsTotal: number; transactionsToday: number; transactionsThisMonth: number; printsThisMonth: number }; warnings?: Array<{ kind: string; used: number; limit: number }>; retention?: { graceEndsAt: string; spaceCount: number; spaceTypes: string[]; userVisibleDays: number } | null }; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
 
 const copy = {
   ar: {
@@ -964,32 +965,61 @@ function viewForSpaceType(type: string): ViewId {
   return "society";
 }
 
+function notificationDetail(title: string, body: string) {
+  const trimmedTitle = title.trim();
+  const trimmedBody = body.trim();
+  if (!trimmedBody) return "";
+  if (trimmedBody === trimmedTitle) return "";
+  if (trimmedTitle && trimmedBody.startsWith(trimmedTitle) && trimmedBody.length <= trimmedTitle.length + 8) return "";
+  return trimmedBody;
+}
+
 function NotificationBell({ data, locale, onOpen }: { data: DashboardData; locale: Locale; onOpen: (view: ViewId, spaceId: string) => void }) {
   const [open, setOpen] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null);
+  const [mounted, setMounted] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const items = useMemo(() => {
-    const rows: Array<{ id: string; title: string; detail: string; view?: ViewId; spaceId?: string; href?: string | null; unread?: boolean }> = [];
+    const rows: Array<{ id: string; title: string; detail: string; view?: ViewId; spaceId?: string; href?: string | null; unread?: boolean; dedupe?: string }> = [];
+    const seen = new Set<string>();
+    const remember = (key: string) => {
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    };
+
     for (const note of data.notifications ?? []) {
+      const dedupe = note.dedupeKey?.trim() || "";
+      if (dedupe && !remember(`dedupe:${dedupe}`)) continue;
+      const title = locale === "ar" ? note.titleAr : note.titleEn;
+      const body = locale === "ar" ? note.bodyAr : note.bodyEn;
+      if (!remember(`text:${title}`)) continue;
       rows.push({
         id: `note:${note.id}`,
-        title: locale === "ar" ? note.titleAr : note.titleEn,
-        detail: locale === "ar" ? note.bodyAr : note.bodyEn,
+        title,
+        detail: notificationDetail(title, body),
         href: note.href,
         unread: !note.readAt,
+        dedupe: dedupe || undefined,
       });
     }
     for (const alert of data.workspaceAlerts ?? []) {
-      if (rows.some((row) => row.id === `alert:${alert.id}` || row.id === `note:${alert.id}`)) continue;
+      if (!remember(`dedupe:${alert.id}`)) continue;
+      const title = locale === "ar" ? alert.ar : alert.en;
+      if (!remember(`text:${title}`)) continue;
       rows.push({
         id: `alert:${alert.id}`,
-        title: locale === "ar" ? alert.ar : alert.en,
+        title,
         detail: "",
         href: alert.href,
         unread: true,
+        dedupe: alert.id,
       });
     }
     for (const space of data.spaces) {
       if (space.balance_minor >= 0) continue;
+      if (!remember(`deficit:${space.id}`)) continue;
       rows.push({
         id: `deficit:${space.id}`,
         title: locale === "ar" ? `عجز في ${nameOf(space, locale)}` : `Deficit in ${nameOf(space, locale)}`,
@@ -1003,6 +1033,7 @@ function NotificationBell({ data, locale, onOpen }: { data: DashboardData; local
     for (const settlement of data.settlements.filter((item) => item.status === "pending")) {
       const space = data.spaces.find((item) => item.id === settlement.space_id);
       if (!space) continue;
+      if (!remember(`settle:${settlement.id}`)) continue;
       const toFund = String(settlement.to_member_id).startsWith("space:");
       const fromFund = String(settlement.from_member_id).startsWith("space:");
       const title = toFund
@@ -1021,6 +1052,7 @@ function NotificationBell({ data, locale, onOpen }: { data: DashboardData; local
     for (const occurrence of (data.personalOccurrences ?? []).filter((item) => item.status === "pending")) {
       const space = data.spaces.find((item) => item.id === occurrence.space_id);
       if (!space) continue;
+      if (!remember(`occ:${occurrence.id}`)) continue;
       rows.push({
         id: `occ:${occurrence.id}`,
         title: locale === "ar" ? `تأكيد: ${occurrence.rule_name ?? "بند"}` : `Confirm: ${occurrence.rule_name ?? "item"}`,
@@ -1032,6 +1064,7 @@ function NotificationBell({ data, locale, onOpen }: { data: DashboardData; local
     for (const event of (data.familyEvents ?? []).filter((item) => item.needsBoost && item.status === "planned")) {
       const space = data.spaces.find((item) => item.id === event.space_id);
       if (!space) continue;
+      if (!remember(`family:${event.id}`)) continue;
       rows.push({
         id: `family:${event.id}`,
         title: locale === "ar" ? `عجز متوقع: ${event.title}` : `Forecast shortfall: ${event.title}`,
@@ -1044,6 +1077,7 @@ function NotificationBell({ data, locale, onOpen }: { data: DashboardData; local
       const flow = spaceMonthlyFlow(space, data);
       const forecast = projectCashflow({ balanceMinor: space.balance_minor, monthlyInflowMinor: flow.inflow, monthlyOutflowMinor: flow.outflow, months: 3 });
       if (!forecast.needsBoost) continue;
+      if (!remember(`forecast:${space.id}`)) continue;
       rows.push({
         id: `forecast:${space.id}`,
         title: locale === "ar" ? `عجز متوقع في ${nameOf(space, locale)}` : `Forecast shortfall in ${nameOf(space, locale)}`,
@@ -1058,12 +1092,61 @@ function NotificationBell({ data, locale, onOpen }: { data: DashboardData; local
   const unread = items.filter((item) => item.unread).length || items.length;
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
     if (!open) return;
     const onDoc = (event: MouseEvent) => {
-      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (wrapRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPanelStyle(null);
+      return;
+    }
+    const updatePosition = () => {
+      const anchor = wrapRef.current?.getBoundingClientRect();
+      if (!anchor) return;
+      const gutter = 12;
+      const width = Math.min(360, Math.max(260, window.innerWidth - (gutter * 2)));
+      const prefersRtl = document.documentElement.dir === "rtl";
+      const desiredLeft = prefersRtl ? anchor.left : anchor.right - width;
+      const left = Math.min(Math.max(desiredLeft, gutter), window.innerWidth - width - gutter);
+      const top = Math.min(
+        Math.max(gutter, anchor.bottom + 8),
+        window.innerHeight - gutter - 120,
+      );
+      setPanelStyle({
+        position: "fixed",
+        top,
+        left,
+        width,
+        right: "auto",
+        insetInline: "auto",
+        zIndex: 120,
+      });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
   }, [open]);
 
   useEffect(() => {
@@ -1075,36 +1158,41 @@ function NotificationBell({ data, locale, onOpen }: { data: DashboardData; local
     }).catch(() => {});
   }, [open]);
 
+  const panel = open && panelStyle && mounted
+    ? createPortal(
+      <div className="notification-panel" role="menu" ref={panelRef} style={panelStyle}>
+        <h3>{locale === "ar" ? "التنبيهات" : "Notifications"}</h3>
+        {items.length === 0 && <p className="notification-empty">{locale === "ar" ? "لا توجد تنبيهات حالياً." : "No alerts right now."}</p>}
+        {items.map((item) => (
+          <button
+            type="button"
+            className={`notification-item${item.unread ? " is-unread" : ""}`}
+            key={item.id}
+            onClick={() => {
+              if (item.href) {
+                window.location.assign(item.href);
+                return;
+              }
+              if (item.view && item.spaceId) onOpen(item.view, item.spaceId);
+              setOpen(false);
+            }}
+          >
+            <strong>{item.title}</strong>
+            {item.detail ? <span>{item.detail}</span> : null}
+          </button>
+        ))}
+      </div>,
+      document.body,
+    )
+    : null;
+
   return (
     <div className="notification-wrap" ref={wrapRef}>
-      <button type="button" className="icon-button notification-button" aria-label={locale === "ar" ? "التنبيهات" : "Notifications"} onClick={() => setOpen((current) => !current)}>
+      <button type="button" className="icon-button notification-button" aria-expanded={open} aria-label={locale === "ar" ? "التنبيهات" : "Notifications"} onClick={() => setOpen((current) => !current)}>
         <Bell size={19} />
         {unread > 0 && <i />}
       </button>
-      {open && (
-        <div className="notification-panel" role="menu">
-          <h3>{locale === "ar" ? "التنبيهات" : "Notifications"}</h3>
-          {items.length === 0 && <p className="notification-empty">{locale === "ar" ? "لا توجد تنبيهات حالياً." : "No alerts right now."}</p>}
-          {items.map((item) => (
-            <button
-              type="button"
-              className={`notification-item${item.unread ? " is-unread" : ""}`}
-              key={item.id}
-              onClick={() => {
-                if (item.href) {
-                  window.location.assign(item.href);
-                  return;
-                }
-                if (item.view && item.spaceId) onOpen(item.view, item.spaceId);
-                setOpen(false);
-              }}
-            >
-              <strong>{item.title}</strong>
-              {item.detail ? <span>{item.detail}</span> : null}
-            </button>
-          ))}
-        </div>
-      )}
+      {panel}
     </div>
   );
 }

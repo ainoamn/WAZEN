@@ -154,9 +154,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .notification-button { position: relative; }
 .notification-button i { position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; background: #dc2626; border: 1px solid white; border-radius: 50%; }
 .notification-wrap { position: relative; }
-.notification-panel { position: absolute; top: calc(100% + 8px); inset-inline-end: 0; width: min(360px, calc(100vw - 24px)); max-width: calc(100dvw - 24px); max-height: min(420px, 70vh); overflow: auto; overscroll-behavior: contain; background: white; border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); z-index: 60; padding: 10px; }
+.notification-panel { position: fixed; z-index: 120; width: min(360px, calc(100vw - 24px)); max-width: calc(100dvw - 24px); max-height: min(420px, 70vh); overflow: auto; overscroll-behavior: contain; background: white; border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 10px; }
 .notification-panel h3 { margin: 4px 8px 10px; font-size: 14px; }
-.notification-item { width: 100%; border: 0; background: #f8faf8; border-radius: 10px; padding: 10px 12px; text-align: start; cursor: pointer; display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; color: inherit; font: inherit; }
+.notification-item { width: 100%; border: 0; background: #f8faf8; border-radius: 10px; padding: 10px 12px; text-align: start; cursor: pointer; display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; color: inherit; font: inherit; position: relative; z-index: 0; }
 .notification-item:hover { background: #eef5f2; }
 .notification-item strong { font-size: 13px; overflow-wrap: anywhere; }
 .notification-item span { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
@@ -1066,20 +1066,22 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
   .notification-wrap,
   .user-menu,
   .action-menu {
-    position: static;
+    position: relative;
   }
   .notification-panel,
   .user-menu-panel {
     position: fixed;
+    max-height: min(70dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 88px));
+    overflow: auto;
+    overscroll-behavior: contain;
+    z-index: 120;
+  }
+  .user-menu-panel {
     inset-inline: 12px;
     top: calc(env(safe-area-inset-top, 0px) + 72px);
     width: auto;
     max-width: none;
     min-width: 0;
-    max-height: min(70dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 88px));
-    overflow: auto;
-    overscroll-behavior: contain;
-    z-index: 85;
   }
   .action-menu-panel {
     position: fixed;

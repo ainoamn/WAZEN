@@ -1037,6 +1037,7 @@ export async function GET(request: Request) {
           href: row.href,
           readAt: row.read_at,
           createdAt: row.created_at,
+          dedupeKey: row.dedupe_key,
         })),
         ...dashboard,
       }, { headers });
