@@ -3,7 +3,7 @@
 import { appOrigin } from "./app-origin";
 import { formatMoneyMinor } from "./money";
 import { buildReceiptWhatsAppMessage, signReceiptShareToken } from "./receipt-share";
-import { drainEmailOutbox, isEmailProviderConfigured } from "./email-provider";
+import { flushOutboxByIds, isEmailProviderConfigured } from "./email-provider";
 
 export async function queueMemberPaymentReceiptEmail(input: {
   db: D1Database;
@@ -37,10 +37,11 @@ export async function queueMemberPaymentReceiptEmail(input: {
     receiptUrl,
   });
   const createdAt = new Date().toISOString();
+  const outboxId = crypto.randomUUID();
   await input.db.prepare(
     "INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)",
   ).bind(
-    crypto.randomUUID(),
+    outboxId,
     email,
     "member_receipt",
     JSON.stringify({
@@ -56,7 +57,7 @@ export async function queueMemberPaymentReceiptEmail(input: {
   ).run();
 
   if (input.flush !== false && isEmailProviderConfigured()) {
-    await drainEmailOutbox(input.db, 5).catch(() => {});
+    await flushOutboxByIds(input.db, [outboxId]).catch(() => {});
   }
   return { queued: true as const, receiptUrl };
 }

@@ -2978,10 +2978,11 @@ export async function POST(request: Request) {
       const createdAt = now();
       if (parsed.data.channel === "email" || parsed.data.channel === "both") {
         if (!member.email) throw new ApiError(400, "MEMBER_EMAIL_MISSING");
+        const outboxId = crypto.randomUUID();
         await db.prepare("INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)")
-          .bind(crypto.randomUUID(), member.email, "member_receipt", JSON.stringify({ displayName: member.display_name, message, html: message.replaceAll("\n", "<br/>"), transactionId: txn.id, receiptUrl }), createdAt).run();
-        const { drainEmailOutbox } = await import("../../../lib/email-provider");
-        await drainEmailOutbox(db, 5).catch(() => {});
+          .bind(outboxId, member.email, "member_receipt", JSON.stringify({ displayName: member.display_name, message, html: message.replaceAll("\n", "<br/>"), transactionId: txn.id, receiptUrl, link: receiptUrl }), createdAt).run();
+        const { flushOutboxByIds } = await import("../../../lib/email-provider");
+        await flushOutboxByIds(db, [outboxId]).catch(() => {});
       }
       const whatsappNumber = member.phone ? toWhatsAppNumber(member.phone) : "";
       if ((parsed.data.channel === "whatsapp" || parsed.data.channel === "both") && !whatsappNumber) throw new ApiError(400, "MEMBER_PHONE_MISSING");

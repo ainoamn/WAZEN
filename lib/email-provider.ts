@@ -188,6 +188,40 @@ export async function deliverOutboxEmail(message: EmailOutboxRow, db?: D1Databas
   await sendViaWebhook(message.recipient, message.template, data);
 }
 
+async function markOutboxSent(db: D1Database, id: string) {
+  await db.prepare("UPDATE email_outbox SET status='sent',attempts=attempts+1,sent_at=? WHERE id=? AND status='pending'")
+    .bind(new Date().toISOString(), id).run();
+}
+
+async function markOutboxAttemptFailed(db: D1Database, id: string) {
+  await db.prepare("UPDATE email_outbox SET attempts=attempts+1,status=CASE WHEN attempts+1>=5 THEN 'failed' ELSE 'pending' END WHERE id=?")
+    .bind(id).run();
+}
+
+/** Deliver only the given outbox rows (never other users' queued mail). */
+export async function flushOutboxByIds(db: D1Database, ids: string[]) {
+  const unique = [...new Set(ids.map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!unique.length) return { skipped: true as const, reason: "NO_IDS", processed: 0, sent: 0 };
+  if (!isEmailProviderConfigured()) {
+    return { skipped: true as const, reason: "EMAIL_PROVIDER_NOT_CONFIGURED", processed: 0, sent: 0 };
+  }
+  let sent = 0;
+  for (const id of unique) {
+    const message = await db.prepare(
+      "SELECT id,recipient,template,payload_json,attempts FROM email_outbox WHERE id=? AND status='pending' AND attempts<5 LIMIT 1",
+    ).bind(id).first<EmailOutboxRow>();
+    if (!message) continue;
+    try {
+      await deliverOutboxEmail(message, db);
+      await markOutboxSent(db, message.id);
+      sent += 1;
+    } catch {
+      await markOutboxAttemptFailed(db, message.id);
+    }
+  }
+  return { skipped: false as const, processed: unique.length, sent };
+}
+
 /** Drain pending rows from email_outbox. Shared by /api/jobs/email and /api/jobs/tick. */
 export async function drainEmailOutbox(db: D1Database, limit = 20) {
   if (!isEmailProviderConfigured()) {
@@ -200,12 +234,10 @@ export async function drainEmailOutbox(db: D1Database, limit = 20) {
   for (const message of pending.results ?? []) {
     try {
       await deliverOutboxEmail(message, db);
-      await db.prepare("UPDATE email_outbox SET status='sent',attempts=attempts+1,sent_at=? WHERE id=? AND status='pending'")
-        .bind(new Date().toISOString(), message.id).run();
+      await markOutboxSent(db, message.id);
       sent += 1;
     } catch {
-      await db.prepare("UPDATE email_outbox SET attempts=attempts+1,status=CASE WHEN attempts+1>=5 THEN 'failed' ELSE 'pending' END WHERE id=?")
-        .bind(message.id).run();
+      await markOutboxAttemptFailed(db, message.id);
     }
   }
   return { skipped: false as const, processed: pending.results?.length ?? 0, sent };

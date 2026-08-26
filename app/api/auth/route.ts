@@ -193,13 +193,14 @@ export async function POST(request: Request) {
       const account = recoveryEmail ? await db.prepare("SELECT id,display_name FROM users WHERE email=? COLLATE NOCASE").bind(recoveryEmail).first<{ id: string; display_name: string }>() : null;
       if (account) {
         const token = createSessionToken(); const createdAt = new Date().toISOString(); const origin = appOrigin(request);
+        const outboxId = crypto.randomUUID();
         await db.batch([
           db.prepare("UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL").bind(createdAt, account.id),
           db.prepare("INSERT INTO password_reset_tokens (id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)").bind(crypto.randomUUID(), account.id, await sha256(token), new Date(Date.now() + 3_600_000).toISOString(), createdAt),
-          db.prepare("INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)").bind(crypto.randomUUID(), recoveryEmail, "reset_password", JSON.stringify({ displayName: account.display_name, link: `${origin}/reset-password?token=${encodeURIComponent(token)}` }), createdAt),
+          db.prepare("INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)").bind(outboxId, recoveryEmail, "reset_password", JSON.stringify({ displayName: account.display_name, link: `${origin}/reset-password?token=${encodeURIComponent(token)}` }), createdAt),
         ]);
-        const { drainEmailOutbox } = await import("../../../lib/email-provider");
-        await drainEmailOutbox(db, 5).catch(() => {});
+        const { flushOutboxByIds } = await import("../../../lib/email-provider");
+        await flushOutboxByIds(db, [outboxId]).catch(() => {});
       }
       return Response.json({ ok: true });
     }
@@ -228,20 +229,21 @@ export async function POST(request: Request) {
       const passwordData = await hashPassword(password);
       const verificationToken = createSessionToken(); const verificationHash = await sha256(verificationToken);
       const origin = appOrigin(request);
+      const outboxId = crypto.randomUUID();
       await db.batch([
         db.prepare("INSERT INTO users (id,email,display_name,locale,currency,created_at) VALUES (?,?,?,'ar','OMR',?)").bind(userId, email, displayName, createdAt),
         db.prepare("INSERT INTO customer_profiles (user_id,status,country,last_seen_at,created_at) VALUES (?,'active','OM',?,?)").bind(userId, createdAt, createdAt),
         db.prepare("INSERT INTO auth_credentials (user_id,password_hash,password_salt,password_iterations,created_at,updated_at) VALUES (?,?,?,?,?,?)").bind(userId, passwordData.hash, passwordData.salt, passwordData.iterations, createdAt, createdAt),
         db.prepare("INSERT INTO email_verification_tokens (id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)").bind(crypto.randomUUID(), userId, verificationHash, new Date(Date.now() + 86_400_000).toISOString(), createdAt),
-        db.prepare("INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)").bind(crypto.randomUUID(), email, "verify_email", JSON.stringify({ displayName, link: `${origin}/verify-email?token=${encodeURIComponent(verificationToken)}` }), createdAt),
+        db.prepare("INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)").bind(outboxId, email, "verify_email", JSON.stringify({ displayName, link: `${origin}/verify-email?token=${encodeURIComponent(verificationToken)}` }), createdAt),
       ]);
       await ensureBootstrapPlatformRole(db, userId, email, createdAt);
       await ensureDefaultTenant(db, { id: userId, displayName });
       await writeAudit(db, { userId, action: "auth.registered", entityType: "user", entityId: userId, createdAt });
       const emailReady = isEmailProviderConfigured();
       if (emailReady) {
-        const { drainEmailOutbox } = await import("../../../lib/email-provider");
-        await drainEmailOutbox(db, 5).catch(() => {});
+        const { flushOutboxByIds } = await import("../../../lib/email-provider");
+        await flushOutboxByIds(db, [outboxId]).catch(() => {});
       }
       if (htmlForm) {
         const verifyPath = !emailReady && !isProductionLikeRuntime()

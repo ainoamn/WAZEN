@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 22;
+const SCHEMA_VERSION = 23;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -169,6 +169,13 @@ async function ensureSchemaPatches(db: D1Database) {
     const { ensureEmailTemplatesTable } = await import("../lib/email-template-store");
     await ensureEmailTemplatesTable(db);
   } catch { /* best-effort */ }
+  // One-time: cancel backlog left by the old "flush next 5 pending" bug (schema < 23).
+  try {
+    const prior = await db.prepare("SELECT version FROM schema_meta WHERE id=1").first<{ version: number }>();
+    if (!prior || Number(prior.version) < 23) {
+      await db.prepare("UPDATE email_outbox SET status='cancelled' WHERE status='pending'").run();
+    }
+  } catch { /* table may not exist yet on empty DB */ }
   try { await ensureWalletLinkTables(db); } catch { /* created in batch on empty DBs that failed early */ }
   const memberColumns = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
   if (!memberColumns.results.some((column) => column.name === "phone")) {
