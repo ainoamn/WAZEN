@@ -742,11 +742,15 @@ export function ReceiptChannelModal({
       }
       onDone(locale === "ar"
         ? (channel === "email"
-          ? "تم تجهيز الإيصال حسب بيانات المساهم المسجّلة."
-          : "تم فتح واتساب بالنص ورابط الإيصال (فتح / تنزيل PDF).")
+          ? "تم إرسال الإيصال إلى بريد المساهم المسجّل."
+          : channel === "both"
+            ? "تم إرسال البريد وفُتح واتساب برابط الإيصال."
+            : "تم فتح واتساب بالنص ورابط الإيصال.")
         : (channel === "email"
-          ? "Receipt prepared using the member’s saved contact details."
-          : "WhatsApp opened with the receipt text and PDF link."));
+          ? "Receipt emailed to the member’s saved address."
+          : channel === "both"
+            ? "Email sent and WhatsApp opened with the receipt link."
+            : "WhatsApp opened with the receipt text and link."));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "SEND_FAILED");
     } finally {

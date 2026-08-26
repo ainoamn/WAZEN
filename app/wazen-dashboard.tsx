@@ -931,33 +931,6 @@ function openTransactionReceipt(transaction: Transaction, data: DashboardData, l
   })();
 }
 
-async function shareTransactionWhatsApp(transaction: Transaction, data: DashboardData, locale: Locale) {
-  if (!planHasFeature(planFeaturesOf(data), "whatsapp")) {
-    goToPricing();
-    return;
-  }
-  try {
-    const response = await apiFetch("/api/dashboard", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        action: "createReceiptShare",
-        idempotencyKey: crypto.randomUUID(),
-        transactionId: transaction.id,
-        locale,
-      }),
-    });
-    const result = await response.json() as { error?: string; notification?: { whatsappUrl?: string | null } };
-    if (!response.ok) throw new Error(result.error ?? "SHARE_FAILED");
-    if (result.notification?.whatsappUrl) {
-      openWhatsAppUrl(result.notification.whatsappUrl);
-    }
-  } catch {
-    window.alert(locale === "ar" ? "تعذر تجهيز رابط الإيصال لواتساب." : "Could not prepare the WhatsApp receipt link.");
-  }
-}
-
-
 function viewForSpaceType(type: string): ViewId {
   if (type === "personal") return "personal";
   if (type === "household") return "household";
@@ -2006,6 +1979,19 @@ function TransactionRow({ transaction, data, locale, onEdit, onVoid }: { transac
   const locked = isPeriodLocked((data.periods ?? []).filter((period) => period.space_id === transaction.space_id), transaction.occurred_at);
   const edited = transactionWasEdited(transaction);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
+  const features = planFeaturesOf(data);
+  const canEmail = planHasFeature(features, "email");
+  const canWhatsapp = planHasFeature(features, "whatsapp");
+  const canSend = canEmail || canWhatsapp;
+  const openSend = () => {
+    if (!canSend) { goToPricing(); return; }
+    if (!member) {
+      window.alert(locale === "ar" ? "اربط العملية بعضو مسجّل لإرسال الإيصال." : "Link the transaction to a member to send the receipt.");
+      return;
+    }
+    setSendOpen(true);
+  };
   return <div className={`transaction-row${isLiveTransaction(transaction) ? "" : " is-inactive"}`}>
     <div className={`transaction-icon ${transaction.kind}`}><Icon size={17} /></div>
     <div className="transaction-main">
@@ -2015,12 +2001,37 @@ function TransactionRow({ transaction, data, locale, onEdit, onVoid }: { transac
     <strong className={positive ? "amount-positive" : "amount-negative"}>{positive ? "+" : "−"}{formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale)}</strong>
     <div className="transaction-actions">
       <button type="button" title={locale === "ar" ? "إيصال" : "Receipt"} onClick={() => openTransactionReceipt(transaction, data, locale)}><Printer size={15} /></button>
-      <button type="button" className={planHasFeature(planFeaturesOf(data), "whatsapp") ? "" : "is-plan-locked"} title="WhatsApp" onClick={() => { void shareTransactionWhatsApp(transaction, data, locale); }}><MessageCircle size={15} />{planHasFeature(planFeaturesOf(data), "whatsapp") ? null : <PlanLockBadge locale={locale} />}</button>
+      <button type="button" className={canSend ? "" : "is-plan-locked"} title={locale === "ar" ? "إرسال" : "Send"} onClick={openSend}><MessageCircle size={15} />{canSend ? null : <PlanLockBadge locale={locale} />}</button>
       {edited && <button type="button" title={locale === "ar" ? "سجل التعديلات" : "Edit history"} onClick={() => setHistoryOpen(true)}><History size={15} /></button>}
       {onEdit && !locked && isLiveTransaction(transaction) && <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => onEdit(transaction)}><Pencil size={15} /></button>}
       {onVoid && !locked && isLiveTransaction(transaction) && <button type="button" className="danger" title={locale === "ar" ? "إلغاء" : "Void"} onClick={() => onVoid(transaction)}><Trash2 size={15} /></button>}
     </div>
     {historyOpen && <TransactionHistoryModal data={data} locale={locale} transaction={transaction} onClose={() => setHistoryOpen(false)} />}
+    {sendOpen && member && (
+      <ReceiptChannelModal
+        member={{
+          id: member.id,
+          space_id: member.space_id,
+          display_name: member.display_name,
+          email: member.email ?? null,
+          phone: member.phone ?? null,
+          role: member.role,
+          due_minor: Number(member.due_minor ?? 0),
+          paid_minor: Number(member.paid_minor ?? 0),
+          extra_minor: Number(member.extra_minor ?? 0),
+          avatar: member.avatar,
+        }}
+        locale={locale}
+        transactionId={transaction.id}
+        canEmail={canEmail}
+        canWhatsapp={canWhatsapp}
+        onClose={() => setSendOpen(false)}
+        onDone={(message) => {
+          setSendOpen(false);
+          window.alert(message);
+        }}
+      />
+    )}
   </div>;
 }
 
@@ -2278,7 +2289,7 @@ function TransactionsView({ data, locale, onChanged }: { data: DashboardData; lo
     }
   };
   return <div className="dashboard-stack">
-    <div className="section-title"><div><h2>{t.allTransactions}</h2><p>{locale === "ar" ? "عدّل أو احذف أو أرسل إيصالاً عبر واتساب" : "Edit, void, or share a receipt on WhatsApp"}</p></div>
+    <div className="section-title"><div><h2>{t.allTransactions}</h2><p>{locale === "ar" ? "عدّل أو احذف أو أرسل إيصالاً بالبريد أو واتساب" : "Edit, void, or send a receipt by email or WhatsApp"}</p></div>
       <button className={`secondary-button${canExport ? "" : " is-plan-locked"}`} onClick={() => {
         if (!canExport) { goToPricing(); return; }
         const csv = [["date", "description", "kind", "amount_minor"], ...data.transactions.map((row) => [row.occurred_at, transactionName(row, locale), row.kind, String(row.amount_minor)])]
