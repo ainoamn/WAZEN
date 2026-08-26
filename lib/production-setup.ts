@@ -1,3 +1,5 @@
+import { isEmailProviderConfigured } from "./email-provider";
+
 export function isProductionLikeRuntime() {
   return process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
 }
@@ -37,7 +39,7 @@ export function productionSetupChecklist(): ProductionSetupItem[] {
   const hasKeyring = Boolean(process.env.WAZEN_ENCRYPTION_KEYRING?.trim());
   const hasJobSecret = Boolean(process.env.WAZEN_JOB_SECRET?.trim());
   const hasWebhookSecret = Boolean(process.env.WAZEN_PAYMENT_WEBHOOK_SECRET?.trim());
-  const hasEmailProvider = Boolean(process.env.WAZEN_EMAIL_WEBHOOK_URL?.trim() && process.env.WAZEN_EMAIL_WEBHOOK_TOKEN?.trim());
+  const hasEmailProvider = isEmailProviderConfigured();
   const adminEmails = process.env.WAZEN_ADMIN_EMAILS?.trim();
   const risks = productionAuthRisks();
 
@@ -75,10 +77,10 @@ export function productionSetupChecklist(): ProductionSetupItem[] {
     {
       id: "email_provider",
       ok: hasEmailProvider,
-      label: "Email delivery webhook configured",
+      label: "Email delivery configured",
       hint: hasEmailProvider
         ? undefined
-        : "Set WAZEN_EMAIL_WEBHOOK_URL + WAZEN_EMAIL_WEBHOOK_TOKEN (messages stay queued until then)",
+        : "Set RESEND_API_KEY + RESEND_FROM_EMAIL (or legacy WAZEN_EMAIL_WEBHOOK_*)",
     },
     {
       id: "auth_hardening",
