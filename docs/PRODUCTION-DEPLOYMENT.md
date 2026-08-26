@@ -113,14 +113,30 @@ BHD_OAUTH_CLIENT_ID=bhd-wazen
 
 ## البريد والدعوات
 
-الدعوات تُكتب في طابور `email_outbox`. اربط مزود البريد عبر Webhook:
+الطابور: جدول `email_outbox`. الإرسال عبر **Resend** (مفضّل) أو Webhook قديم.
+
+### Resend (موصى به)
+
+1. وثّق النطاق في Resend (DKIM/SPF).
+2. أنشئ API key واحفظه في Vercel فقط (لا ترفعه إلى Git).
+3. اضبط:
+
+```text
+RESEND_API_KEY=re_...
+RESEND_FROM_EMAIL="Wazen <noreply@your-domain.com>"
+```
+
+مهمة `/api/jobs/tick` كل 5 دقائق تصرف الطابور عبر `https://api.resend.com/emails`.
+
+### Webhook قديم (اختياري)
 
 ```text
 WAZEN_EMAIL_WEBHOOK_URL=https://provider.example/send-template
 WAZEN_EMAIL_WEBHOOK_TOKEN=...
 WAZEN_EMAIL_PROVIDER_HOSTS=provider.example
-WAZEN_PAYMENT_PROVIDER_HOSTS=api.payment-provider.example
 ```
+
+يُتجاهل إن وُجد `RESEND_API_KEY` + `RESEND_FROM_EMAIL`.
 
 شغّل المهام عبر Vercel Cron على `/api/jobs/tick` كل 5 دقائق (انظر `vercel.json`)، أو يدوياً:
 
@@ -132,7 +148,8 @@ Authorization: Bearer $WAZEN_JOB_SECRET
 ```
 
 المسارات المنفردة ما زالت متاحة: `POST /api/jobs/email` · `POST /api/jobs/push` · `POST /api/jobs/maintenance`.  
-يستقبل مزود البريد `{ to, template, data }`. مهمة الصيانة تنقل المحافظ منتهية مهلة الـ 15 يوماً إلى أرشيف الإدارة لمدة 60 يوماً ثم تصفّي الأرشيف المنتهي.
+قوالب الطابور: `verify_email` · `reset_password` · `member_invitation` · `member_receipt` · `dues_digest` · `privacy_*`.  
+مهمة الصيانة تنقل المحافظ منتهية مهلة الـ 15 يوماً إلى أرشيف الإدارة لمدة 60 يوماً ثم تصفّي الأرشيف المنتهي.
 
 ## الدفع
 

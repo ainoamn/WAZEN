@@ -18,7 +18,7 @@ Verify: `GET /api/health` with `Authorization: Bearer $WAZEN_JOB_SECRET` → `re
 | Item | Action |
 |------|--------|
 | Sentry | Set `SENTRY_DSN` |
-| Email | `WAZEN_EMAIL_WEBHOOK_*` + cron tick |
+| Email | `RESEND_API_KEY` + `RESEND_FROM_EMAIL` (أو webhook قديم) + cron tick |
 | Web Push | `WAZEN_VAPID_*` |
 | Card pay | Thawani or OmanNet env (manual transfer OK) |
 | RLS | Staging with `WAZEN_RLS_DRY_RUN=1`, then `WAZEN_RLS_ENFORCE=1` |

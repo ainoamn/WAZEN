@@ -30,8 +30,8 @@ export function VerifyEmailClient({
   const waitingCopy =
     delivery === "deferred"
       ? l(
-          "مزوّد البريد غير مضبوط بعد، لذلك لم تُرسل رسالة حقيقية. استخدم رابط التأكيد من شاشة التسجيل أو اضبط WAZEN_EMAIL_WEBHOOK_URL.",
-          "Email delivery is not configured yet, so no real message was sent. Use the confirmation link from signup or set WAZEN_EMAIL_WEBHOOK_URL.",
+          "مزوّد البريد غير مضبوط بعد، لذلك لم تُرسل رسالة حقيقية. استخدم رابط التأكيد من شاشة التسجيل أو اضبط RESEND_API_KEY و RESEND_FROM_EMAIL.",
+          "Email delivery is not configured yet, so no real message was sent. Use the confirmation link from signup or set RESEND_API_KEY and RESEND_FROM_EMAIL.",
         )
       : sent
         ? l("أرسلنا رابطاً صالحاً لمدة 24 ساعة. افحص بريدك.", "We sent a link valid for 24 hours. Check your inbox.")
@@ -64,8 +64,8 @@ export function VerifyEmailClient({
         ) : delivery === "deferred" && !token ? (
           <p className="auth-error" role="status">
             {l(
-              "اضبط إرسال البريد لاحقاً عبر WAZEN_EMAIL_WEBHOOK_URL ثم وظيفة /api/jobs/email.",
-              "Configure email later with WAZEN_EMAIL_WEBHOOK_URL and the /api/jobs/email job.",
+              "اضبط إرسال البريد عبر RESEND_API_KEY و RESEND_FROM_EMAIL ثم مهمة /api/jobs/tick.",
+              "Configure email with RESEND_API_KEY and RESEND_FROM_EMAIL, then the /api/jobs/tick job.",
             )}
           </p>
         ) : null}
