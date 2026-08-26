@@ -497,6 +497,11 @@ label.secondary-button { display: inline-flex; align-items: center; gap: 7px; mi
 .member-detail-meta div { border: 1px solid #e5ebe7; border-radius: 12px; padding: 10px 12px; background: #fbfcfb; }
 .member-detail-meta span { display: block; color: #809089; font-size: 12px; }
 .member-detail-meta b { font-size: 14px; }
+.member-contact-actions { grid-column: 1 / -1; border: 0 !important; background: transparent !important; padding: 0 !important; }
+.member-contact-edit { display: grid; gap: 12px; margin-bottom: 8px; }
+.member-contact-edit label { display: flex; flex-direction: column; gap: 6px; }
+.member-contact-edit label > span { color: #596b64; font-size: 13px; font-weight: 700; }
+.member-contact-edit input { height: 44px; border: 1px solid #dfe5e1; border-radius: 11px; padding: 0 12px; background: #fbfcfb; color: var(--ink); font-size: 15px; }
 .month-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
 .month-chip { border: 1px solid #e5ebe7; border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 4px; background: white; text-align: start; }
 .month-chip.paid { border-color: #9ad7c6; background: #f1fbf7; }

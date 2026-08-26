@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckCircle2, Clock3, Mail, MessageCircle, Printer, Sparkles, X } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import OmrSymbol from "../brand/OmrSymbol";
 import { apiFetch } from "../../lib/client-api";
 import { buildMemberLedger, buildMemberLedgerHtml, filterMemberLedgerLines, type MemberLedgerFocus } from "../../lib/member-ledger";
@@ -55,7 +55,7 @@ function money(minor: number, currency: string, locale: Locale) {
   return formatMoneyMinor(minor, currency || "OMR", locale);
 }
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="modal-card wide-modal" role="dialog" aria-modal="true" aria-label={title}>
@@ -395,6 +395,7 @@ export function MemberPersonProfile({
   onClose,
   onSmartPay,
   onStatementSent,
+  onContactSaved,
   canWhatsapp = true,
 }: {
   records: AssociationMember[];
@@ -411,6 +412,7 @@ export function MemberPersonProfile({
   onClose: () => void;
   onSmartPay: (memberId: string) => void;
   onStatementSent?: (message: string) => void;
+  onContactSaved?: (message: string) => void;
   canWhatsapp?: boolean;
 }) {
   const primary = records[0];
@@ -420,7 +422,18 @@ export function MemberPersonProfile({
     return false;
   }) ?? records[0];
   const [spaceId, setSpaceId] = useState<string | null>(preferred?.space_id ?? null);
+  const [displayName, setDisplayName] = useState(primary?.display_name ?? "");
+  const [email, setEmail] = useState(primary?.email ?? "");
+  const [phone, setPhone] = useState(primary?.phone ?? "");
+  const [savingContact, setSavingContact] = useState(false);
+  const [contactError, setContactError] = useState("");
+  const [editingContact, setEditingContact] = useState(!(primary?.email));
   useEffect(() => { setSpaceId(preferred?.space_id ?? null); }, [preferred?.space_id, focus]);
+  useEffect(() => {
+    setDisplayName(primary?.display_name ?? "");
+    setEmail(primary?.email ?? "");
+    setPhone(primary?.phone ?? "");
+  }, [primary?.id, primary?.display_name, primary?.email, primary?.phone]);
   const selected = records.find((row) => row.space_id === spaceId) ?? null;
   const space = spaces.find((item) => item.id === selected?.space_id);
   const plan = plans.find((item) => item.space_id === selected?.space_id);
@@ -447,18 +460,76 @@ export function MemberPersonProfile({
   const gradeRank = { A: 0, B: 1, C: 2, D: 3 } as Record<string, number>;
   const grade = rates.reduce((worst, row) => (gradeRank[row.grade] > gradeRank[worst] ? row.grade : worst), "A");
   const currency = space?.currency || spaces.find((item) => item.id === primary?.space_id)?.currency || "OMR";
+
+  const saveContact = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!primary || savingContact) return;
+    setSavingContact(true);
+    setContactError("");
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "updateMemberContact",
+          idempotencyKey: crypto.randomUUID(),
+          memberId: primary.id,
+          displayName,
+          email,
+          phone,
+          syncLinked: true,
+        }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "UPDATE_FAILED");
+      setEditingContact(false);
+      onContactSaved?.(locale === "ar" ? "تم حفظ بيانات التواصل" : "Contact details saved");
+    } catch {
+      setContactError(locale === "ar" ? "تعذر حفظ البريد أو الهاتف." : "Could not save email or phone.");
+    } finally {
+      setSavingContact(false);
+    }
+  };
+
   if (!primary) return null;
   return (
     <Modal title={primary.display_name} onClose={onClose}>
       <div className="modal-form">
-        <div className="member-detail-meta">
-          <div><span>{locale === "ar" ? "البريد" : "Email"}</span><b>{primary.email || "—"}</b></div>
-          <div><span>{locale === "ar" ? "الهاتف" : "Phone"}</span><b>{primary.phone || "—"}</b></div>
-          <div><span>{locale === "ar" ? "الحالة" : "Status"}</span><b>{isActive ? (locale === "ar" ? "نشط" : "Active") : (locale === "ar" ? "غير نشط" : "Inactive")}</b></div>
-          <div><span>{locale === "ar" ? "تقييم الانضباط" : "Discipline"}</span><b>{grade} · {avgRate}%</b></div>
-          <div><span>{locale === "ar" ? "عليه" : "Owes"}</span><b>{money(remaining, currency, locale)}</b></div>
-          <div><span>{locale === "ar" ? "المستلم / له" : "Received / credit"}</span><b>{money(paid + extra, currency, locale)} · {money(credit, currency, locale)}</b></div>
-        </div>
+        {editingContact ? (
+          <form className="member-contact-edit" onSubmit={saveContact}>
+            <label>
+              <span>{locale === "ar" ? "الاسم" : "Name"}</span>
+              <input required value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+            </label>
+            <label>
+              <span>{locale === "ar" ? "البريد" : "Email"}</span>
+              <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" dir="ltr" />
+            </label>
+            <label>
+              <span>{locale === "ar" ? "الهاتف" : "Phone"}</span>
+              <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="9689xxxxxxx" dir="ltr" />
+            </label>
+            {contactError ? <p className="modal-error">{contactError}</p> : null}
+            <div className="modal-actions">
+              <button type="button" className="secondary-button" onClick={() => setEditingContact(false)}>{locale === "ar" ? "إلغاء" : "Cancel"}</button>
+              <button type="submit" className="primary-button" disabled={savingContact}>{savingContact ? (locale === "ar" ? "جارٍ الحفظ…" : "Saving…") : (locale === "ar" ? "حفظ التواصل" : "Save contact")}</button>
+            </div>
+          </form>
+        ) : (
+          <div className="member-detail-meta">
+            <div><span>{locale === "ar" ? "البريد" : "Email"}</span><b>{primary.email || "—"}</b></div>
+            <div><span>{locale === "ar" ? "الهاتف" : "Phone"}</span><b>{primary.phone || "—"}</b></div>
+            <div><span>{locale === "ar" ? "الحالة" : "Status"}</span><b>{isActive ? (locale === "ar" ? "نشط" : "Active") : (locale === "ar" ? "غير نشط" : "Inactive")}</b></div>
+            <div><span>{locale === "ar" ? "تقييم الانضباط" : "Discipline"}</span><b>{grade} · {avgRate}%</b></div>
+            <div><span>{locale === "ar" ? "عليه" : "Owes"}</span><b>{money(remaining, currency, locale)}</b></div>
+            <div><span>{locale === "ar" ? "المستلم / له" : "Received / credit"}</span><b>{money(paid + extra, currency, locale)} · {money(credit, currency, locale)}</b></div>
+            <div className="member-contact-actions">
+              <button type="button" className="secondary-button" onClick={() => setEditingContact(true)}>
+                {locale === "ar" ? "تعديل البريد والهاتف" : "Edit email & phone"}
+              </button>
+            </div>
+          </div>
+        )}
         <p className="modal-note">{locale === "ar" ? "اضغط جمعية لعرض الكشف التفصيلي داخلها." : "Tap an association to open its detailed statement."}</p>
         <div className="assoc-chip-list">
           {records.map((row) => {

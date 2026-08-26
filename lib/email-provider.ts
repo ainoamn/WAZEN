@@ -17,7 +17,7 @@ type RenderedEmail = {
 };
 
 function env(name: string) {
-  return process.env[name]?.trim() || "";
+  return process.env[name]?.trim().replace(/^["']+|["']+$/g, "") || "";
 }
 
 /** True when Resend or the legacy webhook bridge is configured. */

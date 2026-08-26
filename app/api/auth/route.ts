@@ -198,6 +198,8 @@ export async function POST(request: Request) {
           db.prepare("INSERT INTO password_reset_tokens (id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)").bind(crypto.randomUUID(), account.id, await sha256(token), new Date(Date.now() + 3_600_000).toISOString(), createdAt),
           db.prepare("INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)").bind(crypto.randomUUID(), recoveryEmail, "reset_password", JSON.stringify({ displayName: account.display_name, link: `${origin}/reset-password?token=${encodeURIComponent(token)}` }), createdAt),
         ]);
+        const { drainEmailOutbox } = await import("../../../lib/email-provider");
+        await drainEmailOutbox(db, 5).catch(() => {});
       }
       return Response.json({ ok: true });
     }
@@ -237,6 +239,10 @@ export async function POST(request: Request) {
       await ensureDefaultTenant(db, { id: userId, displayName });
       await writeAudit(db, { userId, action: "auth.registered", entityType: "user", entityId: userId, createdAt });
       const emailReady = isEmailProviderConfigured();
+      if (emailReady) {
+        const { drainEmailOutbox } = await import("../../../lib/email-provider");
+        await drainEmailOutbox(db, 5).catch(() => {});
+      }
       if (htmlForm) {
         const verifyPath = !emailReady && !isProductionLikeRuntime()
           ? `/verify-email?token=${encodeURIComponent(verificationToken)}`

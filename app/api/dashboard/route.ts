@@ -1680,6 +1680,63 @@ export async function POST(request: Request) {
         db.prepare(`UPDATE spaces SET goal_minor = COALESCE((SELECT SUM(due_minor) FROM members WHERE space_id=? AND status='active'), 0) WHERE id=?`).bind(parsed.data.spaceId, parsed.data.spaceId),
       ]);
       await upsertSavedContact(db, user.id, { displayName: parsed.data.displayName, email: parsed.data.email || null, phone }, createdAt);
+    } else if (action === "updateMemberContact") {
+      const parsed = z.object({
+        memberId: z.string().min(1).max(120),
+        displayName: z.string().trim().min(2).max(80).optional(),
+        email: z.union([z.email().max(254), z.literal("")]).optional(),
+        phone: z.string().trim().max(20).optional(),
+        syncLinked: z.boolean().optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_MEMBER");
+      if (parsed.data.phone && parsed.data.phone.length > 0 && !isLikelyPhone(parsed.data.phone)) throw new ApiError(400, "INVALID_PHONE");
+      const member = await db.prepare("SELECT id,space_id,display_name,email,phone,role,status FROM members WHERE id=?").bind(parsed.data.memberId)
+        .first<{ id: string; space_id: string; display_name: string; email: string | null; phone: string | null; role: string; status: string }>();
+      if (!member) throw new ApiError(404, "MEMBER_NOT_FOUND");
+      await authorizeSpace(db, user, member.space_id, "members:write", ["household", "trip", "society", "group"]);
+      const nextName = parsed.data.displayName?.trim() || member.display_name;
+      const nextEmail = parsed.data.email === undefined ? member.email : (parsed.data.email.trim() || null);
+      const nextPhoneRaw = parsed.data.phone === undefined ? member.phone : (parsed.data.phone.trim() || null);
+      const nextPhone = nextPhoneRaw ? (toWhatsAppNumber(nextPhoneRaw) || nextPhoneRaw) : null;
+      const createdAt = now();
+      const targetIds = new Set<string>([member.id]);
+      if (parsed.data.syncLinked !== false) {
+        const siblings = await db.prepare(
+          "SELECT id,space_id,display_name,email,phone FROM members WHERE status='active' AND id<>?",
+        ).bind(member.id).all<{ id: string; space_id: string; display_name: string; email: string | null; phone: string | null }>();
+        const seedKey = (() => {
+          const phone = String(member.phone ?? "").replace(/\D/g, "");
+          const email = String(member.email ?? "").trim().toLowerCase();
+          if (phone.length >= 7) return `p:${phone}`;
+          if (email) return `e:${email}`;
+          return `n:${member.display_name.trim().toLowerCase()}`;
+        })();
+        for (const row of siblings.results ?? []) {
+          const phone = String(row.phone ?? "").replace(/\D/g, "");
+          const email = String(row.email ?? "").trim().toLowerCase();
+          const key = phone.length >= 7 ? `p:${phone}` : email ? `e:${email}` : `n:${row.display_name.trim().toLowerCase()}`;
+          if (key !== seedKey) continue;
+          try {
+            await authorizeSpace(db, user, row.space_id, "members:write", ["household", "trip", "society", "group"]);
+            targetIds.add(row.id);
+          } catch {
+            /* skip spaces without write access */
+          }
+        }
+      }
+      const statements = [...targetIds].map((id) =>
+        db.prepare("UPDATE members SET display_name=?, email=?, phone=? WHERE id=?").bind(nextName, nextEmail, nextPhone, id),
+      );
+      statements.push(prepareAudit(db, {
+        userId: user.id,
+        action: "member.contact_updated",
+        entityType: "member",
+        entityId: member.id,
+        metadata: { spaceId: member.space_id, email: nextEmail, phone: nextPhone, synced: [...targetIds] },
+        createdAt,
+      }));
+      await db.batch(statements);
+      await upsertSavedContact(db, user.id, { displayName: nextName, email: nextEmail, phone: nextPhone }, createdAt);
     } else if (action === "addTransaction") {
       const parsed = z.object({ spaceId: z.string().min(1).max(120), kind: z.enum(["expense", "income", "contribution", "reimbursement"]), allocation: z.enum(["general", "mandatory", "personal_reserve"]), description: z.string().trim().min(2).max(300), amount: z.union([z.string(),z.number()]), memberId: z.string().max(120).optional(), selectedIds: z.array(z.string().min(1).max(160)).max(120).optional(), occurredAt: z.iso.datetime().optional() }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_TRANSACTION");
@@ -2879,6 +2936,8 @@ export async function POST(request: Request) {
         if (!member.email) throw new ApiError(400, "MEMBER_EMAIL_MISSING");
         await db.prepare("INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)")
           .bind(crypto.randomUUID(), member.email, "member_receipt", JSON.stringify({ displayName: member.display_name, message, html: message.replaceAll("\n", "<br/>"), transactionId: txn.id, receiptUrl }), createdAt).run();
+        const { drainEmailOutbox } = await import("../../../lib/email-provider");
+        await drainEmailOutbox(db, 5).catch(() => {});
       }
       const whatsappNumber = member.phone ? toWhatsAppNumber(member.phone) : "";
       if ((parsed.data.channel === "whatsapp" || parsed.data.channel === "both") && !whatsappNumber) throw new ApiError(400, "MEMBER_PHONE_MISSING");

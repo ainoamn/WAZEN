@@ -1676,6 +1676,7 @@ export function WazenDashboard() {
               setModal("smartPay");
             }}
             onStatementSent={(message) => flash(message)}
+            onContactSaved={(message) => { flash(message); void load(true); }}
             canWhatsapp={planHasFeature(planFeaturesOf(data), "whatsapp")}
           />
         );
