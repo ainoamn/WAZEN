@@ -14,9 +14,9 @@ npm run provision:production
 ```
 
 3. افتح `setupUrl` المطبوع خلال 15 دقيقة.
-4. عيّن كلمة مرور ≥ 12 حرفاً لـ `admin@wazen.pro`.
-5. فعّل TOTP من `/account/security`.
-6. احذف `WAZEN_ADMIN_EMAILS` من Vercel بعد نجاح المدير الاحتياطي.
+4. سجّل الدخول عبر الهوية بـ `a.hamid89@hotmail.com` (بريد موثّق على `id.bhd-om.com`).
+5. تأكد من وصول `/admin` بعد أول SSO (الترقية عبر `WAZEN_ADMIN_EMAILS`).
+6. احذف `WAZEN_ADMIN_EMAILS` من Vercel بعد نجاح المدير إن رغبت؛ الدور يبقى في قاعدة البيانات.
 
 ## يدوي
 

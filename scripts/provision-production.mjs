@@ -9,7 +9,7 @@
  * Optional:
  *   TURSO_GROUP=default
  *   TURSO_DATABASE=wazen-production-v1
- *   WAZEN_ADMIN_EMAIL=admin@wazen.pro
+ *   WAZEN_ADMIN_EMAIL=a.hamid89@hotmail.com
  *   WAZEN_ADMIN_NAME=Wazen Admin
  *   WAZEN_APP_ORIGIN=https://wazen-roan.vercel.app
  *
@@ -23,7 +23,7 @@ const apiToken = process.env.TURSO_API_TOKEN;
 const org = process.env.TURSO_ORG;
 const group = process.env.TURSO_GROUP ?? "default";
 const database = process.env.TURSO_DATABASE ?? "wazen-production-v1";
-const adminEmail = (process.env.WAZEN_ADMIN_EMAIL ?? "admin@wazen.pro").trim().toLowerCase();
+const adminEmail = (process.env.WAZEN_ADMIN_EMAIL ?? "a.hamid89@hotmail.com").trim().toLowerCase();
 const adminName = process.env.WAZEN_ADMIN_NAME ?? "Wazen Admin";
 const origin = (process.env.WAZEN_APP_ORIGIN ?? "https://wazen-roan.vercel.app").replace(/\/$/, "");
 

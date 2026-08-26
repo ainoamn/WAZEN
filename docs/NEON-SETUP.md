@@ -24,7 +24,7 @@ npx vercel env add DATABASE_URL production
 
 تأكد أيضاً من:
 ```text
-WAZEN_ADMIN_EMAILS=admin@wazen.pro
+WAZEN_ADMIN_EMAILS=a.hamid89@hotmail.com
 WAZEN_APP_ORIGIN=https://wazen-roan.vercel.app
 ```
 
@@ -41,7 +41,7 @@ npx vercel --prod --yes
 ```powershell
 cd C:\dev\WAZEN
 $env:DATABASE_URL="postgresql://..."
-npm run admin:bootstrap -- --email admin@wazen.pro --name "Wazen Admin" --origin https://wazen-roan.vercel.app
+npm run admin:bootstrap -- --email a.hamid89@hotmail.com --name "Wazen Admin" --origin https://wazen-roan.vercel.app
 ```
 
 افتح `setupUrl` خلال 15 دقيقة وعيّن كلمة المرور.

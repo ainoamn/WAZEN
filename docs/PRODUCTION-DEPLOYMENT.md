@@ -16,7 +16,7 @@ TURSO_AUTH_TOKEN=...
 أنشئ أسراراً عشوائية بطول 32 بايت أو أكثر:
 
 ```text
-WAZEN_ADMIN_EMAILS=owner@your-domain.com
+WAZEN_ADMIN_EMAILS=a.hamid89@hotmail.com
 WAZEN_APP_ORIGIN=https://your-domain.com
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
@@ -33,7 +33,16 @@ WAZEN_USE_NODE_SQLITE=0
 WAZEN_TRUST_OAI_HEADERS=0
 ```
 
-أنشئ حساب المالك بالبريد الموجود في `WAZEN_ADMIN_EMAILS`. لا يحصل أول مستخدم تلقائياً على الإدارة.
+أنشئ حساب المالك بالبريد الموجود في `WAZEN_ADMIN_EMAILS` عبر **بوابة الهوية** (`id.bhd-om.com`) ببريد حقيقي موثّق. لا يحصل أول مستخدم تلقائياً على الإدارة.
+
+### تغيير بريد المدير (من وهمي إلى حقيقي)
+
+1. في Vercel Production ضع: `WAZEN_ADMIN_EMAILS=a.hamid89@hotmail.com`
+2. على [id.bhd-om.com](https://id.bhd-om.com/login) سجّل/ادخل بهذا البريد وأكّده من رسالة التحقق إن طُلب.
+3. افتح `https://wazen.bhd-om.com/api/auth/admin-entry` — أول SSO ناجح يرقّي الحساب إلى `super_admin`.
+4. (اختياري) احذف `WAZEN_ADMIN_EMAILS` بعد النجاح؛ الدور يبقى في `platform_roles`.
+
+البريد القديم `admin@wazen.pro` لم يعد صالحاً لأن الهوية تتطلب بريداً قابلاً للتوثيق.
 
 ## النطاق المخصص و`ERR_TIMED_OUT` من عُمان
 
