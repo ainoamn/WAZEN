@@ -3,10 +3,11 @@
 import { signInEntryPathForOrigin } from "./bhd-identity";
 
 export function clientSignInPath(next: string) {
+  const safe = next.startsWith("/") && !next.startsWith("//") ? next : "/home";
   if (typeof window === "undefined") {
-    return `/login?local=1&next=${encodeURIComponent(next.startsWith("/") ? next : "/home")}`;
+    return `/api/auth/bhd/start?next=${encodeURIComponent(safe)}`;
   }
-  return signInEntryPathForOrigin(next, window.location.origin);
+  return signInEntryPathForOrigin(safe, window.location.origin);
 }
 
 export function goToSignIn(next: string) {

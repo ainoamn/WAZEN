@@ -21,9 +21,9 @@ function googleErrorMessage(code: string, l: (ar: string, en: string) => string)
   if (code === "SESSION_ALREADY_ACTIVE") return l("يوجد حساب مسجّل في هذا المتصفح. سجّل الخروج أولاً لتبديل الحساب.", "A session is already active in this browser. Sign out first to switch accounts.");
   if (code === "BHD_NOT_CONFIGURED") return l("حساب BHD غير مهيأ بعد.", "BHD identity is not configured yet.");
   if (code === "BHD_ACCESS_DENIED") return l("أُلغي الدخول من حساب BHD.", "BHD sign-in was cancelled.");
-  if (code === "BHD_EMAIL_UNVERIFIED") return l("بريد حساب BHD غير مؤكد.", "The BHD account email is not verified.");
-  if (code === "BHD_REDIRECT_DENIED") return l("بوابة BHD لم تسجّل نطاق هذا الموقع بعد. استخدم النموذج أدناه أو أضف عنوان الإرجاع على الهوية.", "The BHD portal has not allowlisted this site yet. Use the form below, or register the callback on identity.");
-  if (code === "BHD_EMAIL_IN_USE") return l("هذا البريد مرتبط بحساب وازن غير مؤكد. أكّد البريد أو ادخل محلياً ثم اربط الحساب.", "This email belongs to an unverified Wazen account. Verify it, or sign in locally first.");
+  if (code === "BHD_EMAIL_UNVERIFIED") return l("بريد حساب BHD غير مؤكد. أكّده من بوابة الهوية ثم أعد المحاولة.", "The BHD account email is not verified. Confirm it on the identity portal, then try again.");
+  if (code === "BHD_REDIRECT_DENIED") return l("بوابة BHD لم تسجّل نطاق هذا الموقع بعد.", "The BHD portal has not allowlisted this site yet.");
+  if (code === "BHD_EMAIL_IN_USE") return l("هذا البريد مرتبط بحساب وازن غير مؤكد. أكّد البريد من رسالة التحقق ثم ادخل عبر BHD.", "This email belongs to an unverified Wazen account. Verify it from the email link, then sign in with BHD.");
   if (code === "BHD_STATE_MISMATCH" || code === "BHD_NONCE_MISMATCH" || code === "BHD_STATE_MISSING") return l("انتهت صلاحية جلسة الدخول. حاول مرة أخرى.", "The sign-in session expired. Try again.");
   if (code.startsWith("BHD_")) return l("تعذر الدخول بحساب BHD. حاول مرة أخرى.", "Could not sign in with BHD. Try again.");
   return l("تعذر الدخول عبر جوجل. حاول مرة أخرى.", "Google sign-in failed. Try again.");
@@ -36,13 +36,14 @@ function authRedirectTarget(role?: string) {
   return safeNext.startsWith("/admin") && !canOpenPlatformConsole(role) ? "/home" : safeNext;
 }
 
-export function AuthForm({ mode, next = "/home", googleClientId = "", identityEnabled = false, ssoReady = false }: { mode: "login" | "register"; next?: string; googleClientId?: string; identityEnabled?: boolean; ssoReady?: boolean }) {
+export function AuthForm({ mode, next = "/home", googleClientId = "", identityEnabled = false, ssoReady = false, identityOnly = false }: { mode: "login" | "register"; next?: string; googleClientId?: string; identityEnabled?: boolean; ssoReady?: boolean; identityOnly?: boolean }) {
   const router = useRouter();
   const { locale, setLocale, l } = useCommerceLocale();
   const [displayName, setDisplayName] = useState(""); const [email, setEmail] = useState("");
   const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [saving, setSaving] = useState(false);
   const [totpCode, setTotpCode] = useState(""); const [totpRequired, setTotpRequired] = useState(false);
   const [activeSession, setActiveSession] = useState<{ dest: string } | null>(null);
+  const showLocalForm = !identityOnly;
 
   useEffect(() => {
     const oauthError = new URLSearchParams(window.location.search).get("error");
@@ -135,14 +136,23 @@ export function AuthForm({ mode, next = "/home", googleClientId = "", identityEn
         </div>
       </div>
     )}
-    {identityEnabled && ssoReady && (
+    {identityEnabled && (ssoReady || identityOnly) && (
       <>
-        <a className="auth-submit" href={`/api/auth/bhd/start?next=${encodeURIComponent(authRedirectTarget())}`}>
+        <a className="auth-submit" href={`/api/auth/bhd/start?next=${encodeURIComponent(next.startsWith("/") && !next.startsWith("//") ? next : "/home")}`}>
           {l("الدخول بحساب BHD", "Sign in with BHD")}
         </a>
-        <div className="auth-divider"><span>{l("أو الدخول المحلي", "Or local sign-in")}</span></div>
+        {showLocalForm ? <div className="auth-divider"><span>{l("أو الدخول المحلي", "Or local sign-in")}</span></div> : null}
       </>
     )}
+    {error && identityOnly && <p className="auth-error" role="alert">{error}</p>}
+    {identityOnly ? (
+      <p className="auth-copy" style={{ marginTop: 12 }}>
+        <a href="https://id.bhd-om.com/login">{l("فتح بوابة الهوية مباشرة", "Open the identity portal")}</a>
+        {" · "}
+        <a href="https://id.bhd-om.com/account">{l("تأكيد البريد من الحساب", "Verify email in account")}</a>
+      </p>
+    ) : null}
+    {showLocalForm ? (
     <form method="post" action="/api/auth" onSubmit={submit}>
       <input type="hidden" name="action" value={mode} />
       <input type="hidden" name="next" value={next.startsWith("/") && !next.startsWith("//") ? next : "/home"} />
@@ -153,6 +163,7 @@ export function AuthForm({ mode, next = "/home", googleClientId = "", identityEn
       {mode === "login" && <Link href="/forgot-password">{l("نسيت كلمة المرور؟", "Forgot password?")}</Link>}
       {error && <p className="auth-error" role="alert">{error}</p>}<button className="auth-submit" type="submit" disabled={saving}>{saving ? l("جارٍ التحقق…", "Checking…") : mode === "login" ? l("تسجيل الدخول", "Sign in") : l("إنشاء الحساب", "Create account")}</button>
     </form>
+    ) : null}
     {!identityEnabled && <div className="auth-divider"><span>{l("أو المتابعة عبر", "Or continue with")}</span></div>}
       {identityEnabled ? null : googleClientId ? (
         <GoogleSignInButton
@@ -170,6 +181,6 @@ export function AuthForm({ mode, next = "/home", googleClientId = "", identityEn
       ) : (
         <p className="auth-error" role="status">{l("تسجيل جوجل غير مهيأ بعد.", "Google sign-in is not configured yet.")}</p>
       )}
-    <footer>{mode === "login" ? <>{l("ليس لديك حساب؟", "No account?")} <Link href={identityEnabled ? "/register?local=1" : "/register"}>{l("أنشئ حساباً", "Create one")}</Link></> : <>{l("لديك حساب؟", "Already registered?")} <Link href={identityEnabled ? "/login?local=1" : "/login"}>{l("سجّل الدخول", "Sign in")}</Link></>}</footer>
+    <footer>{mode === "login" ? <>{l("ليس لديك حساب؟", "No account?")} {identityOnly || identityEnabled ? <a href="https://id.bhd-om.com/login">{l("أنشئ حساباً", "Create one")}</a> : <Link href="/register">{l("أنشئ حساباً", "Create one")}</Link>}</> : <>{l("لديك حساب؟", "Already registered?")} {identityOnly || identityEnabled ? <a href="https://id.bhd-om.com/login">{l("سجّل الدخول", "Sign in")}</a> : <Link href="/login">{l("سجّل الدخول", "Sign in")}</Link>}</>}</footer>
   </section><aside><span className="brand-glyph"><WazenIcon className="h-10 w-auto" /></span><h2>{l("وضوح مالي، من أول ريال.", "Financial clarity from day one.")}</h2><p>{l("المحافظ الشخصية والمنزلية والجمعيات والرحلات في نظام واحد.", "Personal, household, circle and trip wallets in one system.")}</p></aside></main>;
 }

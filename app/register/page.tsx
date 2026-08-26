@@ -22,12 +22,12 @@ export default async function RegisterPage({
   const ssoReady = identityEnabled && isBhdSsoReadyForOrigin(origin);
 
   // Guide §4.9 / §0.7: admin never uses local password form.
-  if (identityEnabled && params.local === "1" && next.startsWith("/admin")) {
+  if (identityEnabled && next.startsWith("/admin")) {
     redirect(`/api/auth/admin-entry?next=${encodeURIComponent(next)}`);
   }
 
   // Guide §0.2 / §0.7: no parallel end-user local register on SSO origins.
-  if (ssoReady && params.local !== "1") {
+  if (ssoReady) {
     redirect(`/api/auth/bhd/start?returnTo=${encodeURIComponent(next)}`);
   }
 

@@ -22,16 +22,16 @@ export default async function LoginPage({
   const ssoReady = identityEnabled && isBhdSsoReadyForOrigin(origin);
 
   // Guide §4.9 / §0.7: admin never uses local password form.
-  if (identityEnabled && params.local === "1" && next.startsWith("/admin")) {
+  if (identityEnabled && next.startsWith("/admin")) {
     redirect(`/api/auth/admin-entry?next=${encodeURIComponent(next)}`);
   }
 
-  // Production SSO origin: end-user login is identity only (no parallel local panel).
-  if (ssoReady && params.local !== "1") {
+  // Production SSO origin: identity only — never honor local=1.
+  // On OAuth errors, show a thin interstitial (no password panel) then retry BHD.
+  if (ssoReady && !params.error) {
     redirect(`/api/auth/bhd/start?returnTo=${encodeURIComponent(next)}`);
   }
 
-  // Preview / emergency local=1 on non-SSO origins, or after SSO error with local=1.
   return (
     <AuthForm
       mode="login"
@@ -39,6 +39,7 @@ export default async function LoginPage({
       googleClientId={identityEnabled ? "" : googleClientId()}
       identityEnabled={identityEnabled}
       ssoReady={ssoReady}
+      identityOnly={ssoReady}
     />
   );
 }

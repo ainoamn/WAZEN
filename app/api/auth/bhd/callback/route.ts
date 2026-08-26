@@ -4,6 +4,7 @@ import { upsertBhdUser } from "../../../../../lib/bhd-account";
 import {
   clearBhdOauthStateCookie,
   exchangeBhdCode,
+  bhdAuthFailurePath,
   mapBhdCallbackError,
   publicRequestOrigin,
   readBhdOauthStateCookie,
@@ -12,8 +13,8 @@ import {
 import { clientCountry, clientIp, recordSecurityEvent } from "../../../../../lib/ip-security";
 import { ApiError, errorResponse, rateLimit } from "../../../../../lib/security";
 
-function loginError(origin: string, code: string) {
-  const headers = new Headers({ Location: `${origin}/login?error=${encodeURIComponent(code)}&local=1`, "Cache-Control": "no-store" });
+function loginError(origin: string, code: string, next = "/home") {
+  const headers = new Headers({ Location: `${origin}${bhdAuthFailurePath(origin, code, next)}`, "Cache-Control": "no-store" });
   headers.append("Set-Cookie", clearBhdOauthStateCookie());
   return new Response(null, { status: 302, headers });
 }
@@ -29,12 +30,12 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const oauthError = mapBhdCallbackError(url.searchParams.get("error"));
     const stored = readBhdOauthStateCookie(request);
-    if (oauthError) return loginError(origin, oauthError);
+    if (oauthError) return loginError(origin, oauthError, stored?.returnTo);
     if (!stored) return loginError(origin, "BHD_STATE_MISSING");
     const state = url.searchParams.get("state") ?? "";
     const code = url.searchParams.get("code") ?? "";
-    if (!state || state !== stored.state) return loginError(origin, "BHD_STATE_MISMATCH");
-    if (!code) return loginError(origin, "BHD_AUTH_FAILED");
+    if (!state || state !== stored.state) return loginError(origin, "BHD_STATE_MISMATCH", stored.returnTo);
+    if (!code) return loginError(origin, "BHD_AUTH_FAILED", stored.returnTo);
     const claims = await exchangeBhdCode(request, code, stored.verifier, stored.nonce);
     const user = await upsertBhdUser(db, claims);
     const session = await createSession(db, user.id, request);

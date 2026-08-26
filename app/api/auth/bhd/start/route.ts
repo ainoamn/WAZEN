@@ -1,5 +1,5 @@
 import { getRawDb, ensureSchema } from "../../../../../db/runtime";
-import { bhdOauthStateCookie, createBhdAuthRequest, isBhdIdentityConfigured, isBhdSsoReadyForRequest, publicRequestOrigin, safeReturnTo } from "../../../../../lib/bhd-identity";
+import { bhdAuthFailurePath, bhdOauthStateCookie, createBhdAuthRequest, isBhdIdentityConfigured, isBhdSsoReadyForRequest, publicRequestOrigin, safeReturnTo } from "../../../../../lib/bhd-identity";
 import { ApiError, errorResponse, rateLimit } from "../../../../../lib/security";
 
 export async function GET(request: Request) {
@@ -11,10 +11,10 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
     const next = safeReturnTo(params.get("next") ?? params.get("returnTo"));
     if (!isBhdIdentityConfigured()) {
-      return Response.redirect(`${origin}/login?error=BHD_NOT_CONFIGURED&local=1&next=${encodeURIComponent(next)}`, 302);
+      return Response.redirect(`${origin}${bhdAuthFailurePath(origin, "BHD_NOT_CONFIGURED", next)}`, 302);
     }
     if (!isBhdSsoReadyForRequest(request)) {
-      return Response.redirect(`${origin}/login?error=BHD_REDIRECT_DENIED&local=1&next=${encodeURIComponent(next)}`, 302);
+      return Response.redirect(`${origin}${bhdAuthFailurePath(origin, "BHD_REDIRECT_DENIED", next)}`, 302);
     }
     const started = await createBhdAuthRequest(request, next);
     const headers = new Headers({ Location: started.url, "Cache-Control": "no-store" });
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       try { return publicRequestOrigin(request); } catch { return new URL(request.url).origin; }
     })();
     if (error instanceof ApiError) {
-      return Response.redirect(`${origin}/login?error=${encodeURIComponent(error.code)}&local=1`, 302);
+      return Response.redirect(`${origin}${bhdAuthFailurePath(origin, error.code)}`, 302);
     }
     return errorResponse(error);
   }

@@ -93,6 +93,22 @@ export function identityEndpointBase() {
   return identityIssuer();
 }
 
+/** Browser login URL on the unified identity host (never Wazen local form). */
+export function bhdBrowserLoginUrl() {
+  return `${identityEndpointBase()}/login`;
+}
+
+/**
+ * Where to send the browser after a BHD OAuth failure.
+ * SSO-ready origins must not use local=1 (no parallel Wazen password panel).
+ */
+export function bhdAuthFailurePath(origin: string, code: string, next = "/home") {
+  const safe = safeReturnTo(next);
+  const qs = new URLSearchParams({ error: code, next: safe });
+  if (!isBhdSsoReadyForOrigin(origin)) qs.set("local", "1");
+  return `/login?${qs.toString()}`;
+}
+
 /**
  * Host used for server-side token / userinfo / JWKS.
  * Prefer the canonical issuer so Wazen does not depend on Vercel→id.bhd-om.com 308 hops
