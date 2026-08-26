@@ -29,7 +29,7 @@ Status reflects repository controls, not a certification or a guarantee of zero 
 - Registration no longer returns `verifyUrl` in production-like runtimes when email is unconfigured.
 - Public `/api/health` returns only `status`, `version`, and `database`; ops details require `Authorization: Bearer $WAZEN_JOB_SECRET`.
 - Dashboard JSON redacts other members' email/phone, masks payout account numbers, and limits personal ledgers to owned wallets.
-- Schema patches (including TOTP pending columns) run when `schema_meta` is missing or behind `SCHEMA_VERSION` (currently 9). If the stored version is current, `ensureSchema` returns immediately — do not re-run patches on every request (that caused 30–50s add/void on Neon).
+- Schema patches (including TOTP pending columns) run when `schema_meta` is missing or behind `SCHEMA_VERSION` (currently 22). If the stored version is current, `ensureSchema` returns immediately — do not re-run patches on every request (that caused 30–50s add/void on Neon).
 
 Still open: optional `WAZEN_RLS_ENFORCE=1` after per-request `app.user_id` wiring; counsel sign-off on privacy/terms; live PSP charge SDKs (manual transfer remains default).
 

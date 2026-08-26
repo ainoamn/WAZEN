@@ -1835,6 +1835,28 @@ export async function POST(request: Request) {
         }));
         await db.batch(statements);
         await reconcileMemberLedgers(db, [spaceId]);
+        if (memberId) {
+          try {
+            const memberRow = await db.prepare("SELECT id,space_id,display_name,email FROM members WHERE id=?").bind(memberId)
+              .first<{ id: string; space_id: string; display_name: string; email: string | null }>();
+            const spaceRow = await db.prepare("SELECT name_ar,name_en,currency FROM spaces WHERE id=?").bind(spaceId)
+              .first<{ name_ar: string; name_en: string; currency: string }>();
+            const txnRow = await db.prepare(
+              "SELECT id,description_ar,description_en,amount_minor,occurred_at FROM transactions WHERE member_id=? AND space_id=? AND kind='contribution' AND status<>'voided' ORDER BY created_at DESC LIMIT 1",
+            ).bind(memberId, spaceId).first<{ id: string; description_ar: string; description_en: string; amount_minor: number; occurred_at: string }>();
+            if (memberRow?.email && spaceRow && txnRow) {
+              const { queueMemberPaymentReceiptEmail } = await import("../../../lib/member-receipt-email");
+              await queueMemberPaymentReceiptEmail({
+                db,
+                request,
+                member: memberRow,
+                transaction: { ...txnRow, amount_minor: amountMinor, description_ar: description, description_en: description },
+                space: spaceRow,
+                locale: "ar",
+              });
+            }
+          } catch { /* receipt email is best-effort */ }
+        }
       } else {
       const positiveKinds = ["income", "contribution"];
       const balanceDelta = allocation === "personal_reserve"
@@ -2530,9 +2552,9 @@ export async function POST(request: Request) {
       if (!parsed.success) throw new ApiError(400, "INVALID_SMART_PAY");
       const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["household", "trip", "society", "group"]);
       await guardOwnerTransactionQuota(db, space.owner_user_id, 2);
-      const member = await db.prepare("SELECT id,space_id,display_name,due_minor,paid_minor,extra_minor FROM members WHERE id=? AND space_id=? AND status='active'")
+      const member = await db.prepare("SELECT id,space_id,display_name,email,due_minor,paid_minor,extra_minor FROM members WHERE id=? AND space_id=? AND status='active'")
         .bind(parsed.data.memberId, parsed.data.spaceId)
-        .first<{ id: string; space_id: string; display_name: string; due_minor: number; paid_minor: number; extra_minor: number }>();
+        .first<{ id: string; space_id: string; display_name: string; email: string | null; due_minor: number; paid_minor: number; extra_minor: number }>();
       if (!member) throw new ApiError(400, "INVALID_MEMBER");
       let amountMinor: number;
       try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
@@ -2593,6 +2615,28 @@ export async function POST(request: Request) {
       if (!statements.length) throw new ApiError(400, "EMPTY_PAYMENT");
       statements.push(prepareAudit(db, { userId: user.id, action: "smart_pay.applied", entityType: "member", entityId: member.id, metadata: { spaceId: parsed.data.spaceId, amountMinor, lastTransactionId }, createdAt }));
       await db.batch(statements);
+      if (member.email && lastTransactionId) {
+        try {
+          const spaceNames = await db.prepare("SELECT name_ar,name_en,currency FROM spaces WHERE id=?")
+            .bind(parsed.data.spaceId)
+            .first<{ name_ar: string; name_en: string; currency: string }>();
+          const { queueMemberPaymentReceiptEmail } = await import("../../../lib/member-receipt-email");
+          await queueMemberPaymentReceiptEmail({
+            db,
+            request,
+            member,
+            transaction: {
+              id: lastTransactionId,
+              description_ar: description,
+              description_en: description,
+              amount_minor: amountMinor,
+              occurred_at: createdAt,
+            },
+            space: spaceNames ?? { name_ar: "محفظة", name_en: "Wallet", currency: space.currency },
+            locale: "ar",
+          });
+        } catch { /* best-effort */ }
+      }
     } else if (action === "closeAccountingPeriod") {
       const parsed = z.object({ spaceId: z.string().min(1).max(120), label: z.string().trim().min(2).max(80).optional() }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_PERIOD");

@@ -548,6 +548,12 @@ export async function GET(request: Request) {
         const gateways = await listGatewaysWithPlans(db);
         return Response.json({ user, role, plans, gateways }, { headers: responseHeaders });
       }
+      if (scope === "emails") {
+        if (!["super_admin", "admin"].includes(role)) throw new ApiError(403, "FORBIDDEN");
+        const { listEmailTemplates } = await import("../../../lib/email-template-store");
+        const templates = await listEmailTemplates(db);
+        return Response.json({ user, role, templates }, { headers: responseHeaders });
+      }
       return Response.json({ user, role, ...(await scopedAdminData(db, role, scope)) }, { headers: responseHeaders });
     }
     return Response.json({ user, role }, { headers: responseHeaders });
@@ -736,7 +742,7 @@ export async function POST(request: Request) {
     }
 
     const actorRole = await roleOf(db, user.id);
-    if (["setUserStatus", "setRole", "setPaymentStatus", "createCoupon", "revokeUserSessions", "updateGateway", "upsertPlan", "adminUpdateSubscription", "adminVerifyEmail", "adminUpdateUser", "restoreRetentionArchive", "adminBlockIp", "adminUnblockIp", "adminTrustIp", "revokeSessionsByIp"].includes(action) && user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
+    if (["setUserStatus", "setRole", "setPaymentStatus", "createCoupon", "revokeUserSessions", "updateGateway", "upsertPlan", "adminUpdateSubscription", "adminVerifyEmail", "adminUpdateUser", "restoreRetentionArchive", "adminBlockIp", "adminUnblockIp", "adminTrustIp", "revokeSessionsByIp", "upsertEmailTemplate", "resetEmailTemplate"].includes(action) && user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
     if (action === "setUserStatus") {
       assertPlatformPermission(actorRole, "users:status");
       const targetUserId = String(payload.userId ?? "");
@@ -805,6 +811,42 @@ export async function POST(request: Request) {
       if (!gateways) throw new ApiError(404, "GATEWAY_NOT_FOUND");
       await writeAudit(db, { userId: user.id, action: "gateway.updated", entityType: "payment_gateway", entityId: gatewayId, metadata: { isEnabled: payload.isEnabled, planIds } });
       return respond({ ok: true, gateways, plans: await listAdminPlans(db) });
+    } else if (action === "upsertEmailTemplate") {
+      if (!["super_admin", "admin"].includes(actorRole)) throw new ApiError(403, "FORBIDDEN");
+      const { EMAIL_TEMPLATE_IDS } = await import("../../../lib/email-template-catalog");
+      const parsed = z.object({
+        id: z.string().refine((value): value is typeof EMAIL_TEMPLATE_IDS[number] => (EMAIL_TEMPLATE_IDS as readonly string[]).includes(value)),
+        subjectAr: z.string().trim().min(2).max(200),
+        subjectEn: z.string().trim().min(2).max(200),
+        bodyHtmlAr: z.string().trim().min(2).max(20_000),
+        bodyHtmlEn: z.string().trim().min(2).max(20_000),
+        textAr: z.string().trim().min(2).max(8_000),
+        textEn: z.string().trim().min(2).max(8_000),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_EMAIL_TEMPLATE");
+      const { upsertEmailTemplate } = await import("../../../lib/email-template-store");
+      const templates = await upsertEmailTemplate(db, {
+        id: parsed.data.id,
+        subjectAr: parsed.data.subjectAr,
+        subjectEn: parsed.data.subjectEn,
+        bodyHtmlAr: parsed.data.bodyHtmlAr,
+        bodyHtmlEn: parsed.data.bodyHtmlEn,
+        textAr: parsed.data.textAr,
+        textEn: parsed.data.textEn,
+      });
+      await writeAudit(db, { userId: user.id, action: "email_template.upserted", entityType: "email_template", entityId: parsed.data.id });
+      return respond({ ok: true, templates });
+    } else if (action === "resetEmailTemplate") {
+      if (!["super_admin", "admin"].includes(actorRole)) throw new ApiError(403, "FORBIDDEN");
+      const { EMAIL_TEMPLATE_IDS } = await import("../../../lib/email-template-catalog");
+      const parsed = z.object({
+        id: z.string().refine((value): value is typeof EMAIL_TEMPLATE_IDS[number] => (EMAIL_TEMPLATE_IDS as readonly string[]).includes(value)),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_EMAIL_TEMPLATE");
+      const { resetEmailTemplate } = await import("../../../lib/email-template-store");
+      const templates = await resetEmailTemplate(db, parsed.data.id);
+      await writeAudit(db, { userId: user.id, action: "email_template.reset", entityType: "email_template", entityId: parsed.data.id });
+      return respond({ ok: true, templates });
     } else if (action === "upsertPlan") {
       assertPlatformPermission(actorRole, "plans:write");
       const parsed = z.object({

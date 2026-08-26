@@ -1,5 +1,14 @@
 /** Outbound email: Resend API (preferred) or legacy HTTPS webhook bridge. */
 
+import { appOrigin } from "./app-origin";
+import {
+  applyTemplatePlaceholders,
+  brandedEmailShell,
+  DEFAULT_EMAIL_TEMPLATES,
+  type EmailTemplateId,
+} from "./email-template-catalog";
+import { resolveEmailTemplate } from "./email-template-store";
+
 export type EmailOutboxRow = {
   id: string;
   recipient: string;
@@ -39,90 +48,89 @@ function escapeHtml(value: string) {
     .replaceAll('"', "&quot;");
 }
 
-function wrapHtml(title: string, bodyHtml: string) {
-  return `<!doctype html>
-<html lang="ar" dir="rtl">
-<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${escapeHtml(title)}</title></head>
-<body style="margin:0;background:#f4f6f2;font-family:Tahoma,Arial,sans-serif;color:#17332d;">
-  <div style="max-width:560px;margin:24px auto;padding:24px;background:#fff;border:1px solid #dce5e0;border-radius:16px;">
-    <p style="margin:0 0 8px;font-size:13px;color:#6d7b75;">وازون · Wazen</p>
-    <h1 style="margin:0 0 16px;font-size:20px;letter-spacing:-0.02em;">${escapeHtml(title)}</h1>
-    ${bodyHtml}
-    <p style="margin:28px 0 0;font-size:12px;color:#8a9690;line-height:1.5;">إذا لم تطلب هذا الإجراء يمكنك تجاهله بأمان.</p>
-  </div>
-</body>
-</html>`;
-}
-
-function cta(href: string, label: string) {
-  const safe = escapeHtml(href);
-  return `<p style="margin:20px 0;"><a href="${safe}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#0f766e;color:#fff;text-decoration:none;font-weight:700;">${escapeHtml(label)}</a></p>
-<p style="margin:0;font-size:12px;color:#6d7b75;word-break:break-all;">${safe}</p>`;
-}
-
-export function renderEmailTemplate(template: string, data: TemplatePayload): RenderedEmail {
-  const displayName = str(data, "displayName", "مستخدم وازون");
-  const link = str(data, "link");
-  const messageAr = str(data, "messageAr") || str(data, "message");
-  const messageEn = str(data, "messageEn");
-  const htmlBody = str(data, "html");
-
-  switch (template) {
-    case "verify_email": {
-      const subject = "تأكيد بريدك في وازون";
-      const text = `مرحباً ${displayName},\n\nأكّد بريدك عبر الرابط:\n${link}\n`;
-      const html = wrapHtml(subject, `<p>مرحباً ${escapeHtml(displayName)}،</p><p>اضغط الزر لتأكيد بريدك وتفعيل الحساب.</p>${cta(link, "تأكيد البريد")}`);
-      return { subject, html, text };
-    }
-    case "reset_password": {
-      const subject = "استعادة كلمة المرور — وازون";
-      const text = `مرحباً ${displayName},\n\nعيّن كلمة مرور جديدة عبر:\n${link}\n`;
-      const html = wrapHtml(subject, `<p>مرحباً ${escapeHtml(displayName)}،</p><p>طلبت استعادة كلمة المرور. الرابط صالح لفترة محدودة.</p>${cta(link, "تعيين كلمة مرور جديدة")}`);
-      return { subject, html, text };
-    }
-    case "member_invitation": {
-      const inviter = str(data, "inviter", "عضو");
-      const subject = "دعوة للانضمام إلى محفظة في وازون";
-      const text = `${inviter} دعاك إلى وازون:\n${link}\n`;
-      const html = wrapHtml(subject, `<p>دعاك <strong>${escapeHtml(inviter)}</strong> للانضمام إلى محفظة على وازون.</p>${cta(link, "قبول الدعوة")}`);
-      return { subject, html, text };
-    }
-    case "member_receipt": {
-      const subject = "إيصال من وازون";
-      const receiptUrl = str(data, "receiptUrl");
-      const bodyText = messageAr || "لديك إيصال جديد من وازون.";
-      const text = `${bodyText}\n${receiptUrl || link}\n`;
-      const html = wrapHtml(
-        subject,
-        `<p>مرحباً ${escapeHtml(displayName)}،</p><p>${htmlBody || escapeHtml(bodyText).replaceAll("\n", "<br/>")}</p>${receiptUrl || link ? cta(receiptUrl || link, "عرض الإيصال") : ""}`,
-      );
-      return { subject, html, text };
-    }
-    case "dues_digest": {
-      const subject = "ملخص مستحقات — وازون";
-      const text = `${messageAr || messageEn || "ملخص المستحقات"}\n`;
-      const html = wrapHtml(subject, `<p>${escapeHtml(messageAr || messageEn || "ملخص المستحقات").replaceAll("\n", "<br/>")}</p>`);
-      return { subject, html, text };
-    }
-    case "privacy_export_ready": {
-      const subject = "تصدير بياناتك جاهز — وازون";
-      const text = `${messageAr || messageEn || subject}\n`;
-      const html = wrapHtml(subject, `<p>${escapeHtml(messageAr || messageEn || subject)}</p>`);
-      return { subject, html, text };
-    }
-    case "privacy_deletion_done": {
-      const subject = "تم حذف بياناتك — وازون";
-      const text = `${messageAr || messageEn || subject}\n`;
-      const html = wrapHtml(subject, `<p>${escapeHtml(messageAr || messageEn || subject)}</p>`);
-      return { subject, html, text };
-    }
-    default: {
-      const subject = `إشعار وازون · ${template}`;
-      const text = messageAr || messageEn || JSON.stringify(data);
-      const html = wrapHtml(subject, `<p>${htmlBody || escapeHtml(text).replaceAll("\n", "<br/>")}</p>${link ? cta(link, "فتح الرابط") : ""}`);
-      return { subject, html, text };
-    }
+function publicOrigin() {
+  try {
+    return appOrigin();
+  } catch {
+    return "https://wazen.bhd-om.com";
   }
+}
+
+function ctaMeta(template: string, locale: "ar" | "en", link: string, receiptUrl: string) {
+  const href = receiptUrl || link;
+  if (!href) return { ctaUrl: "", ctaLabel: "" };
+  if (template === "verify_email") return { ctaUrl: href, ctaLabel: locale === "ar" ? "تأكيد البريد" : "Verify email" };
+  if (template === "reset_password") return { ctaUrl: href, ctaLabel: locale === "ar" ? "تعيين كلمة مرور جديدة" : "Set new password" };
+  if (template === "member_invitation") return { ctaUrl: href, ctaLabel: locale === "ar" ? "قبول الدعوة" : "Accept invite" };
+  if (template === "member_receipt") return { ctaUrl: href, ctaLabel: locale === "ar" ? "عرض الإيصال" : "View receipt" };
+  return { ctaUrl: href, ctaLabel: locale === "ar" ? "فتح الرابط" : "Open link" };
+}
+
+export async function renderEmailTemplate(
+  template: string,
+  data: TemplatePayload,
+  db?: D1Database | null,
+): Promise<RenderedEmail> {
+  const locale: "ar" | "en" = str(data, "locale") === "en" ? "en" : "ar";
+  const displayName = str(data, "displayName") || str(data, "inviter") || (locale === "ar" ? "مستخدم وازون" : "Wazen user");
+  const link = str(data, "link");
+  const receiptUrl = str(data, "receiptUrl");
+  const message = str(data, "messageAr") || str(data, "message") || str(data, "messageEn");
+  const messageHtml = str(data, "html") || escapeHtml(message).replaceAll("\n", "<br/>");
+  const definition = await resolveEmailTemplate(db, template);
+  const { ctaUrl, ctaLabel } = ctaMeta(template, locale, link, receiptUrl);
+  const vars = {
+    displayName,
+    link: link || receiptUrl,
+    message,
+    messageHtml,
+    ctaLabel,
+    inviter: str(data, "inviter", displayName),
+  };
+  const subject = applyTemplatePlaceholders(locale === "ar" ? definition.subjectAr : definition.subjectEn, vars);
+  const bodyHtml = applyTemplatePlaceholders(locale === "ar" ? definition.bodyHtmlAr : definition.bodyHtmlEn, vars);
+  const text = applyTemplatePlaceholders(locale === "ar" ? definition.textAr : definition.textEn, vars);
+  const origin = publicOrigin();
+  const html = brandedEmailShell({
+    title: subject,
+    bodyHtml,
+    logoUrl: `${origin}/brand/wazen-lockup.png`,
+    appOrigin: origin,
+    locale,
+    ctaUrl,
+    ctaLabel,
+  });
+  return { subject, html, text: text || message || subject };
+}
+
+/** Sync helper for tests / fallback without DB override. */
+export function renderEmailTemplateSync(template: string, data: TemplatePayload): RenderedEmail {
+  const locale: "ar" | "en" = str(data, "locale") === "en" ? "en" : "ar";
+  const id = (template in DEFAULT_EMAIL_TEMPLATES ? template : "dues_digest") as EmailTemplateId;
+  const definition = DEFAULT_EMAIL_TEMPLATES[id];
+  const displayName = str(data, "displayName") || (locale === "ar" ? "مستخدم وازون" : "Wazen user");
+  const link = str(data, "link") || str(data, "receiptUrl");
+  const message = str(data, "message") || str(data, "messageAr") || str(data, "messageEn");
+  const messageHtml = str(data, "html") || escapeHtml(message).replaceAll("\n", "<br/>");
+  const { ctaUrl, ctaLabel } = ctaMeta(template, locale, link, str(data, "receiptUrl"));
+  const vars = { displayName, link, message, messageHtml, ctaLabel, inviter: str(data, "inviter", displayName) };
+  const subject = applyTemplatePlaceholders(locale === "ar" ? definition.subjectAr : definition.subjectEn, vars);
+  const bodyHtml = applyTemplatePlaceholders(locale === "ar" ? definition.bodyHtmlAr : definition.bodyHtmlEn, vars);
+  const text = applyTemplatePlaceholders(locale === "ar" ? definition.textAr : definition.textEn, vars);
+  const origin = publicOrigin();
+  return {
+    subject,
+    text,
+    html: brandedEmailShell({
+      title: subject,
+      bodyHtml,
+      logoUrl: `${origin}/brand/wazen-lockup.png`,
+      appOrigin: origin,
+      locale,
+      ctaUrl,
+      ctaLabel,
+    }),
+  };
 }
 
 async function sendViaResend(to: string, rendered: RenderedEmail) {
@@ -170,9 +178,9 @@ async function sendViaWebhook(to: string, template: string, data: TemplatePayloa
   if (!response.ok) throw new Error("PROVIDER_REJECTED");
 }
 
-export async function deliverOutboxEmail(message: EmailOutboxRow) {
+export async function deliverOutboxEmail(message: EmailOutboxRow, db?: D1Database | null) {
   const data = JSON.parse(message.payload_json) as TemplatePayload;
-  const rendered = renderEmailTemplate(message.template, data);
+  const rendered = await renderEmailTemplate(message.template, data, db);
   if (env("RESEND_API_KEY") && env("RESEND_FROM_EMAIL")) {
     await sendViaResend(message.recipient, rendered);
     return;
@@ -191,7 +199,7 @@ export async function drainEmailOutbox(db: D1Database, limit = 20) {
   let sent = 0;
   for (const message of pending.results ?? []) {
     try {
-      await deliverOutboxEmail(message);
+      await deliverOutboxEmail(message, db);
       await db.prepare("UPDATE email_outbox SET status='sent',attempts=attempts+1,sent_at=? WHERE id=? AND status='pending'")
         .bind(new Date().toISOString(), message.id).run();
       sent += 1;

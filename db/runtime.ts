@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 21;
+const SCHEMA_VERSION = 22;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -165,6 +165,10 @@ async function ensureBhdSubColumn(db: D1Database) {
 }
 
 async function ensureSchemaPatches(db: D1Database) {
+  try {
+    const { ensureEmailTemplatesTable } = await import("../lib/email-template-store");
+    await ensureEmailTemplatesTable(db);
+  } catch { /* best-effort */ }
   try { await ensureWalletLinkTables(db); } catch { /* created in batch on empty DBs that failed early */ }
   const memberColumns = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
   if (!memberColumns.results.some((column) => column.name === "phone")) {
@@ -845,6 +849,16 @@ async function initializeSchema(db: D1Database) {
       attempts INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       sent_at TEXT
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS email_templates (
+      id TEXT PRIMARY KEY,
+      subject_ar TEXT NOT NULL,
+      subject_en TEXT NOT NULL,
+      body_html_ar TEXT NOT NULL,
+      body_html_en TEXT NOT NULL,
+      text_ar TEXT NOT NULL,
+      text_en TEXT NOT NULL,
+      updated_at TEXT
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS webhook_events (
       provider TEXT NOT NULL,
