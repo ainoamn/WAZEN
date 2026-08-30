@@ -243,17 +243,17 @@ export function buildMemberLedger(input: {
       || expense.paid_by_name === "Association fund";
 
     if (fromFund) {
-      // Covered by the association fund: share is informational under «صرف».
-      // «عليه» only moves when syncFundDeficitShares creates a pending settlement to the fund.
+      // Member’s share of a fund-paid expense counts as «عليه» (what they consumed from the pool).
       if (shareMinor > 0) {
+        expenseDebit += shareMinor;
         lines.push({
           at: expense.occurred_at,
-          focus: "spent",
+          focus: "owes",
           direction: "out",
           titleAr: `حصة من: ${expense.description || "مصروف"}`,
           titleEn: `Share of: ${expense.description || "expense"}`,
-          detailAr: "حصته من مصروف دُفع من صندوق الجمعية — لا يُضاف إلى «عليه» ما دام الصندوق يغطي الصرف (العجز فقط يظهر في عليه)",
-          detailEn: "Share of a fund-paid expense — does not add to Owes while the fund covers it (only a fund deficit appears under Owes)",
+          detailAr: "حصته من مصروف دُفع من صندوق الجمعية — تُحسب في «عليه»",
+          detailEn: "Share of a fund-paid expense — counted under Owes",
           amountMinor: shareMinor,
         });
       }
@@ -299,26 +299,35 @@ export function buildMemberLedger(input: {
     const toFund = String(settlement.to_member_id).startsWith("space:");
     const fromFundSettle = String(settlement.from_member_id).startsWith("space:");
     if (settlement.from_member_id === member.id) {
-      if (pending) expenseDebit += amount;
-      lines.push({
-        at: new Date().toISOString(),
-        focus: pending ? "owes" : "spent",
-        direction: "out",
-        titleAr: pending
-          ? (toFund ? "عجز الصندوق عليه" : "تسوية معلقة عليه")
-          : "تسوية سُددت",
-        titleEn: pending
-          ? (toFund ? "Fund deficit he owes" : "Pending settlement he owes")
-          : "Settled share",
-        detailAr: toFund
-          ? "حصته من عجز صندوق الجمعية بعد مصروف أكبر من الرصيد"
-          : `يدفع لـ ${settlement.to_member_name || "عضو آخر"} — ناتج تقسيم مصروف مشترك`,
-        detailEn: toFund
-          ? "His share of the association fund deficit after an overspend"
-          : `Pays ${settlement.to_member_name || "another member"} — from a shared expense split`,
-        amountMinor: amount,
-        status: settlement.status,
-      });
+      // Fund-deficit settlements are superseded by counting each fund expense share above.
+      if (toFund) {
+        if (pending) {
+          lines.push({
+            at: new Date().toISOString(),
+            focus: "owes",
+            direction: "out",
+            titleAr: "عجز الصندوق (مُغطى ضمن الحصص)",
+            titleEn: "Fund deficit (already in shares)",
+            detailAr: "للمتابعة فقط — المبلغ محسوب ضمن حصص مصروف الصندوق في «عليه»",
+            detailEn: "Informational — amount is already included in fund expense shares under Owes",
+            amountMinor: amount,
+            status: settlement.status,
+          });
+        }
+      } else {
+        if (pending) expenseDebit += amount;
+        lines.push({
+          at: new Date().toISOString(),
+          focus: pending ? "owes" : "spent",
+          direction: "out",
+          titleAr: pending ? "تسوية معلقة عليه" : "تسوية سُددت",
+          titleEn: pending ? "Pending settlement he owes" : "Settled share",
+          detailAr: `يدفع لـ ${settlement.to_member_name || "عضو آخر"} — ناتج تقسيم مصروف مشترك`,
+          detailEn: `Pays ${settlement.to_member_name || "another member"} — from a shared expense split`,
+          amountMinor: amount,
+          status: settlement.status,
+        });
+      }
     }
     if (settlement.to_member_id === member.id) {
       if (pending) expenseCredit += amount;
