@@ -70,6 +70,62 @@ test("pending settlement from member appears under owes with the other party", (
   assert.equal(ledger.owesMinor, 15_000);
 });
 
+test("fund-paid expense share is spent not owes while fund covers it", () => {
+  const ledger = buildMemberLedger({
+    member: { ...member, paid_minor: 200_000, due_minor: 200_000, addon_minor: 0 },
+    spaceNameAr: "سفر",
+    spaceNameEn: "Trip",
+    currency: "OMR",
+    installments: [],
+    transactions: [],
+    settlements: [],
+    tripExpenses: [{
+      id: "e1",
+      space_id: "s1",
+      paid_by_member_id: "m0",
+      paid_by_name: "صندوق الجمعية",
+      amount_minor: 331_390,
+      description: "تذاكر",
+      occurred_at: "2026-08-30T12:00:00.000Z",
+      paid_from: "common_fund",
+    }],
+    expenseSplits: [{ expense_id: "e1", member_id: "m1", share_minor: 165_695 }],
+  });
+  assert.equal(ledger.owesMinor, 0);
+  assert.equal(ledger.creditMinor, 0);
+  const owes = filterMemberLedgerLines(ledger.lines, "owes");
+  assert.equal(owes.length, 0);
+  const spent = filterMemberLedgerLines(ledger.lines, "spent");
+  assert.equal(spent.some((row) => row.titleAr.includes("حصة")), true);
+  assert.equal(spent.find((row) => row.titleAr.includes("حصة"))?.amountMinor, 165_695);
+});
+
+test("fund deficit settlement appears under owes", () => {
+  const ledger = buildMemberLedger({
+    member: { ...member, paid_minor: 20_000, due_minor: 200_000, addon_minor: 0 },
+    spaceNameAr: "سفر",
+    spaceNameEn: "Trip",
+    currency: "OMR",
+    installments: [],
+    transactions: [],
+    settlements: [{
+      id: "st-fund",
+      space_id: "s1",
+      from_member_id: "m1",
+      to_member_id: "space:s1",
+      from_member_name: "ماجد",
+      to_member_name: "صندوق الجمعية",
+      amount_minor: 40_000,
+      status: "pending",
+    }],
+    tripExpenses: [],
+    expenseSplits: [],
+  });
+  assert.equal(ledger.owesMinor > 0, true);
+  const owes = filterMemberLedgerLines(ledger.lines, "owes");
+  assert.equal(owes.some((row) => row.titleAr.includes("عجز")), true);
+});
+
 test("printable member html includes name and movements table", () => {
   const ledger = buildMemberLedger({
     member,

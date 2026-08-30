@@ -230,7 +230,7 @@ function MemberLedgerBody({
   const tabs: Array<{ id: MemberLedgerFocus; ar: string; en: string; amount: number }> = [
     { id: "all", ar: "الكل", en: "All", amount: 0 },
     { id: "paid", ar: "المدفوع", en: "Paid", amount: ledger.paidMinor },
-    { id: "spent", ar: "الصرف", en: "Spent", amount: ledger.addonMinor },
+    { id: "spent", ar: "الصرف", en: "Spent", amount: ledger.spentMinor || ledger.addonMinor },
     { id: "owes", ar: "عليه", en: "Owes", amount: ledger.owesMinor },
     { id: "credit", ar: "له", en: "Credit", amount: ledger.creditMinor },
   ];
@@ -350,7 +350,7 @@ function MemberLedgerBody({
         ) : null}
         <div><span>{locale === "ar" ? "الهدف المالي" : "Financial goal"}</span><b>{money(member.due_minor, space.currency, locale)}</b></div>
         <div><span>{locale === "ar" ? "كم دفع" : "Paid"}</span><b>{money(ledger.paidMinor, space.currency, locale)}</b></div>
-        <div><span>{locale === "ar" ? "كم صرف" : "Spent"}</span><b>{money(ledger.addonMinor, space.currency, locale)}</b></div>
+        <div><span>{locale === "ar" ? "كم صرف" : "Spent"}</span><b>{money(ledger.spentMinor || ledger.addonMinor, space.currency, locale)}</b></div>
         <div><span>{locale === "ar" ? "كم عليه" : "Owes"}</span><b>{money(ledger.owesMinor, space.currency, locale)}</b></div>
         <div><span>{locale === "ar" ? "كم له" : "Credit"}</span><b>{money(ledger.creditMinor, space.currency, locale)}</b></div>
       </div>

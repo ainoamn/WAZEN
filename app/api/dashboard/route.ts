@@ -711,8 +711,8 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     db.prepare(`SELECT es.*,m.display_name FROM expense_splits es JOIN trip_expenses te ON te.id=es.expense_id
       JOIN members m ON m.id=es.member_id WHERE te.space_id IN (${placeholders}) AND COALESCE(te.status,'posted')<>'voided' ORDER BY es.expense_id,m.joined_at`).bind(...ids).all(),
     db.prepare(`SELECT s.*,
-      tm.display_name AS to_member_name,
-      fm.display_name AS from_member_name
+      CASE WHEN s.to_member_id LIKE 'space:%' THEN 'صندوق الجمعية' ELSE tm.display_name END AS to_member_name,
+      CASE WHEN s.from_member_id LIKE 'space:%' THEN 'صندوق الجمعية' ELSE fm.display_name END AS from_member_name
     FROM settlements s
     LEFT JOIN members tm ON tm.id=s.to_member_id
     LEFT JOIN members fm ON fm.id=s.from_member_id

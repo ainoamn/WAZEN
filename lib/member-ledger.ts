@@ -106,6 +106,8 @@ export function buildMemberLedger(input: {
     amount_minor: number;
     description: string;
     occurred_at: string;
+    /** common_fund | member — when omitted, infer from paid_by_name */
+    paid_from?: string | null;
   }>;
   expenseSplits: Array<{ expense_id: string; member_id: string; share_minor: number }>;
 }) {
@@ -235,6 +237,30 @@ export function buildMemberLedger(input: {
   for (const expense of expenses) {
     const splits = input.expenseSplits.filter((row) => row.expense_id === expense.id);
     const share = splits.find((row) => row.member_id === member.id);
+    const shareMinor = share ? Number(share.share_minor) || 0 : 0;
+    const fromFund = String(expense.paid_from ?? "") === "common_fund"
+      || expense.paid_by_name === "صندوق الجمعية"
+      || expense.paid_by_name === "Association fund";
+
+    if (fromFund) {
+      // Covered by the association fund: share is informational under «صرف».
+      // «عليه» only moves when syncFundDeficitShares creates a pending settlement to the fund.
+      if (shareMinor > 0) {
+        lines.push({
+          at: expense.occurred_at,
+          focus: "spent",
+          direction: "out",
+          titleAr: `حصة من: ${expense.description || "مصروف"}`,
+          titleEn: `Share of: ${expense.description || "expense"}`,
+          detailAr: "حصته من مصروف دُفع من صندوق الجمعية — لا يُضاف إلى «عليه» ما دام الصندوق يغطي الصرف (العجز فقط يظهر في عليه)",
+          detailEn: "Share of a fund-paid expense — does not add to Owes while the fund covers it (only a fund deficit appears under Owes)",
+          amountMinor: shareMinor,
+        });
+      }
+      continue;
+    }
+
+    // Member paid from pocket: «له/عليه» come from pending settlements, not from raw shares.
     if (expense.paid_by_member_id === member.id) {
       lines.push({
         at: expense.occurred_at,
@@ -242,27 +268,26 @@ export function buildMemberLedger(input: {
         direction: "out",
         titleAr: expense.description || "مصروف مشترك",
         titleEn: expense.description || "Shared expense",
-        detailAr: `دفع العضو الفاتورة كاملة (${expense.amount_minor}) ثم تُقسَّم الحصص`,
-        detailEn: `Member paid the full bill (${expense.amount_minor}); shares are split`,
+        detailAr: `دفع العضو الفاتورة كاملة (${expense.amount_minor})؛ حصص الآخرين تظهر له عبر التسويات`,
+        detailEn: `Member paid the full bill (${expense.amount_minor}); others’ shares appear as credit via settlements`,
         amountMinor: Number(expense.amount_minor) || 0,
       });
-      expenseCredit += Math.max(0, (Number(expense.amount_minor) || 0) - (share ? Number(share.share_minor) : 0));
     }
-    if (share && Number(share.share_minor) > 0) {
+    if (shareMinor > 0) {
       const payer = expense.paid_by_name || "—";
       lines.push({
         at: expense.occurred_at,
-        focus: expense.paid_by_member_id === member.id ? "spent" : "owes",
+        focus: "spent",
         direction: "out",
         titleAr: `حصة من: ${expense.description || "مصروف"}`,
         titleEn: `Share of: ${expense.description || "expense"}`,
         detailAr: expense.paid_by_member_id === member.id
-          ? "حصته من فاتورة دفعها بنفسه"
-          : `حصته لأن ${payer} دفع عنه — هكذا صار عليه هذا المبلغ`,
+          ? "حصته من فاتورة دفعها بنفسه (التسوية الصافية تحت له/عليه)"
+          : `حصته من فاتورة دفعها ${payer} — المبلغ المطلوب يظهر في «عليه» عبر التسوية المعلقة`,
         detailEn: expense.paid_by_member_id === member.id
-          ? "His share of a bill he paid"
-          : `Share because ${payer} paid — this is how the owed amount arose`,
-        amountMinor: Number(share.share_minor) || 0,
+          ? "His share of a bill he paid (net claim is under Owes/Credit via settlements)"
+          : `Share of a bill paid by ${payer} — the amount due appears under Owes via the pending settlement`,
+        amountMinor: shareMinor,
       });
     }
   }
@@ -271,16 +296,26 @@ export function buildMemberLedger(input: {
     const amount = Number(settlement.amount_minor) || 0;
     if (amount <= 0) continue;
     const pending = settlement.status === "pending";
+    const toFund = String(settlement.to_member_id).startsWith("space:");
+    const fromFundSettle = String(settlement.from_member_id).startsWith("space:");
     if (settlement.from_member_id === member.id) {
       if (pending) expenseDebit += amount;
       lines.push({
         at: new Date().toISOString(),
         focus: pending ? "owes" : "spent",
         direction: "out",
-        titleAr: pending ? "تسوية معلقة عليه" : "تسوية سُددت",
-        titleEn: pending ? "Pending settlement he owes" : "Settled share",
-        detailAr: `يدفع لـ ${settlement.to_member_name || "عضو آخر"} — ناتج تقسيم مصروف مشترك`,
-        detailEn: `Pays ${settlement.to_member_name || "another member"} — from a shared expense split`,
+        titleAr: pending
+          ? (toFund ? "عجز الصندوق عليه" : "تسوية معلقة عليه")
+          : "تسوية سُددت",
+        titleEn: pending
+          ? (toFund ? "Fund deficit he owes" : "Pending settlement he owes")
+          : "Settled share",
+        detailAr: toFund
+          ? "حصته من عجز صندوق الجمعية بعد مصروف أكبر من الرصيد"
+          : `يدفع لـ ${settlement.to_member_name || "عضو آخر"} — ناتج تقسيم مصروف مشترك`,
+        detailEn: toFund
+          ? "His share of the association fund deficit after an overspend"
+          : `Pays ${settlement.to_member_name || "another member"} — from a shared expense split`,
         amountMinor: amount,
         status: settlement.status,
       });
@@ -293,8 +328,12 @@ export function buildMemberLedger(input: {
         direction: "in",
         titleAr: pending ? "مستحق له من تسوية" : "استلم تسوية",
         titleEn: pending ? "Settlement due to him" : "Settlement received",
-        detailAr: `من ${settlement.from_member_name || "عضو آخر"} لأنه دفع حصة غيره`,
-        detailEn: `From ${settlement.from_member_name || "another member"} because he covered their share`,
+        detailAr: fromFundSettle
+          ? "رد من صندوق الجمعية"
+          : `من ${settlement.from_member_name || "عضو آخر"} لأنه دفع حصة غيره`,
+        detailEn: fromFundSettle
+          ? "Refund from the association fund"
+          : `From ${settlement.from_member_name || "another member"} because he covered their share`,
         amountMinor: amount,
         status: settlement.status,
       });
