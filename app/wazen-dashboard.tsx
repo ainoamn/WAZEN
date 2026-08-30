@@ -1635,16 +1635,40 @@ export function WazenDashboard() {
           )}
           {viewSpaceType[activeView] && !viewLocked && (
             <>
-              <div className="space-switcher">
-                {spacesForView.map((space) => (
-                  <button key={space.id} type="button" className={activeSpace?.id === space.id ? "active" : ""} onClick={() => { setPickedSpaceId((current) => ({ ...current, [activeView]: space.id })); persistPlace(activeView, space.id); }}>{nameOf(space, locale)}{(space.status ?? "active") === "archived" ? (locale === "ar" ? " · مؤرشفة" : " · archived") : ""}</button>
-                ))}
-                <button type="button" onClick={() => setShowArchived((current) => !current)}>{showArchived ? (locale === "ar" ? "إخفاء المؤرشف" : "Hide archived") : (locale === "ar" ? "عرض المؤرشف" : "Show archived")}</button>
-                <button type="button" className={!canCreateCurrentType ? "is-plan-locked" : ""} onClick={openNewWallet}>
-                  {canCreateCurrentType ? <Plus size={16} /> : <Lock size={16} />}
-                  {canCreateCurrentType ? addWalletLabel : (locale === "ar" ? "ترقية لإضافة محفظة" : "Upgrade to add")}
-                  {!canCreateCurrentType && <PlanLockBadge locale={locale} />}
-                </button>
+              <div className="space-switcher space-switcher-select">
+                {spacesForView.length > 0 ? (
+                  <label className="space-picker-field">
+                    <span>{locale === "ar" ? "المحفظة النشطة" : "Active wallet"}</span>
+                    <select
+                      value={activeSpace?.id ?? ""}
+                      aria-label={locale === "ar" ? "اختر المحفظة" : "Choose wallet"}
+                      onChange={(event) => {
+                        const nextId = event.target.value;
+                        setPickedSpaceId((current) => ({ ...current, [activeView]: nextId }));
+                        persistPlace(activeView, nextId);
+                      }}
+                    >
+                      {spacesForView.map((space) => (
+                        <option key={space.id} value={space.id}>
+                          {nameOf(space, locale)}
+                          {(space.status ?? "active") === "archived"
+                            ? (locale === "ar" ? " · مؤرشفة" : " · archived")
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <div className="space-switcher-actions">
+                  <button type="button" className="secondary-button" onClick={() => setShowArchived((current) => !current)}>
+                    {showArchived ? (locale === "ar" ? "إخفاء المؤرشف" : "Hide archived") : (locale === "ar" ? "عرض المؤرشف" : "Show archived")}
+                  </button>
+                  <button type="button" className={!canCreateCurrentType ? "is-plan-locked primary-button" : "primary-button"} onClick={openNewWallet}>
+                    {canCreateCurrentType ? <Plus size={16} /> : <Lock size={16} />}
+                    {canCreateCurrentType ? addWalletLabel : (locale === "ar" ? "ترقية لإضافة محفظة" : "Upgrade to add")}
+                    {!canCreateCurrentType && <PlanLockBadge locale={locale} />}
+                  </button>
+                </div>
               </div>
               {!activeSpace && (
                 <article className="panel"><div className="empty-state"><WalletCards size={28} /><strong>{addWalletLabel}</strong><p>{activeView === "society" ? (locale === "ar" ? "لا توجد جمعية بعد. أنشئ جمعية جديدة لإدارة الأقساط والأدوار والأعضاء." : "No savings circle yet. Create one to manage dues, turns, and members.") : (locale === "ar" ? "لا توجد محفظة في هذا القسم بعد." : "No wallet in this section yet.")}</p><button className="primary-button" onClick={openNewWallet}>{canCreateCurrentType ? <Plus size={16} /> : <Lock size={16} />}{canCreateCurrentType ? addWalletLabel : (locale === "ar" ? "ترقية الباقة" : "Upgrade plan")}</button></div></article>
