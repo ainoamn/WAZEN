@@ -685,8 +685,17 @@ export async function POST(request: Request) {
       if (user.authType === "api_key") throw new ApiError(403, "SESSION_AUTH_REQUIRED");
       const parsed = z.object({ token: z.string().min(40).max(200) }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_INVITATION");
-      const invitation = await db.prepare("SELECT * FROM invites WHERE token=? AND status='pending' AND expires_at>?").bind(await sha256(parsed.data.token), isoNow()).first<{ id: string; space_id: string; email: string; role: string }>();
-      if (!invitation || normalizeEmail(invitation.email) !== normalizeEmail(user.email)) throw new ApiError(404, "INVITATION_NOT_FOUND");
+      const tokenHash = await sha256(parsed.data.token);
+      const invitation = await db.prepare("SELECT id,space_id,email,role,status,expires_at FROM invites WHERE token=? LIMIT 1")
+        .bind(tokenHash)
+        .first<{ id: string; space_id: string; email: string; role: string; status: string; expires_at: string }>();
+      if (!invitation) throw new ApiError(404, "INVITATION_NOT_FOUND");
+      if (invitation.status === "accepted") throw new ApiError(409, "INVITATION_ALREADY_USED");
+      if (invitation.status !== "pending") throw new ApiError(410, "INVITATION_CANCELLED");
+      if (new Date(invitation.expires_at).getTime() <= Date.now()) throw new ApiError(410, "INVITATION_EXPIRED");
+      if (normalizeEmail(invitation.email) !== normalizeEmail(user.email)) {
+        throw new ApiError(403, "INVITE_EMAIL_MISMATCH");
+      }
       const spaceOwner = await db.prepare("SELECT owner_user_id FROM spaces WHERE id=?").bind(invitation.space_id).first<{ owner_user_id: string }>();
       const alreadyLinked = await db.prepare("SELECT id FROM members WHERE space_id=? AND user_id=? AND status='active'").bind(invitation.space_id, user.id).first();
       if (spaceOwner?.owner_user_id && !alreadyLinked) await assertOwnerPlanQuota(db, spaceOwner.owner_user_id, "user", 1);
