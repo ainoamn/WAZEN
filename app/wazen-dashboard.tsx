@@ -5,7 +5,7 @@ import { WazenIcon } from "../components/brand/WazenLogo";
 import WazenPageLoader from "../components/brand/WazenPageLoader";
 import { ReportsPanel } from "../components/reports/ReportsPanel";
 import { MemberDetailModal, MemberPersonProfile, ReceiptChannelModal, RemainingInvoiceGrid, SmartAccountantModal, memberAccruedDueMinor, memberInstallments, personIdentityKey } from "../components/members/association-members";
-import { SpaceRolePermissionsPanel, SpaceRolesHelpButton } from "../components/members/space-role-permissions";
+import { SpaceRolePermissionsPanel } from "../components/members/space-role-permissions";
 import { PersonalRulesSetup, PersonalWalletPanel, confirmResetWalletData } from "../components/personal/personal-wallet";
 import { DateField } from "../components/ui/date-field";
 import { FoldWrap } from "../components/ui/collapsible-panel";
@@ -64,6 +64,7 @@ import {
   Mail,
   Menu,
   Moon,
+  MoreVertical,
   Plane,
   Plus,
   ReceiptText,
@@ -2259,7 +2260,6 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
       {["trip", "society", "group"].includes(space.type) && canManageRoles ? <button type="button" onClick={onInvite}><UserPlus size={16} />{t.invite}</button> : null}
       <button type="button" onClick={onEditWallet}><Pencil size={16} />{locale === "ar" ? "ضبط المحفظة" : "Wallet setup"}</button>
       <button type="button" onClick={onArchiveWallet}><Archive size={16} />{(space.status ?? "active") === "archived" ? (locale === "ar" ? "استعادة" : "Restore") : (locale === "ar" ? "أرشفة" : "Archive")}</button>
-      {["household", "trip", "society", "group"].includes(space.type) ? <SpaceRolesHelpButton locale={locale} /> : null}
     </div>
     <FoldWrap id={`${space.id}:hero`} label={locale === "ar" ? "طي رأس المحفظة" : "Fold wallet header"}>
     <section className={`space-hero accent-${space.accent}`}>
@@ -2332,21 +2332,6 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
     )}
     {goal > 0 && space.type !== "personal" && <FoldWrap id={`${space.id}:goal`}><article className="panel goal-wide"><div className="panel-heading"><div><span className="section-kicker"><Target size={15} />{locale === "ar" ? "تقدم الهدف" : "Goal progress"}</span><h2>{nameOf(space, locale)}</h2></div><strong>{progress}%</strong></div><div className="progress-track tall"><span style={{ width: `${progress}%` }} /></div><div className="goal-wide-values"><span className={space.balance_minor < 0 ? "amount-negative" : ""}>{formatMoney(space.balance_minor, space.currency, locale)}</span><span>{formatMoney(goal, space.currency, locale)}</span></div></article></FoldWrap>}
     {members.length > 0 && space.type !== "personal" && <FoldWrap id={`${space.id}:members`}><MembersTable members={members} locale={locale} currency={space.currency} data={data} spaceId={space.id} onOpenMember={onOpenMember} onChanged={onTxnChanged} /></FoldWrap>}
-    {["household", "trip", "society", "group"].includes(space.type) && (
-      <FoldWrap id={`${space.id}:roles`}>
-        <SpaceRolePermissionsPanel
-          spaceId={space.id}
-          locale={locale}
-          rolePermissionsJson={space.role_permissions_json}
-          canManage={canManageRoles}
-          onSaved={(nextJson) => {
-            onTxnChanged({
-              spaces: data.spaces.map((item) => item.id === space.id ? { ...item, role_permissions_json: nextJson } : item),
-            });
-          }}
-        />
-      </FoldWrap>
-    )}
     {["household", "trip", "society", "group"].includes(space.type) && <FoldWrap id={`${space.id}:expenses`}><article className="panel workflow-panel"><div className="panel-heading"><div><span className="section-kicker"><Plane size={15} />{locale === "ar" ? "المصروفات والتسويات" : "Expenses & settlements"}</span><h2>{locale === "ar" ? "من أي حساب دُفع؟ وما له / عليه" : "Paid-from account and balances"}</h2></div><div className="section-title-actions"><button type="button" className="secondary-button" onClick={() => { if (window.confirm(locale === "ar" ? "إعادة تقسيم كل المصروفات بالتساوي على الأعضاء الحاليين بمن فيهم الجدد؟" : "Re-split every expense equally across current members, including new ones?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "resplitTripExpenses", idempotencyKey: crypto.randomUUID(), spaceId: space.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "RESPLIT_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "RESPLIT_FAILED")); }}><Users size={15} />{locale === "ar" ? "تقسيم الكل بالتساوي" : "Split all equally"}</button><button className="primary-button" onClick={onTripExpense}><Plus size={15} />{locale === "ar" ? "مصروف جماعي" : "Group expense"}</button></div></div><div className="transaction-list">{data.tripExpenses.filter((expense) => expense.space_id === space.id).map((expense) => <div className="trip-expense-row" key={expense.id}><div className="transaction-row"><div className="transaction-icon reimbursement"><HandCoins size={17} /></div><div className="transaction-main"><strong>{expense.description}</strong><span>{locale === "ar" ? (expense.paid_from === "common_fund" ? "دُفع من صندوق الجمعية" : `دفع بواسطة ${expense.paid_by_name}`) : (expense.paid_from === "common_fund" ? "Paid from association fund" : `Paid by ${expense.paid_by_name}`)}</span></div><strong className="amount-negative">{formatMoney(expense.amount_minor, space.currency, locale)}</strong><div className="transaction-actions"><button type="button" title={locale === "ar" ? "تعديل المصروف" : "Edit expense"} aria-label={locale === "ar" ? "تعديل المصروف" : "Edit expense"} onClick={() => onEditExpense(expense.id)}><Pencil size={15} /></button><button type="button" title={locale === "ar" ? "تقسيم بالتساوي على كل الأعضاء" : "Split equally among all members"} aria-label={locale === "ar" ? "تقسيم بالتساوي" : "Split equally"} onClick={() => { if (window.confirm(locale === "ar" ? "تقسيم هذا المصروف بالتساوي على الأعضاء الحاليين بمن فيهم الجدد؟" : "Split this expense equally among current members, including new ones?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "resplitTripExpenses", idempotencyKey: crypto.randomUUID(), spaceId: space.id, expenseId: expense.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "RESPLIT_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "RESPLIT_FAILED")); }}><Users size={15} /></button><button type="button" className="danger" title={locale === "ar" ? "حذف المصروف" : "Delete expense"} aria-label={locale === "ar" ? "حذف المصروف" : "Delete expense"} onClick={() => { if (window.confirm(locale === "ar" ? "حذف هذا المصروف والتسويات المرتبطة به؟" : "Delete this group expense and its settlements?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "voidTripExpense", idempotencyKey: crypto.randomUUID(), expenseId: expense.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "VOID_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "VOID_FAILED")); }}><Trash2 size={15} /></button></div></div><div className="split-chips">{data.expenseSplits.filter((split) => split.expense_id === expense.id).map((split) => <span key={split.id} className={expense.paid_from !== "common_fund" && split.member_id === expense.paid_by_member_id ? "payer-share" : ""}>{split.display_name}: {formatMoney(split.share_minor, space.currency, locale)}{expense.paid_from !== "common_fund" && split.member_id === expense.paid_by_member_id ? (locale === "ar" ? " · حصته" : " · share") : ""}</span>)}</div><p className="expense-split-note">{(() => { const splits = data.expenseSplits.filter((split) => split.expense_id === expense.id); const payerShare = splits.find((split) => split.member_id === expense.paid_by_member_id)?.share_minor ?? 0; const owedToPayer = Math.max(0, expense.amount_minor - payerShare); if (expense.paid_from === "common_fund") return locale === "ar" ? `المبلغ خُصم من صندوق الجمعية. إن صار الرصيد سالباً يُقسَّم العجز مباشرة على الأعضاء المساهمين ويظهر في عمود «عليه».` : `This amount came from the association fund. If the balance goes negative, the deficit is split among contributing members and shown under Owes.`; return locale === "ar" ? `${expense.paid_by_name} دفع ${formatMoney(expense.amount_minor, space.currency, locale)} بالكامل. حصة كل عضو ظاهرة أعلاه. عمود «له» لـ ${expense.paid_by_name} = ما دفعه عن الآخرين (${formatMoney(owedToPayer, space.currency, locale)}) وليس حصته.` : `${expense.paid_by_name} paid ${formatMoney(expense.amount_minor, space.currency, locale)} in full. Each member’s share is shown above. The payer’s credit is what others still owe (${formatMoney(owedToPayer, space.currency, locale)}), not a double share.`; })()}</p></div>)}{!data.tripExpenses.some((expense) => expense.space_id === space.id) && <Empty locale={locale} />}</div>{pendingSettlementsWithCredit(
       data.settlements.filter((item) => item.space_id === space.id && item.status === "pending"),
       new Map(members.map((member) => [member.id, memberPosition(member, data, space.id).cashCredit])),
@@ -2414,9 +2399,75 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
   const [query, setQuery] = useState("");
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [lifecycleId, setLifecycleId] = useState<string | null>(null);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [roleEditMember, setRoleEditMember] = useState<Member | null>(null);
+  const [roleDraft, setRoleDraft] = useState("member");
+  const [roleSaving, setRoleSaving] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const space = data && spaceId ? data.spaces.find((item) => item.id === spaceId) : undefined;
+  const canManageMembers = Boolean(space && data && ["owner", "manager"].includes(myRoleInSpace(data, space)));
+  const assignableRoles = ["manager", "supervisor", "treasurer", "member", "auditor", "viewer"] as const;
   const visible = members.filter((member) => `${member.display_name} ${member.email ?? ""} ${member.phone ?? ""}`.toLowerCase().includes(query.toLowerCase()));
 
+  useEffect(() => {
+    if (!menuOpenId) return;
+    const onPointer = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpenId(null);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpenId(null);
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpenId]);
+
+  const openRoleEditor = (member: Member) => {
+    setMenuOpenId(null);
+    setRoleEditMember(member);
+    setRoleDraft(assignableRoles.includes(member.role as typeof assignableRoles[number]) ? member.role : "member");
+  };
+
+  const saveMemberRole = async () => {
+    if (!roleEditMember || !data || roleSaving) return;
+    setRoleSaving(true);
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "updateMemberRole",
+          idempotencyKey: crypto.randomUUID(),
+          memberId: roleEditMember.id,
+          role: roleDraft,
+        }),
+      });
+      const result = await response.json() as { error?: string; role?: string };
+      if (!response.ok) {
+        window.alert(
+          result.error === "OWNER_MEMBER_LOCKED"
+            ? (locale === "ar" ? "لا يمكن تغيير دور مالك المحفظة." : "Cannot change the wallet owner’s role.")
+            : (locale === "ar" ? "تعذر تحديث دور العضو." : "Could not update member role."),
+        );
+        return;
+      }
+      const nextRole = result.role ?? roleDraft;
+      onChanged?.({
+        members: data.members.map((item) => item.id === roleEditMember.id ? { ...item, role: nextRole } : item),
+      });
+      setRoleEditMember(null);
+    } catch {
+      window.alert(locale === "ar" ? "تعذر تحديث دور العضو." : "Could not update member role.");
+    } finally {
+      setRoleSaving(false);
+    }
+  };
+
   const resendInvite = async (member: Member) => {
+    setMenuOpenId(null);
     if (!member.email || member.user_id || resendingId) return;
     if ((member.status ?? "active") !== "active") return;
     setResendingId(member.id);
@@ -2465,6 +2516,7 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
   };
 
   const runMemberLifecycle = async (member: Member, action: "archiveMember" | "removeMember" | "restoreMember") => {
+    setMenuOpenId(null);
     if (lifecycleId) return;
     if (member.role === "owner") {
       window.alert(locale === "ar" ? "لا يمكن حذف أو أرشفة مالك المحفظة." : "Cannot remove or archive the wallet owner.");
@@ -2555,8 +2607,8 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
                       {!isActive
                         ? (locale === "ar" ? "مؤرشف — بلا مستحقات جديدة" : "Archived — no new dues")
                         : member.user_id
-                          ? (member.phone || member.email || spaceRoleLabel(member.role, locale))
-                          : (locale === "ar" ? "بانتظار الانضمام" : "Pending join")}
+                          ? `${spaceRoleLabel(member.role, locale)}${member.phone || member.email ? ` · ${member.phone || member.email}` : ""}`
+                          : (locale === "ar" ? `بانتظار الانضمام · ${spaceRoleLabel(member.role, locale)}` : `Pending join · ${spaceRoleLabel(member.role, locale)}`)}
                     </span>
                   </div>
                 </div>
@@ -2583,60 +2635,99 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
                   : debit ? (locale === "ar" ? "عليه مطالبات" : "Owes") : (credit ? (locale === "ar" ? "له رصيد" : "Credit") : t.paid)}
               </span>
               <span className="member-row-actions">
-                {canResend ? (
+                <div className="action-menu member-actions-menu" ref={menuOpenId === member.id ? menuRef : undefined}>
                   <button
                     type="button"
-                    className="secondary-button compact"
-                    disabled={resendingId === member.id}
-                    onClick={() => void resendInvite(member)}
-                    title={locale === "ar" ? "إعادة إرسال الدعوة" : "Resend invitation"}
+                    className="member-actions-trigger"
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpenId === member.id}
+                    aria-label={locale === "ar" ? "إجراءات العضو" : "Member actions"}
+                    disabled={busy || resendingId === member.id}
+                    onClick={() => setMenuOpenId((current) => current === member.id ? null : member.id)}
                   >
-                    <Mail size={14} />
-                    {resendingId === member.id
-                      ? (locale === "ar" ? "…" : "…")
-                      : (locale === "ar" ? "دعوة" : "Invite")}
+                    <MoreVertical size={16} />
                   </button>
-                ) : null}
-                {isActive && member.role !== "owner" ? (
-                  <>
-                    <button
-                      type="button"
-                      className="secondary-button compact"
-                      disabled={busy}
-                      onClick={() => void runMemberLifecycle(member, "archiveMember")}
-                      title={locale === "ar" ? "أرشفة / إيقاف" : "Archive / stop"}
-                    >
-                      <Archive size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button compact danger"
-                      disabled={busy}
-                      onClick={() => void runMemberLifecycle(member, "removeMember")}
-                      title={locale === "ar" ? "حذف العضو" : "Remove member"}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </>
-                ) : null}
-                {!isActive && member.role !== "owner" ? (
-                  <button
-                    type="button"
-                    className="secondary-button compact"
-                    disabled={busy}
-                    onClick={() => void runMemberLifecycle(member, "restoreMember")}
-                  >
-                    {locale === "ar" ? "استعادة" : "Restore"}
-                  </button>
-                ) : null}
-                {member.extra_minor > 0 && onWithdraw && isActive ? (
-                  <button type="button" className="secondary-button compact" onClick={() => onWithdraw(member.id)}>{locale === "ar" ? "صرف فائض" : "Withdraw"}</button>
-                ) : null}
+                  {menuOpenId === member.id ? (
+                    <div className="action-menu-panel member-actions-dropdown" role="menu">
+                      {canManageMembers && isActive && member.role !== "owner" ? (
+                        <button type="button" role="menuitem" onClick={() => openRoleEditor(member)}>
+                          <Pencil size={14} />
+                          {locale === "ar" ? "تعديل الدور" : "Change role"}
+                        </button>
+                      ) : null}
+                      {canResend ? (
+                        <button type="button" role="menuitem" onClick={() => void resendInvite(member)}>
+                          <Mail size={14} />
+                          {locale === "ar" ? "إعادة إرسال الدعوة" : "Resend invite"}
+                        </button>
+                      ) : null}
+                      {member.extra_minor > 0 && onWithdraw && isActive ? (
+                        <button type="button" role="menuitem" onClick={() => { setMenuOpenId(null); onWithdraw(member.id); }}>
+                          <HandCoins size={14} />
+                          {locale === "ar" ? "صرف فائض" : "Withdraw surplus"}
+                        </button>
+                      ) : null}
+                      {isActive && member.role !== "owner" ? (
+                        <>
+                          <button type="button" role="menuitem" onClick={() => void runMemberLifecycle(member, "archiveMember")}>
+                            <Archive size={14} />
+                            {locale === "ar" ? "أرشفة / إيقاف" : "Archive / stop"}
+                          </button>
+                          <button type="button" role="menuitem" className="is-danger" onClick={() => void runMemberLifecycle(member, "removeMember")}>
+                            <Trash2 size={14} />
+                            {locale === "ar" ? "حذف العضو" : "Remove member"}
+                          </button>
+                        </>
+                      ) : null}
+                      {!isActive && member.role !== "owner" ? (
+                        <button type="button" role="menuitem" onClick={() => void runMemberLifecycle(member, "restoreMember")}>
+                          <Archive size={14} />
+                          {locale === "ar" ? "استعادة" : "Restore"}
+                        </button>
+                      ) : null}
+                      {member.role === "owner" && !canResend && !(member.extra_minor > 0 && onWithdraw && isActive) ? (
+                        <span className="member-actions-empty">{locale === "ar" ? "المالك — بلا إجراءات" : "Owner — no actions"}</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               </span>
             </div>
           );
         })}
       </div>
+      {roleEditMember ? (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setRoleEditMember(null); }}>
+          <section className="modal-card" role="dialog" aria-modal="true">
+            <div className="modal-header">
+              <h2>{locale === "ar" ? "تعديل دور العضو" : "Change member role"}</h2>
+              <button type="button" onClick={() => setRoleEditMember(null)} aria-label="Close"><X size={20} /></button>
+            </div>
+            <div className="modal-form">
+              <p className="modal-note">{roleEditMember.display_name}</p>
+              <label>
+                <span>{locale === "ar" ? "الدور" : "Role"}</span>
+                <select value={roleDraft} onChange={(event) => setRoleDraft(event.target.value)}>
+                  {assignableRoles.map((role) => (
+                    <option key={role} value={role}>{spaceRoleLabel(role, locale)}</option>
+                  ))}
+                </select>
+              </label>
+              <p className="modal-hint">
+                {locale === "ar"
+                  ? "صلاحيات كل دور (إضافة/تعديل/حذف) تُضبط من «ضبط المحفظة»."
+                  : "Per-role add/edit/delete permissions are set in Wallet setup."}
+              </p>
+              <div className="modal-actions">
+                <button type="button" className="secondary-button" onClick={() => setRoleEditMember(null)}>{locale === "ar" ? "إلغاء" : "Cancel"}</button>
+                <button type="button" className="primary-button" disabled={roleSaving} onClick={() => void saveMemberRole()}>
+                  {roleSaving ? (locale === "ar" ? "جارٍ الحفظ…" : "Saving…") : (locale === "ar" ? "حفظ الدور" : "Save role")}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -3627,7 +3718,8 @@ function WalletModal({ data, locale, existing, defaultType = "trip", lockType = 
       setError(caught instanceof Error ? caught.message : "SAVE_FAILED");
     } finally { setSaving(false); }
   };
-  return <Modal title={existing ? (locale === "ar" ? "ضبط المحفظة" : "Wallet setup") : t.newWallet} wide={Boolean(existing && isPersonal)} xl={Boolean(existing && isPersonal)} onClose={onClose}><form className={`modal-form${existing && isPersonal ? " wallet-setup-form" : ""}`} onSubmit={submit}><label><span>{t.walletName}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={locale === "ar" ? "مثال: سفرة الإخوة 2027" : "e.g. Siblings trip 2027"} /></label>{!lockType && !existing && <label><span>{t.walletType}</span><select value={type} onChange={(event) => setType(event.target.value)}>{Object.entries(typeLabels[locale]).map(([value, label]) => <option key={value} value={value} disabled={!planAllowsSpaceType(features, value)}>{label}{planAllowsSpaceType(features, value) ? "" : (locale === "ar" ? " — ترقية" : " — Upgrade")}</option>)}</select></label>}{isGroup && <div className="form-row"><label><span>{locale === "ar" ? "المساهمة الشهرية الإلزامية" : "Mandatory monthly contribution"}</span><div className="money-input"><input required min="0.01" step="0.001" type="number" value={monthlyContribution} onChange={(event) => setMonthlyContribution(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label><label><span>{locale === "ar" ? "مدة الخطة (أشهر)" : "Plan duration (months)"}</span><input required type="number" min="1" max="120" value={durationMonths} onChange={(event) => setDurationMonths(event.target.value)} /></label></div>}<label><span>{locale === "ar" ? "تاريخ بداية الجمعية / المحفظة" : "Association / wallet start date"}</span><DateField required value={startsAt} onChange={setStartsAt} /></label>{isGroup && <div className="modal-note split-preview"><span>{locale === "ar" ? "الهدف المالي للشخص = المساهمة × عدد الأشهر" : "Personal financial goal = contribution × months"}</span><strong>{formatMoney(Number.isFinite(liveGoalMinor) ? liveGoalMinor : 0, "OMR", locale)}</strong></div>}{isGroup && <p className="modal-note">{locale === "ar" ? "عند استلام مبلغ من عضو: يُخصم أولاً من المطالبات المتراكمة عليه، وأي زيادة تُسجَّل مقدّماً (له)." : "When a member pays: outstanding dues are cleared first, and any surplus is booked as advance credit."}</p>}{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : (existing ? t.save : t.create)}</button></div></form>{existing && isPersonal && <PersonalRulesSetup spaceId={existing.id} locale={locale} accounts={data.personalAccounts ?? []} rules={data.personalRules ?? []} onChanged={(next) => onLiveData?.(next as Partial<DashboardData>)} />}{existing && <div className="personal-reset-box wallet-danger-zone"><div><strong>{locale === "ar" ? "منطقة الخطر" : "Danger zone"}</strong><p>{isPersonal ? (locale === "ar" ? "تصفية البيانات تبقي اسم المحفظة وتحذف الحسابات والعمليات. الحذف يزيل المحفظة بالكامل." : "Wipe keeps the wallet name and deletes accounts and transactions. Delete removes the wallet entirely.") : (locale === "ar" ? "تصفية البيانات تبقي الأعضاء وخطة المساهمة واسم المحفظة. الحذف يزيل الجمعية بالكامل مع الأعضاء." : "Wipe keeps members, the contribution plan, and the wallet name. Delete removes the association and its members entirely.")}</p></div><div className="wallet-danger-actions"><button type="button" className="danger-button" disabled={resetting || deleting} onClick={() => void resetExisting()}><Trash2 size={14} />{resetting ? "…" : (locale === "ar" ? "تصفية وتصفير" : "Wipe & reset")}</button><button type="button" className="danger-button" disabled={resetting || deleting} onClick={() => void deleteExisting()}><Trash2 size={14} />{deleting ? "…" : (locale === "ar" ? "حذف المحفظة" : "Delete wallet")}</button></div></div>}</Modal>;
+  const canManageRoles = Boolean(existing && ["owner", "manager"].includes(myRoleInSpace(data, existing)));
+  return <Modal title={existing ? (locale === "ar" ? "ضبط المحفظة" : "Wallet setup") : t.newWallet} wide={Boolean(existing && (isPersonal || isGroup))} xl={Boolean(existing && isPersonal)} onClose={onClose}><form className={`modal-form${existing && isPersonal ? " wallet-setup-form" : ""}`} onSubmit={submit}><label><span>{t.walletName}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={locale === "ar" ? "مثال: سفرة الإخوة 2027" : "e.g. Siblings trip 2027"} /></label>{!lockType && !existing && <label><span>{t.walletType}</span><select value={type} onChange={(event) => setType(event.target.value)}>{Object.entries(typeLabels[locale]).map(([value, label]) => <option key={value} value={value} disabled={!planAllowsSpaceType(features, value)}>{label}{planAllowsSpaceType(features, value) ? "" : (locale === "ar" ? " — ترقية" : " — Upgrade")}</option>)}</select></label>}{isGroup && <div className="form-row"><label><span>{locale === "ar" ? "المساهمة الشهرية الإلزامية" : "Mandatory monthly contribution"}</span><div className="money-input"><input required min="0.01" step="0.001" type="number" value={monthlyContribution} onChange={(event) => setMonthlyContribution(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label><label><span>{locale === "ar" ? "مدة الخطة (أشهر)" : "Plan duration (months)"}</span><input required type="number" min="1" max="120" value={durationMonths} onChange={(event) => setDurationMonths(event.target.value)} /></label></div>}<label><span>{locale === "ar" ? "تاريخ بداية الجمعية / المحفظة" : "Association / wallet start date"}</span><DateField required value={startsAt} onChange={setStartsAt} /></label>{isGroup && <div className="modal-note split-preview"><span>{locale === "ar" ? "الهدف المالي للشخص = المساهمة × عدد الأشهر" : "Personal financial goal = contribution × months"}</span><strong>{formatMoney(Number.isFinite(liveGoalMinor) ? liveGoalMinor : 0, "OMR", locale)}</strong></div>}{isGroup && <p className="modal-note">{locale === "ar" ? "عند استلام مبلغ من عضو: يُخصم أولاً من المطالبات المتراكمة عليه، وأي زيادة تُسجَّل مقدّماً (له)." : "When a member pays: outstanding dues are cleared first, and any surplus is booked as advance credit."}</p>}{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : (existing ? t.save : t.create)}</button></div></form>{existing && isGroup && <SpaceRolePermissionsPanel embedded spaceId={existing.id} locale={locale} rolePermissionsJson={existing.role_permissions_json} canManage={canManageRoles} onSaved={(nextJson) => { onLiveData?.({ spaces: data.spaces.map((item) => item.id === existing.id ? { ...item, role_permissions_json: nextJson } : item) }); }} />}{existing && isPersonal && <PersonalRulesSetup spaceId={existing.id} locale={locale} accounts={data.personalAccounts ?? []} rules={data.personalRules ?? []} onChanged={(next) => onLiveData?.(next as Partial<DashboardData>)} />}{existing && <div className="personal-reset-box wallet-danger-zone"><div><strong>{locale === "ar" ? "منطقة الخطر" : "Danger zone"}</strong><p>{isPersonal ? (locale === "ar" ? "تصفية البيانات تبقي اسم المحفظة وتحذف الحسابات والعمليات. الحذف يزيل المحفظة بالكامل." : "Wipe keeps the wallet name and deletes accounts and transactions. Delete removes the wallet entirely.") : (locale === "ar" ? "تصفية البيانات تبقي الأعضاء وخطة المساهمة واسم المحفظة. الحذف يزيل الجمعية بالكامل مع الأعضاء." : "Wipe keeps members, the contribution plan, and the wallet name. Delete removes the association and its members entirely.")}</p></div><div className="wallet-danger-actions"><button type="button" className="danger-button" disabled={resetting || deleting} onClick={() => void resetExisting()}><Trash2 size={14} />{resetting ? "…" : (locale === "ar" ? "تصفية وتصفير" : "Wipe & reset")}</button><button type="button" className="danger-button" disabled={resetting || deleting} onClick={() => void deleteExisting()}><Trash2 size={14} />{deleting ? "…" : (locale === "ar" ? "حذف المحفظة" : "Delete wallet")}</button></div></div>}</Modal>;
 }
 
 function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data: DashboardData; locale: Locale; preferredSpaceId?: string; onClose: () => void; onDone: (message: string) => void }) {

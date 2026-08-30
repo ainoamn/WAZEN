@@ -42,8 +42,8 @@ export function SpaceRolesHelpButton({ locale }: { locale: Locale }) {
             <div className="modal-form">
               <p className="modal-note">
                 {locale === "ar"
-                  ? "تحدد الأدوار من يستطيع إضافة أو تعديل أو حذف العمليات، وتمنع العضو من تعديل عملية أنشأها مدير أو مسؤول أعلى منه. المدير يضبط الصلاحيات من إعدادات الجمعية."
-                  : "Roles control who can add, edit, or delete transactions, and stop a member from changing a post created by a manager or higher role. The manager sets permissions in association settings."}
+                  ? "تحدد الأدوار من يستطيع إضافة أو تعديل أو حذف العمليات، وتمنع العضو من تعديل عملية أنشأها مدير أو مسؤول أعلى منه. المدير يضبط الصلاحيات من «ضبط المحفظة»، ويغيّر دور كل عضو من قائمة إجراء."
+                  : "Roles control who can add, edit, or delete transactions, and stop a member from changing a post created by a manager or higher role. The manager sets permissions in Wallet setup, and changes each member’s role from the Action menu."}
               </p>
               <ul className="modal-note" style={{ paddingInlineStart: "1.2rem", display: "grid", gap: "0.5rem" }}>
                 <li><strong>{spaceRoleLabel("manager", locale)}</strong> — {locale === "ar" ? "إدارة كاملة: إضافة وتعديل وحذف، وضبط صلاحيات الأدوار." : "Full control: add, edit, delete, and configure role permissions."}</li>
@@ -73,12 +73,15 @@ export function SpaceRolePermissionsPanel({
   rolePermissionsJson,
   canManage,
   onSaved,
+  embedded = false,
 }: {
   spaceId: string;
   locale: Locale;
   rolePermissionsJson?: string | null;
   canManage: boolean;
   onSaved: (nextJson: string) => void;
+  /** Compact layout inside Wallet setup modal */
+  embedded?: boolean;
 }) {
   const [map, setMap] = useState<SpaceRolePermissionsMap>(() => clientSpaceRolePermissions({ role_permissions_json: rolePermissionsJson }));
   const [saving, setSaving] = useState(false);
@@ -134,9 +137,8 @@ export function SpaceRolePermissionsPanel({
   };
 
   const labels = ACTION_LABELS[locale];
-
-  return (
-    <article className="panel workflow-panel">
+  const body = (
+    <>
       <div className="panel-heading">
         <div>
           <span className="section-kicker">{locale === "ar" ? "صلاحيات الأدوار" : "Role permissions"}</span>
@@ -146,8 +148,8 @@ export function SpaceRolePermissionsPanel({
       </div>
       <p className="modal-note">
         {locale === "ar"
-          ? "اضبط لكل دور: مشاهدة، إضافة، تعديل، حذف. لا يمكن لأي عضو تعديل عملية أنشأها دور أعلى."
-          : "Set view, add, edit, and delete per role. No one can edit a transaction created by a higher role."}
+          ? "اضبط لكل دور: مشاهدة، إضافة، تعديل، حذف. لا يمكن لأي عضو تعديل عملية أنشأها دور أعلى. لتغيير دور عضو معيّن استخدم قائمة «إجراء» في جدول الأعضاء."
+          : "Set view, add, edit, and delete per role. No one can edit a transaction created by a higher role. To change a specific member’s role, use the Action menu in the members table."}
       </p>
       <form onSubmit={save}>
         <div className="members-table role-permissions-table">
@@ -189,6 +191,11 @@ export function SpaceRolePermissionsPanel({
           <p className="modal-hint">{locale === "ar" ? "المالك أو المدير فقط يعدّل هذه الإعدادات." : "Only the owner or manager can change these settings."}</p>
         )}
       </form>
-    </article>
+    </>
   );
+
+  if (embedded) {
+    return <div className="role-permissions-embedded">{body}</div>;
+  }
+  return <article className="panel workflow-panel">{body}</article>;
 }
