@@ -48,8 +48,6 @@ export async function createV1Document(
 ) {
   const { getActivePlanEntitlements, assertOwnerPlanQuota } = await import("../services/admin/billing-service");
   const entitlements = await getActivePlanEntitlements(db, user.id, { skipSideEffects: true, skipUsage: true });
-  if (!planHasFeature(entitlements.features, "documents")) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
-  await assertOwnerPlanQuota(db, user.id, "record", 1);
 
   const personName = input.personName.trim();
   const description = input.description.trim();
@@ -57,8 +55,13 @@ export async function createV1Document(
   if (description.length < 2 || description.length > 500) throw new ApiError(400, "INVALID_DOCUMENT");
 
   const space = input.spaceId
-    ? await authorizeSpace(db, user, input.spaceId, "transact")
+    ? await authorizeSpace(db, user, input.spaceId, "documents:issue")
     : null;
+  if (!space) {
+    if (!planHasFeature(entitlements.features, "documents")) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
+  }
+  await assertOwnerPlanQuota(db, user.id, "record", 1);
+
   const ownCurrency = await db.prepare("SELECT currency FROM users WHERE id=?").bind(user.id).first<{ currency: string }>();
   const currency = space?.currency ?? ownCurrency?.currency ?? "OMR";
   let amountMinor: number;

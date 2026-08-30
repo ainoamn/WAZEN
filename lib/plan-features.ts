@@ -102,15 +102,25 @@ export function upgradeNoticeFor(locale: "ar" | "en", featureLabel: string, targ
     text: `To use ${featureLabel}, upgrade to the ${target.planEn} plan or higher. Your current plan does not include this option.`,
   };
 }
-export function dashboardNavLocked(features: string[], viewId: string, graceSpaceTypes: string[] = []) {
-  const grace = new Set(graceSpaceTypes);
-  if (viewId === "reports") return !(planHasFeature(features, "advanced_reports") || planHasFeature(features, "exports"));
-  if (viewId === "household") return !planAllowsSpaceType(features, "household") && !grace.has("household");
-  if (viewId === "trip") return !planAllowsSpaceType(features, "trip") && !grace.has("trip");
+export function dashboardNavLocked(features: string[], viewId: string, graceSpaceTypes: string[] = [], memberSpaceTypes: string[] = []) {
+  const open = new Set([...graceSpaceTypes, ...memberSpaceTypes]);
+  if (viewId === "reports") {
+    return !(planHasFeature(features, "advanced_reports") || planHasFeature(features, "exports"));
+  }
+  if (viewId === "household") return !planAllowsSpaceType(features, "household") && !open.has("household");
+  if (viewId === "trip") return !planAllowsSpaceType(features, "trip") && !open.has("trip");
   if (viewId === "society" || viewId === "groups") {
-    return !planAllowsSpaceType(features, "society") && !grace.has("society") && !grace.has("group");
+    return !planAllowsSpaceType(features, "society") && !open.has("society") && !open.has("group");
   }
   return false;
+}
+
+/** Whether the signed-in user may print statements / invoices for a space. */
+export function canPrintSpaceArtifacts(role: string, features: string[]) {
+  if (!["owner", "manager", "treasurer"].includes(role)) return false;
+  return planHasFeature(features, "documents")
+    || planHasFeature(features, "statements")
+    || planHasFeature(features, "downloads");
 }
 
 export function featuresInGroup(groupId: string) {

@@ -62,15 +62,19 @@ export async function ensurePlanRetentionSchema(db: D1Database) {
   retentionReady = true;
 }
 
-export function filterSpacesForPlanAccess<T extends { type: string; grace_until?: string | null; status?: string | null }>(
+export function filterSpacesForPlanAccess<T extends { type: string; owner_user_id?: string; grace_until?: string | null; status?: string | null }>(
   spaces: T[] | null | undefined,
   features: string[],
   now = Date.now(),
+  viewerUserId?: string,
 ) {
   return (spaces ?? []).filter((space) => {
     if ((space.status ?? "active") === "retention_held") return false;
     if (planAllowsSpaceType(features, space.type)) return true;
-    return spaceInUserGrace(space, now);
+    if (spaceInUserGrace(space, now)) return true;
+    // Guest membership: keep invited wallets even when the invitee's plan is personal-only.
+    if (viewerUserId && space.owner_user_id && space.owner_user_id !== viewerUserId) return true;
+    return false;
   });
 }
 

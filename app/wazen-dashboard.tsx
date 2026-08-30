@@ -24,7 +24,7 @@ import { PushNotifyCard } from "../components/pwa/PushNotifyCard";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor, currencyScale, parseMoneyToMinor } from "../lib/money";
 import { memberDisplayCreditMinor, netMemberClaim, pendingSettlementsWithCredit } from "../lib/finance";
-import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, quotaRemaining, quotaWarningCopy, upgradeNoticeFor } from "../lib/plan-features";
+import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, quotaRemaining, quotaWarningCopy, upgradeNoticeFor, canPrintSpaceArtifacts } from "../lib/plan-features";
 import { userGraceWarningCopy } from "../lib/plan-retention-rules";
 import { canOpenPlatformConsole } from "../lib/platform-console";
 import { consumePlanQuota } from "../lib/plan-quota-client";
@@ -131,6 +131,7 @@ type Space = {
 type Member = {
   id: string;
   space_id: string;
+  user_id?: string | null;
   display_name: string;
   email: string | null;
   role: string;
@@ -392,6 +393,23 @@ function graceSpaceTypesOf(data?: DashboardData | null) {
 
 function planAllowsStatements(features: string[]) {
   return planHasFeature(features, "statements") || planHasFeature(features, "documents");
+}
+
+function memberSpaceTypesOf(data: DashboardData | null | undefined) {
+  return [...new Set((data?.spaces ?? []).map((space) => space.type))];
+}
+
+function myRoleInSpace(data: DashboardData, space: Space) {
+  if (space.owner_user_id === data.user.id) return "owner";
+  const mine = data.members.find((member) => member.space_id === space.id && member.user_id === data.user.id);
+  return String(mine?.role ?? "member");
+}
+
+function canPrintForSpace(data: DashboardData, space: Space) {
+  const role = myRoleInSpace(data, space);
+  const features = planFeaturesOf(data);
+  return canPrintSpaceArtifacts(role, features)
+    && quotaRemaining(data.entitlements?.usage?.printsThisMonth ?? 0, data.entitlements?.printLimit ?? 0) > 0;
 }
 
 function goToPricing() {
@@ -1265,7 +1283,7 @@ export function WazenDashboard() {
   }, [router, data]);
   useEffect(() => {
     if (!data) return;
-    if (dashboardNavLocked(planFeaturesOf(data), activeView, graceSpaceTypesOf(data))) {
+    if (dashboardNavLocked(planFeaturesOf(data), activeView, graceSpaceTypesOf(data), memberSpaceTypesOf(data))) {
       setActiveView("overview");
       persistPlace("overview");
     }
@@ -1385,7 +1403,7 @@ export function WazenDashboard() {
 
   const changeView = (view: ViewId, spaceId?: string) => {
     const features = planFeaturesOf(data);
-    if (dashboardNavLocked(features, view, graceSpaceTypesOf(data))) {
+    if (dashboardNavLocked(features, view, graceSpaceTypesOf(data), memberSpaceTypesOf(data))) {
       showUpgradeNotice(view, t[view]);
       return;
     }
@@ -1403,7 +1421,8 @@ export function WazenDashboard() {
   const activeSpace = spacesForView.find((space) => space.id === pickedSpaceId[activeView]) ?? spacesForView[0];
   const planFeatures = planFeaturesOf(data);
   const graceTypes = graceSpaceTypesOf(data);
-  const viewLocked = dashboardNavLocked(planFeatures, activeView, graceTypes);
+  const memberTypes = memberSpaceTypesOf(data);
+  const viewLocked = dashboardNavLocked(planFeatures, activeView, graceTypes, memberTypes);
   const canCreateCurrentType = planAllowsSpaceType(planFeatures, walletDefaultType);
   const retentionNotice = data.entitlements?.retention
     ? userGraceWarningCopy(locale, data.entitlements.retention.graceEndsAt, data.entitlements.retention.spaceCount)
@@ -1425,7 +1444,7 @@ export function WazenDashboard() {
 
   return (
     <div className="app-shell">
-      <Sidebar locale={locale} active={activeView} open={sidebarOpen} entitlements={data.entitlements} role={data.user.role} onNavigate={changeView} onLocked={(id) => showUpgradeNotice(id, id === "documents" ? (locale === "ar" ? "الإيصالات والكشوفات" : "Documents & statements") : t[id])} onClose={() => setSidebarOpen(false)} onLogout={() => void logout()} />
+      <Sidebar locale={locale} active={activeView} open={sidebarOpen} entitlements={data.entitlements} memberSpaceTypes={memberTypes} role={data.user.role} onNavigate={changeView} onLocked={(id) => showUpgradeNotice(id, id === "documents" ? (locale === "ar" ? "الإيصالات والكشوفات" : "Documents & statements") : t[id])} onClose={() => setSidebarOpen(false)} onLogout={() => void logout()} />
 
       <main className="main-shell">
         <header className="topbar">
@@ -1446,7 +1465,7 @@ export function WazenDashboard() {
             </button>
             <AccentPicker locale={locale} accent={accent} onPick={applyAccent} />
             <NotificationBell data={data} locale={locale} onOpen={(view, spaceId) => {
-              if (dashboardNavLocked(planFeatures, view, graceTypes)) {
+              if (dashboardNavLocked(planFeatures, view, graceTypes, memberTypes)) {
                 showUpgradeNotice(view, t[view]);
                 return;
               }
@@ -1733,7 +1752,7 @@ function AccentPicker({ locale, accent, onPick }: { locale: Locale; accent: Acce
   );
 }
 
-function Sidebar({ locale, active, open, entitlements, role, onNavigate, onLocked, onClose, onLogout }: { locale: Locale; active: ViewId; open: boolean; entitlements?: DashboardData["entitlements"]; role?: string | null; onNavigate: (id: ViewId) => void; onLocked: (id: ViewId | "documents") => void; onClose: () => void; onLogout: () => void }) {
+function Sidebar({ locale, active, open, entitlements, memberSpaceTypes = [], role, onNavigate, onLocked, onClose, onLogout }: { locale: Locale; active: ViewId; open: boolean; entitlements?: DashboardData["entitlements"]; memberSpaceTypes?: string[]; role?: string | null; onNavigate: (id: ViewId) => void; onLocked: (id: ViewId | "documents") => void; onClose: () => void; onLogout: () => void }) {
   const t = copy[locale];
   const features = entitlements?.features?.length ? entitlements.features : ["personal"];
   const graceTypes = entitlements?.retention?.spaceTypes ?? [];
@@ -1750,7 +1769,7 @@ function Sidebar({ locale, active, open, entitlements, role, onNavigate, onLocke
         <div className="workspace-pill"><div className="workspace-icon"><Landmark size={17} /></div><div><small>{t.workspace}</small><strong>{locale === "ar" ? "الحساب الرئيسي" : "Main account"}</strong></div><ChevronDown size={15} /></div>
         <nav className="sidebar-nav">
           {navItems.map(({ id, icon: Icon }) => {
-            const locked = dashboardNavLocked(features, id, graceTypes);
+            const locked = dashboardNavLocked(features, id, graceTypes, memberSpaceTypes);
             return (
               <button
                 key={id}
@@ -2099,8 +2118,8 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
     <div className="space-toolbar">
       <StatementPrintMenu
         locale={locale}
-        locked={!planAllowsStatements(planFeaturesOf(data))}
-        canShare={planHasFeature(planFeaturesOf(data), "whatsapp")}
+        locked={!canPrintForSpace(data, space)}
+        canShare={planHasFeature(planFeaturesOf(data), "whatsapp") && ["owner", "manager", "treasurer"].includes(myRoleInSpace(data, space))}
         onPick={(filter) => printSpaceStatement(space, data, locale, null, filter)}
         onShare={(filter) => void shareSpaceStatement(space, locale, filter, planHasFeature(planFeaturesOf(data), "whatsapp"))}
       />
@@ -2834,7 +2853,7 @@ function SpaceTransactionsPanel({ space, data, locale, onAdd, onTxnChanged }: { 
   const [working, setWorking] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
-  const canPrint = planAllowsStatements(planFeaturesOf(data)) && quotaRemaining(data.entitlements?.usage?.printsThisMonth ?? 0, data.entitlements?.printLimit ?? 0) > 0;
+  const canPrint = canPrintForSpace(data, space);
   const transactions = useMemo(
     () => sortTransactionsNewest(data.transactions.filter((transaction) => transaction.space_id === space.id && isListedTransaction(transaction))),
     [data.transactions, space.id],

@@ -314,7 +314,7 @@ export async function GET(request: Request) {
       assertApiScope(user, "documents:read");
       const entitlements = await getActivePlanEntitlements(db, user.id);
       if (!planHasFeature(entitlements.features, "documents")) {
-        return Response.json({ user, role, documents: [], spaces: [], entitlements }, { headers: responseHeaders });
+        return Response.json({ user, role, documents: [], spaces: [], entitlements, locked: true }, { headers: responseHeaders });
       }
       const [documents, spaces] = await Promise.all([
         db.prepare(`SELECT * FROM documents
@@ -323,16 +323,26 @@ export async function GET(request: Request) {
             WHERE s.owner_user_id=? OR m.user_id=?
           )
           ORDER BY issued_at DESC`).bind(user.id, user.id, user.id).all(),
-        db.prepare(`SELECT s.id,s.name_ar,s.name_en,s.type,s.currency FROM spaces s
+        db.prepare(`SELECT s.id,s.name_ar,s.name_en,s.type,s.currency,s.owner_user_id FROM spaces s
           WHERE s.owner_user_id=? OR EXISTS (
             SELECT 1 FROM members m WHERE m.space_id=s.id AND m.status='active' AND m.user_id=?
           )
           ORDER BY s.created_at`).bind(user.id, user.id).all(),
       ]);
-      const allowedSpaces = (spaces.results ?? []).filter((space) => planAllowsSpaceType(entitlements.features, String(space.type)));
-      const allowedIds = new Set(allowedSpaces.map((space) => String(space.id)));
+      const visibleSpaces = filterSpacesForPlanAccess(
+        (spaces.results ?? []).map((space) => ({
+          ...space,
+          id: String(space.id),
+          type: String(space.type),
+          owner_user_id: String(space.owner_user_id ?? ""),
+        })),
+        entitlements.features,
+        Date.now(),
+        user.id,
+      );
+      const allowedIds = new Set(visibleSpaces.map((space) => String(space.id)));
       const allowedDocs = (documents.results ?? []).filter((doc) => !doc.space_id || allowedIds.has(String(doc.space_id)));
-      return Response.json({ user, role, documents: allowedDocs, spaces: allowedSpaces, entitlements }, { headers: responseHeaders });
+      return Response.json({ user, role, documents: allowedDocs, spaces: visibleSpaces, entitlements, locked: false }, { headers: responseHeaders });
     }
     if (view === "billing") {
       assertApiScope(user, "billing:read");
@@ -649,10 +659,10 @@ export async function POST(request: Request) {
       const parsed = z.object({ type: z.enum(["receipt", "disbursement", "handover", "member_statement", "society_statement", "trip_statement", "household_statement", "personal_report"]), personName: z.string().trim().min(2).max(120), description: z.string().trim().min(2).max(500), amount: z.union([z.string().min(1).max(40), z.number().nonnegative()]), spaceId: z.string().max(120).optional(), paymentMethod: z.enum(["bank_transfer", "cash", "card", "other"]).default("bank_transfer") }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_DOCUMENT");
       const entitlements = await getActivePlanEntitlements(db, user.id);
-      if (!planHasFeature(entitlements.features, "documents")) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
       await assertOwnerPlanQuota(db, user.id, "record", 1);
       const { type, personName, description } = parsed.data;
-      const space = parsed.data.spaceId ? await authorizeSpace(db, user, parsed.data.spaceId, "transact") : null;
+      const space = parsed.data.spaceId ? await authorizeSpace(db, user, parsed.data.spaceId, "documents:issue") : null;
+      if (!space && !planHasFeature(entitlements.features, "documents")) throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
       const ownCurrency = await db.prepare("SELECT currency FROM users WHERE id=?").bind(user.id).first<{ currency: string }>();
       const currency = space?.currency ?? ownCurrency?.currency ?? "OMR";
       let amountMinor: number; try { amountMinor = parseNonNegativeMoneyToMinor(parsed.data.amount, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }

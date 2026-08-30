@@ -1,7 +1,8 @@
 /** Business API v1 — list documents visible to the caller. */
 
 import { formatMoneyMinor } from "./money";
-import { planHasFeature, planAllowsSpaceType } from "../services/admin/billing-service";
+import { planHasFeature } from "../services/admin/billing-service";
+import { filterSpacesForPlanAccess } from "./plan-retention";
 
 export async function listV1Documents(db: D1Database, userId: string) {
   const { getActivePlanEntitlements } = await import("../services/admin/billing-service");
@@ -17,16 +18,15 @@ export async function listV1Documents(db: D1Database, userId: string) {
         WHERE s.owner_user_id=? OR m.user_id=?
       )
       ORDER BY issued_at DESC LIMIT 100`).bind(userId, userId, userId).all<Record<string, unknown>>(),
-    db.prepare(`SELECT s.id,s.type FROM spaces s
+    db.prepare(`SELECT s.id,s.type,s.owner_user_id,s.grace_until,s.status FROM spaces s
       WHERE s.owner_user_id=? OR EXISTS (
         SELECT 1 FROM members m WHERE m.space_id=s.id AND m.status='active' AND m.user_id=?
-      )`).bind(userId, userId).all<{ id: string; type: string }>(),
+      )`).bind(userId, userId).all<{ id: string; type: string; owner_user_id: string; grace_until: string | null; status: string | null }>(),
   ]);
 
   const allowedIds = new Set(
-    (spaces.results ?? [])
-      .filter((space) => planAllowsSpaceType(entitlements.features, space.type))
-      .map((space) => space.id),
+    filterSpacesForPlanAccess(spaces.results ?? [], entitlements.features, Date.now(), userId)
+      .map((space) => String(space.id)),
   );
 
   const rows = (documents.results ?? []).filter((doc) => !doc.space_id || allowedIds.has(String(doc.space_id)));

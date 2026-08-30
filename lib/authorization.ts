@@ -1,9 +1,11 @@
 import type { RequestUser } from "../db/runtime";
 import { ApiError } from "./security";
 import { PLATFORM_CONSOLE_ROLES, canOpenPlatformConsole } from "./platform-console";
+import { planHasFeature } from "./plan-features";
 
 export type PlatformRole = "super_admin" | "admin" | "finance" | "support" | "customer";
-export type SpaceCapability = "read" | "transact" | "members:write" | "circle:write" | "settlements:write";
+/** documents:issue = print / receipts / statements (elevated roles only). */
+export type SpaceCapability = "read" | "transact" | "members:write" | "circle:write" | "settlements:write" | "documents:issue";
 
 const platformPermissions: Record<PlatformRole, ReadonlySet<string>> = {
   super_admin: new Set(["*"]),
@@ -15,17 +17,32 @@ const platformPermissions: Record<PlatformRole, ReadonlySet<string>> = {
 
 const spaceRoles: Record<SpaceCapability, ReadonlySet<string>> = {
   read: new Set(["owner", "manager", "treasurer", "member", "auditor", "viewer"]),
-  transact: new Set(["owner", "manager", "treasurer"]),
+  // Invited members may view + add; print/docs stay on documents:issue.
+  transact: new Set(["owner", "manager", "treasurer", "member"]),
   "members:write": new Set(["owner", "manager"]),
   "circle:write": new Set(["owner", "manager"]),
   "settlements:write": new Set(["owner", "manager", "treasurer"]),
+  "documents:issue": new Set(["owner", "manager", "treasurer"]),
 };
 
 const apiScopes: Record<SpaceCapability, string> = {
-  read: "wallets:read", transact: "wallets:write", "members:write": "members:write", "circle:write": "circles:write", "settlements:write": "settlements:write",
+  read: "wallets:read",
+  transact: "wallets:write",
+  "members:write": "members:write",
+  "circle:write": "circles:write",
+  "settlements:write": "settlements:write",
+  "documents:issue": "documents:write",
 };
 
 export { PLATFORM_CONSOLE_ROLES, canOpenPlatformConsole };
+
+/** Print / statements / invoices: elevated space role AND a paid print-capable plan on the actor. */
+export function actorCanIssueSpaceDocuments(role: string, features: string[]) {
+  if (!spaceRoles["documents:issue"].has(role)) return false;
+  return planHasFeature(features, "documents")
+    || planHasFeature(features, "statements")
+    || planHasFeature(features, "downloads");
+}
 
 export async function platformRoleOf(db: D1Database, userId: string) {
   const row = await db.prepare("SELECT role FROM platform_roles WHERE user_id=?").bind(userId).first<{ role: string }>();
@@ -53,13 +70,26 @@ export async function authorizeSpace(db: D1Database, user: RequestUser, spaceId:
   if (!row) throw new ApiError(404, "WALLET_NOT_FOUND");
   if (!spaceRoles[capability].has(row.effective_role)) throw new ApiError(403, "FORBIDDEN");
   if (allowedTypes && !allowedTypes.includes(row.type)) throw new ApiError(400, "INVALID_WALLET_TYPE");
-  const { getActivePlanEntitlements, planAllowsSpaceType } = await import("../services/admin/billing-service");
-  const { spaceInUserGrace } = await import("./plan-retention");
-  // Auth only needs feature flags — skip plan apply/expire and quota COUNT scans.
-  const entitlements = await getActivePlanEntitlements(db, user.id, { skipSideEffects: true, skipUsage: true });
-  if (!planAllowsSpaceType(entitlements.features, row.type) && !spaceInUserGrace(row)) {
-    throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
+
+  const isOwner = row.owner_user_id === user.id;
+  // Owners: plan must include the wallet type (or grace). Guests: membership grants access to that space.
+  if (isOwner) {
+    const { getActivePlanEntitlements, planAllowsSpaceType } = await import("../services/admin/billing-service");
+    const { spaceInUserGrace } = await import("./plan-retention");
+    const entitlements = await getActivePlanEntitlements(db, user.id, { skipSideEffects: true, skipUsage: true });
+    if (!planAllowsSpaceType(entitlements.features, row.type) && !spaceInUserGrace(row)) {
+      throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
+    }
   }
+
+  if (capability === "documents:issue") {
+    const { getActivePlanEntitlements } = await import("../services/admin/billing-service");
+    const entitlements = await getActivePlanEntitlements(db, user.id, { skipSideEffects: true, skipUsage: true });
+    if (!actorCanIssueSpaceDocuments(row.effective_role, entitlements.features)) {
+      throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
+    }
+  }
+
   return row;
 }
 
@@ -82,4 +112,3 @@ export async function assertTenantResource(db: D1Database, userId: string, resou
     WHERE tr.resource_type=? AND tr.resource_id=? AND tm.user_id=? AND tm.status='active' LIMIT 1`).bind(resourceType, resourceId, userId).first();
   if (!row) throw new ApiError(404, "RESOURCE_NOT_FOUND");
 }
-

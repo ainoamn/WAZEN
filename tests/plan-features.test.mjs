@@ -65,6 +65,21 @@ test("dashboard nav stays listed but locked when the plan does not include the f
   assert.equal(dashboardNavLocked(["personal", "advanced_reports"], "reports"), false);
 });
 
+test("invited membership unlocks trip nav even on starter features", () => {
+  assert.equal(dashboardNavLocked(["personal"], "trip", [], ["trip"]), false);
+  assert.equal(dashboardNavLocked(["personal"], "trip", [], []), true);
+  assert.equal(dashboardNavLocked(["personal"], "household", [], ["household"]), false);
+});
+
+test("print artifacts need elevated role and paid print features", async () => {
+  const { canPrintSpaceArtifacts } = await import("../lib/plan-features.ts");
+  assert.equal(canPrintSpaceArtifacts("member", ["personal", "statements"]), false);
+  assert.equal(canPrintSpaceArtifacts("manager", ["personal"]), false);
+  assert.equal(canPrintSpaceArtifacts("manager", ["personal", "statements"]), true);
+  assert.equal(canPrintSpaceArtifacts("owner", ["documents"]), true);
+  assert.equal(canPrintSpaceArtifacts("viewer", ["documents"]), false);
+});
+
 test("locked nav copy tells the user which plan to upgrade to", () => {
   const notice = upgradeNoticeFor("ar", "الجمعيات", "society");
   assert.match(notice.text, /رقِّ الباقة إلى العائلة/);

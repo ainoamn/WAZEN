@@ -3,7 +3,7 @@ import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
 import { authenticateRequest, clearCsrfCookie, clearSessionCookie, csrfCookie, issueCsrfToken } from "../../../lib/auth";
 import { buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
-import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf } from "../../../lib/authorization";
+import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf, actorCanIssueSpaceDocuments } from "../../../lib/authorization";
 import { prepareAudit, writeAudit } from "../../../lib/audit";
 import { formatMoneyMinor, multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
 import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, periodKeyFromDate, type InstallmentLike } from "../../../lib/installments";
@@ -674,7 +674,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
       ? Promise.resolve({ results: [] as Array<Record<string, unknown>> })
       : db.prepare("SELECT * FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name").bind(userId).all(),
   ]);
-  const allowed = filterSpacesForPlanAccess(spaces.results ?? [], options?.features ?? []);
+  const allowed = filterSpacesForPlanAccess(spaces.results ?? [], options?.features ?? [], Date.now(), userId);
   const ids = allowed.map((space) => space.id);
   if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results ?? [], periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [] };
 
@@ -2744,8 +2744,14 @@ export async function POST(request: Request) {
       if (!parsed.success) throw new ApiError(400, "INVALID_QUOTA");
       let ownerUserId = user.id;
       if (parsed.data.spaceId) {
-        const space = await authorizeSpace(db, user, parsed.data.spaceId, "read");
+        const space = await authorizeSpace(db, user, parsed.data.spaceId, "documents:issue");
         ownerUserId = space.owner_user_id;
+      } else {
+        const { getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
+        const entitlements = await getActivePlanEntitlements(db, user.id, { skipSideEffects: true, skipUsage: true });
+        if (!actorCanIssueSpaceDocuments("owner", entitlements.features)) {
+          throw new ApiError(403, "PLAN_FEATURE_REQUIRED");
+        }
       }
       const { consumeQuotaEvent, getActivePlanEntitlements } = await import("../../../services/admin/billing-service");
       let entitlements;
