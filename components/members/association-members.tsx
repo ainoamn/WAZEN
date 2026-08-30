@@ -25,6 +25,7 @@ type Locale = "ar" | "en";
 export type AssociationMember = {
   id: string;
   space_id: string;
+  user_id?: string | null;
   display_name: string;
   email: string | null;
   phone?: string | null;
@@ -428,11 +429,16 @@ export function MemberPersonProfile({
   const [savingContact, setSavingContact] = useState(false);
   const [contactError, setContactError] = useState("");
   const [editingContact, setEditingContact] = useState(!(primary?.email));
+  const [resendingInvite, setResendingInvite] = useState(false);
+  const [inviteNote, setInviteNote] = useState("");
+  const [inviteError, setInviteError] = useState("");
   useEffect(() => { setSpaceId(preferred?.space_id ?? null); }, [preferred?.space_id, focus]);
   useEffect(() => {
     setDisplayName(primary?.display_name ?? "");
     setEmail(primary?.email ?? "");
     setPhone(primary?.phone ?? "");
+    setInviteNote("");
+    setInviteError("");
   }, [primary?.id, primary?.display_name, primary?.email, primary?.phone]);
   const selected = records.find((row) => row.space_id === spaceId) ?? null;
   const space = spaces.find((item) => item.id === selected?.space_id);
@@ -491,6 +497,68 @@ export function MemberPersonProfile({
     }
   };
 
+  const canResendInvite = Boolean(selected?.email || primary?.email) && !Boolean(selected?.user_id ?? primary?.user_id);
+
+  const resendInvite = async () => {
+    const target = selected ?? primary;
+    if (!target || resendingInvite) return;
+    if (target.user_id) {
+      setInviteError(locale === "ar" ? "العضو قبل الدعوة وسجّل الدخول؛ لا يمكن إعادة الإرسال." : "This member already accepted and signed in; resend is not allowed.");
+      return;
+    }
+    if (!(target.email || email)) {
+      setInviteError(locale === "ar" ? "أضف بريداً للعضو أولاً." : "Add an email for this member first.");
+      return;
+    }
+    setResendingInvite(true);
+    setInviteError("");
+    setInviteNote("");
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "resendMemberInvite",
+          idempotencyKey: crypto.randomUUID(),
+          memberId: target.id,
+        }),
+      });
+      const result = await response.json() as { error?: string; delivery?: string; nextEligibleAt?: string | null };
+      if (response.status === 429 && result.error === "INVITE_RESEND_COOLDOWN") {
+        const when = result.nextEligibleAt
+          ? new Date(result.nextEligibleAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")
+          : "";
+        setInviteError(
+          locale === "ar"
+            ? `يمكن إعادة إرسال الدعوة مرة واحدة كل 6 ساعات${when ? ` (متاح بعد ${when})` : ""}.`
+            : `You can resend once every 6 hours${when ? ` (available after ${when})` : ""}.`,
+        );
+        return;
+      }
+      if (!response.ok) {
+        if (result.error === "INVITE_ALREADY_ACCEPTED") {
+          setInviteError(locale === "ar" ? "الدعوة مقبولة مسبقاً ولا يمكن إعادة إرسالها." : "Invite already accepted; cannot resend.");
+        } else if (result.error === "INVITE_EMAIL_REQUIRED") {
+          setInviteError(locale === "ar" ? "أضف بريداً للعضو أولاً." : "Add an email for this member first.");
+        } else {
+          setInviteError(locale === "ar" ? "تعذر إعادة إرسال الدعوة." : "Could not resend the invite.");
+        }
+        return;
+      }
+      const deliveryNote = result.delivery === "sent"
+        ? (locale === "ar" ? "أُرسلت الدعوة بالبريد." : "Invite email sent.")
+        : result.delivery === "deferred"
+          ? (locale === "ar" ? "سُجّلت الدعوة وسيُرسل البريد عند تفعيل الخدمة." : "Invite queued; email will send when delivery is configured.")
+          : (locale === "ar" ? "أُعيدت جدولة الدعوة في البريد." : "Invite re-queued for email.");
+      setInviteNote(deliveryNote);
+      onContactSaved?.(deliveryNote);
+    } catch {
+      setInviteError(locale === "ar" ? "تعذر إعادة إرسال الدعوة." : "Could not resend the invite.");
+    } finally {
+      setResendingInvite(false);
+    }
+  };
+
   if (!primary) return null;
   return (
     <Modal title={primary.display_name} onClose={onClose}>
@@ -527,7 +595,21 @@ export function MemberPersonProfile({
               <button type="button" className="secondary-button" onClick={() => setEditingContact(true)}>
                 {locale === "ar" ? "تعديل البريد والهاتف" : "Edit email & phone"}
               </button>
+              {canResendInvite ? (
+                <button type="button" className="secondary-button" disabled={resendingInvite} onClick={() => void resendInvite()}>
+                  <Mail size={16} />
+                  {resendingInvite
+                    ? (locale === "ar" ? "جارٍ الإرسال…" : "Sending…")
+                    : (locale === "ar" ? "إعادة إرسال الدعوة" : "Resend invitation")}
+                </button>
+              ) : (selected?.user_id || primary.user_id) ? (
+                <span className="modal-note" style={{ margin: 0 }}>
+                  {locale === "ar" ? "انضم العضو مسبقاً — لا حاجة لإعادة الدعوة." : "Member already joined — invite resend unavailable."}
+                </span>
+              ) : null}
             </div>
+            {inviteNote ? <p className="modal-note">{inviteNote}</p> : null}
+            {inviteError ? <p className="modal-error">{inviteError}</p> : null}
           </div>
         )}
         <p className="modal-note">{locale === "ar" ? "اضغط جمعية لعرض الكشف التفصيلي داخلها." : "Tap an association to open its detailed statement."}</p>

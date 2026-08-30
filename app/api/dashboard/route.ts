@@ -1703,6 +1703,37 @@ export async function POST(request: Request) {
       await completeIdempotency(db, user.id, idempotencyKey, { ok: true, memberId, inviteDelivery });
       claimRef.current = null;
       return Response.json({ ok: true, memberId, inviteDelivery }, { headers: { "Cache-Control": "no-store" } });
+    } else if (action === "resendMemberInvite") {
+      const parsed = z.object({ memberId: z.string().min(1).max(120) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_MEMBER");
+      const member = await db.prepare("SELECT id,space_id,user_id,email FROM members WHERE id=? LIMIT 1")
+        .bind(parsed.data.memberId)
+        .first<{ id: string; space_id: string; user_id: string | null; email: string | null }>();
+      if (!member) throw new ApiError(404, "MEMBER_NOT_FOUND");
+      await authorizeSpace(db, user, member.space_id, "members:write", ["household", "trip", "society", "group"]);
+      try {
+        const { resendSpaceMemberInvite } = await import("../../../lib/member-invite");
+        const invite = await resendSpaceMemberInvite({
+          db,
+          memberId: member.id,
+          inviterUserId: user.id,
+          inviterDisplayName: user.displayName,
+          origin: appOrigin(request),
+        });
+        const body = { ok: true, delivery: invite.delivery, email: invite.email, expiresAt: invite.expiresAt };
+        await completeIdempotency(db, user.id, idempotencyKey, body);
+        claimRef.current = null;
+        return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+      } catch (error) {
+        if (error instanceof ApiError && error.code === "INVITE_RESEND_COOLDOWN") {
+          const { inviteResendNextEligibleAt } = await import("../../../lib/member-invite");
+          const nextEligibleAt = member.email
+            ? await inviteResendNextEligibleAt(db, member.space_id, member.email)
+            : null;
+          return Response.json({ error: "INVITE_RESEND_COOLDOWN", nextEligibleAt }, { status: 429 });
+        }
+        throw error;
+      }
     } else if (action === "updateMemberContact") {
       const parsed = z.object({
         memberId: z.string().min(1).max(120),
