@@ -73,14 +73,16 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<EmailTemplateId, EmailTemplateDefin
     id: "member_invitation",
     labelAr: "دعوة عضو",
     labelEn: "Member invite",
-    subjectAr: "دعوة للانضمام إلى محفظة في وازون",
-    subjectEn: "You're invited to a Wazen wallet",
+    subjectAr: "دعوة للانضمام إلى وازون",
+    subjectEn: "You're invited to join Wazen",
     bodyHtmlAr: `<p style="margin:0 0 12px;font-size:16px;line-height:1.7;">مرحباً،</p>
-<p style="margin:0 0 12px;font-size:15px;line-height:1.7;">دعاك <strong>{{displayName}}</strong> للانضمام إلى محفظة على وازون.</p>`,
+<p style="margin:0 0 12px;font-size:15px;line-height:1.7;">دعاك <strong>{{displayName}}</strong> للانضمام إلى محفظة على وازون.</p>
+<p style="margin:0 0 12px;font-size:15px;line-height:1.7;">عند فتح الرابط يمكنك تثبيت وازن على الشاشة الرئيسية كتطبيق، ثم تسجيل الدخول ببريدك لقبول الدعوة.</p>`,
     bodyHtmlEn: `<p style="margin:0 0 12px;font-size:16px;line-height:1.7;">Hello,</p>
-<p style="margin:0 0 12px;font-size:15px;line-height:1.7;"><strong>{{displayName}}</strong> invited you to a Wazen wallet.</p>`,
-    textAr: "دعوة وازون من {{displayName}}\n{{link}}",
-    textEn: "Wazen invite from {{displayName}}\n{{link}}",
+<p style="margin:0 0 12px;font-size:15px;line-height:1.7;"><strong>{{displayName}}</strong> invited you to a Wazen wallet.</p>
+<p style="margin:0 0 12px;font-size:15px;line-height:1.7;">When you open the link you can install Wazen on your home screen, then sign in with your email to accept.</p>`,
+    textAr: "دعوة وازون من {{displayName}}\nثبّت التطبيق ثم سجّل الدخول:\n{{link}}",
+    textEn: "Wazen invite from {{displayName}}\nInstall the app, then sign in:\n{{link}}",
   },
   member_receipt: {
     id: "member_receipt",

@@ -470,6 +470,52 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .audit-log-list li strong { font-weight: 750; }
 .audit-log-list li span, .audit-log-list li em { opacity: 0.72; font-style: normal; }
 .pwa-install-card .primary-button { margin-top: 8px; }
+.pwa-install-banner {
+  position: fixed;
+  inset-inline: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--green) 35%, var(--line));
+  border-radius: 16px;
+  background: color-mix(in srgb, #ecfdf5 92%, white);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+  color: #134e4a;
+}
+.pwa-install-banner-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.pwa-install-banner-copy strong,
+.pwa-install-banner-copy span {
+  display: block;
+}
+.pwa-install-banner-copy strong { font-size: 14px; font-weight: 800; }
+.pwa-install-banner-copy span { margin-top: 2px; font-size: 12px; line-height: 1.45; opacity: 0.88; }
+.pwa-install-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.pwa-install-gate {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+.pwa-install-gate h2 { margin: 0; font-size: 1.25rem; }
+.pwa-install-gate p { margin: 0; color: #5f6e68; line-height: 1.6; }
+@media (max-width: 720px) {
+  .pwa-install-banner {
+    bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+  }
+}
 label.secondary-button { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: white; color: var(--ink); font-size: 13px; font-weight: 700; }
 .notification-item.is-unread strong { font-weight: 850; }
 .developers-code { direction: ltr; text-align: left; background: #0f172a; color: #e2e8f0; padding: 14px 16px; border-radius: 12px; overflow: auto; font-size: 13px; }

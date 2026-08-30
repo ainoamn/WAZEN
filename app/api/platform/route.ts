@@ -641,7 +641,15 @@ export async function POST(request: Request) {
     }
 
     if (action === "inviteMember") {
-      const parsed = z.object({ spaceId: z.string().min(1).max(120), email: z.email().max(254), role: z.enum(["member", "treasurer", "manager", "auditor", "viewer"]) }).safeParse(payload);
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        email: z.email().max(254),
+        role: z.enum(["member", "treasurer", "manager", "auditor", "viewer"]),
+        displayName: z.string().trim().min(2).max(80).optional(),
+        phone: z.string().trim().max(40).optional(),
+        monthlyContribution: z.union([z.string(), z.number()]).optional(),
+        durationMonths: z.coerce.number().int().min(1).max(120).optional(),
+      }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_INVITATION");
       const spaceId = parsed.data.spaceId; const email = normalizeEmail(parsed.data.email); const role = parsed.data.role;
       await authorizeSpace(db, user, spaceId, "members:write");
@@ -658,17 +666,19 @@ export async function POST(request: Request) {
         ).bind(owner.owner_user_id, isoNow()).first<{ count: number }>();
         await assertOwnerPlanQuota(db, owner.owner_user_id, "user", 1 + Number(pending?.count ?? 0));
       }
-      const duplicate = await db.prepare("SELECT id FROM invites WHERE space_id=? AND email=? COLLATE NOCASE AND status='pending' AND expires_at>?").bind(spaceId, email, isoNow()).first();
-      if (duplicate) throw new ApiError(409, "INVITATION_EXISTS");
-      const invitationId = id(); const token = id().replaceAll("-", "") + id().replaceAll("-", ""); const tokenHash = await sha256(token); const createdAt = isoNow();
-      const origin = appOrigin(request);
-      await db.batch([
-        db.prepare("INSERT INTO invites VALUES (?,?,?,?,?,'pending',?,?,?)").bind(invitationId, spaceId, email, role, tokenHash, atOffset(7), user.id, createdAt),
-        db.prepare("INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)")
-          .bind(id(), email, "member_invitation", JSON.stringify({ invitationId, inviter: user.displayName, link: `${origin}/invite?token=${encodeURIComponent(token)}` }), createdAt),
-        prepareAudit(db, { userId: user.id, action: "member.invited", entityType: "invite", entityId: invitationId, metadata: { spaceId, email, role }, createdAt }),
-      ]);
-      return respond({ ok: true, invitation: { id: invitationId, email, role, delivery: "queued" } });
+      const { sendSpaceMemberInvite } = await import("../../../lib/member-invite");
+      const invitation = await sendSpaceMemberInvite({
+        db,
+        spaceId,
+        email,
+        role,
+        inviterUserId: user.id,
+        inviterDisplayName: user.displayName,
+        origin: appOrigin(request),
+        flush: true,
+        via: "platform.inviteMember",
+      });
+      return respond({ ok: true, invitation: { id: invitation.invitationId, email: invitation.email, role: invitation.role, delivery: invitation.delivery } });
     }
 
     if (action === "acceptInvite") {

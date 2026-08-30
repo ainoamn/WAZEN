@@ -3286,9 +3286,22 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
           durationMonths: Number(durationMonths) || 12,
         }),
       });
-      const result = await response.json() as { error?: string };
+      const result = await response.json() as { error?: string; inviteDelivery?: string | null };
       if (!response.ok) throw new Error(result.error ?? "Unable to create invitation");
-      onDone(recordOnly ? (locale === "ar" ? `تمت إضافة ${displayName} — الإجمالي ${formatMoney(totalMinor, "OMR", locale)}` : `${displayName} added — total ${formatMoney(totalMinor, "OMR", locale)}`) : (locale === "ar" ? `تم إنشاء دعوة آمنة لـ ${email}` : `A secure invitation was created for ${email}`));
+      const emailed = Boolean(email.trim()) && (
+        !recordOnly || Boolean(result.inviteDelivery && result.inviteDelivery !== "failed")
+      );
+      onDone(
+        recordOnly
+          ? (locale === "ar"
+            ? (emailed
+              ? `تمت إضافة ${displayName} وإرسال دعوة الانضمام إلى البريد`
+              : `تمت إضافة ${displayName} — الإجمالي ${formatMoney(totalMinor, "OMR", locale)}`)
+            : (emailed
+              ? `${displayName} added and an invite was emailed`
+              : `${displayName} added — total ${formatMoney(totalMinor, "OMR", locale)}`))
+          : (locale === "ar" ? `تم إرسال دعوة الانضمام إلى ${email}` : `Join invite sent to ${email}`),
+      );
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : "Unable to create invitation";
       const messages: Record<string, string> = locale === "ar"
@@ -3306,6 +3319,7 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
   return <Modal title={locale === "ar" ? "إضافة مساهم" : "Add member"} onClose={onClose}>
     <form className="modal-form" onSubmit={submit}>
       <div className="segmented-control"><button type="button" className={!recordOnly ? "active" : ""} onClick={() => setRecordOnly(false)}>{locale === "ar" ? "دعوة إلكترونية" : "Email invite"}</button><button type="button" className={recordOnly ? "active" : ""} onClick={() => setRecordOnly(true)}>{locale === "ar" ? "إضافة للسجل" : "Ledger member"}</button></div>
+      <p className="modal-note">{locale === "ar" ? "عند إدخال البريد تُرسل دعوة فورية للانضمام وتثبيت التطبيق." : "When an email is provided, a join invite is sent immediately."}</p>
       <label><span>{locale === "ar" ? "من سجل العناوين" : "From address book"}</span>
         <select value="" onChange={(event) => {
           const contact = (data.contacts ?? []).find((item) => item.id === event.target.value);

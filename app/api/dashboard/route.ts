@@ -1680,6 +1680,29 @@ export async function POST(request: Request) {
         db.prepare(`UPDATE spaces SET goal_minor = COALESCE((SELECT SUM(due_minor) FROM members WHERE space_id=? AND status='active'), 0) WHERE id=?`).bind(parsed.data.spaceId, parsed.data.spaceId),
       ]);
       await upsertSavedContact(db, user.id, { displayName: parsed.data.displayName, email: parsed.data.email || null, phone }, createdAt);
+      let inviteDelivery: string | null = null;
+      if (parsed.data.email) {
+        try {
+          const { sendSpaceMemberInvite } = await import("../../../lib/member-invite");
+          const invite = await sendSpaceMemberInvite({
+            db,
+            spaceId: parsed.data.spaceId,
+            email: parsed.data.email,
+            role: parsed.data.role,
+            inviterUserId: user.id,
+            inviterDisplayName: user.displayName,
+            origin: appOrigin(request),
+            flush: true,
+            via: "dashboard.addMember",
+          });
+          inviteDelivery = invite.delivery;
+        } catch {
+          inviteDelivery = "failed";
+        }
+      }
+      await completeIdempotency(db, user.id, idempotencyKey, { ok: true, memberId, inviteDelivery });
+      claimRef.current = null;
+      return Response.json({ ok: true, memberId, inviteDelivery }, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "updateMemberContact") {
       const parsed = z.object({
         memberId: z.string().min(1).max(120),
@@ -1737,6 +1760,24 @@ export async function POST(request: Request) {
       }));
       await db.batch(statements);
       await upsertSavedContact(db, user.id, { displayName: nextName, email: nextEmail, phone: nextPhone }, createdAt);
+      const previousEmail = String(member.email ?? "").trim().toLowerCase();
+      const freshEmail = String(nextEmail ?? "").trim().toLowerCase();
+      if (freshEmail && freshEmail !== previousEmail) {
+        try {
+          const { sendSpaceMemberInvite } = await import("../../../lib/member-invite");
+          await sendSpaceMemberInvite({
+            db,
+            spaceId: member.space_id,
+            email: freshEmail,
+            role: (["member", "treasurer", "manager", "auditor", "viewer"].includes(member.role) ? member.role : "member") as "member" | "treasurer" | "manager" | "auditor" | "viewer",
+            inviterUserId: user.id,
+            inviterDisplayName: user.displayName,
+            origin: appOrigin(request),
+            flush: true,
+            via: "dashboard.updateMemberContact",
+          });
+        } catch { /* invite is best-effort when contact email is added */ }
+      }
     } else if (action === "addTransaction") {
       const parsed = z.object({ spaceId: z.string().min(1).max(120), kind: z.enum(["expense", "income", "contribution", "reimbursement"]), allocation: z.enum(["general", "mandatory", "personal_reserve"]), description: z.string().trim().min(2).max(300), amount: z.union([z.string(),z.number()]), memberId: z.string().max(120).optional(), selectedIds: z.array(z.string().min(1).max(160)).max(120).optional(), occurredAt: z.iso.datetime().optional() }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_TRANSACTION");
