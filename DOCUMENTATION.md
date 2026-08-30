@@ -207,7 +207,7 @@ fe6db47  fix: support Vercel Next.js build path   ← آخر نقطة في أر�
 | رحلات وتسويات | مساهمات، تعويضات، هدف | جزئي (منطق allocation / personal_reserve) |
 | جمعيات | أقساط وأدوار | عرض UI + seed؛ قرعة حقيقية ناقصة |
 | الأعضاء والأدوار | مالك، أمين صندوق، عضو… | أدوار في schema؛ صلاحيات API جزئية |
-| دعوات الأعضاء | دعوة بالبريد + دور | `inviteMember` API |
+| دعوات الأعضاء | دعوة بالبريد + قبول مباشر + إعادة إرسال | `inviteMember` / `joinInvite` / `resendMemberInvite` |
 | باقات الاشتراك | بداية / عائلة / احتراف / أعمال | `plans` + UI pricing |
 | كوبونات | تحقق + تطبيق خصم | `validateCoupon` / `selectPlan` |
 | فواتير ومدفوعات | إنشاء فاتورة + سجل | محاكاة (بدون بوابة دفع) |
@@ -337,6 +337,8 @@ Next.js App Router  ── app/* pages
 | `POST selectPlan` | اختيار باقة + فاتورة + ضريبة 15% |
 | `POST createDocument` | مستند + رقم تسلسلي `WZN-…` |
 | `POST inviteMember` | دعوة عضو لمحفظة |
+| `POST peekInvite` / `joinInvite` | معاينة الدعوة والانضمام (تسجيل + قبول) بدون بوابة دخول وسطية |
+| `POST resendMemberInvite` (dashboard) | إعادة إرسال دعوة عضو مرة كل 6 ساعات؛ ممنوع بعد قبول الدعوة وربط الحساب |
 | `POST setUserStatus` | admin: حالة عميل |
 | `POST setRole` | admin: دور منصة |
 | `POST setPaymentStatus` | admin: حالة دفع |
