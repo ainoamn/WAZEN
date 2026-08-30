@@ -1977,7 +1977,7 @@ export async function POST(request: Request) {
       if (!parsed.success) throw new ApiError(400, "INVALID_TRANSACTION");
       const { spaceId, allocation, description } = parsed.data;
       let kind = parsed.data.kind;
-      const { assertSpaceTxnAction } = await import("../../../lib/space-role-permissions");
+      const { assertSpaceTxnAction } = await import("../../../lib/space-role-permissions-server");
       const { space } = await assertSpaceTxnAction(db, user, spaceId, "add");
       const memberId = parsed.data.memberId ?? null;
       await guardOwnerTransactionQuota(db, space.owner_user_id, 2);
@@ -2142,7 +2142,7 @@ export async function POST(request: Request) {
       if (!parsed.success) throw new ApiError(400, "INVALID_TRANSACTION");
       const txn = await db.prepare("SELECT * FROM transactions WHERE id=?").bind(parsed.data.transactionId).first<TransactionRow>();
       if (!txn) throw new ApiError(404, "TRANSACTION_NOT_FOUND");
-      const { assertSpaceTxnAction } = await import("../../../lib/space-role-permissions");
+      const { assertSpaceTxnAction } = await import("../../../lib/space-role-permissions-server");
       await assertSpaceTxnAction(db, user, txn.space_id, "delete", txn);
       if (txn.status !== "voided" && txn.status !== "superseded") {
         await voidApprovedTransaction(db, txn, user.id, { recordStatus: "voided", closeOccurrence: true });
@@ -2172,7 +2172,7 @@ export async function POST(request: Request) {
       const existing = await db.prepare("SELECT * FROM transactions WHERE id=?").bind(parsed.data.transactionId).first<TransactionRow>();
       if (!existing) throw new ApiError(404, "TRANSACTION_NOT_FOUND");
       if (existing.status !== "approved") throw new ApiError(409, "TRANSACTION_NOT_EDITABLE");
-      const { assertSpaceTxnAction } = await import("../../../lib/space-role-permissions");
+      const { assertSpaceTxnAction } = await import("../../../lib/space-role-permissions-server");
       const { space } = await assertSpaceTxnAction(db, user, existing.space_id, "edit", existing);
       await assertPeriodWritable(db, existing.space_id, existing.occurred_at);
       const occurredAt = parsed.data.occurredAt ?? existing.occurred_at;
