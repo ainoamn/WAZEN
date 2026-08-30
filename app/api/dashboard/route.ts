@@ -241,6 +241,11 @@ async function ensureUser(db: D1Database, user: RequestUser) {
     await ensureDefaultTenant(db, user);
   }
 
+  try {
+    const { claimMemberLinksByEmail } = await import("../../../lib/claim-member-links");
+    await claimMemberLinksByEmail(db, user.id, user.email);
+  } catch { /* best-effort membership claim */ }
+
   // Real accounts start empty. Seeded finance data is restricted to explicit local demo mode.
   if (!user.isDemo) return;
 
@@ -1015,6 +1020,12 @@ export async function GET(request: Request) {
         planStatus: entitlements.status,
         graceEndsAt: entitlements.retention?.graceEndsAt ?? null,
       });
+      let pendingInvites: Awaited<ReturnType<typeof import("../../../lib/pending-invites").listPendingInvitesForEmail>> = [];
+      try {
+        const { listPendingInvitesForEmail, pendingInvitesAsWorkspaceAlerts } = await import("../../../lib/pending-invites");
+        pendingInvites = await listPendingInvitesForEmail(db, user.email);
+        workspaceAlerts.unshift(...pendingInvitesAsWorkspaceAlerts(pendingInvites));
+      } catch { /* pending invites optional */ }
       try {
         await upsertUserNotifications(db, user.id, workspaceAlerts);
       } catch { /* notifications are best-effort */ }
@@ -1026,7 +1037,15 @@ export async function GET(request: Request) {
         user: { ...user, role },
         entitlements,
         revision,
-        workspaceAlerts,
+        workspaceAlerts: workspaceAlerts.slice(0, 12),
+        pendingInvites: pendingInvites.map((invite) => ({
+          id: invite.id,
+          spaceId: invite.spaceId,
+          spaceNameAr: invite.spaceNameAr,
+          spaceNameEn: invite.spaceNameEn,
+          expiresAt: invite.expiresAt,
+          inviterName: invite.inviterName,
+        })),
         notifications: notifications.map((row) => ({
           id: row.id,
           severity: row.severity,
@@ -1740,6 +1759,65 @@ export async function POST(request: Request) {
         }
         throw error;
       }
+    } else if (action === "acceptPendingInvite") {
+      const parsed = z.object({ inviteId: z.string().min(8).max(80) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_INVITATION");
+      const { acceptPendingInviteForUser } = await import("../../../lib/pending-invites");
+      const accepted = await acceptPendingInviteForUser({
+        db,
+        userId: user.id,
+        userEmail: user.email,
+        displayName: user.displayName,
+        inviteId: parsed.data.inviteId,
+      });
+      const body = { ok: true, spaceId: accepted.spaceId, inviteId: accepted.inviteId };
+      await completeIdempotency(db, user.id, idempotencyKey, body);
+      claimRef.current = null;
+      return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+    } else if (action === "archiveMember" || action === "removeMember") {
+      const parsed = z.object({
+        memberId: z.string().min(1).max(120),
+        mode: z.enum(["auto", "archive", "remove"]).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_MEMBER");
+      const member = await db.prepare("SELECT id,space_id FROM members WHERE id=? LIMIT 1")
+        .bind(parsed.data.memberId)
+        .first<{ id: string; space_id: string }>();
+      if (!member) throw new ApiError(404, "MEMBER_NOT_FOUND");
+      const space = await authorizeSpace(db, user, member.space_id, "members:write", ["household", "trip", "society", "group"]);
+      const { archiveOrRemoveSpaceMember } = await import("../../../lib/member-lifecycle");
+      const prefer = parsed.data.mode
+        ?? (action === "removeMember" ? "auto" : "archive");
+      const result = await archiveOrRemoveSpaceMember({
+        db,
+        actorUserId: user.id,
+        space: { id: space.id, owner_user_id: space.owner_user_id },
+        memberId: member.id,
+        prefer,
+      });
+      const body = { ok: true, ...result };
+      await completeIdempotency(db, user.id, idempotencyKey, body);
+      claimRef.current = null;
+      return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+    } else if (action === "restoreMember") {
+      const parsed = z.object({ memberId: z.string().min(1).max(120) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_MEMBER");
+      const member = await db.prepare("SELECT id,space_id FROM members WHERE id=? LIMIT 1")
+        .bind(parsed.data.memberId)
+        .first<{ id: string; space_id: string }>();
+      if (!member) throw new ApiError(404, "MEMBER_NOT_FOUND");
+      await authorizeSpace(db, user, member.space_id, "members:write", ["household", "trip", "society", "group"]);
+      const { restoreArchivedMember } = await import("../../../lib/member-lifecycle");
+      const result = await restoreArchivedMember({
+        db,
+        actorUserId: user.id,
+        spaceId: member.space_id,
+        memberId: member.id,
+      });
+      const body = { ok: true, ...result };
+      await completeIdempotency(db, user.id, idempotencyKey, body);
+      claimRef.current = null;
+      return Response.json(body, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "updateMemberContact") {
       const parsed = z.object({
         memberId: z.string().min(1).max(120),

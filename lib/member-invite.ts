@@ -70,7 +70,20 @@ export async function sendSpaceMemberInvite(input: {
     delivery = "deferred";
   }
 
-  return { invitationId, email, role, expiresAt, link, outboxId, delivery };
+  let notifiedUserId: string | null = null;
+  try {
+    const { notifyExistingUserOfInvite } = await import("./pending-invites");
+    const notified = await notifyExistingUserOfInvite({
+      db: input.db,
+      email,
+      invitationId,
+      spaceId: input.spaceId,
+      inviterDisplayName: input.inviterDisplayName,
+    });
+    notifiedUserId = notified.notifiedUserId;
+  } catch { /* in-app notify is best-effort */ }
+
+  return { invitationId, email, role, expiresAt, link, outboxId, delivery, notifiedUserId };
 }
 
 export const INVITE_RESEND_COOLDOWN_MS = 6 * 60 * 60 * 1000;

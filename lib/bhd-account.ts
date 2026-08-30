@@ -20,6 +20,8 @@ export async function upsertBhdUser(db: D1Database, claims: BhdIdClaims) {
     await db.prepare("UPDATE auth_credentials SET email_verified_at=COALESCE(email_verified_at,?),updated_at=? WHERE user_id=?")
       .bind(now, now, bySub.id).run();
     await ensureBootstrapPlatformRole(db, bySub.id, email, now);
+    const { claimMemberLinksByEmail } = await import("./claim-member-links");
+    await claimMemberLinksByEmail(db, bySub.id, email).catch(() => {});
     return { id: bySub.id, email, displayName: claims.name, created: false };
   }
 
@@ -46,6 +48,8 @@ export async function upsertBhdUser(db: D1Database, claims: BhdIdClaims) {
     // Preserve existing platform_roles; promote only when WAZEN_ADMIN_EMAILS matches (§0.7).
     await ensureBootstrapPlatformRole(db, existing.id, email, now);
     await writeAudit(db, { userId: existing.id, action: "auth.bhd_linked", entityType: "user", entityId: existing.id, createdAt: now });
+    const { claimMemberLinksByEmail } = await import("./claim-member-links");
+    await claimMemberLinksByEmail(db, existing.id, email).catch(() => {});
     return { id: existing.id, email: existing.email, displayName: claims.name, created: false };
   }
 
@@ -58,5 +62,7 @@ export async function upsertBhdUser(db: D1Database, claims: BhdIdClaims) {
   await ensureBootstrapPlatformRole(db, userId, email, now);
   await ensureDefaultTenant(db, { id: userId, displayName: claims.name });
   await writeAudit(db, { userId, action: "auth.bhd_registered", entityType: "user", entityId: userId, createdAt: now });
+  const { claimMemberLinksByEmail } = await import("./claim-member-links");
+  await claimMemberLinksByEmail(db, userId, email).catch(() => {});
   return { id: userId, email, displayName: claims.name, created: true };
 }

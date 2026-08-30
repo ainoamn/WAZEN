@@ -182,7 +182,11 @@ type LedgerInputs = {
   onSmartPay: () => void;
   /** Called after statement share succeeds (for toast). */
   onStatementSent?: (message: string) => void;
+  /** Called after invite resend succeeds (for toast / refresh). */
+  onInviteResent?: (message: string) => void;
   canWhatsapp?: boolean;
+  /** Show resend-invite controls (trip/space member detail). */
+  showInviteActions?: boolean;
 };
 
 function MemberLedgerBody({
@@ -199,10 +203,15 @@ function MemberLedgerBody({
   expenseSplits = [],
   onSmartPay,
   onStatementSent,
+  onInviteResent,
   canWhatsapp = true,
+  showInviteActions = false,
 }: LedgerInputs) {
   const [tab, setTab] = useState<MemberLedgerFocus>(focus);
   const [sending, setSending] = useState(false);
+  const [resendingInvite, setResendingInvite] = useState(false);
+  const [inviteNote, setInviteNote] = useState("");
+  const [inviteError, setInviteError] = useState("");
   useEffect(() => { setTab(focus); }, [focus, member.id, space.id]);
   const ledger = useMemo(() => buildMemberLedger({
     member,
@@ -279,18 +288,94 @@ function MemberLedgerBody({
       setSending(false);
     }
   };
+  const canResendInvite = showInviteActions && Boolean(member.email) && !member.user_id;
+  const resendInvite = async () => {
+    if (!canResendInvite || resendingInvite) return;
+    setResendingInvite(true);
+    setInviteError("");
+    setInviteNote("");
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "resendMemberInvite",
+          idempotencyKey: crypto.randomUUID(),
+          memberId: member.id,
+        }),
+      });
+      const result = await response.json() as { error?: string; delivery?: string; nextEligibleAt?: string | null };
+      if (response.status === 429 && result.error === "INVITE_RESEND_COOLDOWN") {
+        const when = result.nextEligibleAt
+          ? new Date(result.nextEligibleAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")
+          : "";
+        setInviteError(
+          locale === "ar"
+            ? `يمكن إعادة إرسال الدعوة مرة واحدة كل 6 ساعات${when ? ` (متاح بعد ${when})` : ""}.`
+            : `You can resend once every 6 hours${when ? ` (available after ${when})` : ""}.`,
+        );
+        return;
+      }
+      if (!response.ok) {
+        if (result.error === "INVITE_ALREADY_ACCEPTED") {
+          setInviteError(locale === "ar" ? "الدعوة مقبولة مسبقاً ولا يمكن إعادة إرسالها." : "Invite already accepted; cannot resend.");
+        } else if (result.error === "INVITE_EMAIL_REQUIRED") {
+          setInviteError(locale === "ar" ? "أضف بريداً للعضو أولاً." : "Add an email for this member first.");
+        } else {
+          setInviteError(locale === "ar" ? "تعذر إعادة إرسال الدعوة." : "Could not resend the invite.");
+        }
+        return;
+      }
+      const deliveryNote = result.delivery === "sent"
+        ? (locale === "ar" ? "أُرسلت الدعوة بالبريد." : "Invite email sent.")
+        : result.delivery === "deferred"
+          ? (locale === "ar" ? "سُجّلت الدعوة وسيُرسل البريد عند تفعيل الخدمة." : "Invite queued; email will send when delivery is configured.")
+          : (locale === "ar" ? "أُعيدت جدولة الدعوة في البريد." : "Invite re-queued for email.");
+      setInviteNote(deliveryNote);
+      onInviteResent?.(deliveryNote);
+    } catch {
+      setInviteError(locale === "ar" ? "تعذر إعادة إرسال الدعوة." : "Could not resend the invite.");
+    } finally {
+      setResendingInvite(false);
+    }
+  };
   return (
     <>
       <div className="member-detail-meta">
         <div><span>{locale === "ar" ? "تاريخ الانضمام" : "Joined"}</span><b>{member.joined_at ? new Date(member.joined_at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB") : "—"}</b></div>
         <div><span>{locale === "ar" ? "الهاتف" : "Phone"}</span><b>{member.phone || "—"}</b></div>
         <div><span>{locale === "ar" ? "البريد" : "Email"}</span><b>{member.email || "—"}</b></div>
+        {showInviteActions ? (
+          <div><span>{locale === "ar" ? "حساب الدخول" : "Login link"}</span><b>{member.user_id ? (locale === "ar" ? "مرتبط" : "Linked") : (locale === "ar" ? "بانتظار الانضمام" : "Pending join")}</b></div>
+        ) : null}
         <div><span>{locale === "ar" ? "الهدف المالي" : "Financial goal"}</span><b>{money(member.due_minor, space.currency, locale)}</b></div>
         <div><span>{locale === "ar" ? "كم دفع" : "Paid"}</span><b>{money(ledger.paidMinor, space.currency, locale)}</b></div>
         <div><span>{locale === "ar" ? "كم صرف" : "Spent"}</span><b>{money(ledger.addonMinor, space.currency, locale)}</b></div>
         <div><span>{locale === "ar" ? "كم عليه" : "Owes"}</span><b>{money(ledger.owesMinor, space.currency, locale)}</b></div>
         <div><span>{locale === "ar" ? "كم له" : "Credit"}</span><b>{money(ledger.creditMinor, space.currency, locale)}</b></div>
       </div>
+      {showInviteActions ? (
+        <div className="member-contact-actions" style={{ marginBottom: "0.75rem" }}>
+          {canResendInvite ? (
+            <button type="button" className="secondary-button" disabled={resendingInvite} onClick={() => void resendInvite()}>
+              <Mail size={16} />
+              {resendingInvite
+                ? (locale === "ar" ? "جارٍ الإرسال…" : "Sending…")
+                : (locale === "ar" ? "إعادة إرسال الدعوة" : "Resend invitation")}
+            </button>
+          ) : member.user_id ? (
+            <span className="modal-note" style={{ margin: 0 }}>
+              {locale === "ar" ? "انضم العضو مسبقاً — لا حاجة لإعادة الدعوة." : "Member already joined — invite resend unavailable."}
+            </span>
+          ) : (
+            <span className="modal-note" style={{ margin: 0 }}>
+              {locale === "ar" ? "أضف بريداً للعضو أولاً لإرسال الدعوة." : "Add an email first to send an invite."}
+            </span>
+          )}
+          {inviteNote ? <p className="modal-note">{inviteNote}</p> : null}
+          {inviteError ? <p className="modal-error">{inviteError}</p> : null}
+        </div>
+      ) : null}
       <div className="member-ledger-tabs">
         {tabs.map((item) => (
           <button type="button" key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>
@@ -355,7 +440,9 @@ export function MemberDetailModal({
   onClose,
   onSmartPay,
   onStatementSent,
+  onInviteResent,
   canWhatsapp = true,
+  showInviteActions = true,
 }: LedgerInputs & { onClose: () => void }) {
   return (
     <Modal title={member.display_name} onClose={onClose}>
@@ -374,7 +461,9 @@ export function MemberDetailModal({
           expenseSplits={expenseSplits}
           onSmartPay={onSmartPay}
           onStatementSent={onStatementSent}
+          onInviteResent={onInviteResent}
           canWhatsapp={canWhatsapp}
+          showInviteActions={showInviteActions}
         />
       </div>
     </Modal>

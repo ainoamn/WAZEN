@@ -147,6 +147,10 @@ export async function joinInvite(input: {
     }),
   ]);
 
+  // Link any other ledger rows / pending invites for this email (e.g. multiple wallets).
+  const { claimMemberLinksByEmail } = await import("./claim-member-links");
+  await claimMemberLinksByEmail(input.db, userId, inviteEmail).catch(() => {});
+
   const session = await createSession(input.db, userId, input.request);
   return {
     ok: true as const,

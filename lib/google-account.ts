@@ -19,6 +19,8 @@ export async function upsertGoogleUser(db: D1Database, profile: GoogleProfile) {
     if (profile.picture) await db.prepare("UPDATE users SET avatar_url=? WHERE id=?").bind(profile.picture, account.id).run();
     await db.prepare("UPDATE auth_credentials SET email_verified_at=COALESCE(email_verified_at,?),updated_at=? WHERE user_id=?")
       .bind(now, now, account.id).run();
+    const { claimMemberLinksByEmail } = await import("./claim-member-links");
+    await claimMemberLinksByEmail(db, account.id, account.email).catch(() => {});
     return { id: account.id, email: account.email, displayName: account.display_name, created: false };
   }
 
@@ -33,6 +35,8 @@ export async function upsertGoogleUser(db: D1Database, profile: GoogleProfile) {
       .bind(now, now, existing.id).run();
     if (profile.picture) await db.prepare("UPDATE users SET avatar_url=? WHERE id=?").bind(profile.picture, existing.id).run();
     await writeAudit(db, { userId: existing.id, action: "auth.google_linked", entityType: "user", entityId: existing.id, createdAt: now });
+    const { claimMemberLinksByEmail } = await import("./claim-member-links");
+    await claimMemberLinksByEmail(db, existing.id, existing.email).catch(() => {});
     return { id: existing.id, email: existing.email, displayName: existing.display_name, created: false };
   }
 
@@ -50,5 +54,7 @@ export async function upsertGoogleUser(db: D1Database, profile: GoogleProfile) {
   await ensureBootstrapPlatformRole(db, userId, email, now);
   await ensureDefaultTenant(db, { id: userId, displayName: profile.name });
   await writeAudit(db, { userId, action: "auth.google_registered", entityType: "user", entityId: userId, createdAt: now });
+  const { claimMemberLinksByEmail } = await import("./claim-member-links");
+  await claimMemberLinksByEmail(db, userId, email).catch(() => {});
   return { id: userId, email, displayName: profile.name, created: true };
 }

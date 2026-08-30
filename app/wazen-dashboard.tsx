@@ -59,6 +59,7 @@ import {
   Landmark,
   LayoutDashboard,
   LogOut,
+  Mail,
   Menu,
   Moon,
   Plane,
@@ -164,7 +165,7 @@ type CircleTurn = { id: string; space_id: string; member_id: string; display_nam
 type TripExpense = { id: string; space_id: string; paid_by_member_id: string; paid_by_name: string; amount_minor: number; description: string; occurred_at: string; paid_from?: string };
 type ExpenseSplit = { id: string; expense_id: string; member_id: string; display_name: string; share_minor: number };
 type Settlement = { id: string; space_id: string; from_member_id: string; to_member_id: string; from_member_name: string | null; to_member_name: string | null; amount_minor: number; status: string };
-type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; workspaceAlerts?: Array<{ id: string; severity: "info" | "warning" | "danger"; href?: string; ar: string; en: string }>; notifications?: Array<{ id: string; severity: "info" | "warning" | "danger"; titleAr: string; titleEn: string; bodyAr: string; bodyEn: string; href?: string | null; readAt?: string | null; createdAt: string; dedupeKey?: string | null }>; entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; dailyTransactionLimit?: number; monthlyTransactionLimit?: number; printLimit?: number; status: string; usage?: { transactionsTotal: number; transactionsToday: number; transactionsThisMonth: number; printsThisMonth: number }; warnings?: Array<{ kind: string; used: number; limit: number }>; retention?: { graceEndsAt: string; spaceCount: number; spaceTypes: string[]; userVisibleDays: number } | null }; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
+type DashboardData = { user: User; spaces: Space[]; members: Member[]; transactions: Transaction[]; plans: Record<string, unknown>[]; circleTurns: CircleTurn[]; tripExpenses: TripExpense[]; expenseSplits: ExpenseSplit[]; settlements: Settlement[]; workspaceAlerts?: Array<{ id: string; severity: "info" | "warning" | "danger"; href?: string; ar: string; en: string; inviteId?: string }>; pendingInvites?: Array<{ id: string; spaceId: string; spaceNameAr: string | null; spaceNameEn: string | null; expiresAt: string; inviterName: string | null }>; notifications?: Array<{ id: string; severity: "info" | "warning" | "danger"; titleAr: string; titleEn: string; bodyAr: string; bodyEn: string; href?: string | null; readAt?: string | null; createdAt: string; dedupeKey?: string | null }>; entitlements?: { features: string[]; walletLimit: number; memberLimit: number; transactionLimit?: number; recordLimit?: number; userLimit?: number; dailyTransactionLimit?: number; monthlyTransactionLimit?: number; printLimit?: number; status: string; usage?: { transactionsTotal: number; transactionsToday: number; transactionsThisMonth: number; printsThisMonth: number }; warnings?: Array<{ kind: string; used: number; limit: number }>; retention?: { graceEndsAt: string; spaceCount: number; spaceTypes: string[]; userVisibleDays: number } | null }; installments?: Array<{ id: string; member_id: string; space_id: string; period_index: number; period_key: string; amount_minor: number; paid_minor: number; status: string; due_at?: string }>; contacts?: Array<{ id: string; display_name: string; email: string | null; phone: string | null }>; periods?: Array<{ id: string; space_id: string; label: string; starts_at: string; ends_at?: string | null; closed_at?: string | null; reopened_at?: string | null; closed_by_name?: string | null; reopened_by_name?: string | null; reopen_count?: number; status: string }>; periodEvents?: Array<{ id: string; space_id: string; period_id?: string | null; actor_name?: string | null; action: string; summary_ar?: string | null; summary_en?: string | null; created_at: string }>; personalAccounts?: Array<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; balance_minor?: number }>; personalRules?: Array<{ id: string; space_id: string; account_id?: string | null; kind: string; name: string; amount_mode: string; schedule?: string; amount_minor: number; due_day: number; starts_at: string; ends_at?: string | null; total_minor: number; duration_months: number; paid_minor: number; status: string }>; personalOccurrences?: Array<{ id: string; rule_id: string; space_id: string; account_id?: string | null; period_key: string; due_at: string; expected_minor: number; actual_minor?: number | null; status: string; transaction_id?: string | null; rule_name?: string; rule_kind?: string; amount_mode?: string }>; payoutAccounts?: Array<{ space_id: string; label: string; account_number: string; linked_member_id?: string | null }>; familyEvents?: Array<{ id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; status: string; projectedMinor?: number; scheduledInflowMinor?: number; shortfallMinor?: number; needsBoost?: boolean }>; spaceLinks?: Array<{ hub_space_id: string; linked_space_id: string; status: string }>; spaceBankLinks?: Array<{ hub_space_id: string; linked_space_id: string; account_id: string }> };
 
 const copy = {
   ar: {
@@ -1211,6 +1212,7 @@ export function WazenDashboard() {
   const [toast, setToast] = useState("");
   const [upgradeNotice, setUpgradeNotice] = useState<{ title: string; text: string } | null>(null);
   const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, string>>({});
+  const [acceptingInviteId, setAcceptingInviteId] = useState<string | null>(null);
   const t = copy[locale];
 
   useEffect(() => {
@@ -1415,6 +1417,57 @@ export function WazenDashboard() {
     persistPlace(view, spaceId ?? pickedSpaceId[view]);
   };
 
+  const acceptPendingInvite = async (inviteId: string) => {
+    if (!inviteId || acceptingInviteId) return;
+    setAcceptingInviteId(inviteId);
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "acceptPendingInvite",
+          idempotencyKey: crypto.randomUUID(),
+          inviteId,
+        }),
+      });
+      const result = await response.json() as { error?: string; spaceId?: string };
+      if (!response.ok) {
+        window.alert(
+          result.error === "INVITE_EMAIL_MISMATCH"
+            ? (locale === "ar" ? "بريد حسابك لا يطابق بريد الدعوة." : "Your account email does not match this invite.")
+            : result.error === "INVITATION_ALREADY_USED"
+              ? (locale === "ar" ? "تم قبول هذه الدعوة مسبقاً." : "This invite was already accepted.")
+              : (locale === "ar" ? "تعذر قبول الدعوة." : "Could not accept the invite."),
+        );
+        return;
+      }
+      flash(locale === "ar" ? "تم قبول الدعوة — ستظهر المحفظة الآن." : "Invite accepted — the wallet will appear now.");
+      dismissWorkspaceAlert({ id: `invite:${inviteId}`, ar: "", en: "" });
+      await load(true);
+      if (result.spaceId) {
+        const refreshed = readDashboardCache<DashboardData>();
+        const space = (refreshed?.spaces ?? []).find((item) => item.id === result.spaceId);
+        if (space) changeView(viewForSpaceType(space.type), space.id);
+      }
+    } catch {
+      window.alert(locale === "ar" ? "تعذر قبول الدعوة." : "Could not accept the invite.");
+    } finally {
+      setAcceptingInviteId(null);
+    }
+  };
+
+  useEffect(() => {
+    const inviteId = searchParams.get("acceptInvite");
+    if (!inviteId || !data || acceptingInviteId) return;
+    void acceptPendingInvite(inviteId);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("acceptInvite");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once when invite query is present
+  }, [data?.user?.id, searchParams]);
+
   if (loading && !data) return <LoadingScreen locale={locale} />;
   if (error || !data) return <ErrorScreen message={t.error} retry={load} />;
 
@@ -1501,22 +1554,37 @@ export function WazenDashboard() {
 
         {visibleWorkspaceAlerts.length ? (
           <div className="workspace-alerts" role="status">
-            {visibleWorkspaceAlerts.map((alert) => (
-              <div key={alert.id} className={`workspace-alert is-${alert.severity}`}>
-                <p>{locale === "ar" ? alert.ar : alert.en}</p>
-                <div className="workspace-alert-actions">
-                  {alert.href ? <a href={alert.href}>{locale === "ar" ? "فتح" : "Open"}</a> : null}
-                  <button
-                    type="button"
-                    className="workspace-alert-dismiss"
-                    aria-label={locale === "ar" ? "إغلاق الملاحظة" : "Dismiss alert"}
-                    onClick={() => dismissWorkspaceAlert(alert)}
-                  >
-                    <X size={16} />
-                  </button>
+            {visibleWorkspaceAlerts.map((alert) => {
+              const inviteId = alert.inviteId || (alert.id.startsWith("invite:") ? alert.id.slice("invite:".length) : "");
+              return (
+                <div key={alert.id} className={`workspace-alert is-${alert.severity}`}>
+                  <p>{locale === "ar" ? alert.ar : alert.en}</p>
+                  <div className="workspace-alert-actions">
+                    {inviteId ? (
+                      <button
+                        type="button"
+                        className="primary-button compact"
+                        disabled={acceptingInviteId === inviteId}
+                        onClick={() => void acceptPendingInvite(inviteId)}
+                      >
+                        {acceptingInviteId === inviteId
+                          ? (locale === "ar" ? "جارٍ القبول…" : "Accepting…")
+                          : (locale === "ar" ? "موافقة" : "Accept")}
+                      </button>
+                    ) : null}
+                    {alert.href && !inviteId ? <a href={alert.href}>{locale === "ar" ? "فتح" : "Open"}</a> : null}
+                    <button
+                      type="button"
+                      className="workspace-alert-dismiss"
+                      aria-label={locale === "ar" ? "إغلاق الملاحظة" : "Dismiss alert"}
+                      onClick={() => dismissWorkspaceAlert(alert)}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : null}
 
@@ -1639,6 +1707,7 @@ export function WazenDashboard() {
               setModal("smartPay");
             }}
             onStatementSent={(message) => flash(message)}
+            onInviteResent={(message) => { flash(message); void load(true); }}
             canWhatsapp={planHasFeature(planFeaturesOf(data), "whatsapp")}
           />
         );
@@ -2198,7 +2267,7 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
       />
     )}
     {goal > 0 && space.type !== "personal" && <FoldWrap id={`${space.id}:goal`}><article className="panel goal-wide"><div className="panel-heading"><div><span className="section-kicker"><Target size={15} />{locale === "ar" ? "تقدم الهدف" : "Goal progress"}</span><h2>{nameOf(space, locale)}</h2></div><strong>{progress}%</strong></div><div className="progress-track tall"><span style={{ width: `${progress}%` }} /></div><div className="goal-wide-values"><span className={space.balance_minor < 0 ? "amount-negative" : ""}>{formatMoney(space.balance_minor, space.currency, locale)}</span><span>{formatMoney(goal, space.currency, locale)}</span></div></article></FoldWrap>}
-    {members.length > 0 && space.type !== "personal" && <FoldWrap id={`${space.id}:members`}><MembersTable members={members} locale={locale} currency={space.currency} data={data} spaceId={space.id} onOpenMember={onOpenMember} /></FoldWrap>}
+    {members.length > 0 && space.type !== "personal" && <FoldWrap id={`${space.id}:members`}><MembersTable members={members} locale={locale} currency={space.currency} data={data} spaceId={space.id} onOpenMember={onOpenMember} onChanged={onTxnChanged} /></FoldWrap>}
     {["household", "trip", "society", "group"].includes(space.type) && <FoldWrap id={`${space.id}:expenses`}><article className="panel workflow-panel"><div className="panel-heading"><div><span className="section-kicker"><Plane size={15} />{locale === "ar" ? "المصروفات والتسويات" : "Expenses & settlements"}</span><h2>{locale === "ar" ? "من أي حساب دُفع؟ وما له / عليه" : "Paid-from account and balances"}</h2></div><div className="section-title-actions"><button type="button" className="secondary-button" onClick={() => { if (window.confirm(locale === "ar" ? "إعادة تقسيم كل المصروفات بالتساوي على الأعضاء الحاليين بمن فيهم الجدد؟" : "Re-split every expense equally across current members, including new ones?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "resplitTripExpenses", idempotencyKey: crypto.randomUUID(), spaceId: space.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "RESPLIT_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "RESPLIT_FAILED")); }}><Users size={15} />{locale === "ar" ? "تقسيم الكل بالتساوي" : "Split all equally"}</button><button className="primary-button" onClick={onTripExpense}><Plus size={15} />{locale === "ar" ? "مصروف جماعي" : "Group expense"}</button></div></div><div className="transaction-list">{data.tripExpenses.filter((expense) => expense.space_id === space.id).map((expense) => <div className="trip-expense-row" key={expense.id}><div className="transaction-row"><div className="transaction-icon reimbursement"><HandCoins size={17} /></div><div className="transaction-main"><strong>{expense.description}</strong><span>{locale === "ar" ? (expense.paid_from === "common_fund" ? "دُفع من صندوق الجمعية" : `دفع بواسطة ${expense.paid_by_name}`) : (expense.paid_from === "common_fund" ? "Paid from association fund" : `Paid by ${expense.paid_by_name}`)}</span></div><strong className="amount-negative">{formatMoney(expense.amount_minor, space.currency, locale)}</strong><div className="transaction-actions"><button type="button" title={locale === "ar" ? "تعديل المصروف" : "Edit expense"} aria-label={locale === "ar" ? "تعديل المصروف" : "Edit expense"} onClick={() => onEditExpense(expense.id)}><Pencil size={15} /></button><button type="button" title={locale === "ar" ? "تقسيم بالتساوي على كل الأعضاء" : "Split equally among all members"} aria-label={locale === "ar" ? "تقسيم بالتساوي" : "Split equally"} onClick={() => { if (window.confirm(locale === "ar" ? "تقسيم هذا المصروف بالتساوي على الأعضاء الحاليين بمن فيهم الجدد؟" : "Split this expense equally among current members, including new ones?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "resplitTripExpenses", idempotencyKey: crypto.randomUUID(), spaceId: space.id, expenseId: expense.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "RESPLIT_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "RESPLIT_FAILED")); }}><Users size={15} /></button><button type="button" className="danger" title={locale === "ar" ? "حذف المصروف" : "Delete expense"} aria-label={locale === "ar" ? "حذف المصروف" : "Delete expense"} onClick={() => { if (window.confirm(locale === "ar" ? "حذف هذا المصروف والتسويات المرتبطة به؟" : "Delete this group expense and its settlements?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "voidTripExpense", idempotencyKey: crypto.randomUUID(), expenseId: expense.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "VOID_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "VOID_FAILED")); }}><Trash2 size={15} /></button></div></div><div className="split-chips">{data.expenseSplits.filter((split) => split.expense_id === expense.id).map((split) => <span key={split.id} className={expense.paid_from !== "common_fund" && split.member_id === expense.paid_by_member_id ? "payer-share" : ""}>{split.display_name}: {formatMoney(split.share_minor, space.currency, locale)}{expense.paid_from !== "common_fund" && split.member_id === expense.paid_by_member_id ? (locale === "ar" ? " · حصته" : " · share") : ""}</span>)}</div><p className="expense-split-note">{(() => { const splits = data.expenseSplits.filter((split) => split.expense_id === expense.id); const payerShare = splits.find((split) => split.member_id === expense.paid_by_member_id)?.share_minor ?? 0; const owedToPayer = Math.max(0, expense.amount_minor - payerShare); if (expense.paid_from === "common_fund") return locale === "ar" ? `المبلغ خُصم من صندوق الجمعية. إن صار الرصيد سالباً يُقسَّم العجز مباشرة على الأعضاء المساهمين ويظهر في عمود «عليه».` : `This amount came from the association fund. If the balance goes negative, the deficit is split among contributing members and shown under Owes.`; return locale === "ar" ? `${expense.paid_by_name} دفع ${formatMoney(expense.amount_minor, space.currency, locale)} بالكامل. حصة كل عضو ظاهرة أعلاه. عمود «له» لـ ${expense.paid_by_name} = ما دفعه عن الآخرين (${formatMoney(owedToPayer, space.currency, locale)}) وليس حصته.` : `${expense.paid_by_name} paid ${formatMoney(expense.amount_minor, space.currency, locale)} in full. Each member’s share is shown above. The payer’s credit is what others still owe (${formatMoney(owedToPayer, space.currency, locale)}), not a double share.`; })()}</p></div>)}{!data.tripExpenses.some((expense) => expense.space_id === space.id) && <Empty locale={locale} />}</div>{pendingSettlementsWithCredit(
       data.settlements.filter((item) => item.space_id === space.id && item.status === "pending"),
       new Map(members.map((member) => [member.id, memberPosition(member, data, space.id).cashCredit])),
@@ -2261,16 +2330,236 @@ function MembersView({ data, locale, onInvite, onOpenPerson, onSmartPay }: { dat
     <section className="settings-grid"><InfoPanel icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} /><InfoPanel icon={<Users />} title={t.access} text={t.accessText} /></section></div>;
 }
 
-function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, onOpenMember }: { members: Member[]; locale: Locale; currency: string; data?: DashboardData; spaceId?: string; onWithdraw?: (memberId: string) => void; onOpenMember?: (memberId: string, focus?: MemberLedgerFocus) => void }) {
+function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, onOpenMember, onChanged }: { members: Member[]; locale: Locale; currency: string; data?: DashboardData; spaceId?: string; onWithdraw?: (memberId: string) => void; onOpenMember?: (memberId: string, focus?: MemberLedgerFocus) => void; onChanged?: (next: Partial<DashboardData>) => void }) {
   const t = copy[locale];
-  const [query, setQuery] = useState(""); const visible = members.filter((member) => `${member.display_name} ${member.email ?? ""} ${member.phone ?? ""}`.toLowerCase().includes(query.toLowerCase()));
-  return <article className="panel members-panel"><div className="panel-heading"><h2>{t.members} <span className="count-badge">{members.length}</span></h2><label className="search-field member-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={locale === "ar" ? "ابحث باسم المساهم" : "Search member name"} /></label></div><div className="members-table"><div className="table-head"><span>{locale === "ar" ? "العضو" : "Member"}</span><span>{t.goal}</span><span>{t.paid}</span><span>{locale === "ar" ? "إضافي" : "Extra"}</span><span>{locale === "ar" ? "عليه" : "Owes"}</span><span>{locale === "ar" ? "له" : "Owed"}</span><span>{t.status}</span><span>{locale === "ar" ? "إجراء" : "Action"}</span></div>{visible.map((member) => {
-    const pos = memberPosition(member, data, spaceId);
-    const debit = pos.debit;
-    const credit = pos.credit;
-    const open = (focus: MemberLedgerFocus) => onOpenMember?.(member.id, focus);
-    return <div className="member-row" key={member.id}><button type="button" className="member-name-hit" onClick={() => open("all")}><div className="member-name"><i style={{ background: member.avatar }}>{member.display_name.slice(0, 1)}</i><div><strong>{member.display_name}</strong><span>{member.phone || member.email || (member.role === "owner" ? t.roleOwner : member.role === "treasurer" ? t.roleTreasurer : t.roleMember)}</span></div></div></button><strong>{formatMoney(personGoalMinor(member), currency, locale)}</strong><button type="button" className="amount-hit" onClick={() => open("paid")}><strong>{formatMoney(member.paid_minor, currency, locale)}</strong></button><button type="button" className="amount-hit" onClick={() => open("spent")}><strong>{formatMoney(Number(member.addon_minor ?? 0), currency, locale)}</strong></button><button type="button" className={`amount-hit ${debit ? "amount-negative" : "muted-amount"}`} onClick={() => open("owes")}><span className="claim-stack"><span>{formatMoney(debit, currency, locale)}</span>{pos.reservedMinor > 0 && <small>{locale === "ar" ? `بعد حجز ${formatMoney(pos.reservedMinor, currency, locale)}` : `after ${formatMoney(pos.reservedMinor, currency, locale)} reserved`}</small>}</span></button><button type="button" className={`amount-hit ${credit ? "reserve-amount" : "muted-amount"}`} onClick={() => open("credit")}><span className="claim-stack"><span>{formatMoney(credit, currency, locale)}</span>{pos.reservedMinor > 0 && <small>{locale === "ar" ? "رصيده محجوز" : "Credit reserved"}</small>}</span></button><span className={`status-pill ${debit ? "pending" : "complete"}`}>{debit ? <Clock3 size={13} /> : <CheckCircle2 size={13} />}{debit ? (locale === "ar" ? "عليه مطالبات" : "Owes") : (credit ? (locale === "ar" ? "له رصيد" : "Credit") : t.paid)}</span><span>{member.extra_minor > 0 && onWithdraw ? <button type="button" className="secondary-button compact" onClick={() => onWithdraw(member.id)}>{locale === "ar" ? "صرف فائض" : "Withdraw"}</button> : "—"}</span></div>;
-  })}</div></article>;
+  const [query, setQuery] = useState("");
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [lifecycleId, setLifecycleId] = useState<string | null>(null);
+  const visible = members.filter((member) => `${member.display_name} ${member.email ?? ""} ${member.phone ?? ""}`.toLowerCase().includes(query.toLowerCase()));
+
+  const resendInvite = async (member: Member) => {
+    if (!member.email || member.user_id || resendingId) return;
+    if ((member.status ?? "active") !== "active") return;
+    setResendingId(member.id);
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "resendMemberInvite",
+          idempotencyKey: crypto.randomUUID(),
+          memberId: member.id,
+        }),
+      });
+      const result = await response.json() as { error?: string; delivery?: string; nextEligibleAt?: string | null };
+      if (response.status === 429 && result.error === "INVITE_RESEND_COOLDOWN") {
+        const when = result.nextEligibleAt
+          ? new Date(result.nextEligibleAt).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")
+          : "";
+        window.alert(
+          locale === "ar"
+            ? `يمكن إعادة إرسال الدعوة مرة كل 6 ساعات${when ? ` (متاح بعد ${when})` : ""}.`
+            : `You can resend once every 6 hours${when ? ` (available after ${when})` : ""}.`,
+        );
+        return;
+      }
+      if (!response.ok) {
+        window.alert(
+          result.error === "INVITE_ALREADY_ACCEPTED"
+            ? (locale === "ar" ? "الدعوة مقبولة مسبقاً." : "Invite already accepted.")
+            : (locale === "ar" ? "تعذر إعادة إرسال الدعوة." : "Could not resend the invite."),
+        );
+        return;
+      }
+      window.alert(
+        result.delivery === "sent"
+          ? (locale === "ar" ? "أُرسلت الدعوة بالبريد." : "Invite email sent.")
+          : result.delivery === "deferred"
+            ? (locale === "ar" ? "سُجّلت الدعوة وسيُرسل البريد عند تفعيل الخدمة." : "Invite queued; email will send when delivery is configured.")
+            : (locale === "ar" ? "أُعيدت جدولة الدعوة." : "Invite re-queued."),
+      );
+    } catch {
+      window.alert(locale === "ar" ? "تعذر إعادة إرسال الدعوة." : "Could not resend the invite.");
+    } finally {
+      setResendingId(null);
+    }
+  };
+
+  const runMemberLifecycle = async (member: Member, action: "archiveMember" | "removeMember" | "restoreMember") => {
+    if (lifecycleId) return;
+    if (member.role === "owner") {
+      window.alert(locale === "ar" ? "لا يمكن حذف أو أرشفة مالك المحفظة." : "Cannot remove or archive the wallet owner.");
+      return;
+    }
+    if (action === "restoreMember") {
+      if (!window.confirm(locale === "ar" ? `استعادة ${member.display_name} للمحفظة؟` : `Restore ${member.display_name} to this wallet?`)) return;
+    } else if (action === "archiveMember") {
+      if (!window.confirm(locale === "ar"
+        ? `إيقاف وأرشفة ${member.display_name}؟ لن تُحتسب عليه مستحقات مستقبلية، ويبقى سجل مساهماته.`
+        : `Archive ${member.display_name}? Future dues stop; contribution history is kept.`)) return;
+    } else {
+      if (!window.confirm(locale === "ar"
+        ? `حذف ${member.display_name} من المحفظة؟ إن وُجدت مساهمات سابقة سيتم أرشفته بدل الحذف.`
+        : `Remove ${member.display_name}? If they already contributed they will be archived instead.`)) return;
+    }
+    setLifecycleId(member.id);
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action,
+          idempotencyKey: crypto.randomUUID(),
+          memberId: member.id,
+          mode: action === "removeMember" ? "auto" : undefined,
+        }),
+      });
+      const result = await response.json() as Partial<DashboardData> & { error?: string; mode?: string };
+      if (!response.ok) {
+        window.alert(
+          result.error === "OWNER_MEMBER_LOCKED"
+            ? (locale === "ar" ? "لا يمكن تعديل مالك المحفظة." : "Cannot modify the wallet owner.")
+            : result.error === "MEMBER_HAS_HISTORY"
+              ? (locale === "ar" ? "للعضو سجل مساهمات — استخدم الأرشفة." : "Member has contribution history — use archive.")
+              : (locale === "ar" ? "تعذر تنفيذ الإجراء على العضو." : "Could not update this member."),
+        );
+        return;
+      }
+      onChanged?.(result);
+      window.alert(
+        result.mode === "archived"
+          ? (locale === "ar" ? "تمت أرشفة العضو وإيقاف المستحقات المستقبلية." : "Member archived; future dues stopped.")
+          : result.mode === "removed"
+            ? (locale === "ar" ? "تم حذف العضو من المحفظة." : "Member removed from the wallet.")
+            : (locale === "ar" ? "تمت استعادة العضو." : "Member restored."),
+      );
+    } catch {
+      window.alert(locale === "ar" ? "تعذر تنفيذ الإجراء على العضو." : "Could not update this member.");
+    } finally {
+      setLifecycleId(null);
+    }
+  };
+
+  return (
+    <article className="panel members-panel">
+      <div className="panel-heading">
+        <h2>{t.members} <span className="count-badge">{members.length}</span></h2>
+        <label className="search-field member-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={locale === "ar" ? "ابحث باسم المساهم" : "Search member name"} /></label>
+      </div>
+      <div className="members-table">
+        <div className="table-head">
+          <span>{locale === "ar" ? "العضو" : "Member"}</span>
+          <span>{t.goal}</span>
+          <span>{t.paid}</span>
+          <span>{locale === "ar" ? "إضافي" : "Extra"}</span>
+          <span>{locale === "ar" ? "عليه" : "Owes"}</span>
+          <span>{locale === "ar" ? "له" : "Owed"}</span>
+          <span>{t.status}</span>
+          <span>{locale === "ar" ? "إجراء" : "Action"}</span>
+        </div>
+        {visible.map((member) => {
+          const pos = memberPosition(member, data, spaceId);
+          const debit = pos.debit;
+          const credit = pos.credit;
+          const open = (focus: MemberLedgerFocus) => onOpenMember?.(member.id, focus);
+          const isActive = (member.status ?? "active") === "active";
+          const canResend = isActive && Boolean(member.email) && !member.user_id;
+          const busy = lifecycleId === member.id;
+          return (
+            <div className={`member-row${!isActive ? " is-archived" : ""}`} key={member.id}>
+              <button type="button" className="member-name-hit" onClick={() => open("all")}>
+                <div className="member-name">
+                  <i style={{ background: member.avatar }}>{member.display_name.slice(0, 1)}</i>
+                  <div>
+                    <strong>{member.display_name}</strong>
+                    <span>
+                      {!isActive
+                        ? (locale === "ar" ? "مؤرشف — بلا مستحقات جديدة" : "Archived — no new dues")
+                        : member.user_id
+                          ? (member.phone || member.email || (member.role === "owner" ? t.roleOwner : member.role === "treasurer" ? t.roleTreasurer : t.roleMember))
+                          : (locale === "ar" ? "بانتظار الانضمام" : "Pending join")}
+                    </span>
+                  </div>
+                </div>
+              </button>
+              <strong>{formatMoney(personGoalMinor(member), currency, locale)}</strong>
+              <button type="button" className="amount-hit" onClick={() => open("paid")}><strong>{formatMoney(member.paid_minor, currency, locale)}</strong></button>
+              <button type="button" className="amount-hit" onClick={() => open("spent")}><strong>{formatMoney(Number(member.addon_minor ?? 0), currency, locale)}</strong></button>
+              <button type="button" className={`amount-hit ${debit ? "amount-negative" : "muted-amount"}`} onClick={() => open("owes")}>
+                <span className="claim-stack">
+                  <span>{formatMoney(debit, currency, locale)}</span>
+                  {pos.reservedMinor > 0 && <small>{locale === "ar" ? `بعد حجز ${formatMoney(pos.reservedMinor, currency, locale)}` : `after ${formatMoney(pos.reservedMinor, currency, locale)} reserved`}</small>}
+                </span>
+              </button>
+              <button type="button" className={`amount-hit ${credit ? "reserve-amount" : "muted-amount"}`} onClick={() => open("credit")}>
+                <span className="claim-stack">
+                  <span>{formatMoney(credit, currency, locale)}</span>
+                  {pos.reservedMinor > 0 && <small>{locale === "ar" ? "رصيده محجوز" : "Credit reserved"}</small>}
+                </span>
+              </button>
+              <span className={`status-pill ${!isActive ? "pending" : debit ? "pending" : "complete"}`}>
+                {!isActive ? <Archive size={13} /> : debit ? <Clock3 size={13} /> : <CheckCircle2 size={13} />}
+                {!isActive
+                  ? (locale === "ar" ? "مؤرشف" : "Archived")
+                  : debit ? (locale === "ar" ? "عليه مطالبات" : "Owes") : (credit ? (locale === "ar" ? "له رصيد" : "Credit") : t.paid)}
+              </span>
+              <span className="member-row-actions">
+                {canResend ? (
+                  <button
+                    type="button"
+                    className="secondary-button compact"
+                    disabled={resendingId === member.id}
+                    onClick={() => void resendInvite(member)}
+                    title={locale === "ar" ? "إعادة إرسال الدعوة" : "Resend invitation"}
+                  >
+                    <Mail size={14} />
+                    {resendingId === member.id
+                      ? (locale === "ar" ? "…" : "…")
+                      : (locale === "ar" ? "دعوة" : "Invite")}
+                  </button>
+                ) : null}
+                {isActive && member.role !== "owner" ? (
+                  <>
+                    <button
+                      type="button"
+                      className="secondary-button compact"
+                      disabled={busy}
+                      onClick={() => void runMemberLifecycle(member, "archiveMember")}
+                      title={locale === "ar" ? "أرشفة / إيقاف" : "Archive / stop"}
+                    >
+                      <Archive size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button compact danger"
+                      disabled={busy}
+                      onClick={() => void runMemberLifecycle(member, "removeMember")}
+                      title={locale === "ar" ? "حذف العضو" : "Remove member"}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </>
+                ) : null}
+                {!isActive && member.role !== "owner" ? (
+                  <button
+                    type="button"
+                    className="secondary-button compact"
+                    disabled={busy}
+                    onClick={() => void runMemberLifecycle(member, "restoreMember")}
+                  >
+                    {locale === "ar" ? "استعادة" : "Restore"}
+                  </button>
+                ) : null}
+                {member.extra_minor > 0 && onWithdraw && isActive ? (
+                  <button type="button" className="secondary-button compact" onClick={() => onWithdraw(member.id)}>{locale === "ar" ? "صرف فائض" : "Withdraw"}</button>
+                ) : null}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </article>
+  );
 }
 
 function TransactionsView({ data, locale, onChanged }: { data: DashboardData; locale: Locale; onChanged: (next: Partial<DashboardData>) => void }) {
