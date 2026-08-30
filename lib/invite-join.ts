@@ -74,8 +74,8 @@ export async function joinInvite(input: {
   const displayName = input.displayName.trim();
   if (displayName.length < 2 || displayName.length > 80) throw new ApiError(400, "INVALID_PROFILE");
   const phoneRaw = String(input.phone ?? "").trim();
-  if (!phoneRaw || !isLikelyPhone(phoneRaw)) throw new ApiError(400, "INVALID_PHONE");
-  const phone = toWhatsAppNumber(phoneRaw) || phoneRaw;
+  if (phoneRaw && !isLikelyPhone(phoneRaw)) throw new ApiError(400, "INVALID_PHONE");
+  const phone = phoneRaw ? (toWhatsAppNumber(phoneRaw) || phoneRaw) : null;
   const createdAt = new Date().toISOString();
 
   let userId = input.existingUserId ?? "";
@@ -90,6 +90,7 @@ export async function joinInvite(input: {
 
     const password = String(input.password ?? "");
     if (password.length < 12 || password.length > 128) throw new ApiError(400, "INVALID_PASSWORD");
+    if (!phoneRaw || !phone) throw new ApiError(400, "INVALID_PHONE");
 
     userId = crypto.randomUUID();
     const passwordData = await hashPassword(password);
@@ -126,7 +127,7 @@ export async function joinInvite(input: {
 
   const memberStatement = ledgerMember
     ? input.db.prepare(
-      "UPDATE members SET user_id=?,display_name=?,email=?,phone=?,role=?,status='active' WHERE id=?",
+      "UPDATE members SET user_id=?,display_name=?,email=?,phone=COALESCE(?,phone),role=?,status='active' WHERE id=?",
     ).bind(userId, displayName, inviteEmail, phone, invitation.role, ledgerMember.id)
     : input.db.prepare(
       "INSERT INTO members (id,space_id,user_id,display_name,email,phone,role,status,due_minor,paid_minor,extra_minor,avatar,joined_at) VALUES (?,?,?,?,?,?,?,'active',?,0,0,'#0f766e',?)",

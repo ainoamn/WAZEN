@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { WazenIcon } from "../../components/brand/WazenLogo";
 import { PwaInstallGate, isWazenInstalled } from "../../components/pwa/PwaInstallCard";
 import { Brand, useCommerceLocale } from "../commercial-kit";
@@ -25,6 +25,9 @@ function inviteErrorMessage(code: string, l: (ar: string, en: string) => string,
           "The current signed-in email does not match the invite.",
         );
   }
+  if (code === "CSRF_REJECTED") {
+    return l("انتهت صلاحية الجلسة الأمنية. حدّث الصفحة ثم اقبل الدعوة مرة أخرى.", "Security session expired. Refresh the page, then accept again.");
+  }
   if (code === "INVITATION_EXPIRED") return l("انتهت صلاحية الدعوة. اطلب دعوة جديدة من مدير المحفظة.", "This invite expired. Ask the wallet admin for a new one.");
   if (code === "INVITATION_CANCELLED") return l("أُلغيت هذه الدعوة (ربما أُرسلت دعوة أحدث). استخدم آخر رسالة بريد.", "This invite was cancelled (a newer one may have been sent). Use the latest email.");
   if (code === "INVITATION_ALREADY_USED") return l("تم قبول هذه الدعوة مسبقاً. افتح الرئيسية للمتابعة.", "This invite was already accepted. Open Home to continue.");
@@ -40,6 +43,10 @@ function inviteErrorMessage(code: string, l: (ar: string, en: string) => string,
   return l("تعذر إكمال الانضمام. حاول مرة أخرى أو اطلب رابطاً جديداً.", "Could not complete joining. Try again or request a new link.");
 }
 
+function goHome() {
+  window.location.replace("/home");
+}
+
 export function InviteClient({ token }: { token: string }) {
   const { locale, setLocale, l } = useCommerceLocale();
   const [status, setStatus] = useState<"loading" | "install" | "register" | "saving" | "done" | "exists" | "error">("loading");
@@ -50,11 +57,57 @@ export function InviteClient({ token }: { token: string }) {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [resetStatus, setResetStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const autoJoinTried = useRef(false);
 
   const sessionMatchesInvite = useMemo(() => {
     if (!invite?.email || !signedInEmail) return false;
     return signedInEmail.trim().toLowerCase() === invite.email.trim().toLowerCase();
   }, [invite?.email, signedInEmail]);
+
+  const submitJoin = async (opts?: { name?: string; phone?: string; password?: string; asMember?: boolean }) => {
+    const nameValue = (opts?.name ?? displayName).trim();
+    const phoneValue = (opts?.phone ?? phone).trim();
+    const passwordValue = opts?.password ?? password;
+    const asMember = opts?.asMember ?? sessionMatchesInvite;
+    setStatus("saving");
+    setErrorCode("");
+    try {
+      const response = await apiFetch("/api/platform", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "joinInvite",
+          token,
+          displayName: nameValue,
+          phone: phoneValue,
+          ...(asMember ? {} : { password: passwordValue }),
+        }),
+      });
+      const result = await response.json() as { error?: string; ok?: boolean };
+      if (response.status === 409 && result.error === "EMAIL_ALREADY_USED") {
+        setStatus("exists");
+        setResetStatus("idle");
+        return false;
+      }
+      if (response.status === 409 && result.error === "INVITATION_ALREADY_USED") {
+        setStatus("done");
+        window.setTimeout(goHome, 400);
+        return true;
+      }
+      if (!response.ok) {
+        setErrorCode(result.error ?? "INVITATION_NOT_FOUND");
+        setStatus(result.error === "INVITE_EMAIL_MISMATCH" ? "error" : "register");
+        return false;
+      }
+      setStatus("done");
+      window.setTimeout(goHome, 400);
+      return true;
+    } catch {
+      setErrorCode("INVITATION_NOT_FOUND");
+      setStatus("error");
+      return false;
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -66,14 +119,16 @@ export function InviteClient({ token }: { token: string }) {
       }
 
       let sessionEmail = "";
+      let sessionName = "";
       try {
         const authResponse = await fetch("/api/auth", { cache: "no-store", credentials: "same-origin" });
         const authResult = await authResponse.json() as { authenticated?: boolean; user?: { email?: string; displayName?: string } };
         if (authResponse.ok && authResult.authenticated) {
           sessionEmail = String(authResult.user?.email ?? "").trim();
+          sessionName = String(authResult.user?.displayName ?? "").trim();
           if (!cancelled) {
             setSignedInEmail(sessionEmail);
-            if (authResult.user?.displayName) setDisplayName(String(authResult.user.displayName));
+            if (sessionName) setDisplayName(sessionName);
           }
         }
       } catch { /* guest */ }
@@ -91,11 +146,29 @@ export function InviteClient({ token }: { token: string }) {
         };
         if (cancelled) return;
         if (!peekResponse.ok || !peekResult.invite) {
-          setErrorCode(peekResult.error ?? "INVITATION_NOT_FOUND");
+          const code = peekResult.error ?? "INVITATION_NOT_FOUND";
+          if (code === "INVITATION_ALREADY_USED" && sessionEmail) {
+            setStatus("done");
+            window.setTimeout(goHome, 400);
+            return;
+          }
+          setErrorCode(code);
           setStatus("error");
           return;
         }
         setInvite(peekResult.invite);
+
+        const emailMatch = sessionEmail
+          && sessionEmail.trim().toLowerCase() === peekResult.invite.email.trim().toLowerCase();
+
+        if (emailMatch && sessionName.length >= 2 && !autoJoinTried.current) {
+          autoJoinTried.current = true;
+          setStatus("saving");
+          const ok = await submitJoin({ name: sessionName, phone: "", asMember: true });
+          if (!cancelled && !ok) setStatus(isWazenInstalled() ? "register" : "install");
+          return;
+        }
+
         setStatus(isWazenInstalled() ? "register" : "install");
       } catch {
         if (!cancelled) {
@@ -105,42 +178,13 @@ export function InviteClient({ token }: { token: string }) {
       }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per token
   }, [token]);
 
   const join = async (event: FormEvent) => {
     event.preventDefault();
     if (!invite) return;
-    setStatus("saving");
-    setErrorCode("");
-    try {
-      const response = await apiFetch("/api/platform", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "joinInvite",
-          token,
-          displayName,
-          phone,
-          ...(sessionMatchesInvite ? {} : { password }),
-        }),
-      });
-      const result = await response.json() as { error?: string; ok?: boolean };
-      if (response.status === 409 && result.error === "EMAIL_ALREADY_USED") {
-        setStatus("exists");
-        setResetStatus("idle");
-        return;
-      }
-      if (!response.ok) {
-        setErrorCode(result.error ?? "INVITATION_NOT_FOUND");
-        setStatus(result.error === "INVITE_EMAIL_MISMATCH" ? "error" : "register");
-        return;
-      }
-      setStatus("done");
-      window.setTimeout(() => { window.location.href = "/home"; }, 600);
-    } catch {
-      setErrorCode("INVITATION_NOT_FOUND");
-      setStatus("error");
-    }
+    await submitJoin();
   };
 
   const sendReset = async () => {
@@ -184,8 +228,12 @@ export function InviteClient({ token }: { token: string }) {
           </p>
         </div>
 
-        {status === "loading" ? (
-          <p className="modal-note">{l("جارٍ تجهيز الدعوة…", "Preparing the invite…")}</p>
+        {status === "loading" || status === "saving" ? (
+          <p className="modal-note">
+            {status === "saving"
+              ? l("جارٍ قبول الدعوة وإدخالك للتطبيق…", "Accepting the invite and opening the app…")
+              : l("جارٍ تجهيز الدعوة…", "Preparing the invite…")}
+          </p>
         ) : status === "install" ? (
           <PwaInstallGate
             locale={locale}
@@ -216,7 +264,7 @@ export function InviteClient({ token }: { token: string }) {
               </p>
             ) : null}
             {resetStatus === "sent" ? (
-              <p>{l("تحقق من بريدك لرابط إعادة كلمة المرور، ثم عد لرابط الدعوة لإكمال الانضمام.", "Check your inbox for the reset link, then reopen the invite to finish joining.")}</p>
+              <p>{l("تحقق من بريدك لرابط إعادة كلمة المرور. بعد التعيين سنقبل الدعوة تلقائياً.", "Check your inbox for the reset link. After setting a password we will accept the invite automatically.")}</p>
             ) : (
               <button type="button" className="auth-submit" disabled={resetStatus === "sending"} onClick={() => void sendReset()}>
                 {resetStatus === "sending"
@@ -232,7 +280,12 @@ export function InviteClient({ token }: { token: string }) {
             </button>
           </>
         ) : status === "error" && !invite ? (
-          <p className="auth-error" role="alert">{inviteErrorMessage(errorCode || "INVITATION_NOT_FOUND", l, signedInEmail)}</p>
+          <>
+            <p className="auth-error" role="alert">{inviteErrorMessage(errorCode || "INVITATION_NOT_FOUND", l, signedInEmail)}</p>
+            {errorCode === "INVITATION_ALREADY_USED" ? (
+              <Link className="auth-submit" href="/home">{l("فتح الرئيسية", "Open home")}</Link>
+            ) : null}
+          </>
         ) : (
           <form onSubmit={(event) => void join(event)}>
             {signedInEmail && !sessionMatchesInvite ? (
@@ -249,6 +302,15 @@ export function InviteClient({ token }: { token: string }) {
               </>
             ) : null}
 
+            {sessionMatchesInvite ? (
+              <p className="modal-note">
+                {l(
+                  `أنت مسجّل كـ ${signedInEmail}. أكمل الهاتف إن رغبت ثم اضغط قبول الدعوة مرة واحدة للدخول.`,
+                  `Signed in as ${signedInEmail}. Optionally add a phone, then press Accept once to enter.`,
+                )}
+              </p>
+            ) : null}
+
             <label>
               <span>{l("الاسم", "Name")}</span>
               <input
@@ -262,9 +324,9 @@ export function InviteClient({ token }: { token: string }) {
               />
             </label>
             <label>
-              <span>{l("رقم الهاتف", "Phone")}</span>
+              <span>{sessionMatchesInvite ? l("رقم الهاتف (اختياري)", "Phone (optional)") : l("رقم الهاتف", "Phone")}</span>
               <input
-                required
+                required={!sessionMatchesInvite}
                 type="tel"
                 autoComplete="tel"
                 inputMode="tel"
@@ -292,20 +354,16 @@ export function InviteClient({ token }: { token: string }) {
                   disabled={Boolean(signedInEmail && !sessionMatchesInvite)}
                 />
               </label>
-            ) : (
-              <p className="modal-note">{l(`مسجّل الدخول: ${signedInEmail} — أكمل الاسم والهاتف للقبول.`, `Signed in as ${signedInEmail} — finish name and phone to accept.`)}</p>
-            )}
+            ) : null}
 
             <button
               type="submit"
               className="auth-submit"
-              disabled={status === "saving" || Boolean(signedInEmail && !sessionMatchesInvite)}
+              disabled={Boolean(signedInEmail && !sessionMatchesInvite)}
             >
-              {status === "saving"
-                ? l("جارٍ الانضمام…", "Joining…")
-                : sessionMatchesInvite
-                  ? l("قبول الدعوة", "Accept invitation")
-                  : l("إنشاء الحساب والانضمام", "Create account and join")}
+              {sessionMatchesInvite
+                ? l("قبول الدعوة والدخول", "Accept invite and enter")
+                : l("إنشاء الحساب والانضمام", "Create account and join")}
             </button>
 
             {errorCode ? (
