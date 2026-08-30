@@ -6,22 +6,27 @@ import { WazenIcon } from "../components/brand/WazenLogo";
 import { Brand, useCommerceLocale } from "./commercial-kit";
 import { clientSignInPath } from "../lib/client-sign-in";
 
-export function PasswordRecovery({ mode, token = "" }: { mode: "forgot" | "reset"; token?: string }) {
+function safeNext(value?: string) {
+  return value && value.startsWith("/") && !value.startsWith("//") ? value : "/home";
+}
+
+export function PasswordRecovery({ mode, token = "", next = "/home" }: { mode: "forgot" | "reset"; token?: string; next?: string }) {
   const router = useRouter();
   const { locale, setLocale, l } = useCommerceLocale();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "saving" | "done" | "error">("idle");
+  const destination = safeNext(next);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setStatus("saving");
     const response = await fetch("/api/auth", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(mode === "forgot" ? { action: "forgotPassword", email } : { action: "resetPassword", token, password }),
+      body: JSON.stringify(mode === "forgot" ? { action: "forgotPassword", email, next: destination } : { action: "resetPassword", token, password }),
     });
     setStatus(response.ok ? "done" : "error");
-    if (response.ok && mode === "reset") window.setTimeout(() => router.push("/home"), 700);
+    if (response.ok && mode === "reset") window.setTimeout(() => router.push(destination), 700);
   };
   return (
     <main className="auth-page">
@@ -61,7 +66,7 @@ export function PasswordRecovery({ mode, token = "" }: { mode: "forgot" | "reset
           </form>
         )}
         <footer>
-          <Link href={clientSignInPath("/home")}>{l("العودة لتسجيل الدخول", "Back to sign in")}</Link>
+          <Link href={clientSignInPath(destination)}>{l("العودة لتسجيل الدخول", "Back to sign in")}</Link>
         </footer>
       </section>
       <aside>

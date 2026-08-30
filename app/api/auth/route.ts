@@ -197,7 +197,10 @@ export async function POST(request: Request) {
         await db.batch([
           db.prepare("UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL").bind(createdAt, account.id),
           db.prepare("INSERT INTO password_reset_tokens (id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)").bind(crypto.randomUUID(), account.id, await sha256(token), new Date(Date.now() + 3_600_000).toISOString(), createdAt),
-          db.prepare("INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)").bind(outboxId, recoveryEmail, "reset_password", JSON.stringify({ displayName: account.display_name, link: `${origin}/reset-password?token=${encodeURIComponent(token)}` }), createdAt),
+          db.prepare("INSERT INTO email_outbox (id,recipient,template,payload_json,status,created_at) VALUES (?,?,?,?,'pending',?)").bind(outboxId, recoveryEmail, "reset_password", JSON.stringify({
+            displayName: account.display_name,
+            link: `${origin}/reset-password?token=${encodeURIComponent(token)}${formNext !== "/home" ? `&next=${encodeURIComponent(formNext)}` : ""}`,
+          }), createdAt),
         ]);
         const { flushOutboxByIds } = await import("../../../lib/email-provider");
         await flushOutboxByIds(db, [outboxId]).catch(() => {});
@@ -210,8 +213,13 @@ export async function POST(request: Request) {
       const reset = await db.prepare("SELECT id,user_id FROM password_reset_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at>? LIMIT 1").bind(await sha256(token), new Date().toISOString()).first<{ id: string; user_id: string }>();
       if (!reset) throw new ApiError(400, "INVALID_RESET_TOKEN");
       const passwordData = await hashPassword(password); const resetAt = new Date().toISOString();
+      const hasCredentials = await db.prepare("SELECT user_id FROM auth_credentials WHERE user_id=? LIMIT 1").bind(reset.user_id).first();
       await db.batch([
-        db.prepare("UPDATE auth_credentials SET password_hash=?,password_salt=?,password_iterations=?,updated_at=? WHERE user_id=?").bind(passwordData.hash, passwordData.salt, passwordData.iterations, resetAt, reset.user_id),
+        hasCredentials
+          ? db.prepare("UPDATE auth_credentials SET password_hash=?,password_salt=?,password_iterations=?,email_verified_at=COALESCE(email_verified_at,?),updated_at=? WHERE user_id=?")
+            .bind(passwordData.hash, passwordData.salt, passwordData.iterations, resetAt, resetAt, reset.user_id)
+          : db.prepare("INSERT INTO auth_credentials (user_id,password_hash,password_salt,password_iterations,email_verified_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(reset.user_id, passwordData.hash, passwordData.salt, passwordData.iterations, resetAt, resetAt, resetAt),
         db.prepare("UPDATE password_reset_tokens SET used_at=? WHERE id=?").bind(resetAt, reset.id),
         db.prepare("DELETE FROM auth_sessions WHERE user_id=?").bind(reset.user_id),
       ]);

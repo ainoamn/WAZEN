@@ -571,9 +571,38 @@ export async function POST(request: Request) {
   try {
     enforceWriteRequest(request);
     const db = getRawDb(); await ensureSchema(db); await seedPlans(db);
-    await rateLimit(db, request, "platform-write", 90, 60);
     const payload = (await request.json()) as Record<string, unknown>;
     const action = String(payload.action ?? "");
+
+    if (action === "peekInvite") {
+      await rateLimit(db, request, "invite-peek", 40, 60);
+      const { peekInvite } = await import("../../../lib/invite-join");
+      const invite = await peekInvite(db, String(payload.token ?? ""));
+      return Response.json({ ok: true, invite });
+    }
+
+    if (action === "joinInvite") {
+      await rateLimit(db, request, "invite-join", 12, 60);
+      const sessionUser = await authenticateRequest(db, request);
+      if (sessionUser?.authType === "session") await enforceCsrf(db, request);
+      const { joinInvite } = await import("../../../lib/invite-join");
+      const result = await joinInvite({
+        db,
+        request,
+        token: String(payload.token ?? ""),
+        displayName: String(payload.displayName ?? ""),
+        phone: String(payload.phone ?? ""),
+        password: typeof payload.password === "string" ? payload.password : undefined,
+        existingUserId: sessionUser?.id ?? null,
+        existingUserEmail: sessionUser?.email ?? null,
+      });
+      return Response.json(
+        { ok: true, spaceId: result.spaceId, userId: result.userId, email: result.email },
+        { headers: result.headers },
+      );
+    }
+
+    await rateLimit(db, request, "platform-write", 90, 60);
 
     if (action === "validateCoupon") {
       const code = String(payload.code ?? "").trim().toUpperCase();
