@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Clock3, Mail, MessageCircle, Printer, Sparkles, X } from "lucide-react";
+import { CheckCircle2, Clock3, Mail, MessageCircle, Pencil, Printer, Sparkles, X } from "lucide-react";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import OmrSymbol from "../brand/OmrSymbol";
 import { apiFetch } from "../../lib/client-api";
@@ -19,6 +19,7 @@ import {
 } from "../../lib/installments";
 import { formatMoneyMinor } from "../../lib/money";
 import { openWhatsAppUrl } from "../../lib/receipt-share";
+import { spaceRoleLabel } from "../../lib/space-role-permissions";
 
 type Locale = "ar" | "en";
 
@@ -187,7 +188,12 @@ type LedgerInputs = {
   canWhatsapp?: boolean;
   /** Show resend-invite controls (trip/space member detail). */
   showInviteActions?: boolean;
+  /** Owner/manager can change this member’s role from the detail modal. */
+  canManageRole?: boolean;
+  onRoleChanged?: (next: { memberId: string; role: string }) => void;
 };
+
+const ASSIGNABLE_MEMBER_ROLES = ["manager", "supervisor", "treasurer", "member", "auditor", "viewer"] as const;
 
 function MemberLedgerBody({
   member,
@@ -206,13 +212,24 @@ function MemberLedgerBody({
   onInviteResent,
   canWhatsapp = true,
   showInviteActions = false,
+  canManageRole = false,
+  onRoleChanged,
 }: LedgerInputs) {
   const [tab, setTab] = useState<MemberLedgerFocus>(focus);
   const [sending, setSending] = useState(false);
   const [resendingInvite, setResendingInvite] = useState(false);
   const [inviteNote, setInviteNote] = useState("");
   const [inviteError, setInviteError] = useState("");
+  const [roleDraft, setRoleDraft] = useState(member.role);
+  const [editingRole, setEditingRole] = useState(false);
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [roleError, setRoleError] = useState("");
   useEffect(() => { setTab(focus); }, [focus, member.id, space.id]);
+  useEffect(() => {
+    setRoleDraft(ASSIGNABLE_MEMBER_ROLES.includes(member.role as typeof ASSIGNABLE_MEMBER_ROLES[number]) ? member.role : "member");
+    setEditingRole(false);
+    setRoleError("");
+  }, [member.id, member.role]);
   const ledger = useMemo(() => buildMemberLedger({
     member,
     spaceNameAr: space.name_ar,
@@ -231,9 +248,44 @@ function MemberLedgerBody({
     { id: "all", ar: "الكل", en: "All", amount: 0 },
     { id: "paid", ar: "المدفوع", en: "Paid", amount: ledger.paidMinor },
     { id: "spent", ar: "الصرف", en: "Spent", amount: ledger.spentMinor || ledger.addonMinor },
-    { id: "owes", ar: "عليه", en: "Owes", amount: ledger.owesMinor },
-    { id: "credit", ar: "له", en: "Credit", amount: ledger.creditMinor },
+    { id: "owes", ar: "عليه", en: "Owes", amount: Math.max(0, ledger.owesMinor) },
+    { id: "credit", ar: "له", en: "Credit", amount: Math.max(0, ledger.creditMinor) },
   ];
+  const canEditThisRole = canManageRole && member.role !== "owner" && (member.status ?? "active") === "active";
+
+  const saveRole = async () => {
+    if (!canEditThisRole || roleSaving) return;
+    setRoleSaving(true);
+    setRoleError("");
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "updateMemberRole",
+          idempotencyKey: crypto.randomUUID(),
+          memberId: member.id,
+          role: roleDraft,
+        }),
+      });
+      const result = await response.json() as { error?: string; role?: string };
+      if (!response.ok) {
+        setRoleError(
+          result.error === "OWNER_MEMBER_LOCKED"
+            ? (locale === "ar" ? "لا يمكن تغيير دور المالك." : "Cannot change the owner’s role.")
+            : (locale === "ar" ? "تعذر تحديث الدور." : "Could not update role."),
+        );
+        return;
+      }
+      const nextRole = result.role ?? roleDraft;
+      onRoleChanged?.({ memberId: member.id, role: nextRole });
+      setEditingRole(false);
+    } catch {
+      setRoleError(locale === "ar" ? "تعذر تحديث الدور." : "Could not update role.");
+    } finally {
+      setRoleSaving(false);
+    }
+  };
   const ledgerHtml = (logoUrl: string) => buildMemberLedgerHtml({
     locale,
     logoUrl,
@@ -348,34 +400,63 @@ function MemberLedgerBody({
         {showInviteActions ? (
           <div><span>{locale === "ar" ? "حساب الدخول" : "Login link"}</span><b>{member.user_id ? (locale === "ar" ? "مرتبط" : "Linked") : (locale === "ar" ? "بانتظار الانضمام" : "Pending join")}</b></div>
         ) : null}
+        <div><span>{locale === "ar" ? "الدور" : "Role"}</span><b>{spaceRoleLabel(member.role, locale)}</b></div>
         <div><span>{locale === "ar" ? "الهدف المالي" : "Financial goal"}</span><b>{money(member.due_minor, space.currency, locale)}</b></div>
         <div><span>{locale === "ar" ? "كم دفع" : "Paid"}</span><b>{money(ledger.paidMinor, space.currency, locale)}</b></div>
         <div><span>{locale === "ar" ? "كم صرف" : "Spent"}</span><b>{money(ledger.spentMinor || ledger.addonMinor, space.currency, locale)}</b></div>
-        <div><span>{locale === "ar" ? "كم عليه" : "Owes"}</span><b>{money(ledger.owesMinor, space.currency, locale)}</b></div>
-        <div><span>{locale === "ar" ? "كم له" : "Credit"}</span><b>{money(ledger.creditMinor, space.currency, locale)}</b></div>
+        <div><span>{locale === "ar" ? "كم عليه" : "Owes"}</span><b>{money(Math.max(0, ledger.owesMinor), space.currency, locale)}</b></div>
+        <div><span>{locale === "ar" ? "كم له" : "Credit"}</span><b>{money(Math.max(0, ledger.creditMinor), space.currency, locale)}</b></div>
       </div>
-      {showInviteActions ? (
-        <div className="member-contact-actions" style={{ marginBottom: "0.75rem" }}>
-          {canResendInvite ? (
-            <button type="button" className="secondary-button" disabled={resendingInvite} onClick={() => void resendInvite()}>
-              <Mail size={16} />
-              {resendingInvite
-                ? (locale === "ar" ? "جارٍ الإرسال…" : "Sending…")
-                : (locale === "ar" ? "إعادة إرسال الدعوة" : "Resend invitation")}
-            </button>
-          ) : member.user_id ? (
-            <span className="modal-note" style={{ margin: 0 }}>
-              {locale === "ar" ? "انضم العضو مسبقاً — لا حاجة لإعادة الدعوة." : "Member already joined — invite resend unavailable."}
-            </span>
+      <div className="member-contact-actions" style={{ marginBottom: "0.75rem" }}>
+        {canEditThisRole ? (
+          editingRole ? (
+            <div className="member-role-editor">
+              <label>
+                <span>{locale === "ar" ? "تعديل الدور" : "Change role"}</span>
+                <select value={roleDraft} onChange={(event) => setRoleDraft(event.target.value)}>
+                  {ASSIGNABLE_MEMBER_ROLES.map((role) => (
+                    <option key={role} value={role}>{spaceRoleLabel(role, locale)}</option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" className="primary-button" disabled={roleSaving} onClick={() => void saveRole()}>
+                {roleSaving ? (locale === "ar" ? "جارٍ الحفظ…" : "Saving…") : (locale === "ar" ? "حفظ الدور" : "Save role")}
+              </button>
+              <button type="button" className="secondary-button" disabled={roleSaving} onClick={() => { setEditingRole(false); setRoleError(""); setRoleDraft(member.role); }}>
+                {locale === "ar" ? "إلغاء" : "Cancel"}
+              </button>
+            </div>
           ) : (
-            <span className="modal-note" style={{ margin: 0 }}>
-              {locale === "ar" ? "أضف بريداً للعضو أولاً لإرسال الدعوة." : "Add an email first to send an invite."}
-            </span>
-          )}
-          {inviteNote ? <p className="modal-note">{inviteNote}</p> : null}
-          {inviteError ? <p className="modal-error">{inviteError}</p> : null}
-        </div>
-      ) : null}
+            <button type="button" className="secondary-button" onClick={() => setEditingRole(true)}>
+              <Pencil size={16} />
+              {locale === "ar" ? "تعديل الدور" : "Change role"}
+            </button>
+          )
+        ) : null}
+        {showInviteActions ? (
+          <>
+            {canResendInvite ? (
+              <button type="button" className="secondary-button" disabled={resendingInvite} onClick={() => void resendInvite()}>
+                <Mail size={16} />
+                {resendingInvite
+                  ? (locale === "ar" ? "جارٍ الإرسال…" : "Sending…")
+                  : (locale === "ar" ? "إعادة إرسال الدعوة" : "Resend invitation")}
+              </button>
+            ) : member.user_id ? (
+              <span className="modal-note" style={{ margin: 0 }}>
+                {locale === "ar" ? "انضم العضو مسبقاً — لا حاجة لإعادة الدعوة." : "Member already joined — invite resend unavailable."}
+              </span>
+            ) : (
+              <span className="modal-note" style={{ margin: 0 }}>
+                {locale === "ar" ? "أضف بريداً للعضو أولاً لإرسال الدعوة." : "Add an email first to send an invite."}
+              </span>
+            )}
+          </>
+        ) : null}
+        {inviteNote ? <p className="modal-note">{inviteNote}</p> : null}
+        {inviteError ? <p className="modal-error">{inviteError}</p> : null}
+        {roleError ? <p className="modal-error">{roleError}</p> : null}
+      </div>
       <div className="member-ledger-tabs">
         {tabs.map((item) => (
           <button type="button" key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>
@@ -443,6 +524,8 @@ export function MemberDetailModal({
   onInviteResent,
   canWhatsapp = true,
   showInviteActions = true,
+  canManageRole = false,
+  onRoleChanged,
 }: LedgerInputs & { onClose: () => void }) {
   return (
     <Modal title={member.display_name} onClose={onClose}>
@@ -464,6 +547,8 @@ export function MemberDetailModal({
           onInviteResent={onInviteResent}
           canWhatsapp={canWhatsapp}
           showInviteActions={showInviteActions}
+          canManageRole={canManageRole}
+          onRoleChanged={onRoleChanged}
         />
       </div>
     </Modal>

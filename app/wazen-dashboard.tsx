@@ -1768,6 +1768,13 @@ export function WazenDashboard() {
             onStatementSent={(message) => flash(message)}
             onInviteResent={(message) => { flash(message); void load(true); }}
             canWhatsapp={planHasFeature(planFeaturesOf(data), "whatsapp")}
+            canManageRole={["owner", "manager"].includes(myRoleInSpace(data, space))}
+            onRoleChanged={({ memberId, role }) => {
+              acceptWrite({
+                members: data.members.map((item) => item.id === memberId ? { ...item, role } : item),
+              });
+              flash(locale === "ar" ? "تم تحديث دور العضو" : "Member role updated");
+            }}
           />
         );
       })()}
