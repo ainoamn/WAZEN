@@ -61,10 +61,10 @@ export function pendingInvitesAsWorkspaceAlerts(invites: PendingInviteRow[]) {
     return {
       id: `invite:${invite.id}`,
       severity: "warning" as const,
-      href: `/dashboard?acceptInvite=${encodeURIComponent(invite.id)}`,
+      href: `/home?acceptInvite=${encodeURIComponent(invite.id)}`,
       inviteId: invite.id,
-      ar: `دعوة للانضمام إلى «${nameAr}»${whoAr} — وافق لإظهار المحفظة.`,
-      en: `Invitation to join “${nameEn}”${whoEn} — accept to show the wallet.`,
+      ar: `دعوة للانضمام إلى «${nameAr}»${whoAr} — وافق من الشاشة الرئيسية أو الإشعارات.`,
+      en: `Invitation to join “${nameEn}”${whoEn} — accept from Home or notifications.`,
     };
   });
 }
@@ -94,9 +94,9 @@ export async function notifyExistingUserOfInvite(input: {
   await upsertUserNotifications(input.db, invitee.id, [{
     id: `invite:${input.invitationId}`,
     severity: "warning",
-    href: `/dashboard?acceptInvite=${encodeURIComponent(input.invitationId)}`,
-    ar: `دعوة من ${inviter} للانضمام إلى «${nameAr}». وافق من الإشعارات أو الشريط أعلى الصفحة.`,
-    en: `Invite from ${inviter} to join “${nameEn}”. Accept from notifications or the top banner.`,
+    href: `/home?acceptInvite=${encodeURIComponent(input.invitationId)}`,
+    ar: `دعوة من ${inviter} للانضمام إلى «${nameAr}». وافق من الشاشة الرئيسية أو جرس الإشعارات.`,
+    en: `Invite from ${inviter} to join “${nameEn}”. Accept from Home or the notification bell.`,
   }]);
 
   return { notifiedUserId: invitee.id };

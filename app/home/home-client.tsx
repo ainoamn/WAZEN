@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bell,
@@ -17,6 +17,7 @@ import OmrSymbol from "../../components/brand/OmrSymbol";
 import WazenLogo from "../../components/brand/WazenLogo";
 import WazenPageLoader from "../../components/brand/WazenPageLoader";
 import { BhdAppSwitcher } from "../../components/bhd/BhdAppSwitcher";
+import { HomeNotificationBell, HomeWorkspaceAlertsBanner, type HomeUserNotification, type HomeWorkspaceAlert } from "../../components/home/home-notifications";
 import { apiFetch } from "../../lib/client-api";
 import { prefetchAppRoutes, warmAppCaches } from "../../lib/app-prefetch";
 import { completeClientLogout } from "../../lib/client-logout";
@@ -28,6 +29,34 @@ import { memberDisplayCreditMinor, pendingSettlementsWithCredit } from "../../li
 import { memberAccruedDueMinor } from "../../components/members/association-members";
 import { DateField } from "../../components/ui/date-field";
 type Locale = "ar" | "en";
+
+const DISMISSED_ALERTS_KEY = "wazen-dismissed-workspace-alerts";
+
+function readDismissedAlerts(): Record<string, string> {
+  try {
+    const raw = window.localStorage.getItem(DISMISSED_ALERTS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function writeDismissedAlerts(next: Record<string, string>) {
+  try {
+    window.localStorage.setItem(DISMISSED_ALERTS_KEY, JSON.stringify(next));
+  } catch { /* ignore */ }
+}
+
+function alertFingerprint(alert: { id: string; ar: string; en: string }) {
+  return `${alert.id}::${alert.ar}::${alert.en}`;
+}
 
 function todayDateInput() {
   return new Date().toISOString().slice(0, 10);
@@ -97,6 +126,16 @@ type HomeData = {
   personalAccounts?: PersonalAccount[];
   plans?: Plan[];
   installments?: Installment[];
+  workspaceAlerts?: HomeWorkspaceAlert[];
+  pendingInvites?: Array<{
+    id: string;
+    spaceId: string;
+    spaceNameAr: string | null;
+    spaceNameEn: string | null;
+    expiresAt: string;
+    inviterName: string | null;
+  }>;
+  notifications?: HomeUserNotification[];
 };
 
 function money(minor: number, currency: string, locale: Locale) {
@@ -109,6 +148,7 @@ function spaceName(space: Space, locale: Locale) {
 
 export function HomeClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [locale, setLocale] = useState<Locale>("ar");
   const [data, setData] = useState<HomeData | null>(() => readDashboardCache<HomeData>());
   const [loading, setLoading] = useState(() => !readDashboardCache());
@@ -120,6 +160,8 @@ export function HomeClient() {
   const [addOpen, setAddOpen] = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, string>>({});
+  const [acceptingInviteId, setAcceptingInviteId] = useState<string | null>(null);
 
   const load = useCallback(async (force = false) => {
     try {
@@ -142,6 +184,71 @@ export function HomeClient() {
   }, [router]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { setDismissedAlerts(readDismissedAlerts()); }, []);
+
+  const flash = useCallback((message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(""), 2800);
+  }, []);
+
+  const acceptPendingInvite = useCallback(async (inviteId: string) => {
+    if (!inviteId || acceptingInviteId) return;
+    setAcceptingInviteId(inviteId);
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "acceptPendingInvite",
+          idempotencyKey: crypto.randomUUID(),
+          inviteId,
+        }),
+      });
+      const result = await response.json() as { error?: string; spaceId?: string };
+      if (!response.ok) {
+        window.alert(
+          result.error === "INVITE_EMAIL_MISMATCH"
+            ? (locale === "ar" ? "بريد حسابك لا يطابق بريد الدعوة." : "Your account email does not match this invite.")
+            : result.error === "INVITATION_ALREADY_USED"
+              ? (locale === "ar" ? "تم قبول هذه الدعوة مسبقاً." : "This invite was already accepted.")
+              : (locale === "ar" ? "تعذر قبول الدعوة." : "Could not accept the invite."),
+        );
+        return;
+      }
+      flash(locale === "ar" ? "تم قبول الدعوة — ستظهر المحفظة في التحكم." : "Invite accepted — the wallet will appear in Control.");
+      await load(true);
+      if (result.spaceId) router.push(`/dashboard?space=${encodeURIComponent(result.spaceId)}`);
+    } catch {
+      window.alert(locale === "ar" ? "تعذر قبول الدعوة." : "Could not accept the invite.");
+    } finally {
+      setAcceptingInviteId(null);
+    }
+  }, [acceptingInviteId, flash, load, locale, router]);
+
+  useEffect(() => {
+    const inviteId = searchParams.get("acceptInvite");
+    if (!inviteId || !data || acceptingInviteId) return;
+    void acceptPendingInvite(inviteId);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("acceptInvite");
+      window.history.replaceState({}, "", url.pathname + url.search);
+    } catch { /* ignore */ }
+  }, [searchParams, data, acceptingInviteId, acceptPendingInvite]);
+
+  const visibleAlerts = useMemo(() => {
+    const alerts = data?.workspaceAlerts ?? [];
+    return alerts.filter((alert) => dismissedAlerts[alert.id] !== alertFingerprint(alert));
+  }, [data?.workspaceAlerts, dismissedAlerts]);
+
+  const dismissAlert = (alert: HomeWorkspaceAlert) => {
+    setDismissedAlerts((current) => {
+      const next = { ...current, [alert.id]: alertFingerprint(alert) };
+      writeDismissedAlerts(next);
+      return next;
+    });
+  };
+
   // Load lightweight session info for the app switcher.
   // This prevents showing an auth/login UI when /api/dashboard is slow or times out.
   useEffect(() => {
@@ -212,11 +319,7 @@ export function HomeClient() {
 
   const logout = async () => {
     await completeClientLogout();
-  };
-
-  const flash = (message: string) => {
-    setToast(message);
-    window.setTimeout(() => setToast(""), 2600);
+    window.location.replace(clientSignInPath("/home"));
   };
 
   const switcherUser = data?.user ?? sessionUser;
@@ -295,6 +398,13 @@ export function HomeClient() {
       <header className="home-top">
         <WazenLogo showText iconClassName="home-logo-img" />
         <div className="home-top-actions">
+          <HomeNotificationBell
+            locale={locale}
+            notifications={data.notifications ?? []}
+            workspaceAlerts={data.workspaceAlerts ?? []}
+            onAcceptInvite={(inviteId) => void acceptPendingInvite(inviteId)}
+            acceptingInviteId={acceptingInviteId}
+          />
           <button
             type="button"
             className="language-button"
@@ -322,6 +432,14 @@ export function HomeClient() {
             ? "أضف عملية بسرعة، أو ادخل للتحكم لضبط المحافظ والاعتمادات."
             : "Add a transaction quickly, or open Control to manage wallets and approvals."}
         </p>
+
+        <HomeWorkspaceAlertsBanner
+          locale={locale}
+          alerts={visibleAlerts}
+          acceptingInviteId={acceptingInviteId}
+          onAcceptInvite={(inviteId) => void acceptPendingInvite(inviteId)}
+          onDismiss={dismissAlert}
+        />
 
         <section className="home-stats" aria-label={locale === "ar" ? "الإحصائيات" : "Statistics"}>
           <article className="tone-teal">

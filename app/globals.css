@@ -1303,6 +1303,26 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
   text-align: start;
   cursor: pointer;
 }
+.home-workspace-alerts { margin: 0 0 14px; }
+.home-notification-wrap { position: relative; }
+.home-notification-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  inset-inline-end: 0;
+  z-index: 40;
+  width: min(360px, calc(100vw - 24px));
+}
+.home-notification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.home-notification-actions a,
+.home-notification-actions .primary-button {
+  font-size: 12px;
+  font-weight: 800;
+}
 .home-pending-list { display: flex; flex-direction: column; gap: 10px; }
 .home-pending-row {
   display: grid;
