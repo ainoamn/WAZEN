@@ -37,6 +37,7 @@ type SpaceRow = {
   created_at: string;
   starts_at?: string | null;
   status?: string;
+  role_permissions_json?: string | null;
 };
 
 type MemberRow = {
@@ -1300,6 +1301,72 @@ export async function POST(request: Request) {
           .first<{ amount_minor: number; duration_months: number; starts_at: string }>();
         await rebuildSpaceInstallments(db, parsed.data.spaceId, nextPlan, createdAt);
       }
+    } else if (action === "updateSpaceRolePermissions") {
+      const permRow = z.object({
+        view: z.boolean(),
+        add: z.boolean(),
+        edit: z.boolean(),
+        delete: z.boolean(),
+      });
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        permissions: z.object({
+          manager: permRow,
+          supervisor: permRow,
+          treasurer: permRow,
+          member: permRow,
+        }),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_PERMISSIONS");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "members:write", ["household", "trip", "society", "group"]);
+      if (!["owner", "manager"].includes(space.effective_role)) throw new ApiError(403, "FORBIDDEN");
+      const { serializeSpaceRolePermissions } = await import("../../../lib/space-role-permissions");
+      const json = serializeSpaceRolePermissions(parsed.data.permissions);
+      const createdAt = now();
+      await db.batch([
+        db.prepare("UPDATE spaces SET role_permissions_json=? WHERE id=?").bind(json, space.id),
+        prepareAudit(db, {
+          userId: user.id,
+          action: "space.role_permissions_updated",
+          entityType: "space",
+          entityId: space.id,
+          metadata: { via: "dashboard" },
+          createdAt,
+        }),
+      ]);
+      const body = { ok: true, spaceId: space.id, role_permissions_json: json };
+      await completeIdempotency(db, user.id, idempotencyKey, body);
+      claimRef.current = null;
+      return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+    } else if (action === "updateMemberRole") {
+      const parsed = z.object({
+        memberId: z.string().min(1).max(120),
+        role: z.enum(["manager", "supervisor", "treasurer", "member", "auditor", "viewer"]),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_MEMBER");
+      const member = await db.prepare("SELECT id,space_id,user_id,role,status FROM members WHERE id=? LIMIT 1")
+        .bind(parsed.data.memberId)
+        .first<{ id: string; space_id: string; user_id: string | null; role: string; status: string }>();
+      if (!member) throw new ApiError(404, "MEMBER_NOT_FOUND");
+      const space = await authorizeSpace(db, user, member.space_id, "members:write", ["household", "trip", "society", "group"]);
+      if (member.user_id && member.user_id === space.owner_user_id) throw new ApiError(403, "OWNER_MEMBER_LOCKED");
+      if (member.role === "owner") throw new ApiError(403, "OWNER_MEMBER_LOCKED");
+      const createdAt = now();
+      await db.batch([
+        db.prepare("UPDATE members SET role=? WHERE id=? AND space_id=?").bind(parsed.data.role, member.id, member.space_id),
+        prepareAudit(db, {
+          userId: user.id,
+          action: "member.role_updated",
+          entityType: "member",
+          entityId: member.id,
+          metadata: { spaceId: member.space_id, role: parsed.data.role, via: "dashboard" },
+          createdAt,
+        }),
+      ]);
+      const body = { ok: true, memberId: member.id, role: parsed.data.role };
+      await completeIdempotency(db, user.id, idempotencyKey, body);
+      claimRef.current = null;
+      return Response.json(body, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "archiveWallet") {
       const parsed = z.object({ spaceId: z.string().min(1).max(120), archived: z.boolean().default(true) }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_WALLET");
@@ -1666,7 +1733,7 @@ export async function POST(request: Request) {
         displayName: z.string().trim().min(2).max(80),
         email: z.union([z.email().max(254), z.literal("")]).optional(),
         phone: z.string().trim().max(20).optional(),
-        role: z.enum(["member", "treasurer", "manager", "auditor", "viewer"]).default("member"),
+        role: z.enum(["member", "treasurer", "manager", "supervisor", "auditor", "viewer"]).default("member"),
         monthlyContribution: z.union([z.string(), z.number()]).optional(),
         durationMonths: z.coerce.number().int().min(1).max(120).optional(),
       }).safeParse(payload);
@@ -1910,7 +1977,9 @@ export async function POST(request: Request) {
       if (!parsed.success) throw new ApiError(400, "INVALID_TRANSACTION");
       const { spaceId, allocation, description } = parsed.data;
       let kind = parsed.data.kind;
-      const space = await authorizeSpace(db, user, spaceId, "transact"); const memberId = parsed.data.memberId ?? null;
+      const { assertSpaceTxnAction } = await import("../../../lib/space-role-permissions");
+      const { space } = await assertSpaceTxnAction(db, user, spaceId, "add");
+      const memberId = parsed.data.memberId ?? null;
       await guardOwnerTransactionQuota(db, space.owner_user_id, 2);
       await assertPeriodWritable(db, spaceId, parsed.data.occurredAt ?? now());
       // Group payments linked to a member count as contributions toward dues (not plain income).
@@ -2073,7 +2142,8 @@ export async function POST(request: Request) {
       if (!parsed.success) throw new ApiError(400, "INVALID_TRANSACTION");
       const txn = await db.prepare("SELECT * FROM transactions WHERE id=?").bind(parsed.data.transactionId).first<TransactionRow>();
       if (!txn) throw new ApiError(404, "TRANSACTION_NOT_FOUND");
-      await authorizeSpace(db, user, txn.space_id, "transact");
+      const { assertSpaceTxnAction } = await import("../../../lib/space-role-permissions");
+      await assertSpaceTxnAction(db, user, txn.space_id, "delete", txn);
       if (txn.status !== "voided" && txn.status !== "superseded") {
         await voidApprovedTransaction(db, txn, user.id, { recordStatus: "voided", closeOccurrence: true });
         try {
@@ -2102,7 +2172,8 @@ export async function POST(request: Request) {
       const existing = await db.prepare("SELECT * FROM transactions WHERE id=?").bind(parsed.data.transactionId).first<TransactionRow>();
       if (!existing) throw new ApiError(404, "TRANSACTION_NOT_FOUND");
       if (existing.status !== "approved") throw new ApiError(409, "TRANSACTION_NOT_EDITABLE");
-      const space = await authorizeSpace(db, user, existing.space_id, "transact");
+      const { assertSpaceTxnAction } = await import("../../../lib/space-role-permissions");
+      const { space } = await assertSpaceTxnAction(db, user, existing.space_id, "edit", existing);
       await assertPeriodWritable(db, existing.space_id, existing.occurred_at);
       const occurredAt = parsed.data.occurredAt ?? existing.occurred_at;
       if (occurredAt !== existing.occurred_at) {

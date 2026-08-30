@@ -5,6 +5,7 @@ import { WazenIcon } from "../components/brand/WazenLogo";
 import WazenPageLoader from "../components/brand/WazenPageLoader";
 import { ReportsPanel } from "../components/reports/ReportsPanel";
 import { MemberDetailModal, MemberPersonProfile, ReceiptChannelModal, RemainingInvoiceGrid, SmartAccountantModal, memberAccruedDueMinor, memberInstallments, personIdentityKey } from "../components/members/association-members";
+import { SpaceRolePermissionsPanel, SpaceRolesHelpButton } from "../components/members/space-role-permissions";
 import { PersonalRulesSetup, PersonalWalletPanel, confirmResetWalletData } from "../components/personal/personal-wallet";
 import { DateField } from "../components/ui/date-field";
 import { FoldWrap } from "../components/ui/collapsible-panel";
@@ -25,6 +26,7 @@ import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, sele
 import { formatMoneyMinor, currencyScale, parseMoneyToMinor } from "../lib/money";
 import { memberDisplayCreditMinor, netMemberClaim, pendingSettlementsWithCredit } from "../lib/finance";
 import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, quotaRemaining, quotaWarningCopy, upgradeNoticeFor, canPrintSpaceArtifacts } from "../lib/plan-features";
+import { clientCanSpaceTxnAction, spaceRoleLabel } from "../lib/space-role-permissions";
 import { userGraceWarningCopy } from "../lib/plan-retention-rules";
 import { canOpenPlatformConsole } from "../lib/platform-console";
 import { consumePlanQuota } from "../lib/plan-quota-client";
@@ -128,6 +130,7 @@ type Space = {
   created_at: string;
   starts_at?: string | null;
   status?: string;
+  role_permissions_json?: string | null;
 };
 type Member = {
   id: string;
@@ -235,6 +238,8 @@ const copy = {
     memberProgress: "التزام أعضاء رحلة العائلة",
     invite: "دعوة عضو",
     roleOwner: "المالك",
+    roleManager: "مدير",
+    roleSupervisor: "مشرف",
     roleTreasurer: "أمين الصندوق",
     roleMember: "عضو",
     householdInsight: "مصروف المنزل أقل بـ 8% من متوسط آخر ثلاثة أشهر",
@@ -242,7 +247,7 @@ const copy = {
     privacy: "الخصوصية أولاً",
     privacyText: "لا يرى أي عضو محفظتك الشخصية. تظهر للمجموعة فقط التحويلات التي تختار مشاركتها.",
     access: "الصلاحيات",
-    accessText: "المالك يدير الإعدادات، أمين الصندوق يعتمد الدفعات، والعضو يرى حسابه فقط.",
+    accessText: "المدير يضبط من يضيف/يعدّل/يحذف. لا يعدّل عضو عملية أنشأها دور أعلى منه.",
     export: "تصدير التقرير",
     categories: ["السكن", "الطعام", "المواصلات", "التعليم", "أخرى"],
     empty: "لا توجد بيانات بعد",
@@ -315,6 +320,8 @@ const copy = {
     memberProgress: "Family trip member progress",
     invite: "Invite member",
     roleOwner: "Owner",
+    roleManager: "Manager",
+    roleSupervisor: "Supervisor",
     roleTreasurer: "Treasurer",
     roleMember: "Member",
     householdInsight: "Home spending is 8% below your three-month average",
@@ -322,7 +329,7 @@ const copy = {
     privacy: "Privacy first",
     privacyText: "No member can see your personal wallet. Groups only see transfers you explicitly share.",
     access: "Permissions",
-    accessText: "Owners manage settings, treasurers approve payments, and members see only their own account.",
+    accessText: "The manager sets who can add, edit, or delete. Members cannot change posts from a higher role.",
     export: "Export report",
     categories: ["Housing", "Food", "Transport", "Education", "Other"],
     empty: "No data yet",
@@ -404,6 +411,29 @@ function myRoleInSpace(data: DashboardData, space: Space) {
   if (space.owner_user_id === data.user.id) return "owner";
   const mine = data.members.find((member) => member.space_id === space.id && member.user_id === data.user.id);
   return String(mine?.role ?? "member");
+}
+
+function creatorRoleForTxn(data: DashboardData, space: Space, transaction: Transaction) {
+  if (!transaction.user_id) return null;
+  if (transaction.user_id === space.owner_user_id) return "owner";
+  const row = data.members.find((member) => member.space_id === space.id && member.user_id === transaction.user_id);
+  return row?.role ?? "member";
+}
+
+function canActorTxnAction(data: DashboardData, space: Space | undefined, action: "view" | "add" | "edit" | "delete", transaction?: Transaction) {
+  if (!space) return false;
+  if (space.type === "personal") {
+    return space.owner_user_id === data.user.id || myRoleInSpace(data, space) === "owner";
+  }
+  const actorRole = myRoleInSpace(data, space);
+  return clientCanSpaceTxnAction({
+    actorRole,
+    space,
+    action,
+    creatorUserId: transaction?.user_id,
+    creatorRole: transaction ? creatorRoleForTxn(data, space, transaction) : null,
+    ownerUserId: space.owner_user_id,
+  });
 }
 
 function canPrintForSpace(data: DashboardData, space: Space) {
@@ -805,6 +835,8 @@ function dashboardError(code: string, locale: Locale) {
       PLAN_USER_LIMIT: "وصلت إلى حد المستخدمين في باقتك.",
       PLAN_MEMBER_LIMIT: "وصلت إلى حد الأعضاء في باقتك.",
       PLAN_WALLET_LIMIT: "وصلت إلى حد المحافظ في باقتك.",
+      ROLE_PERMISSION_DENIED: "دورك لا يسمح بهذا الإجراء على العمليات. اطلب من المدير تعديل الصلاحيات.",
+      HIGHER_ROLE_TRANSACTION: "لا يمكن تعديل أو إلغاء عملية أنشأها مسؤول أعلى منك.",
     }
     : {
       INTERNAL_ERROR: "Could not complete the delete. Refresh and try again.",
@@ -834,6 +866,8 @@ function dashboardError(code: string, locale: Locale) {
       PLAN_USER_LIMIT: "You reached the user limit on your plan.",
       PLAN_MEMBER_LIMIT: "You reached the member limit on your plan.",
       PLAN_WALLET_LIMIT: "You reached the wallet limit on your plan.",
+      ROLE_PERMISSION_DENIED: "Your role cannot perform this transaction action. Ask the manager to update permissions.",
+      HIGHER_ROLE_TRANSACTION: "You cannot edit or void a transaction created by a higher role.",
     };
   return table[code as keyof typeof table] ?? code;
 }
@@ -2072,6 +2106,8 @@ function TransactionRow({ transaction, data, locale, onEdit, onVoid }: { transac
   const canEmail = planHasFeature(features, "email");
   const canWhatsapp = planHasFeature(features, "whatsapp");
   const canSend = canEmail || canWhatsapp;
+  const allowEdit = Boolean(onEdit && space && canActorTxnAction(data, space, "edit", transaction));
+  const allowVoid = Boolean(onVoid && space && canActorTxnAction(data, space, "delete", transaction));
   const openSend = () => {
     if (!canSend) { goToPricing(); return; }
     if (!member) {
@@ -2091,8 +2127,8 @@ function TransactionRow({ transaction, data, locale, onEdit, onVoid }: { transac
       <button type="button" title={locale === "ar" ? "إيصال" : "Receipt"} onClick={() => openTransactionReceipt(transaction, data, locale)}><Printer size={15} /></button>
       <button type="button" className={canSend ? "" : "is-plan-locked"} title={locale === "ar" ? "إرسال" : "Send"} onClick={openSend}><MessageCircle size={15} />{canSend ? null : <PlanLockBadge locale={locale} />}</button>
       {edited && <button type="button" title={locale === "ar" ? "سجل التعديلات" : "Edit history"} onClick={() => setHistoryOpen(true)}><History size={15} /></button>}
-      {onEdit && !locked && isLiveTransaction(transaction) && <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => onEdit(transaction)}><Pencil size={15} /></button>}
-      {onVoid && !locked && isLiveTransaction(transaction) && <button type="button" className="danger" title={locale === "ar" ? "إلغاء" : "Void"} onClick={() => onVoid(transaction)}><Trash2 size={15} /></button>}
+      {allowEdit && !locked && isLiveTransaction(transaction) && <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => onEdit?.(transaction)}><Pencil size={15} /></button>}
+      {allowVoid && !locked && isLiveTransaction(transaction) && <button type="button" className="danger" title={locale === "ar" ? "إلغاء" : "Void"} onClick={() => onVoid?.(transaction)}><Trash2 size={15} /></button>}
     </div>
     {historyOpen && <TransactionHistoryModal data={data} locale={locale} transaction={transaction} onClose={() => setHistoryOpen(false)} />}
     {sendOpen && member && (
@@ -2183,19 +2219,23 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
       : currentPeriod.status === "reopened"
         ? (locale === "ar" ? "مفتوحة للتعديل" : "Reopened")
         : (locale === "ar" ? "مفتوحة" : "Open");
+  const myRole = myRoleInSpace(data, space);
+  const canAddTxn = canActorTxnAction(data, space, "add");
+  const canManageRoles = ["owner", "manager"].includes(myRole);
   return <div className="dashboard-stack">
     <div className="space-toolbar">
       <StatementPrintMenu
         locale={locale}
         locked={!canPrintForSpace(data, space)}
-        canShare={planHasFeature(planFeaturesOf(data), "whatsapp") && ["owner", "manager", "treasurer"].includes(myRoleInSpace(data, space))}
+        canShare={planHasFeature(planFeaturesOf(data), "whatsapp") && ["owner", "manager", "treasurer", "supervisor"].includes(myRole)}
         onPick={(filter) => printSpaceStatement(space, data, locale, null, filter)}
         onShare={(filter) => void shareSpaceStatement(space, locale, filter, planHasFeature(planFeaturesOf(data), "whatsapp"))}
       />
-      <button type="button" onClick={onAdd}><Plus size={16} />{t.add}</button>
-      {["trip", "society", "group"].includes(space.type) && <button type="button" onClick={onInvite}><UserPlus size={16} />{t.invite}</button>}
+      {canAddTxn ? <button type="button" onClick={onAdd}><Plus size={16} />{t.add}</button> : null}
+      {["trip", "society", "group"].includes(space.type) && canManageRoles ? <button type="button" onClick={onInvite}><UserPlus size={16} />{t.invite}</button> : null}
       <button type="button" onClick={onEditWallet}><Pencil size={16} />{locale === "ar" ? "ضبط المحفظة" : "Wallet setup"}</button>
       <button type="button" onClick={onArchiveWallet}><Archive size={16} />{(space.status ?? "active") === "archived" ? (locale === "ar" ? "استعادة" : "Restore") : (locale === "ar" ? "أرشفة" : "Archive")}</button>
+      {["household", "trip", "society", "group"].includes(space.type) ? <SpaceRolesHelpButton locale={locale} /> : null}
     </div>
     <FoldWrap id={`${space.id}:hero`} label={locale === "ar" ? "طي رأس المحفظة" : "Fold wallet header"}>
     <section className={`space-hero accent-${space.accent}`}>
@@ -2268,6 +2308,21 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
     )}
     {goal > 0 && space.type !== "personal" && <FoldWrap id={`${space.id}:goal`}><article className="panel goal-wide"><div className="panel-heading"><div><span className="section-kicker"><Target size={15} />{locale === "ar" ? "تقدم الهدف" : "Goal progress"}</span><h2>{nameOf(space, locale)}</h2></div><strong>{progress}%</strong></div><div className="progress-track tall"><span style={{ width: `${progress}%` }} /></div><div className="goal-wide-values"><span className={space.balance_minor < 0 ? "amount-negative" : ""}>{formatMoney(space.balance_minor, space.currency, locale)}</span><span>{formatMoney(goal, space.currency, locale)}</span></div></article></FoldWrap>}
     {members.length > 0 && space.type !== "personal" && <FoldWrap id={`${space.id}:members`}><MembersTable members={members} locale={locale} currency={space.currency} data={data} spaceId={space.id} onOpenMember={onOpenMember} onChanged={onTxnChanged} /></FoldWrap>}
+    {["household", "trip", "society", "group"].includes(space.type) && (
+      <FoldWrap id={`${space.id}:roles`}>
+        <SpaceRolePermissionsPanel
+          spaceId={space.id}
+          locale={locale}
+          rolePermissionsJson={space.role_permissions_json}
+          canManage={canManageRoles}
+          onSaved={(nextJson) => {
+            onTxnChanged({
+              spaces: data.spaces.map((item) => item.id === space.id ? { ...item, role_permissions_json: nextJson } : item),
+            });
+          }}
+        />
+      </FoldWrap>
+    )}
     {["household", "trip", "society", "group"].includes(space.type) && <FoldWrap id={`${space.id}:expenses`}><article className="panel workflow-panel"><div className="panel-heading"><div><span className="section-kicker"><Plane size={15} />{locale === "ar" ? "المصروفات والتسويات" : "Expenses & settlements"}</span><h2>{locale === "ar" ? "من أي حساب دُفع؟ وما له / عليه" : "Paid-from account and balances"}</h2></div><div className="section-title-actions"><button type="button" className="secondary-button" onClick={() => { if (window.confirm(locale === "ar" ? "إعادة تقسيم كل المصروفات بالتساوي على الأعضاء الحاليين بمن فيهم الجدد؟" : "Re-split every expense equally across current members, including new ones?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "resplitTripExpenses", idempotencyKey: crypto.randomUUID(), spaceId: space.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "RESPLIT_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "RESPLIT_FAILED")); }}><Users size={15} />{locale === "ar" ? "تقسيم الكل بالتساوي" : "Split all equally"}</button><button className="primary-button" onClick={onTripExpense}><Plus size={15} />{locale === "ar" ? "مصروف جماعي" : "Group expense"}</button></div></div><div className="transaction-list">{data.tripExpenses.filter((expense) => expense.space_id === space.id).map((expense) => <div className="trip-expense-row" key={expense.id}><div className="transaction-row"><div className="transaction-icon reimbursement"><HandCoins size={17} /></div><div className="transaction-main"><strong>{expense.description}</strong><span>{locale === "ar" ? (expense.paid_from === "common_fund" ? "دُفع من صندوق الجمعية" : `دفع بواسطة ${expense.paid_by_name}`) : (expense.paid_from === "common_fund" ? "Paid from association fund" : `Paid by ${expense.paid_by_name}`)}</span></div><strong className="amount-negative">{formatMoney(expense.amount_minor, space.currency, locale)}</strong><div className="transaction-actions"><button type="button" title={locale === "ar" ? "تعديل المصروف" : "Edit expense"} aria-label={locale === "ar" ? "تعديل المصروف" : "Edit expense"} onClick={() => onEditExpense(expense.id)}><Pencil size={15} /></button><button type="button" title={locale === "ar" ? "تقسيم بالتساوي على كل الأعضاء" : "Split equally among all members"} aria-label={locale === "ar" ? "تقسيم بالتساوي" : "Split equally"} onClick={() => { if (window.confirm(locale === "ar" ? "تقسيم هذا المصروف بالتساوي على الأعضاء الحاليين بمن فيهم الجدد؟" : "Split this expense equally among current members, including new ones?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "resplitTripExpenses", idempotencyKey: crypto.randomUUID(), spaceId: space.id, expenseId: expense.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "RESPLIT_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "RESPLIT_FAILED")); }}><Users size={15} /></button><button type="button" className="danger" title={locale === "ar" ? "حذف المصروف" : "Delete expense"} aria-label={locale === "ar" ? "حذف المصروف" : "Delete expense"} onClick={() => { if (window.confirm(locale === "ar" ? "حذف هذا المصروف والتسويات المرتبطة به؟" : "Delete this group expense and its settlements?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "voidTripExpense", idempotencyKey: crypto.randomUUID(), expenseId: expense.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "VOID_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "VOID_FAILED")); }}><Trash2 size={15} /></button></div></div><div className="split-chips">{data.expenseSplits.filter((split) => split.expense_id === expense.id).map((split) => <span key={split.id} className={expense.paid_from !== "common_fund" && split.member_id === expense.paid_by_member_id ? "payer-share" : ""}>{split.display_name}: {formatMoney(split.share_minor, space.currency, locale)}{expense.paid_from !== "common_fund" && split.member_id === expense.paid_by_member_id ? (locale === "ar" ? " · حصته" : " · share") : ""}</span>)}</div><p className="expense-split-note">{(() => { const splits = data.expenseSplits.filter((split) => split.expense_id === expense.id); const payerShare = splits.find((split) => split.member_id === expense.paid_by_member_id)?.share_minor ?? 0; const owedToPayer = Math.max(0, expense.amount_minor - payerShare); if (expense.paid_from === "common_fund") return locale === "ar" ? `المبلغ خُصم من صندوق الجمعية. إن صار الرصيد سالباً يُقسَّم العجز مباشرة على الأعضاء المساهمين ويظهر في عمود «عليه».` : `This amount came from the association fund. If the balance goes negative, the deficit is split among contributing members and shown under Owes.`; return locale === "ar" ? `${expense.paid_by_name} دفع ${formatMoney(expense.amount_minor, space.currency, locale)} بالكامل. حصة كل عضو ظاهرة أعلاه. عمود «له» لـ ${expense.paid_by_name} = ما دفعه عن الآخرين (${formatMoney(owedToPayer, space.currency, locale)}) وليس حصته.` : `${expense.paid_by_name} paid ${formatMoney(expense.amount_minor, space.currency, locale)} in full. Each member’s share is shown above. The payer’s credit is what others still owe (${formatMoney(owedToPayer, space.currency, locale)}), not a double share.`; })()}</p></div>)}{!data.tripExpenses.some((expense) => expense.space_id === space.id) && <Empty locale={locale} />}</div>{pendingSettlementsWithCredit(
       data.settlements.filter((item) => item.space_id === space.id && item.status === "pending"),
       new Map(members.map((member) => [member.id, memberPosition(member, data, space.id).cashCredit])),
@@ -2476,7 +2531,7 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
                       {!isActive
                         ? (locale === "ar" ? "مؤرشف — بلا مستحقات جديدة" : "Archived — no new dues")
                         : member.user_id
-                          ? (member.phone || member.email || (member.role === "owner" ? t.roleOwner : member.role === "treasurer" ? t.roleTreasurer : t.roleMember))
+                          ? (member.phone || member.email || spaceRoleLabel(member.role, locale))
                           : (locale === "ar" ? "بانتظار الانضمام" : "Pending join")}
                     </span>
                   </div>
@@ -3170,7 +3225,7 @@ function SpaceTransactionsPanel({ space, data, locale, onAdd, onTxnChanged }: { 
   return <>
     <FoldWrap id={`${space.id}:transactions`} label={locale === "ar" ? "طي العمليات" : "Fold transactions"}>
     <article className="panel list-panel">
-      <div className="panel-heading"><h2>{t.recent}</h2><div className="section-title-actions"><StatementPrintMenu locale={locale} locked={!canPrint} canShare={planHasFeature(planFeaturesOf(data), "whatsapp")} onPick={(filter) => printSpaceStatement(space, data, locale, null, filter)} onShare={(filter) => void shareSpaceStatement(space, locale, filter, planHasFeature(planFeaturesOf(data), "whatsapp"))} /><button className="secondary-button" onClick={onAdd}><Plus size={15} />{t.add}</button></div></div>
+      <div className="panel-heading"><h2>{t.recent}</h2><div className="section-title-actions"><StatementPrintMenu locale={locale} locked={!canPrint} canShare={planHasFeature(planFeaturesOf(data), "whatsapp")} onPick={(filter) => printSpaceStatement(space, data, locale, null, filter)} onShare={(filter) => void shareSpaceStatement(space, locale, filter, planHasFeature(planFeaturesOf(data), "whatsapp"))} />{canActorTxnAction(data, space, "add") ? <button className="secondary-button" onClick={onAdd}><Plus size={15} />{t.add}</button> : null}</div></div>
       <div className="transaction-list">
         {paged.rows.length ? paged.rows.map((transaction) => (
           <TransactionRow key={transaction.id} transaction={transaction} data={data} locale={locale} onEdit={setEditing} onVoid={(txn) => { if (!working) void voidTxn(txn); }} />
@@ -3648,8 +3703,8 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
     }
   };
   const roles = locale === "ar"
-    ? { member: "عضو", treasurer: "أمين صندوق", manager: "مدير", auditor: "مدقق", viewer: "مشاهدة فقط" }
-    : { member: "Member", treasurer: "Treasurer", manager: "Manager", auditor: "Auditor", viewer: "View only" };
+    ? { manager: "مدير", supervisor: "مشرف", treasurer: "أمين صندوق", member: "عضو" }
+    : { manager: "Manager", supervisor: "Supervisor", treasurer: "Treasurer", member: "Member" };
   const groupSpaces = data.spaces.filter((space) => space.type !== "personal");
   return <Modal title={locale === "ar" ? "إضافة مساهم" : "Add member"} onClose={onClose}>
     <form className="modal-form" onSubmit={submit}>

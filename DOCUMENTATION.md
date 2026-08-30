@@ -208,7 +208,7 @@ fe6db47  fix: support Vercel Next.js build path   ← آخر نقطة في أر�
 | جمعيات | أقساط وأدوار | عرض UI + seed؛ قرعة حقيقية ناقصة |
 | الأعضاء والأدوار | مالك، أمين صندوق، عضو… | أدوار في schema؛ صلاحيات API جزئية |
 | دعوات الأعضاء | بريد + إشعار داخل التطبيق + موافقة صريحة + إعادة إرسال | `inviteMember` / `joinInvite` / `acceptPendingInvite` / `resendMemberInvite` — انظر `docs/MEMBER-INVITES.md` |
-| حذف/أرشفة عضو | حذف بلا سجل؛ أرشفة مع إيقاف المستحقات المستقبلية | `removeMember` / `archiveMember` / `restoreMember` |
+| أدوار وصلاحيات المحفظة | مدير / مشرف / أمين صندوق / عضو مع مصفوفة صلاحيات قابلة للضبط | `role_permissions_json` · `updateSpaceRolePermissions` · حماية رتبة المنشئ |
 | باقات الاشتراك | بداية / عائلة / احتراف / أعمال | `plans` + UI pricing |
 | كوبونات | تحقق + تطبيق خصم | `validateCoupon` / `selectPlan` |
 | فواتير ومدفوعات | إنشاء فاتورة + سجل | محاكاة (بدون بوابة دفع) |

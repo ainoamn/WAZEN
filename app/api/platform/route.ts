@@ -683,7 +683,7 @@ export async function POST(request: Request) {
       const parsed = z.object({
         spaceId: z.string().min(1).max(120),
         email: z.email().max(254),
-        role: z.enum(["member", "treasurer", "manager", "auditor", "viewer"]),
+        role: z.enum(["member", "treasurer", "manager", "supervisor", "auditor", "viewer"]),
         displayName: z.string().trim().min(2).max(80).optional(),
         phone: z.string().trim().max(40).optional(),
         monthlyContribution: z.union([z.string(), z.number()]).optional(),

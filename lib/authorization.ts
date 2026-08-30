@@ -16,13 +16,13 @@ const platformPermissions: Record<PlatformRole, ReadonlySet<string>> = {
 };
 
 const spaceRoles: Record<SpaceCapability, ReadonlySet<string>> = {
-  read: new Set(["owner", "manager", "treasurer", "member", "auditor", "viewer"]),
-  // Invited members may view + add; print/docs stay on documents:issue.
-  transact: new Set(["owner", "manager", "treasurer", "member"]),
+  read: new Set(["owner", "manager", "supervisor", "treasurer", "member", "auditor", "viewer"]),
+  // Invited members may view; add/edit/delete further gated by role_permissions_json.
+  transact: new Set(["owner", "manager", "supervisor", "treasurer", "member"]),
   "members:write": new Set(["owner", "manager"]),
   "circle:write": new Set(["owner", "manager"]),
-  "settlements:write": new Set(["owner", "manager", "treasurer"]),
-  "documents:issue": new Set(["owner", "manager", "treasurer"]),
+  "settlements:write": new Set(["owner", "manager", "treasurer", "supervisor"]),
+  "documents:issue": new Set(["owner", "manager", "treasurer", "supervisor"]),
 };
 
 const apiScopes: Record<SpaceCapability, string> = {

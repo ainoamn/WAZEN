@@ -9,7 +9,7 @@ export async function sendSpaceMemberInvite(input: {
   db: D1Database;
   spaceId: string;
   email: string;
-  role?: "member" | "treasurer" | "manager" | "auditor" | "viewer";
+  role?: "member" | "treasurer" | "manager" | "supervisor" | "auditor" | "viewer";
   inviterUserId: string;
   inviterDisplayName: string;
   origin: string;
