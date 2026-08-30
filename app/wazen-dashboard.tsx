@@ -3290,6 +3290,25 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
     setError("");
     try {
       const fullPhone = phone.trim() ? composeWhatsAppPhone(dialCode, phone) : "";
+      const emailNorm = email.trim().toLowerCase();
+      const phoneDigits = fullPhone.replace(/\D/g, "");
+      const localConflict = data.members.find((member) => {
+        if (member.space_id !== spaceId || (member.status ?? "active") !== "active") return false;
+        if (emailNorm && String(member.email ?? "").trim().toLowerCase() === emailNorm) return true;
+        if (phoneDigits.length >= 7) {
+          const existing = String(member.phone ?? "").replace(/\D/g, "");
+          if (existing && (existing === phoneDigits || existing.endsWith(phoneDigits) || phoneDigits.endsWith(existing))) return true;
+        }
+        return false;
+      });
+      if (localConflict) {
+        const name = localConflict.display_name;
+        throw new Error(
+          emailNorm && String(localConflict.email ?? "").trim().toLowerCase() === emailNorm
+            ? (locale === "ar" ? `هذا البريد مستخدم للعضو «${name}».` : `This email is already used by “${name}”.`)
+            : (locale === "ar" ? `هذا الرقم مستخدم للعضو «${name}».` : `This phone number is already used by “${name}”.`),
+        );
+      }
       const response = await apiFetch(recordOnly ? "/api/dashboard" : "/api/platform", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -3305,8 +3324,16 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
           durationMonths: Number(durationMonths) || 12,
         }),
       });
-      const result = await response.json() as { error?: string; inviteDelivery?: string | null };
-      if (!response.ok) throw new Error(result.error ?? "Unable to create invitation");
+      const result = await response.json() as { error?: string; inviteDelivery?: string | null; conflictName?: string };
+      if (!response.ok) {
+        if (result.error === "MEMBER_PHONE_TAKEN" || result.error === "MEMBER_EMAIL_TAKEN") {
+          const name = result.conflictName || (locale === "ar" ? "عضو آخر" : "another member");
+          throw new Error(result.error === "MEMBER_EMAIL_TAKEN"
+            ? (locale === "ar" ? `هذا البريد مستخدم للعضو «${name}».` : `This email is already used by “${name}”.`)
+            : (locale === "ar" ? `هذا الرقم مستخدم للعضو «${name}».` : `This phone number is already used by “${name}”.`));
+        }
+        throw new Error(result.error ?? "Unable to create invitation");
+      }
       const emailed = Boolean(email.trim()) && (
         !recordOnly || Boolean(result.inviteDelivery && result.inviteDelivery !== "failed")
       );

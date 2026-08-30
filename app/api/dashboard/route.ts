@@ -1661,6 +1661,13 @@ export async function POST(request: Request) {
       const count = await db.prepare("SELECT COUNT(*) AS count FROM members WHERE space_id=? AND status='active'").bind(parsed.data.spaceId).first<{ count: number }>();
       const memberLimit = isPlatformAdmin ? Math.max(entitlements.memberLimit, 200) : entitlements.memberLimit;
       if (Number(count?.count ?? 0) >= memberLimit) throw new ApiError(403, "PLAN_MEMBER_LIMIT");
+      const phone = parsed.data.phone?.trim() ? toWhatsAppNumber(parsed.data.phone) || parsed.data.phone.trim() : null;
+      const { findSpaceMemberContactConflict, throwMemberContactConflict } = await import("../../../lib/member-contact-unique");
+      const contactConflict = await findSpaceMemberContactConflict(db, parsed.data.spaceId, {
+        email: parsed.data.email || null,
+        phone,
+      });
+      if (contactConflict) throwMemberContactConflict(contactConflict);
       const space = await db.prepare("SELECT currency FROM spaces WHERE id=?").bind(parsed.data.spaceId).first<{ currency: string }>();
       const currency = space?.currency ?? "OMR";
       const contribution = await db.prepare("SELECT amount_minor,duration_months,starts_at FROM contribution_plans WHERE space_id=? LIMIT 1").bind(parsed.data.spaceId).first<{ amount_minor: number; duration_months: number; starts_at: string }>();
@@ -1671,7 +1678,6 @@ export async function POST(request: Request) {
       const durationMonths = parsed.data.durationMonths ?? Number(contribution?.duration_months ?? 12);
       const memberId = crypto.randomUUID(); const createdAt = now();
       const dueMinor = multiplyMinor(monthlyMinor, durationMonths);
-      const phone = parsed.data.phone?.trim() ? toWhatsAppNumber(parsed.data.phone) || parsed.data.phone.trim() : null;
       const planForMember = { amount_minor: monthlyMinor, duration_months: durationMonths, starts_at: contribution?.starts_at || createdAt };
       await db.batch([
         db.prepare("INSERT INTO members (id,space_id,user_id,display_name,email,phone,role,status,due_minor,paid_minor,extra_minor,avatar,joined_at) VALUES (?,?,NULL,?,?,?,?,'active',?,0,0,'#0f766e',?)").bind(memberId, parsed.data.spaceId, parsed.data.displayName, parsed.data.email || null, phone, parsed.data.role, dueMinor, createdAt),
@@ -1777,6 +1783,18 @@ export async function POST(request: Request) {
             /* skip spaces without write access */
           }
         }
+      }
+      const { findSpaceMemberContactConflict, throwMemberContactConflict } = await import("../../../lib/member-contact-unique");
+      const targets = await db.prepare(
+        `SELECT id, space_id FROM members WHERE id IN (${[...targetIds].map(() => "?").join(",")})`,
+      ).bind(...targetIds).all<{ id: string; space_id: string }>();
+      for (const row of targets.results ?? []) {
+        const contactConflict = await findSpaceMemberContactConflict(db, row.space_id, {
+          email: nextEmail,
+          phone: nextPhone,
+          excludeMemberId: row.id,
+        });
+        if (contactConflict) throwMemberContactConflict(contactConflict);
       }
       const statements = [...targetIds].map((id) =>
         db.prepare("UPDATE members SET display_name=?, email=?, phone=? WHERE id=?").bind(nextName, nextEmail, nextPhone, id),

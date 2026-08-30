@@ -75,7 +75,9 @@ export async function releaseIdempotency(db: D1Database, userId: string, key: st
 }
 
 export function errorResponse(error: unknown) {
-  if (error instanceof ApiError) return Response.json({ error: error.code }, { status: error.status });
+  if (error instanceof ApiError) {
+    return Response.json({ error: error.code, ...error.details }, { status: error.status });
+  }
   const message = error instanceof Error ? error.message : String(error);
   const code = message === "DATABASE_NOT_CONFIGURED" ? "DATABASE_NOT_CONFIGURED" : "INTERNAL_ERROR";
   void import("./observability").then(({ reportEvent }) => {

@@ -34,6 +34,10 @@ export async function createV1Invite(
   `).bind(space.owner_user_id, now).first<{ count: number }>();
   await assertOwnerPlanQuota(db, space.owner_user_id, "user", 1 + Number(pending?.count ?? 0));
 
+  const { findSpaceMemberContactConflict, throwMemberContactConflict } = await import("./member-contact-unique");
+  const contactConflict = await findSpaceMemberContactConflict(db, space.id, { email });
+  if (contactConflict) throwMemberContactConflict(contactConflict);
+
   const invitation = await sendSpaceMemberInvite({
     db,
     spaceId: space.id,

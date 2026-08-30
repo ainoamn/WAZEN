@@ -32,4 +32,12 @@
 - المدعو على الباقة المجانية: يرى محافظ الدعوة ويستطيع **الاطلاع والإضافة** (`member` + `transact`).
 - طباعة التقارير/الفواتير/المستندات: تتطلب دورًا أعلى (`owner` / `manager` / `treasurer`) **و** ميزة طباعة على باقة **المدعو** نفسه (`statements` / `documents` / `downloads`).
 
-مرجع الكود: `lib/authorization.ts`, `lib/plan-features.ts` (`canPrintSpaceArtifacts`), `lib/plan-retention.ts` (`filterSpacesForPlanAccess` مع استثناء ضيوف الدعوة).
+## تفرد الهاتف والبريد داخل المحفظة
+
+داخل **نفس المحفظة** لا يُسمح بعضوين نشطين بنفس البريد أو بنفس رقم الهاتف (بعد تطبيع واتساب).
+
+- عند التكرار يرجع النظام: `MEMBER_EMAIL_TAKEN` أو `MEMBER_PHONE_TAKEN` مع `conflictName` باسم العضو الحالي.
+- ينطبق على: إضافة عضو، دعوة، وتعديل بيانات التواصل.
+- نفس الشخص يمكن أن يظهر في محافظ مختلفة بذات الرقم/البريد (لأن القيد لكل `space_id`).
+
+مرجع: `lib/member-contact-unique.ts`.

@@ -486,12 +486,20 @@ export function MemberPersonProfile({
           syncLinked: true,
         }),
       });
-      const result = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "UPDATE_FAILED");
+      const result = await response.json() as { error?: string; conflictName?: string };
+      if (!response.ok) {
+        if (result.error === "MEMBER_PHONE_TAKEN" || result.error === "MEMBER_EMAIL_TAKEN") {
+          const name = result.conflictName || (locale === "ar" ? "عضو آخر" : "another member");
+          throw new Error(result.error === "MEMBER_EMAIL_TAKEN"
+            ? (locale === "ar" ? `هذا البريد مستخدم للعضو «${name}».` : `This email is already used by “${name}”.`)
+            : (locale === "ar" ? `هذا الرقم مستخدم للعضو «${name}».` : `This phone number is already used by “${name}”.`));
+        }
+        throw new Error(result.error ?? "UPDATE_FAILED");
+      }
       setEditingContact(false);
       onContactSaved?.(locale === "ar" ? "تم حفظ بيانات التواصل" : "Contact details saved");
-    } catch {
-      setContactError(locale === "ar" ? "تعذر حفظ البريد أو الهاتف." : "Could not save email or phone.");
+    } catch (caught) {
+      setContactError(caught instanceof Error ? caught.message : (locale === "ar" ? "تعذر حفظ البريد أو الهاتف." : "Could not save email or phone."));
     } finally {
       setSavingContact(false);
     }
