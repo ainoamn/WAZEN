@@ -205,6 +205,47 @@ export function memberDisplayCreditMinor(
   return memberCashCreditMinor(member, accrued) + fromTx;
 }
 
+/** True when a trip/group expense was paid from the association common fund. */
+export function isFundPaidExpense(expense: { paid_from?: string | null; paid_by_name?: string | null }) {
+  return String(expense.paid_from ?? "") === "common_fund"
+    || expense.paid_by_name === "صندوق الجمعية"
+    || expense.paid_by_name === "Association fund";
+}
+
+/**
+ * Net member contributions against fund-paid expense shares.
+ * Example: paid 200, share 165.5 → leftover 34.5 (له), shortfall 0.
+ * Example: paid 100, share 165.5 → leftover 0, shortfall 65.5 (عليه).
+ */
+export function memberFundPoolNet(paidMinor: unknown, fundShareMinor: unknown) {
+  const paid = asMinor(paidMinor);
+  const shares = asMinor(fundShareMinor);
+  return {
+    paidMinor: paid,
+    fundShareMinor: shares,
+    leftoverMinor: Math.max(0, paid - shares),
+    shortfallMinor: Math.max(0, shares - paid),
+  };
+}
+
+/** Extra + inferred personal reserve only (excludes paid−accrued advance). Used when fund shares already net against paid. */
+export function memberExtraCreditMinor(
+  member: { id: string; space_id: string; extra_minor?: unknown },
+  transactions?: Array<{
+    member_id?: string | null;
+    space_id?: string;
+    status?: string;
+    allocation?: string;
+    kind: string;
+    amount_minor: number;
+  }>,
+) {
+  const fromTx = transactions
+    ? personalReserveFromTransactions(member.id, member.space_id, member.extra_minor, transactions)
+    : 0;
+  return asMinor(member.extra_minor) + fromTx;
+}
+
 /** Pending settlements with each payer's credit reserved oldest-first. */
 export function pendingSettlementsWithCredit<T extends { from_member_id: string; amount_minor: unknown }>(
   settlements: T[],

@@ -70,7 +70,7 @@ test("pending settlement from member appears under owes with the other party", (
   assert.equal(ledger.owesMinor, 15_000);
 });
 
-test("fund-paid expense share counts under owes", () => {
+test("fund-paid expense share nets against paid → leftover under credit", () => {
   const ledger = buildMemberLedger({
     member: { ...member, paid_minor: 200_000, due_minor: 200_000, addon_minor: 0 },
     spaceNameAr: "سفر",
@@ -84,21 +84,50 @@ test("fund-paid expense share counts under owes", () => {
       space_id: "s1",
       paid_by_member_id: "m0",
       paid_by_name: "صندوق الجمعية",
-      amount_minor: 331_390,
+      amount_minor: 331_000,
       description: "تذاكر",
       occurred_at: "2026-08-30T12:00:00.000Z",
       paid_from: "common_fund",
     }],
-    expenseSplits: [{ expense_id: "e1", member_id: "m1", share_minor: 165_695 }],
+    expenseSplits: [{ expense_id: "e1", member_id: "m1", share_minor: 165_500 }],
   });
-  assert.equal(ledger.owesMinor, 165_695);
-  assert.equal(ledger.creditMinor, 0);
-  const owes = filterMemberLedgerLines(ledger.lines, "owes");
-  assert.equal(owes.some((row) => row.titleAr.includes("حصة")), true);
-  assert.equal(owes.find((row) => row.titleAr.includes("حصة"))?.amountMinor, 165_695);
+  assert.equal(ledger.owesMinor, 0);
+  assert.equal(ledger.creditMinor, 34_500);
+  const spent = filterMemberLedgerLines(ledger.lines, "spent");
+  assert.equal(spent.some((row) => row.titleAr.includes("حصة")), true);
+  const credit = filterMemberLedgerLines(ledger.lines, "credit");
+  assert.equal(credit.some((row) => row.titleAr.includes("متبقي")), true);
 });
 
-test("fund deficit settlement does not double-count when shares already counted", () => {
+test("fund-paid share exceeding paid creates owes shortfall", () => {
+  const ledger = buildMemberLedger({
+    member: { ...member, paid_minor: 100_000, due_minor: 200_000, addon_minor: 0 },
+    spaceNameAr: "سفر",
+    spaceNameEn: "Trip",
+    currency: "OMR",
+    installments: [],
+    transactions: [],
+    settlements: [],
+    tripExpenses: [{
+      id: "e1",
+      space_id: "s1",
+      paid_by_member_id: "m0",
+      paid_by_name: "صندوق الجمعية",
+      amount_minor: 331_000,
+      description: "تذاكر",
+      occurred_at: "2026-08-30T12:00:00.000Z",
+      paid_from: "common_fund",
+    }],
+    expenseSplits: [{ expense_id: "e1", member_id: "m1", share_minor: 165_500 }],
+  });
+  // remainingDue 100k + shortfall 65.5k = 165.5k, then netted? remainingDue = max(0, accrued-paid).
+  // Without installment schedule, accrued = due_minor = 200k → remainingDue = 100k.
+  // shortfall = 65.5k → gross debit 165.5k, credit 0.
+  assert.equal(ledger.owesMinor, 165_500);
+  assert.equal(ledger.creditMinor, 0);
+});
+
+test("fund deficit settlement does not double-count when shares already netted", () => {
   const ledger = buildMemberLedger({
     member: { ...member, paid_minor: 200_000, due_minor: 200_000, addon_minor: 0 },
     spaceNameAr: "سفر",
@@ -128,7 +157,9 @@ test("fund deficit settlement does not double-count when shares already counted"
     }],
     expenseSplits: [{ expense_id: "e1", member_id: "m1", share_minor: 40_000 }],
   });
-  assert.equal(ledger.owesMinor, 40_000);
+  // paid 200 − share 40 → له 160; fund deficit settlement ignored for debit
+  assert.equal(ledger.owesMinor, 0);
+  assert.equal(ledger.creditMinor, 160_000);
 });
 
 test("printable member html includes name and movements table", () => {

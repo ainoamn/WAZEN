@@ -6,7 +6,13 @@ import {
   remainingInstallmentMinor,
   type InstallmentLike,
 } from "./installments.ts";
-import { memberDisplayCreditMinor, netMemberClaim } from "./finance.ts";
+import {
+  isFundPaidExpense,
+  memberDisplayCreditMinor,
+  memberExtraCreditMinor,
+  memberFundPoolNet,
+  netMemberClaim,
+} from "./finance.ts";
 import { formatMoneyMinor } from "./money.ts";
 import { wrapPrintDocument } from "./print-document.ts";
 
@@ -118,6 +124,7 @@ export function buildMemberLedger(input: {
   const cashCredit = memberDisplayCreditMinor(member, { accruedDueMinor: accrued, transactions: input.transactions });
   let expenseDebit = 0;
   let expenseCredit = 0;
+  let fundSharesTotal = 0;
   const lines: MemberLedgerLine[] = [];
 
   const payments = input.transactions
@@ -238,22 +245,20 @@ export function buildMemberLedger(input: {
     const splits = input.expenseSplits.filter((row) => row.expense_id === expense.id);
     const share = splits.find((row) => row.member_id === member.id);
     const shareMinor = share ? Number(share.share_minor) || 0 : 0;
-    const fromFund = String(expense.paid_from ?? "") === "common_fund"
-      || expense.paid_by_name === "صندوق الجمعية"
-      || expense.paid_by_name === "Association fund";
+    const fromFund = isFundPaidExpense(expense);
 
     if (fromFund) {
-      // Member’s share of a fund-paid expense counts as «عليه» (what they consumed from the pool).
+      // Fund share is consumed from contributions; net leftover/shortfall applied after the loop.
       if (shareMinor > 0) {
-        expenseDebit += shareMinor;
+        fundSharesTotal += shareMinor;
         lines.push({
           at: expense.occurred_at,
-          focus: "owes",
+          focus: "spent",
           direction: "out",
           titleAr: `حصة من: ${expense.description || "مصروف"}`,
           titleEn: `Share of: ${expense.description || "expense"}`,
-          detailAr: "حصته من مصروف دُفع من صندوق الجمعية — تُحسب في «عليه»",
-          detailEn: "Share of a fund-paid expense — counted under Owes",
+          detailAr: "حصة من مصروف صندوق الجمعية — تُخصم من مساهمته المدفوعة",
+          detailEn: "Share of a fund-paid expense — deducted from his paid contributions",
           amountMinor: shareMinor,
         });
       }
@@ -308,8 +313,8 @@ export function buildMemberLedger(input: {
             direction: "out",
             titleAr: "عجز الصندوق (مُغطى ضمن الحصص)",
             titleEn: "Fund deficit (already in shares)",
-            detailAr: "للمتابعة فقط — المبلغ محسوب ضمن حصص مصروف الصندوق في «عليه»",
-            detailEn: "Informational — amount is already included in fund expense shares under Owes",
+            detailAr: "للمتابعة فقط — المبلغ مُغطى ضمن صافي مساهمته مقابل حصص الصندوق",
+            detailEn: "Informational — covered by netting paid contributions against fund shares",
             amountMinor: amount,
             status: settlement.status,
           });
@@ -374,8 +379,40 @@ export function buildMemberLedger(input: {
     });
   }
 
+  const pool = memberFundPoolNet(member.paid_minor, fundSharesTotal);
+  if (fundSharesTotal > 0 && pool.leftoverMinor > 0) {
+    expenseCredit += pool.leftoverMinor;
+    lines.push({
+      at: new Date().toISOString(),
+      focus: "credit",
+      direction: "in",
+      titleAr: "متبقي له من مساهمته بعد حصص الصندوق",
+      titleEn: "Leftover after fund shares",
+      detailAr: `مدفوع ${pool.paidMinor} − حصص الصندوق ${pool.fundShareMinor} = متبقي له`,
+      detailEn: `Paid ${pool.paidMinor} − fund shares ${pool.fundShareMinor} = leftover credit`,
+      amountMinor: pool.leftoverMinor,
+    });
+  }
+  if (pool.shortfallMinor > 0) {
+    expenseDebit += pool.shortfallMinor;
+    lines.push({
+      at: new Date().toISOString(),
+      focus: "owes",
+      direction: "out",
+      titleAr: "عجز مساهمته عن حصص الصندوق",
+      titleEn: "Shortfall vs fund shares",
+      detailAr: `حصص الصندوق ${pool.fundShareMinor} تجاوزت المدفوع ${pool.paidMinor}`,
+      detailEn: `Fund shares ${pool.fundShareMinor} exceeded paid ${pool.paidMinor}`,
+      amountMinor: pool.shortfallMinor,
+    });
+  }
+
+  // When fund shares net against paid, do not also count paid−accrued as cash credit.
+  const baseCredit = fundSharesTotal > 0
+    ? memberExtraCreditMinor(member, input.transactions)
+    : cashCredit;
   const debit = remainingDue + Math.max(0, expenseDebit);
-  const credit = cashCredit + Math.max(0, expenseCredit);
+  const credit = baseCredit + Math.max(0, expenseCredit);
   const net = netMemberClaim(debit, credit);
   lines.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 
