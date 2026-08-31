@@ -20,7 +20,7 @@ import { BhdAppSwitcher } from "../../components/bhd/BhdAppSwitcher";
 import { HomeNotificationBell, HomeWorkspaceAlertsBanner, type HomeUserNotification, type HomeWorkspaceAlert } from "../../components/home/home-notifications";
 import { apiFetch } from "../../lib/client-api";
 import { prefetchAppRoutes, warmAppCaches } from "../../lib/app-prefetch";
-import { completeClientLogout } from "../../lib/client-logout";
+import { completeClientLogout, isClientLogoutInProgress } from "../../lib/client-logout";
 import { clientSignInPath } from "../../lib/client-sign-in";
 import { fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../../lib/dashboard-session";
 import { useLiveDashboard } from "../../lib/live-sync";
@@ -174,7 +174,9 @@ export function HomeClient() {
       }
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) {
-        window.location.replace(clientSignInPath("/home"));
+        if (!isClientLogoutInProgress()) {
+          window.location.replace(clientSignInPath("/home"));
+        }
         return;
       }
       if (!readDashboardCache()) setError(true);
@@ -319,7 +321,6 @@ export function HomeClient() {
 
   const logout = async () => {
     await completeClientLogout();
-    window.location.replace(clientSignInPath("/home"));
   };
 
   const switcherUser = data?.user ?? sessionUser;

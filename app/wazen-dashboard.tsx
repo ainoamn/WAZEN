@@ -90,7 +90,7 @@ import Link from "next/link";
 import { FormEvent, ReactNode, CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, startTransition } from "react";
 import { createPortal } from "react-dom";
 import { prefetchAppRoutes, warmAppCaches } from "../lib/app-prefetch";
-import { completeClientLogout } from "../lib/client-logout";
+import { completeClientLogout, isClientLogoutInProgress } from "../lib/client-logout";
 import { clientSignInPath } from "../lib/client-sign-in";
 import { BhdAppSwitcher } from "../components/bhd/BhdAppSwitcher";
 import { fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../lib/dashboard-session";
@@ -1317,7 +1317,9 @@ export function WazenDashboard() {
       if (result.data) setDataState(result.data);
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) {
-        window.location.replace(clientSignInPath("/dashboard"));
+        if (!isClientLogoutInProgress()) {
+          window.location.replace(clientSignInPath("/dashboard"));
+        }
         return;
       }
       if (!readDashboardCache()) setError(true);

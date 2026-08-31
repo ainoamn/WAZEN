@@ -6,7 +6,20 @@ import { apiFetch } from "./client-api";
 import { clearDashboardCache } from "./dashboard-session";
 import { resetAppPrefetch } from "./app-prefetch";
 
+let clientLogoutInProgress = false;
+
+/** True while product logout is clearing the session and navigating to identity end-session. */
+export function isClientLogoutInProgress() {
+  return clientLogoutInProgress;
+}
+
+/**
+ * Clears the Wazen session then navigates to identity end-session (or `/api/auth/bhd/logout`).
+ * Do not call `location.replace(signIn…)` afterward — that re-opens SSO while identity is still alive.
+ * This promise intentionally never resolves after navigation starts so awaiters cannot race.
+ */
 export async function completeClientLogout() {
+  clientLogoutInProgress = true;
   let endSessionUrl = "";
   try {
     const response = await apiFetch("/api/auth", {
@@ -26,7 +39,7 @@ export async function completeClientLogout() {
           endSessionUrl = result.endSessionUrl;
         }
       } catch {
-        /* stay on product login */
+        /* stay on product logout route */
       }
     }
   } catch {
@@ -36,6 +49,6 @@ export async function completeClientLogout() {
   clearDashboardCache();
   resetAppPrefetch();
   notifyBrowserSessionChange(null);
-  // After product logout: identity end-session, else BHD start (never parallel local admin).
-  window.location.assign(endSessionUrl || "/api/auth/bhd/logout");
+  window.location.replace(endSessionUrl || "/api/auth/bhd/logout");
+  await new Promise<never>(() => {});
 }

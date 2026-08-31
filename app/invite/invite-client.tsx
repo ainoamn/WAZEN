@@ -295,7 +295,7 @@ export function InviteClient({ token }: { token: string }) {
                   type="button"
                   className="secondary-button"
                   style={{ width: "100%", marginBottom: 12 }}
-                  onClick={() => void completeClientLogout().then(() => { window.location.reload(); })}
+                  onClick={() => void completeClientLogout()}
                 >
                   {l("تسجيل الخروج والمتابعة", "Sign out and continue")}
                 </button>

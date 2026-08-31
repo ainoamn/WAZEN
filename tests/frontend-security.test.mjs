@@ -189,6 +189,11 @@ test("BHD SSO start/callback exist and login can wrap identity", () => {
   assert.match(form, /الدخول بحساب BHD/);
   assert.match(logout, /endSessionUrl/);
   assert.match(logout, /\/api\/auth\/bhd\/logout/);
+  assert.match(logout, /isClientLogoutInProgress/);
+  assert.match(logout, /location\.replace/);
+  assert.doesNotMatch(home, /completeClientLogout\(\)[\s\S]{0,120}clientSignInPath/);
+  assert.match(home, /isClientLogoutInProgress/);
+  assert.match(dashboard, /isClientLogoutInProgress/);
   assert.match(fs.readFileSync(path.join(root, "app/api/auth/bhd/logout/route.ts"), "utf8"), /bhdEndSessionUrl/);
   assert.match(fs.readFileSync(path.join(root, "components/auth/SessionKeepAlive.tsx"), "utf8"), /\/api\/auth\/me/);
   assert.match(fs.readFileSync(path.join(root, "docs/BHD-PRODUCT-SSO-ADMIN.md"), "utf8"), /admin-entry/);
