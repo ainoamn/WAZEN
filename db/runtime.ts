@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 24;
+const SCHEMA_VERSION = 25;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -168,6 +168,22 @@ async function ensureSchemaPatches(db: D1Database) {
   try {
     const { ensureEmailTemplatesTable } = await import("../lib/email-template-store");
     await ensureEmailTemplatesTable(db);
+  } catch { /* best-effort */ }
+  try {
+    await db.batch([
+      db.prepare(`CREATE TABLE IF NOT EXISTS message_outbox (
+        id TEXT PRIMARY KEY,
+        channel TEXT NOT NULL,
+        recipient TEXT NOT NULL,
+        template TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        sent_at TEXT
+      )`),
+      db.prepare("CREATE INDEX IF NOT EXISTS idx_message_outbox_pending ON message_outbox(status, created_at)"),
+    ]);
   } catch { /* best-effort */ }
   // One-time: cancel backlog left by the old "flush next 5 pending" bug (schema < 23).
   try {
@@ -860,6 +876,18 @@ async function initializeSchema(db: D1Database) {
       created_at TEXT NOT NULL,
       sent_at TEXT
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS message_outbox (
+      id TEXT PRIMARY KEY,
+      channel TEXT NOT NULL,
+      recipient TEXT NOT NULL,
+      template TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      sent_at TEXT
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_message_outbox_pending ON message_outbox(status, created_at)"),
     db.prepare(`CREATE TABLE IF NOT EXISTS email_templates (
       id TEXT PRIMARY KEY,
       subject_ar TEXT NOT NULL,

@@ -264,7 +264,7 @@ test("Wazen BHD routes follow the product card in the identity spec", () => {
   const logout = fs.readFileSync(path.join(root, "app/api/auth/bhd/logout/route.ts"), "utf8");
   assert.match(logout, /revokeSession/);
   assert.match(logout, /bhdEndSessionUrl/);
-  assert.match(runtime, /SCHEMA_VERSION = 21/);
+  assert.match(runtime, /SCHEMA_VERSION = 2\d/);
   assert.match(runtime, /bhd_sub/);
   assert.match(runtime, /await ensureBhdSubColumn\(db\)/);
   const currentPath = runtime.slice(

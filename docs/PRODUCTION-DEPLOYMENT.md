@@ -157,7 +157,19 @@ Authorization: Bearer $WAZEN_JOB_SECRET
 ```
 
 المسارات المنفردة ما زالت متاحة: `POST /api/jobs/email` · `POST /api/jobs/push` · `POST /api/jobs/maintenance`.  
-قوالب الطابور: `verify_email` · `reset_password` · `member_invitation` · `member_receipt` · `dues_digest` · `privacy_*`.  
+قوالب الطابور: `verify_email` · `reset_password` · `member_invitation` · `member_receipt` · `dues_digest` · `privacy_*`.
+
+### واتساب و SMS (دعوات الأعضاء)
+
+عند دعوة عضو معه رقم هاتف يُضاف صف في `message_outbox` ويُفرَّغ مع cron (`/api/jobs/tick` · مهمة `messaging`).
+
+| القناة | متغيرات Vercel |
+|--------|----------------|
+| واتساب Cloud API | `WHATSAPP_TOKEN` · `WHATSAPP_PHONE_NUMBER_ID` · يُفضَّل `WHATSAPP_INVITE_TEMPLATE` + `WHATSAPP_TEMPLATE_LANG=ar` |
+| SMS Twilio | `TWILIO_ACCOUNT_SID` · `TWILIO_AUTH_TOKEN` · `TWILIO_FROM_NUMBER` |
+| SMS Unifonic | `UNIFONIC_APP_SID` · `UNIFONIC_SENDER_ID` · اختياري `UNIFONIC_BASE_URL` |
+
+بدون هذه المتغيرات تبقى الدعوة بالبريد (إن وُجد Resend) أو `deferred`. مشاركة الإيصالات عبر `wa.me` اليدوي تبقى مستقلة.  
 مهمة الصيانة تنقل المحافظ منتهية مهلة الـ 15 يوماً إلى أرشيف الإدارة لمدة 60 يوماً ثم تصفّي الأرشيف المنتهي.
 
 ## الدفع

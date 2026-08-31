@@ -19,6 +19,8 @@ Verify: `GET /api/health` with `Authorization: Bearer $WAZEN_JOB_SECRET` → `re
 |------|--------|
 | Sentry | Set `SENTRY_DSN` |
 | Email | `RESEND_API_KEY` + `RESEND_FROM_EMAIL` (أو webhook قديم) + cron tick |
+| WhatsApp invites | `WHATSAPP_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` (+ قالب `WHATSAPP_INVITE_TEMPLATE`) |
+| SMS invites | Twilio **أو** Unifonic env (انظر `.env.example`) |
 | Web Push | `WAZEN_VAPID_*` |
 | Card pay | Thawani or OmanNet env (manual transfer OK) |
 | RLS | Staging with `WAZEN_RLS_DRY_RUN=1`, then `WAZEN_RLS_ENFORCE=1` |

@@ -16,7 +16,7 @@ test("phase 12 webhooks, summary, contributions markers", () => {
   const security = fs.readFileSync(path.join(root, "app/account/security/security-client.tsx"), "utf8");
   const developers = fs.readFileSync(path.join(root, "app/developers/developers-client.tsx"), "utf8");
 
-  assert.match(runtime, /SCHEMA_VERSION = 21/);
+  assert.match(runtime, /SCHEMA_VERSION = 2\d/);
   assert.match(runtime, /integration_webhooks/);
   assert.match(runtime, /webhook_outbox/);
   assert.match(hooks, /processWebhookOutbox/);

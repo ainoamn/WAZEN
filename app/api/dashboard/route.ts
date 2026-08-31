@@ -1780,6 +1780,7 @@ export async function POST(request: Request) {
             db,
             spaceId: parsed.data.spaceId,
             email: parsed.data.email,
+            phone,
             role: parsed.data.role,
             inviterUserId: user.id,
             inviterDisplayName: user.displayName,
@@ -1812,7 +1813,13 @@ export async function POST(request: Request) {
           inviterDisplayName: user.displayName,
           origin: appOrigin(request),
         });
-        const body = { ok: true, delivery: invite.delivery, email: invite.email, expiresAt: invite.expiresAt };
+        const body = {
+          ok: true,
+          delivery: invite.delivery,
+          channels: invite.channels,
+          email: invite.email,
+          expiresAt: invite.expiresAt,
+        };
         await completeIdempotency(db, user.id, idempotencyKey, body);
         claimRef.current = null;
         return Response.json(body, { headers: { "Cache-Control": "no-store" } });
@@ -1963,6 +1970,7 @@ export async function POST(request: Request) {
             db,
             spaceId: member.space_id,
             email: freshEmail,
+            phone: nextPhone,
             role: (["member", "treasurer", "manager", "auditor", "viewer"].includes(member.role) ? member.role : "member") as "member" | "treasurer" | "manager" | "auditor" | "viewer",
             inviterUserId: user.id,
             inviterDisplayName: user.displayName,

@@ -2543,9 +2543,9 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
       }
       window.alert(
         result.delivery === "sent"
-          ? (locale === "ar" ? "أُرسلت الدعوة بالبريد." : "Invite email sent.")
+          ? (locale === "ar" ? "أُرسلت الدعوة (بريد و/أو واتساب/SMS حسب الإعداد)." : "Invite sent (email and/or WhatsApp/SMS per config).")
           : result.delivery === "deferred"
-            ? (locale === "ar" ? "سُجّلت الدعوة وسيُرسل البريد عند تفعيل الخدمة." : "Invite queued; email will send when delivery is configured.")
+            ? (locale === "ar" ? "سُجّلت الدعوة. فعّل البريد أو واتساب/SMS في الخادم ليصل الرابط تلقائياً." : "Invite saved. Configure email or WhatsApp/SMS on the server for automatic delivery.")
             : (locale === "ar" ? "أُعيدت جدولة الدعوة." : "Invite re-queued."),
       );
     } catch {

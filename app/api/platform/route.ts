@@ -716,6 +716,7 @@ export async function POST(request: Request) {
         db,
         spaceId,
         email,
+        phone,
         role,
         inviterUserId: user.id,
         inviterDisplayName: user.displayName,
@@ -723,7 +724,16 @@ export async function POST(request: Request) {
         flush: true,
         via: "platform.inviteMember",
       });
-      return respond({ ok: true, invitation: { id: invitation.invitationId, email: invitation.email, role: invitation.role, delivery: invitation.delivery } });
+      return respond({
+        ok: true,
+        invitation: {
+          id: invitation.invitationId,
+          email: invitation.email,
+          role: invitation.role,
+          delivery: invitation.delivery,
+          channels: invitation.channels,
+        },
+      });
     }
 
     if (action === "acceptInvite") {

@@ -29,6 +29,17 @@
 
 التنفيذ: `lib/member-invite.ts` (`sendSpaceMemberInvite`, `resendSpaceMemberInvite`).
 
+## قنوات التسليم
+
+| قناة | الشرط | التنفيذ |
+|------|--------|---------|
+| بريد | `RESEND_*` أو webhook البريد | `email_outbox` |
+| واتساب آلي | `WHATSAPP_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` + رقم هاتف العضو | `message_outbox` (Cloud API) |
+| SMS | Twilio أو Unifonic + رقم هاتف | `message_outbox` |
+
+الحالة المُرجَعة: `delivery` ملخّص + `channels: { email, whatsapp, sms }` ∈ `sent|queued|deferred|skipped`.
+راجع [PRODUCTION-DEPLOYMENT.md](./PRODUCTION-DEPLOYMENT.md) لقائمة المتغيرات.
+
 ## مستخدم مسجّل مسبقاً: بريد + إشعار + موافقة
 
 1. عند إرسال الدعوة يُرسل البريد كما هو.

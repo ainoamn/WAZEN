@@ -379,10 +379,10 @@ function MemberLedgerBody({
         return;
       }
       const deliveryNote = result.delivery === "sent"
-        ? (locale === "ar" ? "أُرسلت الدعوة بالبريد." : "Invite email sent.")
+        ? (locale === "ar" ? "أُرسلت الدعوة (بريد و/أو واتساب/SMS)." : "Invite sent (email and/or WhatsApp/SMS).")
         : result.delivery === "deferred"
-          ? (locale === "ar" ? "سُجّلت الدعوة وسيُرسل البريد عند تفعيل الخدمة." : "Invite queued; email will send when delivery is configured.")
-          : (locale === "ar" ? "أُعيدت جدولة الدعوة في البريد." : "Invite re-queued for email.");
+          ? (locale === "ar" ? "سُجّلت الدعوة. فعّل البريد أو واتساب/SMS في الخادم." : "Invite saved. Configure email or WhatsApp/SMS on the server.")
+          : (locale === "ar" ? "أُعيدت جدولة الدعوة." : "Invite re-queued.");
       setInviteNote(deliveryNote);
       onInviteResent?.(deliveryNote);
     } catch {
@@ -728,10 +728,10 @@ export function MemberPersonProfile({
         return;
       }
       const deliveryNote = result.delivery === "sent"
-        ? (locale === "ar" ? "أُرسلت الدعوة بالبريد." : "Invite email sent.")
+        ? (locale === "ar" ? "أُرسلت الدعوة (بريد و/أو واتساب/SMS)." : "Invite sent (email and/or WhatsApp/SMS).")
         : result.delivery === "deferred"
-          ? (locale === "ar" ? "سُجّلت الدعوة وسيُرسل البريد عند تفعيل الخدمة." : "Invite queued; email will send when delivery is configured.")
-          : (locale === "ar" ? "أُعيدت جدولة الدعوة في البريد." : "Invite re-queued for email.");
+          ? (locale === "ar" ? "سُجّلت الدعوة. فعّل البريد أو واتساب/SMS في الخادم." : "Invite saved. Configure email or WhatsApp/SMS on the server.")
+          : (locale === "ar" ? "أُعيدت جدولة الدعوة." : "Invite re-queued.");
       setInviteNote(deliveryNote);
       onContactSaved?.(deliveryNote);
     } catch {
