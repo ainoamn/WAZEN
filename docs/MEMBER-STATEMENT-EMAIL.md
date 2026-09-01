@@ -46,6 +46,15 @@ API: `POST /api/dashboard` with `action: "sendMemberStatementEmails"`, `spaceId`
 | `components/members/association-members.tsx` | `MemberStatementEmailModal` |
 | `tests/member-statement-email.test.mjs` | Unit tests |
 
+## Deploy note (Sep 2026)
+
+Commits `2117bc3` and `64a5e8d` failed Vercel `npm run build` (TypeScript). Fixed in **`846ec4e`**:
+
+1. Extended dashboard `notification` type with `statementsQueued`, `statementsSkipped`, `spaceId`.
+2. Normalized `addon_minor` (`null` → `undefined`) when queueing member emails.
+
+Verify production: `GET https://wazen.bhd-om.com/api/health` → `buildId` prefix `846ec4e`.
+
 ## Related
 
 - WhatsApp statement share: `createMemberStatementShare` · [HANDOFF-2026-08-16.md](./HANDOFF-2026-08-16.md)
