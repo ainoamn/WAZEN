@@ -53,7 +53,9 @@ Commits `2117bc3` and `64a5e8d` failed Vercel `npm run build` (TypeScript). Fixe
 1. Extended dashboard `notification` type with `statementsQueued`, `statementsSkipped`, `spaceId`.
 2. Normalized `addon_minor` (`null` → `undefined`) when queueing member emails.
 
-Verify production: `GET https://wazen.bhd-om.com/api/health` → `buildId` prefix `846ec4e`.
+Verify production: `GET https://wazen.bhd-om.com/api/health` → `buildId` prefix `4f51388` (or newer).
+
+**Full session handoff (Arabic + all conversation context):** [HANDOFF-2026-09-01-SESSION.md](./HANDOFF-2026-09-01-SESSION.md)
 
 ## Related
 
