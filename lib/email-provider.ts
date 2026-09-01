@@ -63,6 +63,7 @@ function ctaMeta(template: string, locale: "ar" | "en", link: string, receiptUrl
   if (template === "reset_password") return { ctaUrl: href, ctaLabel: locale === "ar" ? "تعيين كلمة مرور جديدة" : "Set new password" };
   if (template === "member_invitation") return { ctaUrl: href, ctaLabel: locale === "ar" ? "قبول الدعوة" : "Accept invite" };
   if (template === "member_receipt") return { ctaUrl: href, ctaLabel: locale === "ar" ? "عرض الإيصال" : "View receipt" };
+  if (template === "member_statement") return { ctaUrl: href, ctaLabel: locale === "ar" ? "عرض الكشف التفصيلي" : "View full statement" };
   return { ctaUrl: href, ctaLabel: locale === "ar" ? "فتح الرابط" : "Open link" };
 }
 
@@ -81,9 +82,14 @@ export async function renderEmailTemplate(
   const { ctaUrl, ctaLabel } = ctaMeta(template, locale, link, receiptUrl);
   const vars = {
     displayName,
+    walletName: str(data, "walletName"),
     link: link || receiptUrl,
     message,
     messageHtml,
+    balanceAlertHtml: str(data, "balanceAlertHtml"),
+    transactionNoteHtml: str(data, "transactionNoteHtml"),
+    owesLabel: str(data, "owesLabel"),
+    creditLabel: str(data, "creditLabel"),
     ctaLabel,
     inviter: str(data, "inviter", displayName),
   };
@@ -113,7 +119,19 @@ export function renderEmailTemplateSync(template: string, data: TemplatePayload)
   const message = str(data, "message") || str(data, "messageAr") || str(data, "messageEn");
   const messageHtml = str(data, "html") || escapeHtml(message).replaceAll("\n", "<br/>");
   const { ctaUrl, ctaLabel } = ctaMeta(template, locale, link, str(data, "receiptUrl"));
-  const vars = { displayName, link, message, messageHtml, ctaLabel, inviter: str(data, "inviter", displayName) };
+  const vars = {
+    displayName,
+    walletName: str(data, "walletName"),
+    link,
+    message,
+    messageHtml,
+    balanceAlertHtml: str(data, "balanceAlertHtml"),
+    transactionNoteHtml: str(data, "transactionNoteHtml"),
+    owesLabel: str(data, "owesLabel"),
+    creditLabel: str(data, "creditLabel"),
+    ctaLabel,
+    inviter: str(data, "inviter", displayName),
+  };
   const subject = applyTemplatePlaceholders(locale === "ar" ? definition.subjectAr : definition.subjectEn, vars);
   const bodyHtml = applyTemplatePlaceholders(locale === "ar" ? definition.bodyHtmlAr : definition.bodyHtmlEn, vars);
   const text = applyTemplatePlaceholders(locale === "ar" ? definition.textAr : definition.textEn, vars);

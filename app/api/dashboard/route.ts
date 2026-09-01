@@ -2080,6 +2080,19 @@ export async function POST(request: Request) {
         }));
         await db.batch(statements);
         await reconcileMemberLedgers(db, [spaceId]);
+        if (["household", "trip", "society", "group"].includes(space.type)) {
+          try {
+            const { queueSpaceMemberStatementEmails } = await import("../../../lib/member-statement-email");
+            await queueSpaceMemberStatementEmails({
+              db,
+              request,
+              spaceId,
+              ownerUserId: space.owner_user_id,
+              transaction: { description, amountMinor, occurredAt },
+              locale: "ar",
+            });
+          } catch { /* statement email is best-effort */ }
+        }
         if (memberId) {
           try {
             const memberRow = await db.prepare("SELECT id,space_id,display_name,email FROM members WHERE id=?").bind(memberId)
@@ -2144,6 +2157,19 @@ export async function POST(request: Request) {
       }));
       await db.batch(statements);
       await reconcileMemberLedgers(db, [spaceId]);
+      if (["household", "trip", "society", "group"].includes(space.type)) {
+        try {
+          const { queueSpaceMemberStatementEmails } = await import("../../../lib/member-statement-email");
+          await queueSpaceMemberStatementEmails({
+            db,
+            request,
+            spaceId,
+            ownerUserId: space.owner_user_id,
+            transaction: { description, amountMinor, occurredAt },
+            locale: "ar",
+          });
+        } catch { /* statement email is best-effort */ }
+      }
       }
     } else if (action === "voidTransaction") {
       const parsed = z.object({ transactionId: z.string().min(1).max(120) }).safeParse(payload);
@@ -2550,6 +2576,21 @@ export async function POST(request: Request) {
       }));
       await db.batch(statements);
       await rebuildSpaceBalance(db, [parsed.data.spaceId]);
+      try {
+        const { queueSpaceMemberStatementEmails } = await import("../../../lib/member-statement-email");
+        await queueSpaceMemberStatementEmails({
+          db,
+          request,
+          spaceId: parsed.data.spaceId,
+          ownerUserId: space.owner_user_id,
+          transaction: {
+            description: parsed.data.description,
+            amountMinor,
+            occurredAt,
+          },
+          locale: "ar",
+        });
+      } catch { /* statement email is best-effort */ }
     } else if (action === "voidTripExpense") {
       const parsed = z.object({ expenseId: z.string().min(1).max(120) }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_TRIP_EXPENSE");
@@ -3192,6 +3233,51 @@ export async function POST(request: Request) {
       await completeIdempotency(db, user.id, idempotencyKey, response);
       claimRef.current = null;
       return Response.json(response, { headers: { "Cache-Control": "no-store" } });
+    } else if (action === "sendMemberStatementEmails") {
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        transactionId: z.string().min(1).max(120).optional(),
+        memberId: z.string().min(1).max(120).optional(),
+        locale: z.enum(["ar", "en"]).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_STATEMENT");
+      const locale = parsed.data.locale ?? "ar";
+      const spaceAuth = await authorizeSpace(db, user, parsed.data.spaceId, "read");
+      const { assertPlanShareFeature } = await import("../../../services/admin/billing-service");
+      await assertPlanShareFeature(db, spaceAuth.owner_user_id, "email", user.id);
+      let transactionNote: { description: string; amountMinor: number; occurredAt: string } | undefined;
+      if (parsed.data.transactionId) {
+        const txn = await db.prepare("SELECT description_ar,description_en,amount_minor,occurred_at FROM transactions WHERE id=? AND space_id=?")
+          .bind(parsed.data.transactionId, parsed.data.spaceId)
+          .first<{ description_ar: string; description_en: string; amount_minor: number; occurred_at: string }>();
+        if (txn) {
+          transactionNote = {
+            description: locale === "ar" ? txn.description_ar : txn.description_en,
+            amountMinor: Number(txn.amount_minor),
+            occurredAt: txn.occurred_at,
+          };
+        }
+      }
+      const { queueSpaceMemberStatementEmails } = await import("../../../lib/member-statement-email");
+      const result = await queueSpaceMemberStatementEmails({
+        db,
+        request,
+        spaceId: parsed.data.spaceId,
+        ownerUserId: spaceAuth.owner_user_id,
+        transaction: transactionNote,
+        memberIds: parsed.data.memberId ? [parsed.data.memberId] : undefined,
+        locale,
+        requireEmailFeature: true,
+      });
+      notification = {
+        emailQueued: result.queued > 0,
+        statementsQueued: result.queued,
+        statementsSkipped: result.skipped,
+        spaceId: parsed.data.spaceId,
+      };
+      await completeIdempotency(db, user.id, idempotencyKey, { ok: true, notification });
+      claimRef.current = null;
+      return Response.json({ ok: true, notification }, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "sendReceipt") {
       const parsed = z.object({
         memberId: z.string().min(1).max(120),

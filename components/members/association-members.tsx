@@ -972,6 +972,82 @@ export function SmartAccountantModal({
   );
 }
 
+export function MemberStatementEmailModal({
+  spaceId,
+  spaceName,
+  locale,
+  transactionId,
+  memberCount,
+  onClose,
+  onDone,
+  canEmail = true,
+}: {
+  spaceId: string;
+  spaceName: string;
+  locale: Locale;
+  transactionId?: string;
+  memberCount: number;
+  onClose: () => void;
+  onDone: (message: string) => void;
+  canEmail?: boolean;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const send = async () => {
+    if (!canEmail) {
+      window.location.assign("/pricing");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "sendMemberStatementEmails",
+          idempotencyKey: crypto.randomUUID(),
+          spaceId,
+          transactionId,
+          locale,
+        }),
+      });
+      const result = await response.json() as {
+        error?: string;
+        notification?: { statementsQueued?: number; statementsSkipped?: number };
+      };
+      if (!response.ok) throw new Error(result.error ?? "SEND_FAILED");
+      const queued = Number(result.notification?.statementsQueued ?? 0);
+      onDone(locale === "ar"
+        ? `تم إرسال كشف حساب مفصل إلى ${queued} عضو/أعضاء بالبريد.`
+        : `Detailed statement emailed to ${queued} member(s).`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "SEND_FAILED");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal title={locale === "ar" ? "إرسال كشف للأعضاء" : "Email statements to members"} onClose={onClose}>
+      <div className="modal-form">
+        <p className="modal-note">{locale === "ar"
+          ? `سيتم إرسال بريد مهذب لكل عضو مسجّل بريده في «${spaceName}» — يتضمن تنبيهاً بمبلغ «عليه/له» وملخص الكشف مع رابط للكشف التفصيلي.${transactionId ? " تُذكر المعاملة الحالية في الرسالة." : ""}`
+          : `A polite email goes to each member with a saved address in “${spaceName}” — balance alert, statement summary, and a link to the full statement.${transactionId ? " This transaction will be referenced." : ""}`}</p>
+        <p className="modal-note">{locale === "ar"
+          ? `الأعضاء النشطون: ${memberCount} — يُرسل فقط لمن لديه بريد مسجّل.`
+          : `Active members: ${memberCount} — only those with email on file.`}</p>
+        {error && <p className="modal-error">{error}</p>}
+        <div className="receipt-channel-grid">
+          <button type="button" className={`primary-button${canEmail ? "" : " is-plan-locked"}`} disabled={saving || !canEmail} onClick={() => void send()}>
+            <Mail size={16} />{locale === "ar" ? "إرسال الكشف بالبريد" : "Send statements by email"}{canEmail ? null : <em className="plan-lock-badge">{locale === "ar" ? "ترقية" : "Upgrade"}</em>}
+          </button>
+        </div>
+        <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{locale === "ar" ? "إغلاق" : "Close"}</button></div>
+      </div>
+    </Modal>
+  );
+}
+
 export function ReceiptChannelModal({
   member,
   locale,

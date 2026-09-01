@@ -157,7 +157,9 @@ Authorization: Bearer $WAZEN_JOB_SECRET
 ```
 
 المسارات المنفردة ما زالت متاحة: `POST /api/jobs/email` · `POST /api/jobs/push` · `POST /api/jobs/maintenance`.  
-قوالب الطابور: `verify_email` · `reset_password` · `member_invitation` · `member_receipt` · `dues_digest` · `privacy_*`.
+قوالب الطابور: `verify_email` · `reset_password` · `member_invitation` · `member_receipt` · `member_statement` · `dues_digest` · `privacy_*`.
+
+**`member_statement`:** يُرسل تلقائياً بعد معاملة/مصروف جماعي لكل عضو (تنبيه عليه/له + ملخص + رابط `/s/{token}`). إرسال يدوي من صف المعاملة في اللوحة.
 
 ### واتساب و SMS (دعوات الأعضاء)
 

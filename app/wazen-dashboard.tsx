@@ -4,7 +4,7 @@ import OmrSymbol from "../components/brand/OmrSymbol";
 import { WazenIcon } from "../components/brand/WazenLogo";
 import WazenPageLoader from "../components/brand/WazenPageLoader";
 import { ReportsPanel } from "../components/reports/ReportsPanel";
-import { MemberDetailModal, MemberPersonProfile, ReceiptChannelModal, RemainingInvoiceGrid, SmartAccountantModal, memberAccruedDueMinor, memberInstallments, personIdentityKey } from "../components/members/association-members";
+import { MemberDetailModal, MemberPersonProfile, MemberStatementEmailModal, ReceiptChannelModal, RemainingInvoiceGrid, SmartAccountantModal, memberAccruedDueMinor, memberInstallments, personIdentityKey } from "../components/members/association-members";
 import { SpaceRolePermissionsPanel } from "../components/members/space-role-permissions";
 import { PersonalRulesSetup, PersonalWalletPanel, confirmResetWalletData } from "../components/personal/personal-wallet";
 import { DateField } from "../components/ui/date-field";
@@ -2167,10 +2167,13 @@ function TransactionRow({ transaction, data, locale, onEdit, onVoid }: { transac
   const edited = transactionWasEdited(transaction);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
+  const [statementEmailOpen, setStatementEmailOpen] = useState(false);
   const features = planFeaturesOf(data);
   const canEmail = planHasFeature(features, "email");
   const canWhatsapp = planHasFeature(features, "whatsapp");
   const canSend = canEmail || canWhatsapp;
+  const isGroupSpace = space && ["household", "trip", "society", "group"].includes(space.type);
+  const spaceMembers = isGroupSpace ? data.members.filter((item) => item.space_id === space.id && item.status !== "inactive") : [];
   const allowEdit = Boolean(onEdit && space && canActorTxnAction(data, space, "edit", transaction));
   const allowVoid = Boolean(onVoid && space && canActorTxnAction(data, space, "delete", transaction));
   const openSend = () => {
@@ -2181,6 +2184,10 @@ function TransactionRow({ transaction, data, locale, onEdit, onVoid }: { transac
     }
     setSendOpen(true);
   };
+  const openStatementEmail = () => {
+    if (!canEmail) { goToPricing(); return; }
+    setStatementEmailOpen(true);
+  };
   return <div className={`transaction-row${isLiveTransaction(transaction) ? "" : " is-inactive"}`}>
     <div className={`transaction-icon ${transaction.kind}`}><Icon size={17} /></div>
     <div className="transaction-main">
@@ -2190,7 +2197,12 @@ function TransactionRow({ transaction, data, locale, onEdit, onVoid }: { transac
     <strong className={positive ? "amount-positive" : "amount-negative"}>{positive ? "+" : "−"}{formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale)}</strong>
     <div className="transaction-actions">
       <button type="button" title={locale === "ar" ? "إيصال" : "Receipt"} onClick={() => openTransactionReceipt(transaction, data, locale)}><Printer size={15} /></button>
-      <button type="button" className={canSend ? "" : "is-plan-locked"} title={locale === "ar" ? "إرسال" : "Send"} onClick={openSend}><MessageCircle size={15} />{canSend ? null : <PlanLockBadge locale={locale} />}</button>
+      {isGroupSpace && (
+        <button type="button" className={canEmail ? "" : "is-plan-locked"} title={locale === "ar" ? "إرسال كشف للأعضاء" : "Email statements to members"} onClick={openStatementEmail}>
+          <Mail size={15} />{canEmail ? null : <PlanLockBadge locale={locale} />}
+        </button>
+      )}
+      <button type="button" className={canSend ? "" : "is-plan-locked"} title={locale === "ar" ? "إرسال إيصال" : "Send receipt"} onClick={openSend}><MessageCircle size={15} />{canSend ? null : <PlanLockBadge locale={locale} />}</button>
       {edited && <button type="button" title={locale === "ar" ? "سجل التعديلات" : "Edit history"} onClick={() => setHistoryOpen(true)}><History size={15} /></button>}
       {allowEdit && !locked && isLiveTransaction(transaction) && <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => onEdit?.(transaction)}><Pencil size={15} /></button>}
       {allowVoid && !locked && isLiveTransaction(transaction) && <button type="button" className="danger" title={locale === "ar" ? "إلغاء" : "Void"} onClick={() => onVoid?.(transaction)}><Trash2 size={15} /></button>}
@@ -2217,6 +2229,21 @@ function TransactionRow({ transaction, data, locale, onEdit, onVoid }: { transac
         onClose={() => setSendOpen(false)}
         onDone={(message) => {
           setSendOpen(false);
+          window.alert(message);
+        }}
+      />
+    )}
+    {statementEmailOpen && space && (
+      <MemberStatementEmailModal
+        spaceId={space.id}
+        spaceName={nameOf(space, locale)}
+        locale={locale}
+        transactionId={transaction.id}
+        memberCount={spaceMembers.length}
+        canEmail={canEmail}
+        onClose={() => setStatementEmailOpen(false)}
+        onDone={(message) => {
+          setStatementEmailOpen(false);
           window.alert(message);
         }}
       />

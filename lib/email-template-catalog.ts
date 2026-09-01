@@ -5,6 +5,7 @@ export type EmailTemplateId =
   | "reset_password"
   | "member_invitation"
   | "member_receipt"
+  | "member_statement"
   | "dues_digest"
   | "privacy_export_ready"
   | "privacy_deletion_done";
@@ -27,6 +28,7 @@ export const EMAIL_TEMPLATE_IDS: EmailTemplateId[] = [
   "reset_password",
   "member_invitation",
   "member_receipt",
+  "member_statement",
   "dues_digest",
   "privacy_export_ready",
   "privacy_deletion_done",
@@ -96,6 +98,29 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<EmailTemplateId, EmailTemplateDefin
     bodyHtmlEn: `<p style="margin:0 0 12px;font-size:16px;line-height:1.7;">Hello <strong>{{displayName}}</strong>,</p>
 <p style="margin:0 0 12px;font-size:15px;line-height:1.7;">We received your payment. Receipt details:</p>
 <div style="margin:0 0 16px;padding:14px 16px;border-radius:12px;background:#f4f8f6;border:1px solid #d7e5df;font-size:14px;line-height:1.75;white-space:pre-wrap;">{{messageHtml}}</div>`,
+    textAr: "{{message}}\n\n{{link}}",
+    textEn: "{{message}}\n\n{{link}}",
+  },
+  member_statement: {
+    id: "member_statement",
+    labelAr: "كشف حساب عضو",
+    labelEn: "Member statement",
+    subjectAr: "كشف حساب — {{walletName}} — وازون",
+    subjectEn: "Account statement — {{walletName}} — Wazen",
+    bodyHtmlAr: `<p style="margin:0 0 12px;font-size:16px;line-height:1.7;">السلام عليكم <strong>{{displayName}}</strong>،</p>
+<p style="margin:0 0 12px;font-size:15px;line-height:1.7;">نود إبلاغكم بتحديث حسابكم في <strong>{{walletName}}</strong>. نرفق أدناه ملخصاً واضحاً لموقفكم المالي.</p>
+{{transactionNoteHtml}}
+{{balanceAlertHtml}}
+<p style="margin:0 0 10px;font-size:15px;line-height:1.7;color:#24443c;"><strong>ملخص الكشف:</strong></p>
+<div style="margin:0 0 16px;padding:14px 16px;border-radius:12px;background:#f4f8f6;border:1px solid #d7e5df;font-size:14px;line-height:1.75;">{{messageHtml}}</div>
+<p style="margin:0;font-size:14px;line-height:1.7;color:#5f6e68;">للاطلاع على الكشف التفصيلي الكامل، استخدم الزر أدناه. شكراً لالتزامكم وتعاونكم.</p>`,
+    bodyHtmlEn: `<p style="margin:0 0 12px;font-size:16px;line-height:1.7;">Hello <strong>{{displayName}}</strong>,</p>
+<p style="margin:0 0 12px;font-size:15px;line-height:1.7;">We’re writing to share an update on your account in <strong>{{walletName}}</strong>. Below is a clear summary of your position.</p>
+{{transactionNoteHtml}}
+{{balanceAlertHtml}}
+<p style="margin:0 0 10px;font-size:15px;line-height:1.7;color:#24443c;"><strong>Statement summary:</strong></p>
+<div style="margin:0 0 16px;padding:14px 16px;border-radius:12px;background:#f4f8f6;border:1px solid #d7e5df;font-size:14px;line-height:1.75;">{{messageHtml}}</div>
+<p style="margin:0;font-size:14px;line-height:1.7;color:#5f6e68;">Tap the button below for the full detailed statement. Thank you for your cooperation.</p>`,
     textAr: "{{message}}\n\n{{link}}",
     textEn: "{{message}}\n\n{{link}}",
   },
