@@ -29,6 +29,8 @@
 
 التنفيذ: `lib/member-invite.ts` (`sendSpaceMemberInvite`, `resendSpaceMemberInvite`).
 
+**بريد كشف الحساب (منفصل عن الدعوة):** بعد معاملة/مصروف جماعي يُرسل `member_statement` لكل عضو — انظر [MEMBER-STATEMENT-EMAIL.md](./MEMBER-STATEMENT-EMAIL.md).
+
 ## قنوات التسليم
 
 | قناة | الشرط | التنفيذ |
