@@ -273,7 +273,10 @@ export async function queueSpaceMemberStatementEmails(input: {
       db: input.db,
       request: input.request,
       bundle,
-      member,
+      member: {
+        ...member,
+        addon_minor: member.addon_minor ?? undefined,
+      },
       transaction: input.transaction,
       locale: input.locale,
       flush: false,

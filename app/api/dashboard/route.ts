@@ -1069,7 +1069,15 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const claimRef: { current: { db: D1Database; userId: string; key: string } | null } = { current: null };
-  let notification: { emailQueued: boolean; whatsappUrl: string | null; transactionId: string; receiptUrl?: string | null } | undefined;
+  let notification: {
+    emailQueued: boolean;
+    whatsappUrl?: string | null;
+    transactionId?: string;
+    receiptUrl?: string | null;
+    statementsQueued?: number;
+    statementsSkipped?: number;
+    spaceId?: string;
+  } | undefined;
   try {
     enforceWriteRequest(request);
     const db = getRawDb();
