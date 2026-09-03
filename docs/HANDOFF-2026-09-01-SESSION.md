@@ -1,14 +1,16 @@
-# Handoff — جلسة 1 سبتمبر 2026 (محادثة كاملة)
+# Handoff — جلسة سبتمبر 2026 (محادثة كاملة)
 
-**الغرض:** استئناف العمل من جهاز آخر — ي summariz كل ما طُلب ونُفّذ في هذه المحادثة.
+**الغرض:** استئناف العمل من جهاز آخر — يلخّص كل ما طُلب ونُفّذ في هذه المحادثة.
+
+**نقطة الدخول السريعة:** [CONTINUE-HERE.md](./CONTINUE-HERE.md)
 
 **الفرع:** `main`  
 **المستودع:** https://github.com/ainoamn/WAZEN  
 **الإنتاج:** https://wazen.bhd-om.com  
-**آخر commit منشور:** `4f51388` (تحقق: `GET /api/health` → `buildId` يبدأ بـ `4f51388`)
+**آخر commit لهذه المحادثة:** `3887e03` فما فوق على `main` (تحقق: `GET /api/health`)
 
-**سجل المحادثة في Cursor (اختياري):**  
-`agent-transcripts/a6e70310-2e7c-417b-84ca-7238cf9d9dca/a6e70310-2e7c-417b-84ca-7238cf9d9dca.jsonl`
+**سجل المحادثة في Cursor (محلي فقط، غير مرفوع لـ Git):**  
+`agent-transcripts/a6e70310-2e7c-417b-84ca-7238cf9d9dca/`
 
 ---
 
@@ -39,7 +41,8 @@ npm run test:backend   # اختياري — يشمل member-statement-email.test
 | 6 | عند **معاملة جديدة** → بريد لكل الأعضاء: كشف + «عليك للجمعية …» + إرسال يدوي | ✅ `2117bc3` |
 | 7 | ادفع ووثّق وانشر | ✅ |
 | 8 | فشل Vercel على `2117bc3`/`64a5e8d` — صحّح وارفع | ✅ `846ec4e` + `4f51388` |
-| 9 | ارفع المحادثة كلها في git للرجوع من جهاز ثانٍ | ✅ هذا الملف |
+| 9 | ارفع المحادثة كلها في git للرجوع من جهاز ثانٍ | ✅ `3887e03` + هذا الملف |
+| 10 | تأكيد: ارفع كل شيء لـ Git ليعرف الجهاز الثاني ما تم | ✅ `docs/CONTINUE-HERE.md` + تحديث هذا الملف |
 
 ---
 
@@ -53,7 +56,10 @@ d07252f  Fix logout bouncing back into SSO sign-in.
 64a5e8d  Document member statement email feature in handoff and launch checklist.
 846ec4e  Fix TypeScript errors blocking Vercel deploy for statement emails.
 4f51388  Document Vercel build fix for member statement emails (846ec4e).
+3887e03  Add full session handoff doc for continuing work on another device.
 ```
+
+*(commits اللاحقة لتحديث CONTINUE-HERE تُضاف على `main` فوق هذا.)*
 
 ---
 
@@ -176,7 +182,7 @@ node --experimental-strip-types --test tests/member-statement-email.test.mjs
 
 # إنتاج
 curl -s https://wazen.bhd-om.com/api/health
-# buildId يجب أن يبدأ بـ 4f51388 أو أحدث
+# buildId يجب أن يكون حديثاً (بعد 3887e03 أو أحدث)
 ```
 
 **اختبار يدوي في اللوحة:**
@@ -190,6 +196,7 @@ curl -s https://wazen.bhd-om.com/api/health
 
 | مستند | محتوى |
 |--------|--------|
+| [CONTINUE-HERE.md](./CONTINUE-HERE.md) | **ابدأ هنا** على الجهاز الثاني |
 | [HANDOFF-2026-08-30.md](./HANDOFF-2026-08-30.md) | handoff تراكمي (محاسبة، خروج، WA/SMS، بريد الكشف) |
 | [MEMBER-STATEMENT-EMAIL.md](./MEMBER-STATEMENT-EMAIL.md) | دليل بريد الكشف |
 | [MEMBER-INVITES.md](./MEMBER-INVITES.md) | دعوات + WA/SMS |
@@ -200,11 +207,12 @@ curl -s https://wazen.bhd-om.com/api/health
 
 ## 8. رسالة للوكيل/المطور على الجهاز الثاني
 
-> استأنف من `main` @ `4f51388`. الميزة الأخيرة: **بريد كشف الحساب التلقائي/اليدوي** بعد المعاملات الجماعية.  
-> لا تعيد تنفيذ المحاسبة أو الخروج أو WA/SMS — كلها مدمجة.  
-> إن طلب المستخدم «اختبار» أو «تفعيل واتساب» → ركّز على env Vercel والتحقق اليدوي.  
+> اسحب `main` واقرأ أولاً `docs/CONTINUE-HERE.md` ثم هذا الملف.  
+> الميزة الأخيرة: **بريد كشف الحساب التلقائي/اليدوي** بعد المعاملات الجماعية (`member_statement`).  
+> لا تعِد تنفيذ المحاسبة أو الخروج أو WA/SMS للدعوات أو بريد الكشف — كلها مدمجة ومنشورة.  
+> إن طُلب اختبار أو تفعيل مزودات → ركّز على env في Vercel والتحقق اليدوي.  
 > لا ترفع `public/brand/*-with-bg.png` إلا بطلب صريح.
 
 ---
 
-*آخر تحديث: 1 سبتمبر 2026 — جلسة Cursor Agent*
+*آخر تحديث: 3 سبتمبر 2026 — جلسة Cursor Agent*
