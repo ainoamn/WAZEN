@@ -25,7 +25,8 @@ npm install
 
 1. **هذا الملف** (`docs/CONTINUE-HERE.md`)
 2. **[HANDOFF-2026-09-09.md](./HANDOFF-2026-09-09.md)** — تكرار / دمج / جهات اتصال
-3. **[HANDOFF-2026-09-01-SESSION.md](./HANDOFF-2026-09-01-SESSION.md)** — بريد الكشف والخروج وواتساب
+3. **[WALLET-ACCOUNTING.md](./WALLET-ACCOUNTING.md)** — قواعد عليه/له/مدفوع لكل نوع محفظة
+4. **[HANDOFF-2026-09-01-SESSION.md](./HANDOFF-2026-09-01-SESSION.md)** — بريد الكشف والخروج وواتساب
 
 ---
 

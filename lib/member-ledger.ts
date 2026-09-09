@@ -12,6 +12,7 @@ import {
   memberDisplayCreditMinor,
   memberExtraCreditMinor,
   memberFundPoolNet,
+  memberTripPaidMinor,
   memberTripPocketMinor,
   netMemberClaim,
 } from "./finance.ts";
@@ -462,7 +463,9 @@ export function buildMemberLedger(input: {
     lines,
     joinedAt: member.joined_at || "",
     goalMinor: Number(member.due_minor) || 0,
-    paidMinor: Number(member.paid_minor) || 0,
+    paidMinor: input.spaceType === "trip"
+      ? memberTripPaidMinor(member.id, member.space_id, member.paid_minor, input.settlements)
+      : Number(member.paid_minor) || 0,
     extraMinor: Number(member.extra_minor) || 0,
     addonMinor: Number(member.addon_minor ?? 0),
     spentMinor: Number(member.addon_minor ?? 0) + lines.filter((line) => line.focus === "spent" && line.direction === "out").reduce((sum, line) => sum + (line.titleAr.startsWith("حصة") || line.titleEn.startsWith("Share") ? line.amountMinor : 0), 0),

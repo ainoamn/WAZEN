@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, extraAddonMinorFromTransactions, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, splitContributionPayment, splitEvenly, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
+import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, extraAddonMinorFromTransactions, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPaidMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, splitContributionPayment, splitEvenly, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 import { bankCustodySplit } from "../lib/wallet-links.ts";
 
@@ -212,4 +212,18 @@ test("trip pocket spend is the bills a member paid, not settlement extras", () =
   assert.equal(memberTripPocketMinor("ali", "trip1", expenses), 17_000);
   assert.equal(memberTripPocketMinor("harith", "trip1", expenses), 50_400);
   assert.equal(tripPostedSpendMinor("trip1", expenses), 72_400);
+});
+
+test("trip paid column includes settled transfers to other members", () => {
+  const settlements = [
+    { space_id: "trip1", from_member_id: "abdul", to_member_id: "harith", amount_minor: 13_803, status: "settled" },
+    { space_id: "trip1", from_member_id: "dawood", to_member_id: "ali", amount_minor: 2_799, status: "settled" },
+    { space_id: "trip1", from_member_id: "dawood", to_member_id: "harith", amount_minor: 9_000, status: "settled" },
+    { space_id: "trip1", from_member_id: "omar", to_member_id: "harith", amount_minor: 13_799, status: "pending" },
+    { space_id: "trip1", from_member_id: "space:trip1", to_member_id: "abdul", amount_minor: 5_000, status: "settled" },
+  ];
+  assert.equal(memberTripPaidMinor("abdul", "trip1", 0, settlements), 13_803);
+  assert.equal(memberTripPaidMinor("dawood", "trip1", 0, settlements), 11_799);
+  assert.equal(memberTripPaidMinor("omar", "trip1", 0, settlements), 0);
+  assert.equal(memberTripPaidMinor("harith", "trip1", 0, settlements), 0);
 });

@@ -294,6 +294,44 @@ export function tripPostedSpendMinor(
   }, 0);
 }
 
+/** Settled peer transfers this member paid to other members — not fund contributions and not pocket bills. */
+export function memberTripSettlementPaidMinor(
+  memberId: string,
+  spaceId: string,
+  settlements: Array<{
+    space_id?: string;
+    from_member_id?: string;
+    to_member_id?: string;
+    amount_minor?: unknown;
+    status?: string | null;
+  }>,
+) {
+  return settlements.reduce((sum, row) => {
+    if (row.space_id && row.space_id !== spaceId) return sum;
+    if (row.status !== "settled") return sum;
+    if (String(row.from_member_id ?? "").startsWith("space:")) return sum;
+    if (String(row.to_member_id ?? "").startsWith("space:")) return sum;
+    if (row.from_member_id !== memberId) return sum;
+    return sum + asMinor(row.amount_minor);
+  }, 0);
+}
+
+/** Trip «مدفوع»: fund contributions plus money actually sent to other members after settlement. */
+export function memberTripPaidMinor(
+  memberId: string,
+  spaceId: string,
+  paidMinor: unknown,
+  settlements: Array<{
+    space_id?: string;
+    from_member_id?: string;
+    to_member_id?: string;
+    amount_minor?: unknown;
+    status?: string | null;
+  }>,
+) {
+  return asMinor(paidMinor) + memberTripSettlementPaidMinor(memberId, spaceId, settlements);
+}
+
 /**
  * Net member contributions against fund-paid expense shares.
  * Example: paid 200, share 165.5 → leftover 34.5 (له), shortfall 0.

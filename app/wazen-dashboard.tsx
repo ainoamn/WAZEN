@@ -32,7 +32,7 @@ import { PwaInstallCard } from "../components/pwa/PwaInstallCard";
 import { PushNotifyCard } from "../components/pwa/PushNotifyCard";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor, currencyScale, parseMoneyToMinor } from "../lib/money";
-import { isFundPaidExpense, isPeerSettlementTransfer, memberDisplayCreditMinor, memberExtraCreditMinor, memberFundPoolNet, memberTripPocketMinor, netMemberClaim, pendingSettlementsWithCredit, tripPostedSpendMinor } from "../lib/finance";
+import { isFundPaidExpense, isPeerSettlementTransfer, memberDisplayCreditMinor, memberExtraCreditMinor, memberFundPoolNet, memberTripPaidMinor, memberTripPocketMinor, netMemberClaim, pendingSettlementsWithCredit, tripPostedSpendMinor } from "../lib/finance";
 import { memberRemainingSettlementOwe } from "../lib/settlement-posting";
 import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, quotaRemaining, quotaWarningCopy, upgradeNoticeFor, canPrintSpaceArtifacts } from "../lib/plan-features";
 import { clientCanSpaceTxnAction, spaceRoleLabel } from "../lib/space-role-permissions";
@@ -2425,7 +2425,11 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
   const goal = spaceGoalMinor(space, data);
   const progress = goal ? Math.max(0, Math.min(100, Math.round((space.balance_minor / goal) * 100))) : 0;
   const nextCircleTurn = data.circleTurns.find((turn) => turn.space_id === space.id && turn.status === "scheduled");
-  const paidTotal = members.reduce((sum, member) => sum + member.paid_minor, 0);
+  const paidTotal = members.reduce((sum, member) => sum + (
+    space.type === "trip"
+      ? memberTripPaidMinor(member.id, space.id, member.paid_minor, data.settlements)
+      : member.paid_minor
+  ), 0);
   const liveTransactions = transactions.filter((txn) => isLiveTransaction(txn) && !isPeerSettlementTransfer(txn));
   const spentTotal = space.type === "trip"
     ? tripPostedSpendMinor(space.id, data.tripExpenses)
@@ -2786,7 +2790,7 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
         <div className="table-head">
           <span>{locale === "ar" ? "العضو" : "Member"}</span>
           <span>{t.goal}</span>
-          <span>{t.paid}</span>
+          <span>{data?.spaces.find((item) => item.id === spaceId)?.type === "trip" ? (locale === "ar" ? "سدّد للأعضاء" : "Paid members") : t.paid}</span>
           <span>{data?.spaces.find((item) => item.id === spaceId)?.type === "trip" ? (locale === "ar" ? "من الجيب" : "Pocket") : (locale === "ar" ? "إضافي" : "Extra")}</span>
           <span>{locale === "ar" ? "عليه" : "Owes"}</span>
           <span>{locale === "ar" ? "له" : "Owed"}</span>
@@ -2801,6 +2805,9 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
           const extraMinor = spaceType === "trip" && data && spaceId
             ? memberTripPocketMinor(member.id, spaceId, data.tripExpenses)
             : Number(member.addon_minor ?? 0);
+          const paidMinor = spaceType === "trip" && data && spaceId
+            ? memberTripPaidMinor(member.id, spaceId, member.paid_minor, data.settlements)
+            : Number(member.paid_minor) || 0;
           const open = (focus: MemberLedgerFocus) => onOpenMember?.(member.id, focus);
           const isActive = (member.status ?? "active") === "active";
           const canResend = isActive && Boolean(member.email) && !member.user_id;
@@ -2823,7 +2830,7 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
                 </div>
               </button>
               <strong>{formatMoney(personGoalMinor(member), currency, locale)}</strong>
-              <button type="button" className="amount-hit" onClick={() => open("paid")}><strong>{formatMoney(member.paid_minor, currency, locale)}</strong></button>
+              <button type="button" className="amount-hit" onClick={() => open("paid")}><strong>{formatMoney(paidMinor, currency, locale)}</strong></button>
               <button type="button" className="amount-hit" onClick={() => open("spent")}><strong>{formatMoney(extraMinor, currency, locale)}</strong></button>
               <button type="button" className={`amount-hit ${debit ? "amount-negative" : "muted-amount"}`} onClick={() => open("owes")}>
                 <span className="claim-stack">

@@ -224,6 +224,7 @@ test("trip wallet does not treat the savings goal as an expense debt after settl
   });
   assert.equal(ledger.owesMinor, 0);
   assert.equal(ledger.creditMinor, 0);
+  assert.equal(ledger.paidMinor, 13_803);
   assert.ok(ledger.lines.some((line) => line.titleAr.includes("هدف الرحلة")));
   assert.equal(ledger.lines.some((line) => line.titleAr.includes("مستحق شهر")), false);
   assert.equal(ledger.lines.some((line) => line.titleAr.includes("إضافي / حصص")), false);
