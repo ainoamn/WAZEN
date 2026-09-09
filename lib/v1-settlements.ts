@@ -4,6 +4,7 @@ import type { RequestUser } from "../db/runtime";
 import { prepareAudit } from "./audit";
 import { ApiError } from "./security";
 import { formatMoneyMinor } from "./money";
+import { postPeerMemberSettlement } from "./settlement-posting";
 
 export async function listV1Settlements(
   db: D1Database,
@@ -125,43 +126,12 @@ export async function settleV1Settlement(
     }
     await db.batch(statements);
   } else {
-    const names = await db.prepare("SELECT id,display_name FROM members WHERE id IN (?,?)")
-      .bind(settlement.from_member_id, settlement.to_member_id)
-      .all<{ id: string; display_name: string }>();
-    const fromName = names.results?.find((row) => row.id === settlement.from_member_id)?.display_name ?? "عضو";
-    const toName = names.results?.find((row) => row.id === settlement.to_member_id)?.display_name ?? "عضو";
-    const expense = settlement.expense_id
-      ? await db.prepare("SELECT description FROM trip_expenses WHERE id=?").bind(settlement.expense_id).first<{ description: string }>()
-      : null;
-    const reason = expense?.description || "مصروف جماعي";
-    const descFrom = `مبلغ إضافي · تسوية حصة «${reason}» إلى ${toName}`;
-    const descTo = `استرداد مبلغ إضافي · تسوية حصة «${reason}» من ${fromName}`;
-    const fromTxn = crypto.randomUUID();
-    const toTxn = crypto.randomUUID();
-    await db.batch([
-      db.prepare("UPDATE settlements SET status='settled',settled_at=? WHERE id=? AND status='pending'")
-        .bind(createdAt, settlement.id),
-      db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'extra',?,?,?,'approved',?,?)")
-        .bind(fromTxn, settlement.space_id, user.id, settlement.from_member_id, "expense", amountMinor, descFrom, descFrom, createdAt, createdAt),
-      db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'extra',?,?,?,'approved',?,?)")
-        .bind(toTxn, settlement.space_id, user.id, settlement.to_member_id, "income", amountMinor, descTo, descTo, createdAt, createdAt),
-      db.prepare("UPDATE members SET addon_minor = COALESCE(addon_minor,0) + ? WHERE id=?")
-        .bind(amountMinor, settlement.from_member_id),
-      prepareAudit(db, {
-        userId: user.id,
-        action: "member.settlement_recorded",
-        entityType: "settlement",
-        entityId: settlement.id,
-        metadata: {
-          fromMemberId: settlement.from_member_id,
-          toMemberId: settlement.to_member_id,
-          amountMinor,
-          reason,
-          via: "api.v1",
-        },
-        createdAt,
-      }),
-    ]);
+    await postPeerMemberSettlement(db, {
+      userId: user.id,
+      settlement: { ...settlement, amount_minor: amountMinor },
+      createdAt,
+      via: "api.v1",
+    });
   }
 
   return {

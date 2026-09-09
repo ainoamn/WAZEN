@@ -447,6 +447,8 @@ test("trip settlements net across the space instead of each bill", () => {
   const nets = fs.readFileSync(path.join(root, "lib/trip-settlements.ts"), "utf8");
   assert.match(dashboard, /action: "netTripSettlements"/);
   assert.match(dashboard, /تصفية التسويات/);
+  assert.match(dashboard, /سجل التحويلات/);
+  assert.match(dashboard, /TripSettlementLedger/);
   assert.match(dashboardApi, /action === "netTripSettlements"/);
   assert.match(dashboardApi, /rebuildSpaceTripSettlements/);
   assert.match(dashboardApi, /migratePerExpenseTripSettlements/);

@@ -957,6 +957,14 @@ html[data-theme="dark"] .space-picker-field select { background: var(--surface);
 .settlement-alert { min-height: 48px; padding: 10px 13px; border-radius: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 9px; background: #fff4df; color: #805b1e; font-size: 12px; }
 .settlement-alert b { margin-inline-start: auto; }
 .settlement-alert button { height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: #805b1e; color: white; font-size: 10px; font-weight: 800; cursor: pointer; }
+.settlement-ledger { display: grid; gap: 8px; margin-top: 14px; }
+.settlement-ledger-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; color: #3e514b; }
+.settlement-ledger-head span { color: #809089; font-size: 12px; }
+.settlement-meta { display: block; margin-top: 4px; color: #8a7348; font-size: 11px; font-weight: 600; }
+.settlement-alert.is-posted { background: #e8f4ee; color: #1f6f54; }
+.settlement-alert.is-posted .settlement-meta { color: #4d7a68; }
+html[data-theme="dark"] .settlement-ledger-head { color: var(--ink); }
+html[data-theme="dark"] .settlement-alert.is-posted { background: #16352e; color: #b7d7c8; }
 .circle-order-list { display: grid; gap: 7px; }
 .circle-order-list > div { min-height: 48px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 12px; display: grid; grid-template-columns: 34px 1fr auto 72px 80px; align-items: center; gap: 10px; }
 .circle-order-list > div.period-row { grid-template-columns: auto 1fr auto auto auto; }

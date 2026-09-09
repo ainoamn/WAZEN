@@ -103,6 +103,8 @@ export function buildMemberLedger(input: {
     to_member_name?: string | null;
     amount_minor: number;
     status: string;
+    settled_at?: string | null;
+    created_at?: string | null;
   }>;
   tripExpenses: Array<{
     id: string;
@@ -322,13 +324,17 @@ export function buildMemberLedger(input: {
       } else {
         if (pending) expenseDebit += amount;
         lines.push({
-          at: new Date().toISOString(),
-          focus: pending ? "owes" : "spent",
+          at: settlement.settled_at || settlement.created_at || new Date().toISOString(),
+          focus: pending ? "owes" : "paid",
           direction: "out",
-          titleAr: pending ? "تسوية معلقة عليه" : "تسوية سُددت",
-          titleEn: pending ? "Pending settlement he owes" : "Settled share",
-          detailAr: `يدفع لـ ${settlement.to_member_name || "عضو آخر"} — ناتج تقسيم مصروف مشترك`,
-          detailEn: `Pays ${settlement.to_member_name || "another member"} — from a shared expense split`,
+          titleAr: pending ? "عليه تحويل معلق" : "دفع تسوية مسجّلة",
+          titleEn: pending ? "Pending transfer he owes" : "Posted settlement payment",
+          detailAr: pending
+            ? `يدفع إلى ${settlement.to_member_name || "عضو آخر"} · المتبقي ${amount} · صافي مصروفات الرحلة`
+            : `من ${settlement.from_member_name || "العضو"} إلى ${settlement.to_member_name || "عضو آخر"} · مدفوع بالكامل · تحويل مباشر بين الأعضاء`,
+          detailEn: pending
+            ? `Pays ${settlement.to_member_name || "another member"} · remaining ${amount} · netted trip expenses`
+            : `${settlement.from_member_name || "Member"} → ${settlement.to_member_name || "member"} · paid in full · direct member transfer`,
           amountMinor: amount,
           status: settlement.status,
         });
@@ -337,17 +343,21 @@ export function buildMemberLedger(input: {
     if (settlement.to_member_id === member.id) {
       if (pending) expenseCredit += amount;
       lines.push({
-        at: new Date().toISOString(),
-        focus: "credit",
+        at: settlement.settled_at || settlement.created_at || new Date().toISOString(),
+        focus: pending ? "credit" : "paid",
         direction: "in",
-        titleAr: pending ? "مستحق له من تسوية" : "استلم تسوية",
-        titleEn: pending ? "Settlement due to him" : "Settlement received",
+        titleAr: pending ? "له تحويل منتظر" : "استلم تحويل مسجّل",
+        titleEn: pending ? "Incoming transfer due" : "Posted transfer received",
         detailAr: fromFundSettle
           ? "رد من صندوق الجمعية"
-          : `من ${settlement.from_member_name || "عضو آخر"} لأنه دفع حصة غيره`,
+          : pending
+            ? `من ${settlement.from_member_name || "عضو آخر"} · المتبقي ${amount}`
+            : `من ${settlement.from_member_name || "عضو آخر"} إلى ${settlement.to_member_name || "العضو"} · استُلم بالكامل · تحويل مباشر بين الأعضاء`,
         detailEn: fromFundSettle
           ? "Refund from the association fund"
-          : `From ${settlement.from_member_name || "another member"} because he covered their share`,
+          : pending
+            ? `From ${settlement.from_member_name || "another member"} · remaining ${amount}`
+            : `${settlement.from_member_name || "Member"} → ${settlement.to_member_name || "member"} · received in full · direct member transfer`,
         amountMinor: amount,
         status: settlement.status,
       });

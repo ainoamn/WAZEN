@@ -3,6 +3,7 @@ import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
 import { authenticateRequest, clearCsrfCookie, clearSessionCookie, csrfCookie, issueCsrfToken } from "../../../lib/auth";
 import { buildCircleOrder, splitContributionPayment, splitEvenly, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
 import { migratePerExpenseTripSettlements, rebuildSpaceTripSettlements } from "../../../lib/trip-settlements";
+import { postPeerMemberSettlement } from "../../../lib/settlement-posting";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
 import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf, actorCanIssueSpaceDocuments } from "../../../lib/authorization";
 import { prepareAudit, writeAudit } from "../../../lib/audit";
@@ -711,7 +712,9 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     FROM settlements s
     LEFT JOIN members tm ON tm.id=s.to_member_id
     LEFT JOIN members fm ON fm.id=s.from_member_id
-      WHERE s.space_id IN (${placeholders}) AND s.status='pending' ORDER BY s.amount_minor DESC, s.created_at DESC LIMIT 50`).bind(...ids).all(),
+      WHERE s.space_id IN (${placeholders}) AND s.status IN ('pending','settled')
+      ORDER BY CASE s.status WHEN 'pending' THEN 0 ELSE 1 END, COALESCE(s.settled_at, s.created_at) DESC, s.amount_minor DESC
+      LIMIT 80`).bind(...ids).all(),
     db.prepare(`SELECT * FROM member_installments WHERE space_id IN (${placeholders}) ORDER BY member_id, period_index`).bind(...ids).all(),
     writeMode
       ? Promise.resolve({ results: [] as Array<Record<string, unknown>> })
@@ -2617,28 +2620,12 @@ export async function POST(request: Request) {
           prepareAudit(db, { userId: user.id, action: "trip.reimbursement_settled", entityType: "settlement", entityId: settlement.id, metadata: { amountMinor: settlement.amount_minor }, createdAt }),
         ]);
       } else {
-        const names = await db.prepare("SELECT id,display_name FROM members WHERE id IN (?,?)")
-          .bind(settlement.from_member_id, settlement.to_member_id)
-          .all<{ id: string; display_name: string }>();
-        const fromName = names.results.find((row) => row.id === settlement.from_member_id)?.display_name ?? "عضو";
-        const toName = names.results.find((row) => row.id === settlement.to_member_id)?.display_name ?? "عضو";
-        const expense = settlement.expense_id
-          ? await db.prepare("SELECT description FROM trip_expenses WHERE id=?").bind(settlement.expense_id).first<{ description: string }>()
-          : null;
-        const reason = expense?.description || "مصروف جماعي";
-        const descFrom = `مبلغ إضافي · تسوية حصة «${reason}» إلى ${toName}`;
-        const descTo = `استرداد مبلغ إضافي · تسوية حصة «${reason}» من ${fromName}`;
-        const fromTxn = crypto.randomUUID();
-        const toTxn = crypto.randomUUID();
-        await db.batch([
-          db.prepare("UPDATE settlements SET status='settled',settled_at=? WHERE id=? AND status='pending'").bind(createdAt, settlement.id),
-          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'extra',?,?,?,'approved',?,?)")
-            .bind(fromTxn, settlement.space_id, user.id, settlement.from_member_id, "expense", settlement.amount_minor, descFrom, descFrom, createdAt, createdAt),
-          db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'extra',?,?,?,'approved',?,?)")
-            .bind(toTxn, settlement.space_id, user.id, settlement.to_member_id, "income", settlement.amount_minor, descTo, descTo, createdAt, createdAt),
-          db.prepare("UPDATE members SET addon_minor = COALESCE(addon_minor,0) + ? WHERE id=?").bind(settlement.amount_minor, settlement.from_member_id),
-          prepareAudit(db, { userId: user.id, action: "member.settlement_recorded", entityType: "settlement", entityId: settlement.id, metadata: { fromMemberId: settlement.from_member_id, toMemberId: settlement.to_member_id, amountMinor: settlement.amount_minor, reason }, createdAt }),
-        ]);
+        await postPeerMemberSettlement(db, {
+          userId: user.id,
+          settlement,
+          createdAt,
+          via: "dashboard",
+        });
       }
     } else if (action === "setCircleOrder") {
       const parsed = z.object({
