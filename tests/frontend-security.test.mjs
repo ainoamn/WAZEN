@@ -412,3 +412,14 @@ test("groups view can merge duplicate accounts and import phone or file contacts
   assert.match(contacts, /GOOGLE_CONTACTS_DENIED/);
   assert.match(contacts, /لم يُتحقق بعد لنطاق جهات الاتصال/);
 });
+
+test("dark theme keeps groups form fields readable on a dark canvas", () => {
+  const globals = fs.readFileSync(path.join(root, "app/globals.css"), "utf8");
+  assert.match(globals, /color-scheme:\s*light/);
+  assert.match(globals, /html\[data-theme="dark"\][\s\S]*color-scheme:\s*dark/);
+  assert.match(globals, /html\[data-theme="dark"\] \.search-field/);
+  assert.match(globals, /html\[data-theme="dark"\] \.member-contact-edit input/);
+  assert.match(globals, /html\[data-theme="dark"\] \.statement-scope-picker/);
+  assert.match(globals, /html\[data-theme="dark"\] input:-webkit-autofill/);
+  assert.match(globals, /--field:\s*#121c19/);
+});

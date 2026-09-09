@@ -18,8 +18,11 @@
   --rose-soft: #fcebee;
   --purple: #7356aa;
   --shadow: 0 14px 34px rgba(29, 49, 43, 0.06);
+  --field: #fbfcfb;
+  --field-ink: var(--ink);
   --font-sans: var(--font-plex-arabic), var(--font-inter), "Segoe UI", Tahoma, sans-serif;
   --font-display: var(--font-plex-arabic), var(--font-inter), "Segoe UI", Tahoma, sans-serif;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -1042,6 +1045,7 @@ html[data-theme="dark"] .space-picker-field select { background: var(--surface);
   .personal-month-head { flex-direction: column; align-items: flex-start; }
 }
 
+html[data-theme="light"] { color-scheme: light; }
 html[data-theme="dark"] {
   --ink: #d5dfda;
   --muted: #8b9a94;
@@ -1053,6 +1057,8 @@ html[data-theme="dark"] {
   --amber-soft: #3a2c16;
   --rose-soft: #3a1d22;
   --shadow: 0 14px 34px rgba(0, 0, 0, 0.38);
+  --field: #121c19;
+  --field-ink: var(--ink);
   color-scheme: dark;
 }
 html[data-theme="dark"] body,
@@ -1087,8 +1093,91 @@ html[data-theme="dark"] .obligation-row { background: var(--surface); border-col
 html[data-theme="dark"] .notification-item { background: #1a2622; }
 html[data-theme="dark"] .modal-form input,
 html[data-theme="dark"] .modal-form select,
+html[data-theme="dark"] .modal-form textarea,
+html[data-theme="dark"] .modal-form input:focus,
+html[data-theme="dark"] .modal-form select:focus,
 html[data-theme="dark"] .personal-occ-account .money-input input,
-html[data-theme="dark"] .personal-occ-account select { background: #121c19; border-color: var(--line); color: var(--ink); }
+html[data-theme="dark"] .personal-occ-account select,
+html[data-theme="dark"] .member-contact-edit input,
+html[data-theme="dark"] .member-role-editor select,
+html[data-theme="dark"] .profile-card input,
+html[data-theme="dark"] .report-filters select,
+html[data-theme="dark"] .wallet-link-row select,
+html[data-theme="dark"] .admin-email-editor textarea,
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea {
+  background: var(--field);
+  border-color: var(--line);
+  color: var(--field-ink);
+  color-scheme: dark;
+}
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+html[data-theme="dark"] input:-webkit-autofill,
+html[data-theme="dark"] select:-webkit-autofill,
+html[data-theme="dark"] textarea:-webkit-autofill {
+  -webkit-text-fill-color: var(--field-ink);
+  caret-color: var(--field-ink);
+  box-shadow: 0 0 0 1000px var(--field) inset;
+  transition: background-color 99999s ease-out;
+}
+html[data-theme="dark"] option {
+  background: var(--field);
+  color: var(--field-ink);
+}
+html[data-theme="dark"] .search-field {
+  background: var(--field);
+  border-color: var(--line);
+  color: var(--muted);
+}
+html[data-theme="dark"] .search-field input {
+  background: transparent;
+  color: var(--ink);
+}
+html[data-theme="dark"] .profile-card input:disabled {
+  background: #1a2622;
+  color: var(--muted);
+}
+html[data-theme="dark"] .statement-scope-picker,
+html[data-theme="dark"] .assoc-chip,
+html[data-theme="dark"] .duplicate-cluster,
+html[data-theme="dark"] .contact-source-bar,
+html[data-theme="dark"] .member-detail-meta div,
+html[data-theme="dark"] .member-ledger-tabs button {
+  background: var(--field);
+  border-color: var(--line);
+  color: var(--field-ink);
+}
+html[data-theme="dark"] .statement-scope-picker p,
+html[data-theme="dark"] .member-contact-edit label > span,
+html[data-theme="dark"] .modal-form label > span,
+html[data-theme="dark"] .profile-card label > span,
+html[data-theme="dark"] .assoc-chip span,
+html[data-theme="dark"] .assoc-chip em,
+html[data-theme="dark"] .duplicate-cluster p,
+html[data-theme="dark"] .duplicate-cluster small,
+html[data-theme="dark"] .duplicate-cluster em,
+html[data-theme="dark"] .member-detail-meta span,
+html[data-theme="dark"] .member-ledger-tabs button small {
+  color: var(--muted);
+}
+html[data-theme="dark"] .assoc-chip.selected,
+html[data-theme="dark"] .assoc-chip:hover,
+html[data-theme="dark"] .member-ledger-tabs button.active {
+  background: var(--green-soft);
+  border-color: var(--green);
+  color: var(--ink);
+}
+html[data-theme="dark"] .member-row {
+  border-bottom-color: var(--line);
+}
+html[data-theme="dark"] .member-row-button:hover {
+  background: #1a2622;
+}
 html[data-theme="dark"] .space-hero { background: linear-gradient(180deg, #182420 0%, #15201d 42%); border-color: var(--line); }
 html[data-theme="dark"] .space-hero h2 { color: #e7eeea; }
 html[data-theme="dark"] .space-hero p,
@@ -1176,7 +1265,8 @@ html[data-theme="dark"][data-accent="emerald"] { --green: #3da892; --green-2: #5
 .date-calendar-months button { height: 36px; border: 0; border-radius: 9px; background: #f3f6f4; cursor: pointer; font-size: 12px; font-weight: 700; color: inherit; }
 .date-calendar-foot { display: flex; justify-content: space-between; margin-top: 10px; }
 .date-calendar-foot button { width: auto; padding: 0 10px; font-size: 12px; font-weight: 700; }
-html[data-theme="dark"] .date-field-input { background: #121c19; border-color: var(--line); color: var(--ink); }
+html[data-theme="dark"] .date-field-input,
+html[data-theme="dark"] .date-field-input:focus { background: var(--field); border-color: var(--line); color: var(--field-ink); }
 html[data-theme="dark"] .date-field-toggle { background: #1a2622; border-color: var(--line); color: var(--icon); }
 html[data-theme="dark"] .date-calendar { background: #16211e; border-color: var(--line); color: var(--ink); }
 html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .date-calendar-foot button, html[data-theme="dark"] .date-calendar-months button { background: #1a2622; color: var(--ink); }
