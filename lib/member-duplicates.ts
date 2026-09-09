@@ -3,6 +3,7 @@
 import { prepareAudit } from "./audit";
 import { ApiError } from "./api-error";
 import { digitsOnly, toWhatsAppNumber } from "./phone";
+import { normalizeMemberName } from "./member-contact-unique";
 
 export type DuplicateMember = {
   id: string;
@@ -78,9 +79,8 @@ function linkedAccountConflict(members: DuplicateMember[]) {
 }
 
 export function findDuplicateClusters(members: DuplicateMember[]): DuplicateCluster[] {
-  const active = members.filter((item) => (item.status ?? "active") === "active");
   const bySpace = new Map<string, DuplicateMember[]>();
-  for (const member of active) {
+  for (const member of members) {
     const list = bySpace.get(member.space_id) ?? [];
     list.push(member);
     bySpace.set(member.space_id, list);
@@ -133,6 +133,60 @@ export function findDuplicateClusters(members: DuplicateMember[]): DuplicateClus
     }
   }
   return clusters.sort((a, b) => b.extraCount - a.extraCount);
+}
+
+export function findMultiAssociationPeople(members: DuplicateMember[]) {
+  const byPhone = new Map<string, DuplicateMember[]>();
+  for (const member of members) {
+    const phone = canonicalMemberPhone(member.phone);
+    if (phone.length < 7) continue;
+    const list = byPhone.get(phone) ?? [];
+    list.push(member);
+    byPhone.set(phone, list);
+  }
+  return [...byPhone.values()]
+    .map((list) => {
+      const spaces = new Set(list.map((item) => item.space_id));
+      return { phone: canonicalMemberPhone(list[0].phone), members: list, associationCount: spaces.size };
+    })
+    .filter((item) => item.associationCount > 1)
+    .sort((a, b) => b.associationCount - a.associationCount);
+}
+
+export function findSameSpaceNameClusters(members: DuplicateMember[]): DuplicateCluster[] {
+  const bySpace = new Map<string, DuplicateMember[]>();
+  for (const member of members) {
+    if ((member.status ?? "active") !== "active") continue;
+    const list = bySpace.get(member.space_id) ?? [];
+    list.push(member);
+    bySpace.set(member.space_id, list);
+  }
+  const clusters: DuplicateCluster[] = [];
+  for (const [spaceId, rows] of bySpace) {
+    const byName = new Map<string, DuplicateMember[]>();
+    for (const row of rows) {
+      const key = normalizeMemberName(row.display_name);
+      if (key.length < 2) continue;
+      const list = byName.get(key) ?? [];
+      list.push(row);
+      byName.set(key, list);
+    }
+    for (const group of byName.values()) {
+      if (group.length < 2) continue;
+      if (group.every((item, index) => index === 0 || phonesEquivalent(item.phone, group[0].phone))) continue;
+      const keeper = chooseKeeper(group);
+      clusters.push({
+        spaceId,
+        key: `${spaceId}:name:${normalizeMemberName(keeper.display_name)}`,
+        field: "phone",
+        members: group,
+        keeperId: keeper.id,
+        extraCount: group.length - 1,
+        blockedReason: linkedAccountConflict(group) ? "linked_accounts_conflict" : undefined,
+      });
+    }
+  }
+  return clusters;
 }
 
 export function duplicateSummary(clusters: DuplicateCluster[]) {
@@ -219,6 +273,7 @@ export async function mergeDuplicateCluster(input: {
   spaceId: string;
   keeperId: string;
   duplicateIds: string[];
+  requirePhoneMatch?: boolean;
 }) {
   const uniqueDups = [...new Set(input.duplicateIds)].filter((id) => id && id !== input.keeperId);
   if (!uniqueDups.length) throw new ApiError(400, "NOTHING_TO_MERGE");
@@ -238,11 +293,13 @@ export async function mergeDuplicateCluster(input: {
 
   const owner = members.find((item) => item.role === "owner");
   if (owner && owner.id !== keeper.id) throw new ApiError(403, "OWNER_MEMBER_LOCKED");
+  if (linkedAccountConflict(members)) throw new ApiError(409, "MERGE_CONFLICT_ACCOUNTS");
 
-  const cluster = findDuplicateClusters(members)[0];
-  if (!cluster) throw new ApiError(409, "NOT_DUPLICATES");
-  if (extras.some((item) => !cluster.members.some((row) => row.id === item.id))) throw new ApiError(409, "NOT_DUPLICATES");
-  if (cluster.blockedReason === "linked_accounts_conflict") throw new ApiError(409, "MERGE_CONFLICT_ACCOUNTS");
+  if (input.requirePhoneMatch !== false) {
+    const cluster = findDuplicateClusters(members)[0];
+    if (!cluster) throw new ApiError(409, "NOT_DUPLICATES");
+    if (extras.some((item) => !cluster.members.some((row) => row.id === item.id))) throw new ApiError(409, "NOT_DUPLICATES");
+  }
 
   const createdAt = new Date().toISOString();
   const totals = mergedLedgerTotals(keeper, extras);

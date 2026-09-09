@@ -1909,6 +1909,7 @@ export async function POST(request: Request) {
         keeperId: z.string().min(1).max(120).optional(),
         duplicateIds: z.array(z.string().min(1).max(120)).max(20).optional(),
         mergeAll: z.boolean().optional(),
+        force: z.boolean().optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_MERGE");
       const { findDuplicateClusters, mergeDuplicateCluster } = await import("../../../lib/member-duplicates");
@@ -1950,6 +1951,7 @@ export async function POST(request: Request) {
             spaceId: job.spaceId,
             keeperId: job.keeperId,
             duplicateIds: job.duplicateIds,
+            requirePhoneMatch: parsed.data.force ? false : undefined,
           }));
         } catch (error) {
           skipped.push({
@@ -1963,6 +1965,58 @@ export async function POST(request: Request) {
         throw new ApiError(409, skipped[0]?.error === "MERGE_CONFLICT_ACCOUNTS" ? "MERGE_CONFLICT_ACCOUNTS" : "NOTHING_TO_MERGE");
       }
       const body = { ok: true, mergedCount: merged.reduce((sum, item) => sum + item.extraCount, 0), clusterCount: merged.length, skipped };
+      await completeIdempotency(db, user.id, idempotencyKey, body);
+      claimRef.current = null;
+      return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+    } else if (action === "unifyMemberPerson") {
+      const parsed = z.object({
+        keeperMemberId: z.string().min(1).max(120),
+        otherMemberId: z.string().min(1).max(120),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_MERGE");
+      if (parsed.data.keeperMemberId === parsed.data.otherMemberId) throw new ApiError(400, "NOTHING_TO_MERGE");
+      const keeper = await db.prepare("SELECT id,space_id,user_id,display_name,email,phone,role,status FROM members WHERE id=?")
+        .bind(parsed.data.keeperMemberId)
+        .first<{ id: string; space_id: string; user_id: string | null; display_name: string; email: string | null; phone: string | null; role: string; status: string }>();
+      const other = await db.prepare("SELECT id,space_id,user_id,display_name,email,phone,role,status FROM members WHERE id=?")
+        .bind(parsed.data.otherMemberId)
+        .first<{ id: string; space_id: string; user_id: string | null; display_name: string; email: string | null; phone: string | null; role: string; status: string }>();
+      if (!keeper || !other) throw new ApiError(404, "MEMBER_NOT_FOUND");
+      await authorizeSpace(db, user, keeper.space_id, "members:write", ["household", "trip", "society", "group"]);
+      await authorizeSpace(db, user, other.space_id, "members:write", ["household", "trip", "society", "group"]);
+      if (keeper.space_id === other.space_id) {
+        const { mergeDuplicateCluster } = await import("../../../lib/member-duplicates");
+        const merged = await mergeDuplicateCluster({
+          db,
+          actorUserId: user.id,
+          spaceId: keeper.space_id,
+          keeperId: keeper.id,
+          duplicateIds: [other.id],
+          requirePhoneMatch: false,
+        });
+        const body = { ok: true, mode: "merged", mergedCount: merged.extraCount, clusterCount: 1 };
+        await completeIdempotency(db, user.id, idempotencyKey, body);
+        claimRef.current = null;
+        return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+      }
+      const phone = keeper.phone?.trim() ? (toWhatsAppNumber(keeper.phone) || keeper.phone.trim()) : null;
+      if (!phone) throw new ApiError(400, "INVALID_PHONE");
+      const { findSpaceMemberContactConflict, throwMemberContactConflict } = await import("../../../lib/member-contact-unique");
+      const conflict = await findSpaceMemberContactConflict(db, other.space_id, {
+        phone,
+        excludeMemberId: other.id,
+      });
+      if (conflict) throwMemberContactConflict(conflict);
+      await db.prepare("UPDATE members SET phone=? WHERE id=? AND space_id=?").bind(phone, other.id, other.space_id).run();
+      await prepareAudit(db, {
+        userId: user.id,
+        action: "member.person_unified",
+        entityType: "member",
+        entityId: keeper.id,
+        metadata: { keeperId: keeper.id, otherId: other.id, otherSpaceId: other.space_id, phone },
+        createdAt: new Date().toISOString(),
+      }).run();
+      const body = { ok: true, mode: "linked", mergedCount: 0, clusterCount: 1 };
       await completeIdempotency(db, user.id, idempotencyKey, body);
       claimRef.current = null;
       return Response.json(body, { headers: { "Cache-Control": "no-store" } });

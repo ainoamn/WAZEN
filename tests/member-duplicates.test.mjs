@@ -4,6 +4,8 @@ import {
   chooseKeeper,
   duplicateSummary,
   findDuplicateClusters,
+  findMultiAssociationPeople,
+  findSameSpaceNameClusters,
   mergedLedgerTotals,
   mergeInstallmentPair,
   phonesEquivalent,
@@ -35,6 +37,39 @@ test("duplicate clusters stay inside one association and ignore other wallets", 
   const summary = duplicateSummary(clusters);
   assert.equal(summary.clusterCount, 1);
   assert.equal(summary.extraAccounts, 1);
+});
+
+test("membership in two associations is listed separately and is not a merge cluster", () => {
+  const members = [
+    { id: "a1", space_id: space, display_name: "عبد الحميد", phone: "96895655200", role: "member", paid_minor: 0, due_minor: 0, extra_minor: 0 },
+    { id: "a2", space_id: other, display_name: "عبد الحميد", phone: "96895655200", role: "member", paid_minor: 0, due_minor: 0, extra_minor: 0 },
+    { id: "b1", space_id: space, display_name: "ماجد", phone: "96899260305", role: "member", paid_minor: 0, due_minor: 0, extra_minor: 0 },
+  ];
+  assert.equal(findDuplicateClusters(members).length, 0);
+  const multi = findMultiAssociationPeople(members);
+  assert.equal(multi.length, 1);
+  assert.equal(multi[0].associationCount, 2);
+  assert.equal(multi[0].members.length, 2);
+});
+
+test("same name with different phones inside one association is a name cluster", () => {
+  const clusters = findSameSpaceNameClusters([
+    { id: "a1", space_id: space, display_name: "سالم", phone: "96895655200", role: "member", status: "active", paid_minor: 0, due_minor: 0, extra_minor: 0 },
+    { id: "a2", space_id: space, display_name: "سالم", phone: "96896552661", role: "member", status: "active", paid_minor: 0, due_minor: 0, extra_minor: 0 },
+    { id: "b1", space_id: other, display_name: "سالم", phone: "96891112222", role: "member", status: "active", paid_minor: 0, due_minor: 0, extra_minor: 0 },
+  ]);
+  assert.equal(clusters.length, 1);
+  assert.equal(clusters[0].spaceId, space);
+  assert.equal(clusters[0].extraCount, 1);
+});
+
+test("arabic and latin names with different phones are not auto-clustered", () => {
+  const members = [
+    { id: "a1", space_id: space, display_name: "عبد الحميد", phone: "96895655200", role: "member", status: "active", paid_minor: 0, due_minor: 0, extra_minor: 0 },
+    { id: "a2", space_id: other, display_name: "ABDUL HAMID", phone: "96896552661", role: "member", status: "active", paid_minor: 0, due_minor: 0, extra_minor: 0 },
+  ];
+  assert.equal(findSameSpaceNameClusters(members).length, 0);
+  assert.equal(findDuplicateClusters(members).length, 0);
 });
 
 test("same email with different phones is not a duplicate cluster", () => {
