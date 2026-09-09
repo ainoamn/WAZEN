@@ -49,18 +49,45 @@ test("personal due alerts surface recurring bills on the personal wallet", () =>
   assert.match(alerts[0].href ?? "", /view=personal/);
 });
 
+test("personal due alerts remind to approve monthly income", () => {
+  const alerts = personalDueAlerts(
+    [{
+      id: "inc1",
+      space_id: "p1",
+      due_at: "2026-09-01T12:00:00.000Z",
+      status: "pending",
+      expected_minor: 1_200_000,
+      rule_name: "راتب",
+      rule_kind: "income",
+    }],
+    [{ id: "p1", type: "personal", name_ar: "محفظتي", name_en: "Mine" }],
+    new Date("2026-09-01T06:00:00.000Z"),
+  );
+  assert.equal(alerts.length, 1);
+  assert.match(alerts[0].ar, /دخل/);
+  assert.match(alerts[0].ar, /اعتمد/);
+  assert.match(alerts[0].id, /personal-income/);
+});
+
 test("personal wallet UI and cron expose installment reminders", () => {
   const root = process.cwd();
   const ui = fs.readFileSync(path.join(root, "components/personal/personal-wallet.tsx"), "utf8");
   const tick = fs.readFileSync(path.join(root, "app/api/jobs/tick/route.ts"), "utf8");
   const catalog = fs.readFileSync(path.join(root, "lib/email-template-catalog.ts"), "utf8");
   const runtime = fs.readFileSync(path.join(root, "db/runtime.ts"), "utf8");
+  const reminders = fs.readFileSync(path.join(root, "lib/personal-bill-reminders.ts"), "utf8");
   assert.match(ui, /قسط \/ تمويل/);
   assert.match(ui, /فاتورة شهرية/);
+  assert.match(ui, /دخل شهري ثابت/);
   assert.match(ui, /يوم الدفع كل شهر/);
+  const categories = fs.readFileSync(path.join(root, "lib/personal-categories.ts"), "utf8");
+  assert.match(categories, /مصاريف البيت/);
+  assert.match(categories, /راتب شهري/);
   assert.match(tick, /runPersonalBillReminders/);
   assert.match(catalog, /personal_bill_reminder/);
   assert.match(runtime, /personal_reminder_log/);
+  assert.match(runtime, /category TEXT NOT NULL DEFAULT ''/);
+  assert.match(reminders, /r\.kind IN \('expense','income'\)/);
   const dashboard = fs.readFileSync(path.join(root, "app/api/dashboard/route.ts"), "utf8");
   assert.match(dashboard, /rule\.kind === "expense"/);
   const v1Create = fs.readFileSync(path.join(root, "app/api/v1/spaces/[spaceId]/rules/route.ts"), "utf8");

@@ -42,6 +42,7 @@ export async function PATCH(
           total: z.union([z.string(), z.number()]).optional(),
           durationMonths: z.coerce.number().int().min(0).max(360).optional(),
           status: z.enum(["active", "paused", "archived"]).optional(),
+          category: z.string().trim().max(40).optional(),
         }).safeParse(payload);
         if (!parsed.success) throw new ApiError(400, "INVALID_RULE");
         if (Object.values(parsed.data).every((value) => value === undefined)) {

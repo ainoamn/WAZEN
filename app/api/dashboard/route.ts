@@ -20,6 +20,7 @@ import type { StatementTxnFilter } from "../../../lib/account-statement";
 import { computeWorkspaceAlerts } from "../../../lib/workspace-alerts";
 import { upsertUserNotifications, listUserNotifications } from "../../../lib/user-notifications";
 import { runWithDbUser } from "../../../lib/db-request-context";
+import { normalizePersonalCategory } from "../../../lib/personal-categories";
 import { accountLiveBalance, clampDueDay, dueAtForPeriod, endsAtFromDuration, monthKeysForRule, occurrenceLedgerStatus, personalDueAlerts, resolveInstallmentAmounts } from "../../../lib/personal-finance";
 import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-forecast";
 import { filterSpacesByPlan } from "../../../lib/plan-features";
@@ -97,6 +98,7 @@ type PersonalOccurrenceRow = {
   amount_mode?: string;
   total_minor?: number;
   rule_paid_minor?: number;
+  rule_category?: string;
 };
 
 const now = () => new Date().toISOString();
@@ -506,6 +508,7 @@ type PersonalRuleRow = {
   duration_months: number;
   paid_minor: number;
   status: string;
+  category?: string;
 };
 
 async function generatePersonalOccurrences(db: D1Database, spaceIds: string[]) {
@@ -728,7 +731,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
       : db.prepare(`SELECT * FROM period_ledger_events WHERE space_id IN (${placeholders}) ORDER BY created_at DESC LIMIT 200`).bind(...ids).all(),
     db.prepare(`SELECT * FROM personal_accounts WHERE space_id IN (${placeholders}) ORDER BY created_at`).bind(...ids).all<{ id: string; space_id: string; name: string; kind: string; opening_minor: number; status: string; created_at: string }>(),
     db.prepare(`SELECT * FROM personal_rules WHERE space_id IN (${placeholders}) ORDER BY created_at`).bind(...ids).all(),
-    db.prepare(`SELECT o.*, r.name AS rule_name, r.kind AS rule_kind, r.amount_mode, r.total_minor, r.paid_minor AS rule_paid_minor
+    db.prepare(`SELECT o.*, r.name AS rule_name, r.kind AS rule_kind, r.amount_mode, r.total_minor, r.paid_minor AS rule_paid_minor, r.category AS rule_category
       FROM personal_occurrences o JOIN personal_rules r ON r.id=o.rule_id
       WHERE o.space_id IN (${placeholders}) ORDER BY o.due_at DESC, o.created_at DESC`).bind(...ids).all<PersonalOccurrenceRow>(),
     writeMode
@@ -1519,6 +1522,7 @@ export async function POST(request: Request) {
         endsAt: z.string().min(8).max(40).optional(),
         total: z.union([z.string(), z.number()]).optional(),
         durationMonths: z.coerce.number().int().min(0).max(360).optional(),
+        category: z.string().trim().max(40).optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_RULE");
       const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["personal"]);
@@ -1539,12 +1543,13 @@ export async function POST(request: Request) {
       let endsAt = parsed.data.schedule === "once" ? startsAt : (parsed.data.endsAt ? parseStartDate(parsed.data.endsAt) : null);
       if (!endsAt && duration > 0 && parsed.data.schedule === "monthly") endsAt = endsAtFromDuration(startsAt, duration);
       const dueDay = clampDueDay(parsed.data.dueDay);
+      const category = normalizePersonalCategory(parsed.data.kind, parsed.data.category, parsed.data.name);
       const createdAt = now();
       const ruleId = crypto.randomUUID();
       await db.batch([
-        db.prepare("INSERT INTO personal_rules (id,space_id,account_id,kind,name,amount_mode,schedule,amount_minor,due_day,starts_at,ends_at,total_minor,duration_months,paid_minor,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0,'active',?)")
-          .bind(ruleId, parsed.data.spaceId, parsed.data.accountId ?? null, parsed.data.kind, parsed.data.name, parsed.data.amountMode, parsed.data.schedule, amountMinor, dueDay, startsAt, endsAt, totalMinor, duration, createdAt),
-        prepareAudit(db, { userId: user.id, action: "personal.rule_added", entityType: "personal_rule", entityId: ruleId, metadata: { name: parsed.data.name, kind: parsed.data.kind }, createdAt }),
+        db.prepare("INSERT INTO personal_rules (id,space_id,account_id,kind,name,amount_mode,schedule,amount_minor,due_day,starts_at,ends_at,total_minor,duration_months,paid_minor,status,created_at,category) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0,'active',?,?)")
+          .bind(ruleId, parsed.data.spaceId, parsed.data.accountId ?? null, parsed.data.kind, parsed.data.name, parsed.data.amountMode, parsed.data.schedule, amountMinor, dueDay, startsAt, endsAt, totalMinor, duration, createdAt, category),
+        prepareAudit(db, { userId: user.id, action: "personal.rule_added", entityType: "personal_rule", entityId: ruleId, metadata: { name: parsed.data.name, kind: parsed.data.kind, category }, createdAt }),
       ]);
       await generatePersonalOccurrences(db, [parsed.data.spaceId]);
     } else if (action === "updatePersonalRule") {
@@ -1560,6 +1565,7 @@ export async function POST(request: Request) {
         endsAt: z.string().min(8).max(40).optional(),
         total: z.union([z.string(), z.number()]).optional(),
         durationMonths: z.coerce.number().int().min(0).max(360).optional(),
+        category: z.string().trim().max(40).optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_RULE");
       const rule = await db.prepare("SELECT * FROM personal_rules WHERE id=?").bind(parsed.data.ruleId).first<PersonalRuleRow>();
@@ -1582,10 +1588,11 @@ export async function POST(request: Request) {
       let endsAt = parsed.data.schedule === "once" ? startsAt : (parsed.data.endsAt ? parseStartDate(parsed.data.endsAt) : null);
       if (!endsAt && duration > 0 && parsed.data.schedule === "monthly") endsAt = endsAtFromDuration(startsAt, duration);
       const dueDay = clampDueDay(parsed.data.dueDay);
+      const category = normalizePersonalCategory(rule.kind === "income" ? "income" : "expense", parsed.data.category ?? rule.category, parsed.data.name);
       const createdAt = now();
       await db.batch([
-        db.prepare("UPDATE personal_rules SET account_id=?, name=?, amount_mode=?, schedule=?, amount_minor=?, due_day=?, starts_at=?, ends_at=?, total_minor=?, duration_months=? WHERE id=?")
-          .bind(parsed.data.accountId ?? null, parsed.data.name, parsed.data.amountMode, parsed.data.schedule, amountMinor, dueDay, startsAt, endsAt, totalMinor, duration, rule.id),
+        db.prepare("UPDATE personal_rules SET account_id=?, name=?, amount_mode=?, schedule=?, amount_minor=?, due_day=?, starts_at=?, ends_at=?, total_minor=?, duration_months=?, category=? WHERE id=?")
+          .bind(parsed.data.accountId ?? null, parsed.data.name, parsed.data.amountMode, parsed.data.schedule, amountMinor, dueDay, startsAt, endsAt, totalMinor, duration, category, rule.id),
         db.prepare("DELETE FROM personal_occurrences WHERE rule_id=? AND status='pending'").bind(rule.id),
         prepareAudit(db, { userId: user.id, action: "personal.rule_updated", entityType: "personal_rule", entityId: rule.id, metadata: { name: parsed.data.name }, createdAt }),
       ]);

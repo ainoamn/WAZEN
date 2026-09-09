@@ -19,7 +19,7 @@ test("schema and tick include message outbox drain", async () => {
   const runtime = fs.readFileSync(path.join(root, "db/runtime.ts"), "utf8");
   const tick = fs.readFileSync(path.join(root, "app/api/jobs/tick/route.ts"), "utf8");
   const invite = fs.readFileSync(path.join(root, "lib/member-invite.ts"), "utf8");
-  assert.match(runtime, /SCHEMA_VERSION = 25/);
+  assert.match(runtime, /SCHEMA_VERSION = 26/);
   assert.match(runtime, /message_outbox/);
   assert.match(tick, /drainMessageOutbox/);
   assert.match(invite, /isWhatsAppCloudConfigured/);

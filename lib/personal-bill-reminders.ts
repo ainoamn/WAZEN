@@ -24,6 +24,7 @@ function reminderCopy(row: {
   total_minor: number;
   paid_minor: number;
   spaceName: string;
+  rule_kind: string;
 }) {
   const amountAr = formatMoneyMinor(row.expected_minor, "OMR", "ar");
   const amountEn = formatMoneyMinor(row.expected_minor, "OMR", "en");
@@ -33,9 +34,14 @@ function reminderCopy(row: {
   const whenAr = row.kind === "eve" ? "غداً" : "اليوم";
   const whenEn = row.kind === "eve" ? "tomorrow" : "today";
   const due = row.due_at.slice(0, 10);
-  const ar = `تذكير دفع متكرر: ${whenAr} يستحق «${row.rule_name}» بمبلغ ${amountAr} (${due}).${remainingAr}\nمحفظة ${row.spaceName}. افتح وازن لاعتماد الدفع.`;
-  const en = `Recurring payment reminder: ${whenEn} “${row.rule_name}” is due (${amountEn}, ${due}).${remainingEn}\nWallet ${row.spaceName}. Open Wazen to mark it paid.`;
-  return { ar, en };
+  const income = row.rule_kind === "income";
+  const ar = income
+    ? `تذكير دخل شهري: ${whenAr} يستحق اعتماد «${row.rule_name}» بمبلغ ${amountAr} (${due}).\nمحفظة ${row.spaceName}. افتح وازن لاعتماد الدخل أو التأجيل أو التجاهل.`
+    : `تذكير دفع متكرر: ${whenAr} يستحق «${row.rule_name}» بمبلغ ${amountAr} (${due}).${remainingAr}\nمحفظة ${row.spaceName}. افتح وازن لاعتماد الدفع.`;
+  const en = income
+    ? `Monthly income reminder: ${whenEn} approve “${row.rule_name}” (${amountEn}, ${due}).\nWallet ${row.spaceName}. Open Wazen to approve, defer, or skip.`
+    : `Recurring payment reminder: ${whenEn} “${row.rule_name}” is due (${amountEn}, ${due}).${remainingEn}\nWallet ${row.spaceName}. Open Wazen to mark it paid.`;
+  return { ar, en, income };
 }
 
 export async function runPersonalBillReminders(db: D1Database, options?: { asOf?: Date; limit?: number }) {
@@ -59,7 +65,7 @@ export async function runPersonalBillReminders(db: D1Database, options?: { asOf?
     JOIN spaces s ON s.id=o.space_id
     WHERE o.status='pending'
       AND r.status='active'
-      AND r.kind='expense'
+      AND r.kind IN ('expense','income')
       AND COALESCE(s.status,'active')='active'
       AND s.type='personal'
     ORDER BY o.due_at
@@ -105,12 +111,14 @@ export async function runPersonalBillReminders(db: D1Database, options?: { asOf?
       total_minor: Number(row.total_minor) || 0,
       paid_minor: Number(row.paid_minor) || 0,
       spaceName: row.name_ar || row.name_en || "وازن",
+      rule_kind: row.rule_kind,
     });
     const path = `/dashboard?view=personal&space=${encodeURIComponent(row.space_id)}`;
     const href = `${publicOrigin()}${path}`;
+    const prefix = copy.income ? "personal-income" : "personal-bill";
 
     await upsertUserNotifications(db, row.owner_user_id, [{
-      id: `personal-bill:${kind}:${row.id}`,
+      id: `${prefix}:${kind}:${row.id}`,
       severity: kind === "due" ? "warning" : "info",
       href: path,
       ar: copy.ar.split("\n")[0],
@@ -120,8 +128,15 @@ export async function runPersonalBillReminders(db: D1Database, options?: { asOf?
       await enqueuePushOutbox(
         db,
         row.owner_user_id,
-        { title: kind === "due" ? "وازون · استحقاق اليوم" : "وازون · تذكير غداً", body: copy.ar.slice(0, 160), url: path, tag: `personal-bill-${row.id}-${kind}` },
-        `personal-bill:${kind}:${row.id}:${day}`,
+        {
+          title: copy.income
+            ? (kind === "due" ? "وازون · دخل اليوم" : "وازون · دخل غداً")
+            : (kind === "due" ? "وازون · استحقاق اليوم" : "وازون · تذكير غداً"),
+          body: copy.ar.slice(0, 160),
+          url: path,
+          tag: `${prefix}-${row.id}-${kind}`,
+        },
+        `${prefix}:${kind}:${row.id}:${day}`,
       );
     } catch { /* best-effort */ }
 

@@ -70,6 +70,7 @@ export async function POST(
           endsAt: z.string().min(8).max(40).optional(),
           total: z.union([z.string(), z.number()]).optional(),
           durationMonths: z.coerce.number().int().min(0).max(360).optional(),
+          category: z.string().trim().max(40).optional(),
         }).safeParse(payload);
         if (!parsed.success) throw new ApiError(400, "INVALID_RULE");
 
@@ -92,6 +93,7 @@ export async function POST(
           endsAt: parsed.data.endsAt,
           total: parsed.data.total,
           durationMonths: parsed.data.durationMonths,
+          category: parsed.data.category,
         });
         const response = { api: "wazen.v1", ok: true, rule };
         await enqueueIntegrationEvent(db, space.owner_user_id, "rule.created", {

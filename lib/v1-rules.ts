@@ -3,6 +3,7 @@
 import type { RequestUser } from "../db/runtime";
 import { prepareAudit } from "./audit";
 import { parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "./money";
+import { normalizePersonalCategory } from "./personal-categories";
 import { clampDueDay, dueAtForPeriod, endsAtFromDuration, monthKeysForRule, resolveInstallmentAmounts } from "./personal-finance";
 import { ApiError } from "./security";
 
@@ -23,6 +24,7 @@ type PersonalRuleRow = {
   paid_minor: number;
   status: string;
   created_at?: string;
+  category?: string;
 };
 
 function parseStartDate(value?: string) {
@@ -90,6 +92,7 @@ function mapRule(row: PersonalRuleRow) {
     paidMinor: Number(row.paid_minor) || 0,
     status: row.status,
     createdAt: row.created_at ?? null,
+    category: row.category || "",
   };
 }
 
@@ -97,7 +100,7 @@ export async function listV1PersonalRules(db: D1Database, spaceId: string) {
   await generateV1PersonalOccurrences(db, [spaceId]);
   const [rules, occurrences] = await Promise.all([
     db.prepare(`
-      SELECT id,space_id,account_id,kind,name,amount_mode,schedule,amount_minor,due_day,starts_at,ends_at,total_minor,duration_months,paid_minor,status,created_at
+      SELECT id,space_id,account_id,kind,name,amount_mode,schedule,amount_minor,due_day,starts_at,ends_at,total_minor,duration_months,paid_minor,status,created_at,category
       FROM personal_rules WHERE space_id=? ORDER BY created_at DESC
     `).bind(spaceId).all<PersonalRuleRow>(),
     db.prepare(`
@@ -144,6 +147,7 @@ export async function createV1PersonalRule(
     endsAt?: string;
     total?: string | number;
     durationMonths?: number;
+    category?: string;
   },
 ) {
   const name = input.name.trim();
@@ -183,12 +187,13 @@ export async function createV1PersonalRule(
   let endsAt = schedule === "once" ? startsAt : (input.endsAt ? parseStartDate(input.endsAt) : null);
   if (!endsAt && duration > 0 && schedule === "monthly") endsAt = endsAtFromDuration(startsAt, duration);
   const dueDay = clampDueDay(input.dueDay ?? 1);
+  const category = normalizePersonalCategory(input.kind, input.category, name);
   const createdAt = new Date().toISOString();
   const ruleId = crypto.randomUUID();
 
   await db.batch([
     db.prepare(
-      "INSERT INTO personal_rules (id,space_id,account_id,kind,name,amount_mode,schedule,amount_minor,due_day,starts_at,ends_at,total_minor,duration_months,paid_minor,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0,'active',?)",
+      "INSERT INTO personal_rules (id,space_id,account_id,kind,name,amount_mode,schedule,amount_minor,due_day,starts_at,ends_at,total_minor,duration_months,paid_minor,status,created_at,category) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0,'active',?,?)",
     ).bind(
       ruleId,
       space.id,
@@ -204,6 +209,7 @@ export async function createV1PersonalRule(
       totalMinor,
       duration,
       createdAt,
+      category,
     ),
     prepareAudit(db, {
       userId: user.id,
@@ -233,6 +239,7 @@ export async function createV1PersonalRule(
     paid_minor: 0,
     status: "active",
     created_at: createdAt,
+    category,
   });
 }
 
@@ -253,6 +260,7 @@ export async function updateV1PersonalRule(
     total?: string | number;
     durationMonths?: number;
     status?: "active" | "paused" | "archived";
+    category?: string;
   },
 ) {
   const rule = await db.prepare("SELECT * FROM personal_rules WHERE id=? AND space_id=?")
@@ -269,7 +277,8 @@ export async function updateV1PersonalRule(
     && input.total === undefined
     && input.durationMonths === undefined
     && input.dueDay === undefined
-    && input.accountId === undefined) {
+    && input.accountId === undefined
+    && input.category === undefined) {
     const createdAt = new Date().toISOString();
     await db.batch([
       db.prepare("UPDATE personal_rules SET status=? WHERE id=?").bind(input.status, rule.id),
@@ -328,12 +337,17 @@ export async function updateV1PersonalRule(
   if (!endsAt && duration > 0 && schedule === "monthly") endsAt = endsAtFromDuration(startsAt, duration);
   const dueDay = clampDueDay(input.dueDay ?? (Number(rule.due_day) || 1));
   const status = input.status ?? rule.status;
+  const category = normalizePersonalCategory(
+    rule.kind === "income" ? "income" : "expense",
+    input.category ?? rule.category,
+    name,
+  );
   const createdAt = new Date().toISOString();
 
   await db.batch([
     db.prepare(
-      "UPDATE personal_rules SET account_id=?, name=?, amount_mode=?, schedule=?, amount_minor=?, due_day=?, starts_at=?, ends_at=?, total_minor=?, duration_months=?, status=? WHERE id=?",
-    ).bind(accountId, name, amountMode, schedule, amountMinor, dueDay, startsAt, endsAt, totalMinor, duration, status, rule.id),
+      "UPDATE personal_rules SET account_id=?, name=?, amount_mode=?, schedule=?, amount_minor=?, due_day=?, starts_at=?, ends_at=?, total_minor=?, duration_months=?, status=?, category=? WHERE id=?",
+    ).bind(accountId, name, amountMode, schedule, amountMinor, dueDay, startsAt, endsAt, totalMinor, duration, status, category, rule.id),
     db.prepare("DELETE FROM personal_occurrences WHERE rule_id=? AND status='pending'").bind(rule.id),
     prepareAudit(db, {
       userId: user.id,
@@ -359,6 +373,7 @@ export async function updateV1PersonalRule(
     total_minor: totalMinor,
     duration_months: duration,
     status,
+    category,
   });
 }
 

@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 25;
+const SCHEMA_VERSION = 26;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -440,8 +440,12 @@ async function ensureSchemaPatches(db: D1Database) {
   }
   await applyPostgresRls(db);
   const personalRuleCols = await db.prepare("PRAGMA table_info(personal_rules)").all<{ name: string }>();
-  if (!personalRuleCols.results.some((column) => column.name === "schedule")) {
+  const personalRuleNames = new Set(personalRuleCols.results.map((column) => column.name));
+  if (!personalRuleNames.has("schedule")) {
     try { await db.prepare("ALTER TABLE personal_rules ADD COLUMN schedule TEXT NOT NULL DEFAULT 'monthly'").run(); } catch { /* exists */ }
+  }
+  if (!personalRuleNames.has("category")) {
+    try { await db.prepare("ALTER TABLE personal_rules ADD COLUMN category TEXT NOT NULL DEFAULT ''").run(); } catch { /* exists */ }
   }
   const userCols = await db.prepare("PRAGMA table_info(users)").all<{ name: string }>();
   if (!userCols.results.some((column) => column.name === "avatar_url")) {
@@ -1081,7 +1085,8 @@ async function initializeSchema(db: D1Database) {
       duration_months INTEGER NOT NULL DEFAULT 0,
       paid_minor INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'active',
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT ''
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_personal_rules_space ON personal_rules(space_id, status)"),
     db.prepare(`CREATE TABLE IF NOT EXISTS personal_occurrences (

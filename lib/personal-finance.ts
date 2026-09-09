@@ -85,15 +85,21 @@ export function personalDueAlerts(
     const name = row.rule_name || (kind === "due" ? "دفعة" : "قسط");
     const amount = formatMoneyMinor(Number(row.expected_minor) || 0, "OMR", "ar");
     const remaining = Math.max(0, Number(row.total_minor || 0) - Number(row.rule_paid_minor || 0));
-    const remainingLabel = remaining > 0 ? ` · متبقي ${formatMoneyMinor(remaining, "OMR", "ar")}` : "";
+    const remainingLabel = remaining > 0 && row.rule_kind !== "income" ? ` · متبقي ${formatMoneyMinor(remaining, "OMR", "ar")}` : "";
+    const remainingEn = remaining > 0 && row.rule_kind !== "income" ? ` · remaining ${formatMoneyMinor(remaining, "OMR", "en")}` : "";
     const whenAr = kind === "eve" ? "غداً" : "اليوم";
     const whenEn = kind === "eve" ? "tomorrow" : "today";
+    const income = row.rule_kind === "income";
     alerts.push({
-      id: `personal-bill:${kind}:${row.id}`,
+      id: `${income ? "personal-income" : "personal-bill"}:${kind}:${row.id}`,
       severity: kind === "due" ? "warning" : "info",
       href: `/dashboard?view=personal&space=${encodeURIComponent(row.space_id)}`,
-      ar: `${whenAr} استحقاق «${name}» بمبلغ ${amount}${remainingLabel}${space?.name_ar ? ` — ${space.name_ar}` : ""}. دفع متكرر.`,
-      en: `${whenEn}: “${name}” is due (${formatMoneyMinor(Number(row.expected_minor) || 0, "OMR", "en")})${remaining > 0 ? ` · remaining ${formatMoneyMinor(remaining, "OMR", "en")}` : ""}. Recurring payment.`,
+      ar: income
+        ? `${whenAr} دخل «${name}» بمبلغ ${amount}${space?.name_ar ? ` — ${space.name_ar}` : ""}. اعتمد أو أجّل أو تجاهل.`
+        : `${whenAr} استحقاق «${name}» بمبلغ ${amount}${remainingLabel}${space?.name_ar ? ` — ${space.name_ar}` : ""}. دفع متكرر.`,
+      en: income
+        ? `${whenEn}: “${name}” income (${formatMoneyMinor(Number(row.expected_minor) || 0, "OMR", "en")}). Approve, defer, or skip.`
+        : `${whenEn}: “${name}” is due (${formatMoneyMinor(Number(row.expected_minor) || 0, "OMR", "en")})${remainingEn}. Recurring payment.`,
     });
   }
   return alerts.slice(0, 8);

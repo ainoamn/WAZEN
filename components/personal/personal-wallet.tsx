@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Archive, Banknote, Bell, CalendarClock, Check, ChevronDown, Link2, Lock, Pause, Pencil, Play, Plus, Printer, Repeat2, Trash2, Unlock, WalletCards, X } from "lucide-react";
+import { Archive, Banknote, Bell, CalendarClock, Check, ChevronDown, Link2, Lock, Pause, Pencil, Play, Plus, Printer, Repeat2, Sparkles, Trash2, Unlock, WalletCards, X } from "lucide-react";
 import { CollapsiblePanel, FoldWrap } from "../ui/collapsible-panel";
 import { apiFetch } from "../../lib/client-api";
 import { formatMoneyMinor } from "../../lib/money";
@@ -10,6 +10,8 @@ import { printWazenHtml, wrapPrintDocument } from "../../lib/print-document";
 import { consumePlanQuota } from "../../lib/plan-quota-client";
 import { buildAccountStatementHtml } from "../../lib/account-statement";
 import { occurrenceVarianceCopy, occurrenceLedgerStatus } from "../../lib/personal-finance";
+import { personalCategoryLabel, presetsForKind, inferPersonalCategory } from "../../lib/personal-categories";
+import { buildPersonalCoachBriefing } from "../../lib/personal-coach";
 import { bankCustodySplit, holdingsForAccount } from "../../lib/wallet-links";
 import OmrSymbol from "../brand/OmrSymbol";
 import { DateField } from "../ui/date-field";
@@ -86,6 +88,7 @@ export type PersonalRule = {
   duration_months: number;
   paid_minor: number;
   status: string;
+  category?: string | null;
 };
 
 export type PersonalOccurrence = {
@@ -104,6 +107,7 @@ export type PersonalOccurrence = {
   amount_mode?: string;
   total_minor?: number;
   rule_paid_minor?: number;
+  rule_category?: string | null;
 };
 
 function money(minor: number, locale: Locale) {
@@ -121,6 +125,7 @@ function printOccurrenceStatement(item: PersonalOccurrence, locale: Locale, enti
         ["الشهر", item.period_key],
         ["الاستحقاق", formatDue(item.due_at) || item.due_at.slice(0, 10)],
         ["النوع", item.rule_kind === "income" ? "دخل" : "خصم"],
+        ["التصنيف", personalCategoryLabel(item.rule_kind === "income" ? "income" : "expense", item.rule_category, "ar", item.rule_name)],
         ["الالتزام", money(expected, locale)],
         ["المدفوع", money(actual, locale)],
         ["الفرق", delta === 0 ? "لا يوجد" : `${delta > 0 ? "زيادة" : "نقص"} ${money(Math.abs(delta), locale)}`],
@@ -130,6 +135,7 @@ function printOccurrenceStatement(item: PersonalOccurrence, locale: Locale, enti
         ["Month", item.period_key],
         ["Due", formatDue(item.due_at) || item.due_at.slice(0, 10)],
         ["Type", item.rule_kind === "income" ? "Income" : "Expense"],
+        ["Category", personalCategoryLabel(item.rule_kind === "income" ? "income" : "expense", item.rule_category, "en", item.rule_name)],
         ["Commitment", money(expected, locale)],
         ["Paid", money(actual, locale)],
         ["Variance", delta === 0 ? "None" : `${delta > 0 ? "Over" : "Short"} ${money(Math.abs(delta), locale)}`],
@@ -286,6 +292,7 @@ export function PersonalWalletPanel({
         spaceBankLinks={spaceBankLinks}
         onChanged={onChanged}
       />
+      <PersonalCoachPanel locale={locale} spaceId={spaceId} rules={spaceRules} occurrences={spaceOcc} />
       <RecurringBillsPanel
         spaceId={spaceId}
         locale={locale}
@@ -337,6 +344,7 @@ export function PersonalWalletPanel({
                         <strong>{item.rule_name}</strong>
                         <span>
                           {statusLabel}
+                          {` · ${personalCategoryLabel(item.rule_kind === "income" ? "income" : "expense", item.rule_category, locale, item.rule_name)}`}
                           {showVariance ? ` · ${occurrenceVarianceCopy(expected, actual, locale)}` : ""}
                         </span>
                       </div>
@@ -370,6 +378,101 @@ export function PersonalWalletPanel({
   );
 }
 
+function CategoryField({
+  locale,
+  kind,
+  value,
+  onChange,
+}: {
+  locale: Locale;
+  kind: "income" | "expense";
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const presets = presetsForKind(kind);
+  const known = presets.some((preset) => preset.id === value);
+  const selectValue = known ? value : (value ? "custom" : (kind === "income" ? "salary" : "other_expense"));
+  return (
+    <>
+      <label>
+        <span>{kind === "income" ? (locale === "ar" ? "تصنيف الدخل" : "Income category") : (locale === "ar" ? "تصنيف المصروف" : "Expense category")}</span>
+        <select
+          value={selectValue}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (next === "custom") onChange(value && !known ? value : "");
+            else onChange(next);
+          }}
+        >
+          {presets.map((preset) => <option key={preset.id} value={preset.id}>{locale === "ar" ? preset.ar : preset.en}</option>)}
+          <option value="custom">{locale === "ar" ? "تسمية أخرى…" : "Custom name…"}</option>
+        </select>
+      </label>
+      {selectValue === "custom" && (
+        <label>
+          <span>{locale === "ar" ? "المسمّى" : "Label"}</span>
+          <input
+            required
+            maxLength={40}
+            value={known ? "" : value}
+            onChange={(event) => onChange(event.target.value.slice(0, 40))}
+            placeholder={kind === "income" ? (locale === "ar" ? "دخل إيجار" : "Rental income") : (locale === "ar" ? "مصاريف السفر" : "Travel")}
+          />
+        </label>
+      )}
+    </>
+  );
+}
+
+function PersonalCoachPanel({
+  locale,
+  spaceId,
+  rules,
+  occurrences,
+}: {
+  locale: Locale;
+  spaceId: string;
+  rules: PersonalRule[];
+  occurrences: PersonalOccurrence[];
+}) {
+  const briefing = useMemo(
+    () => buildPersonalCoachBriefing({ rules, occurrences }),
+    [rules, occurrences],
+  );
+  const gap = briefing.plannedLeftMinor;
+  return (
+    <CollapsiblePanel
+      id={`${spaceId}:coach`}
+      heading={<><span className="section-kicker"><Sparkles size={15} />{locale === "ar" ? "تقرير وتوفير" : "Report & savings"}</span><h2>{locale === "ar" ? "الدخل مقابل المصروف هذا الشهر، والثغرات، ونصائح عملية" : "This month’s income vs spend, gaps, and practical tips"}</h2></>}
+      foldLabel={locale === "ar" ? "طي التقرير" : "Fold report"}
+    >
+      <div className="personal-coach-metrics">
+        <div className="personal-coach-metric">
+          <span>{locale === "ar" ? "دخل مبرمج" : "Planned in"}</span>
+          <b>{money(briefing.plannedInMinor, locale)}</b>
+        </div>
+        <div className="personal-coach-metric">
+          <span>{locale === "ar" ? "صرف مبرمج" : "Planned out"}</span>
+          <b>{money(briefing.plannedOutMinor, locale)}</b>
+        </div>
+        <div className={`personal-coach-metric${gap < 0 ? " is-danger" : gap > 0 ? " is-ok" : ""}`}>
+          <span>{locale === "ar" ? "الفائض / الثغرة" : "Surplus / gap"}</span>
+          <b>{money(gap, locale)}</b>
+        </div>
+        <div className="personal-coach-metric">
+          <span>{locale === "ar" ? "هامش التوفير" : "Savings rate"}</span>
+          <b>{briefing.savingsRate}%</b>
+        </div>
+      </div>
+      <ul className="personal-coach-tips">
+        {briefing.tips.map((tip) => (
+          <li key={tip.id} className={`personal-coach-tip is-${tip.severity}`}>{locale === "ar" ? tip.ar : tip.en}</li>
+        ))}
+      </ul>
+    </CollapsiblePanel>
+  );
+}
+
 function RecurringBillsPanel({
   spaceId,
   locale,
@@ -385,53 +488,67 @@ function RecurringBillsPanel({
   occurrences: PersonalOccurrence[];
   onChanged: (next: Record<string, unknown>) => void;
 }) {
-  const [open, setOpen] = useState<"installment" | "bill" | null>(null);
+  const [open, setOpen] = useState<"installment" | "bill" | "income" | null>(null);
   const [editRule, setEditRule] = useState<PersonalRule | null>(null);
-  const active = rules.filter((rule) => rule.space_id === spaceId && rule.kind === "expense" && rule.status === "active" && (rule.schedule ?? "monthly") === "monthly");
+  const monthly = rules.filter((rule) => rule.space_id === spaceId && rule.status === "active" && (rule.schedule ?? "monthly") === "monthly");
+  const incomes = monthly.filter((rule) => rule.kind === "income");
+  const expenses = monthly.filter((rule) => rule.kind !== "income");
+  const renderRow = (rule: PersonalRule) => {
+    const paid = Number(rule.paid_minor);
+    const total = Number(rule.total_minor);
+    const left = Math.max(0, total - paid);
+    const next = occurrences
+      .filter((row) => row.rule_id === rule.id && row.status === "pending")
+      .sort((a, b) => a.due_at.localeCompare(b.due_at))[0];
+    const dueLabel = rule.due_day >= 29 ? (locale === "ar" ? "آخر الشهر" : "month-end") : (locale === "ar" ? `يوم ${rule.due_day}` : `day ${rule.due_day}`);
+    const cat = personalCategoryLabel(rule.kind === "income" ? "income" : "expense", rule.category, locale, rule.name);
+    const income = rule.kind === "income";
+    return (
+      <div className="personal-loan-row" key={rule.id}>
+        <div>
+          <strong>{rule.name} <em className="personal-cat-chip">{cat}</em></strong>
+          <span>
+            {income
+              ? (locale === "ar" ? `دخل ثابت ${money(rule.amount_minor, locale)} ${dueLabel}` : `Fixed income ${money(rule.amount_minor, locale)} ${dueLabel}`)
+              : total > 0
+                ? (locale === "ar" ? `مدفوع ${money(paid, locale)} · متبقي ${money(left, locale)} · القسط ${money(rule.amount_minor, locale)} ${dueLabel}` : `Paid ${money(paid, locale)} · remaining ${money(left, locale)} · ${money(rule.amount_minor, locale)} ${dueLabel}`)
+                : (locale === "ar" ? `دفع متكرر ${money(rule.amount_minor, locale)} ${dueLabel}` : `Recurring ${money(rule.amount_minor, locale)} ${dueLabel}`)}
+            {next ? (locale === "ar" ? ` · القادم ${next.due_at.slice(0, 10)}` : ` · next ${next.due_at.slice(0, 10)}`) : ""}
+          </span>
+        </div>
+        <div className="progress-track">{!income && total > 0 ? <span style={{ width: `${Math.min(100, Math.round((paid / total) * 100))}%` }} /> : null}</div>
+        <b>{income ? (locale === "ar" ? "دخل" : "Income") : total > 0 ? `${Math.min(100, Math.round((paid / total) * 100))}%` : (locale === "ar" ? "متكرر" : "Recurring")}</b>
+        <button type="button" className="secondary-button compact" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => setEditRule(rule)}><Pencil size={14} /></button>
+      </div>
+    );
+  };
   return (
     <CollapsiblePanel
       id={`${spaceId}:recurring`}
-      heading={<><span className="section-kicker"><Bell size={15} />{locale === "ar" ? "أقساط وفواتير متكررة" : "Installments & recurring bills"}</span><h2>{locale === "ar" ? "سجّل العملية كاملة: كم دفعت وكم تبقّى، وتذكير قبل يوم وفي يوم الدفع" : "Record the full plan: paid vs remaining, with reminders the day before and on the due day"}</h2></>}
+      heading={<><span className="section-kicker"><Bell size={15} />{locale === "ar" ? "دخل ومصروف شهري ثابت" : "Fixed monthly cashflow"}</span><h2>{locale === "ar" ? "النظام يولّد الاستحقاق كل شهر — أنت تعتمد أو تؤجّل أو تتجاهل فقط" : "Wazen creates each month; you only approve, defer, or skip"}</h2></>}
       actions={
         <>
+          <button type="button" className="secondary-button" onClick={() => setOpen("income")}><Banknote size={15} />{locale === "ar" ? "دخل شهري ثابت" : "Monthly income"}</button>
           <button type="button" className="secondary-button" onClick={() => setOpen("bill")}><Repeat2 size={15} />{locale === "ar" ? "فاتورة شهرية" : "Monthly bill"}</button>
           <button type="button" className="primary-button" onClick={() => setOpen("installment")}><Plus size={15} />{locale === "ar" ? "قسط / تمويل" : "Installment"}</button>
         </>
       }
-      foldLabel={locale === "ar" ? "طي الأقساط والفواتير" : "Fold installments"}
+      foldLabel={locale === "ar" ? "طي الدخل والمصروف" : "Fold cashflow"}
     >
       <p className="modal-note">
         {locale === "ar"
-          ? "مثال: سيارة 9000 ر.ع. بقسط 98 في يوم 28. أو قسط مدرسة 500 بإجمالي و50 كل نهاية شهر. أو فاتورة هاتف 26 بداية كل شهر — تذكير متكرر عبر التطبيق والبريد وواتساب."
-          : "Example: a 9000 OMR car at 98 on the 28th. Or a 500 school plan at 50 month-end. Or a 26 phone bill at the start of each month — recurring reminders in-app, email, and WhatsApp."}
+          ? "مثال الدخل: راتب 1200 يوم 1. مثال المصروف: سيارة 9000 بقسط 98 يوم 28، أو كهرباء 26 بداية الشهر. التذكير في التطبيق والبريد وواتساب قبل يوم وفي يوم الاستحقاق."
+          : "Income example: salary 1200 on day 1. Spend example: a 9000 car at 98 on the 28th, or a 26 electricity bill at month start. Reminders in-app, email, and WhatsApp the day before and on the due day."}
       </p>
+      <h3 className="personal-cashflow-heading">{locale === "ar" ? "دخل شهري ثابت" : "Fixed monthly income"}</h3>
       <div className="personal-loan-list">
-        {active.map((rule) => {
-          const paid = Number(rule.paid_minor);
-          const total = Number(rule.total_minor);
-          const left = Math.max(0, total - paid);
-          const next = occurrences
-            .filter((row) => row.rule_id === rule.id && row.status === "pending")
-            .sort((a, b) => a.due_at.localeCompare(b.due_at))[0];
-          const dueLabel = rule.due_day >= 29 ? (locale === "ar" ? "آخر الشهر" : "month-end") : (locale === "ar" ? `يوم ${rule.due_day}` : `day ${rule.due_day}`);
-          return (
-            <div className="personal-loan-row" key={rule.id}>
-              <div>
-                <strong>{rule.name}</strong>
-                <span>
-                  {total > 0
-                    ? (locale === "ar" ? `مدفوع ${money(paid, locale)} · متبقي ${money(left, locale)} · القسط ${money(rule.amount_minor, locale)} ${dueLabel}` : `Paid ${money(paid, locale)} · remaining ${money(left, locale)} · ${money(rule.amount_minor, locale)} ${dueLabel}`)
-                    : (locale === "ar" ? `دفع متكرر ${money(rule.amount_minor, locale)} ${dueLabel}` : `Recurring ${money(rule.amount_minor, locale)} ${dueLabel}`)}
-                  {next ? (locale === "ar" ? ` · القادم ${next.due_at.slice(0, 10)}` : ` · next ${next.due_at.slice(0, 10)}`) : ""}
-                </span>
-              </div>
-              <div className="progress-track">{total > 0 ? <span style={{ width: `${Math.min(100, Math.round((paid / total) * 100))}%` }} /> : null}</div>
-              <b>{total > 0 ? `${Math.min(100, Math.round((paid / total) * 100))}%` : (locale === "ar" ? "متكرر" : "Recurring")}</b>
-              <button type="button" className="secondary-button compact" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => setEditRule(rule)}><Pencil size={14} /></button>
-            </div>
-          );
-        })}
-        {!active.length && <p className="empty-state">{locale === "ar" ? "لا أقساط أو فواتير بعد. أضف قسط سيارة أو فاتورة هاتف من الأزرار أعلاه." : "No installments or bills yet. Add a car plan or phone bill from the buttons above."}</p>}
+        {incomes.map(renderRow)}
+        {!incomes.length && <p className="empty-state">{locale === "ar" ? "لا دخل شهري بعد. أضف راتباً أو دخلاً تجارياً ليظهر كل شهر للاعتماد." : "No monthly income yet. Add a salary or business income so each month waits for approval."}</p>}
+      </div>
+      <h3 className="personal-cashflow-heading">{locale === "ar" ? "أقساط وفواتير متكررة" : "Installments & recurring bills"}</h3>
+      <div className="personal-loan-list">
+        {expenses.map(renderRow)}
+        {!expenses.length && <p className="empty-state">{locale === "ar" ? "لا أقساط أو فواتير بعد. أضف قسط سيارة أو فاتورة كهرباء من الأزرار أعلاه." : "No installments or bills yet. Add a car plan or electricity bill from the buttons above."}</p>}
       </div>
       {open && (
         <RecurringBillModal
@@ -447,7 +564,7 @@ function RecurringBillsPanel({
         <RuleModal
           locale={locale}
           spaceId={spaceId}
-          kind="expense"
+          kind={editRule.kind === "income" ? "income" : "expense"}
           schedule={(editRule.schedule === "once" || editRule.schedule === "unscheduled" ? editRule.schedule : "monthly")}
           amountMode={editRule.amount_mode === "variable" ? "variable" : "fixed"}
           accounts={accounts}
@@ -470,22 +587,27 @@ function RecurringBillModal({
 }: {
   locale: Locale;
   spaceId: string;
-  purpose: "installment" | "bill";
+  purpose: "installment" | "bill" | "income";
   accounts: PersonalAccount[];
   onClose: () => void;
   onChanged: (next: Record<string, unknown>) => void;
 }) {
   const installment = purpose === "installment";
+  const income = purpose === "income";
+  const kind: "income" | "expense" = income ? "income" : "expense";
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [total, setTotal] = useState("");
   const [dueDay, setDueDay] = useState(installment ? "28" : "1");
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
   const [startsAt, setStartsAt] = useState(new Date().toISOString().slice(0, 10));
+  const [category, setCategory] = useState(income ? "salary" : installment ? "installments" : "other_expense");
   const [saving, setSaving] = useState(false);
-  const title = installment
-    ? (locale === "ar" ? "قسط أو تمويل" : "Installment or loan")
-    : (locale === "ar" ? "فاتورة شهرية متكررة" : "Recurring monthly bill");
+  const title = income
+    ? (locale === "ar" ? "دخل شهري ثابت" : "Fixed monthly income")
+    : installment
+      ? (locale === "ar" ? "قسط أو تمويل" : "Installment or loan")
+      : (locale === "ar" ? "فاتورة شهرية متكررة" : "Recurring monthly bill");
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -497,7 +619,7 @@ function RecurringBillModal({
         idempotencyKey: crypto.randomUUID(),
         spaceId,
         accountId: accountId || undefined,
-        kind: "expense",
+        kind,
         name,
         amountMode: "fixed",
         schedule: "monthly",
@@ -505,12 +627,13 @@ function RecurringBillModal({
         total: installment ? (total || undefined) : undefined,
         dueDay: Number(dueDay) || 1,
         startsAt,
+        category: category || inferPersonalCategory(kind, name),
       }),
     });
     const result = await response.json() as Record<string, unknown> & { error?: string };
     setSaving(false);
     if (!response.ok) {
-      window.alert(result.error === "INVALID_AMOUNT" ? (locale === "ar" ? "أدخل مبلغ القسط أو الإجمالي." : "Enter the installment or the total.") : (result.error ?? "FAILED"));
+      window.alert(result.error === "INVALID_AMOUNT" ? (locale === "ar" ? "أدخل مبلغاً صحيحاً." : "Enter a valid amount.") : (result.error ?? "FAILED"));
       return;
     }
     onChanged(result);
@@ -520,20 +643,21 @@ function RecurringBillModal({
       <section className="modal-card" role="dialog">
         <div className="modal-header"><h2>{title}</h2><button type="button" onClick={onClose}><X size={20} /></button></div>
         <form className="modal-form" onSubmit={(event) => void submit(event)}>
-          <label><span>{locale === "ar" ? "الاسم" : "Name"}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={installment ? (locale === "ar" ? "سيارة / قسط المدرسة" : "Car / school plan") : (locale === "ar" ? "فاتورة هاتف" : "Phone bill")} /></label>
+          <label><span>{locale === "ar" ? "الاسم" : "Name"}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={income ? (locale === "ar" ? "راتب / دخل تجاري" : "Salary / business") : installment ? (locale === "ar" ? "سيارة / قسط المدرسة" : "Car / school plan") : (locale === "ar" ? "كهرباء / ماء / هاتف" : "Electricity / water / phone")} /></label>
+          <CategoryField locale={locale} kind={kind} value={category} onChange={setCategory} />
           {installment && <label><span>{locale === "ar" ? "إجمالي المبلغ" : "Total amount"}</span><div className="money-input"><input required type="number" min="0.001" step="0.001" value={total} onChange={(event) => setTotal(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>}
-          <label><span>{installment ? (locale === "ar" ? "القسط الشهري" : "Monthly installment") : (locale === "ar" ? "المبلغ كل شهر" : "Amount each month")}</span><div className="money-input"><input required type="number" min="0.001" step="0.001" value={amount} onChange={(event) => setAmount(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>
-          <label><span>{locale === "ar" ? "يوم الدفع كل شهر (1 بداية الشهر، 31 آخر يوم)" : "Pay day each month (1 = start, 31 = last day)"}</span>
+          <label><span>{income ? (locale === "ar" ? "المبلغ كل شهر" : "Amount each month") : installment ? (locale === "ar" ? "القسط الشهري" : "Monthly installment") : (locale === "ar" ? "المبلغ كل شهر" : "Amount each month")}</span><div className="money-input"><input required type="number" min="0.001" step="0.001" value={amount} onChange={(event) => setAmount(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>
+          <label><span>{income ? (locale === "ar" ? "يوم الاستحقاق كل شهر (1 بداية الشهر، 31 آخر يوم)" : "Due day each month (1 = start, 31 = last day)") : (locale === "ar" ? "يوم الدفع كل شهر (1 بداية الشهر، 31 آخر يوم)" : "Pay day each month (1 = start, 31 = last day)")}</span>
             <input required type="number" min="1" max="31" value={dueDay} onChange={(event) => setDueDay(event.target.value)} />
           </label>
           <label><span>{locale === "ar" ? "يبدأ من" : "Starts"}</span><DateField required value={startsAt} onChange={setStartsAt} /></label>
-          <label><span>{locale === "ar" ? "يُخصم من الحساب" : "Debit account"}</span>
+          <label><span>{income ? (locale === "ar" ? "يُضاف إلى الحساب" : "Credit account") : (locale === "ar" ? "يُخصم من الحساب" : "Debit account")}</span>
             <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
               <option value="">{locale === "ar" ? "بدون ربط" : "Unlinked"}</option>
               {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
             </select>
           </label>
-          <p className="modal-note">{locale === "ar" ? "يظهر التذكير في المحفظة، ويُرسل بالبريد وواتساب قبل يوم وفي يوم الاستحقاق. بعد الدفع اضغط اعتماد الخصم في حساب الشهر." : "Reminders appear in the wallet and go out by email and WhatsApp the day before and on the due day. After you pay, approve the debit in that month’s ledger."}</p>
+          <p className="modal-note">{locale === "ar" ? "يظهر التذكير في المحفظة، ويُرسل بالبريد وواتساب قبل يوم وفي يوم الاستحقاق. بعد وصول المبلغ أو الدفع اضغط اعتماد الدخل أو اعتماد الخصم، أو أجّل، أو تجاهل." : "Reminders appear in the wallet and go out by email and WhatsApp the day before and on the due day. When the money arrives or you pay, approve, defer, or skip."}</p>
           <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{locale === "ar" ? "إلغاء" : "Cancel"}</button><button className="primary-button" disabled={saving}>{saving ? "…" : (locale === "ar" ? "حفظ العملية" : "Save")}</button></div>
         </form>
       </section>
@@ -612,7 +736,7 @@ export function PersonalRulesSetup({
           <div className={`personal-rule-row ${rule.status !== "active" ? "is-paused" : ""}`} key={rule.id}>
             <div>
               <strong>{rule.name}</strong>
-              <span>{rule.kind === "income" ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "مصروف" : "Expense")} · {(rule.schedule ?? "monthly") === "once" ? (locale === "ar" ? `مجدول ${rule.starts_at.slice(0, 7)}` : `scheduled ${rule.starts_at.slice(0, 7)}`) : (rule.schedule ?? "monthly") === "unscheduled" ? (locale === "ar" ? "بدون موعد" : "no date") : (rule.amount_mode === "variable" ? (locale === "ar" ? "متغير شهرياً" : "variable monthly") : (locale === "ar" ? "ثابت شهرياً" : "fixed monthly"))}{rule.status === "paused" ? (locale === "ar" ? " · متوقف" : " · paused") : rule.status === "archived" ? (locale === "ar" ? " · مؤرشف" : " · archived") : ""}</span>
+              <span>{rule.kind === "income" ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "مصروف" : "Expense")} · {personalCategoryLabel(rule.kind === "income" ? "income" : "expense", rule.category, locale, rule.name)} · {(rule.schedule ?? "monthly") === "once" ? (locale === "ar" ? `مجدول ${rule.starts_at.slice(0, 7)}` : `scheduled ${rule.starts_at.slice(0, 7)}`) : (rule.schedule ?? "monthly") === "unscheduled" ? (locale === "ar" ? "بدون موعد" : "no date") : (rule.amount_mode === "variable" ? (locale === "ar" ? "متغير شهرياً" : "variable monthly") : (locale === "ar" ? "ثابت شهرياً" : "fixed monthly"))}{rule.status === "paused" ? (locale === "ar" ? " · متوقف" : " · paused") : rule.status === "archived" ? (locale === "ar" ? " · مؤرشف" : " · archived") : ""}</span>
             </div>
             <b>{rule.amount_minor ? money(rule.amount_minor, locale) : (locale === "ar" ? "يُدخل عند الترحيل" : "enter when posting")}</b>
             <div className="personal-rule-actions">
@@ -882,7 +1006,7 @@ function OccurrenceRow({ item, locale, accounts, onChanged }: { item: PersonalOc
     <div className="personal-occ-row">
       <div>
         <strong>{item.rule_name}</strong>
-        <span>{formatDue(item.due_at) || item.period_key} · {income ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "خصم" : "Bill")}{!variable && Number(item.expected_minor) > 0 ? (locale === "ar" ? ` · الالتزام ${money(Number(item.expected_minor), locale)}` : ` · due ${money(Number(item.expected_minor), locale)}`) : ""}{variable ? (locale === "ar" ? " · متغيرة — أدخل المبلغ" : " · variable — enter amount") : ""}</span>
+        <span>{formatDue(item.due_at) || item.period_key} · {income ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "خصم" : "Bill")} · {personalCategoryLabel(income ? "income" : "expense", item.rule_category, locale, item.rule_name)}{!variable && Number(item.expected_minor) > 0 ? (locale === "ar" ? ` · الالتزام ${money(Number(item.expected_minor), locale)}` : ` · due ${money(Number(item.expected_minor), locale)}`) : ""}{variable ? (locale === "ar" ? " · متغيرة — أدخل المبلغ" : " · variable — enter amount") : ""}</span>
       </div>
       <div className="personal-occ-fields">
         <label className="personal-occ-account">
@@ -976,6 +1100,7 @@ function RuleModal({ locale, spaceId, kind, schedule, amountMode: initialMode, e
   const [accountId, setAccountId] = useState(existing?.account_id ?? accounts[0]?.id ?? "");
   const [startsAt, setStartsAt] = useState((existing?.starts_at ?? new Date().toISOString()).slice(0, 10));
   const [endsAt, setEndsAt] = useState(existing?.ends_at ? existing.ends_at.slice(0, 10) : "");
+  const [category, setCategory] = useState(existing?.category || inferPersonalCategory(kind, existing?.name ?? ""));
   const [saving, setSaving] = useState(false);
   const resolvedSchedule = kind === "expense" ? (expenseType === "once" ? "once" : "monthly") : schedule;
   const resolvedAmountMode = kind === "expense" ? (expenseType === "variable" ? "variable" : "fixed") : amountMode;
@@ -1011,6 +1136,7 @@ function RuleModal({ locale, spaceId, kind, schedule, amountMode: initialMode, e
         dueDay: Number(dueDay) || 1,
         startsAt,
         endsAt: resolvedSchedule === "once" ? startsAt : (endsAt || undefined),
+        category: category || inferPersonalCategory(kind, name),
       }),
     });
     const result = await response.json() as Record<string, unknown> & { error?: string };
@@ -1024,6 +1150,7 @@ function RuleModal({ locale, spaceId, kind, schedule, amountMode: initialMode, e
         <div className="modal-header"><h2>{title}</h2><button type="button" onClick={onClose}><X size={20} /></button></div>
         <form className="modal-form" onSubmit={(event) => void submit(event)}>
           <label><span>{locale === "ar" ? "الاسم" : "Name"}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={kind === "income" ? (locale === "ar" ? "راتب / مكافأة / هدية" : "Salary / bonus / gift") : (locale === "ar" ? "سداد لشخص / كهرباء" : "Pay someone / electricity")} /></label>
+          <CategoryField locale={locale} kind={kind} value={category} onChange={setCategory} />
           {kind === "expense" && (
             <label><span>{locale === "ar" ? "نوع الخصم" : "Expense type"}</span>
               <select value={expenseType} onChange={(event) => setExpenseType(event.target.value as "fixed" | "variable" | "once")}>
@@ -1040,7 +1167,7 @@ function RuleModal({ locale, spaceId, kind, schedule, amountMode: initialMode, e
               <label><span>{locale === "ar" ? "عدد الأشهر" : "Months"}</span><input type="number" min="0" max="360" value={duration} onChange={(event) => setDuration(event.target.value)} /></label>
             </div>
           )}
-          {resolvedSchedule === "monthly" && kind === "expense" && <p className="modal-note">{locale === "ar" ? "تذكير شخصي قبل يوم الدفع وفي نفس اليوم، عبر التطبيق والبريد وواتساب إن وُجد رقم في ملفك." : "You get a personal reminder the day before and on the due day, in-app plus email and WhatsApp when a phone is on your profile."}</p>}
+          {resolvedSchedule === "monthly" && <p className="modal-note">{locale === "ar" ? "تذكير شخصي قبل يوم الدفع وفي نفس اليوم، عبر التطبيق والبريد وواتساب إن وُجد رقم في ملفك. بعد الوصول أو الدفع: اعتماد أو تأجيل أو تجاهل." : "You get a personal reminder the day before and on the due day, in-app plus email and WhatsApp when a phone is on your profile. Then approve, defer, or skip."}</p>}
           {schedule !== "unscheduled" && (
             <div className="form-row">
               {resolvedSchedule === "monthly" && (
