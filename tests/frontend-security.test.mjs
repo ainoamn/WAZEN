@@ -148,7 +148,8 @@ test("login and register wrap the unified BHD portal", () => {
   assert.match(login, /<AuthForm/);
   assert.match(login, /isBhdSsoReadyForOrigin/);
   assert.match(login, /redirect\(`\/api\/auth\/bhd\/start/);
-  assert.match(login, /params.local !== "1"/);
+  assert.match(login, /never honor local=1/);
+  assert.match(login, /ssoReady && !params.error/);
   assert.match(login, /admin-entry/);
   assert.doesNotMatch(login, /sessionCookieFromStore/);
   assert.doesNotMatch(login, /cookies\(/);

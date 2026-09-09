@@ -1937,8 +1937,8 @@ export async function POST(request: Request) {
         throw new ApiError(400, "INVALID_MERGE");
       }
       if (!jobs.length) throw new ApiError(409, "NOTHING_TO_MERGE");
-      const merged = [];
-      const skipped = [];
+      const merged: Array<{ keeperId: string; mergedIds: string[]; extraCount: number }> = [];
+      const skipped: Array<{ spaceId: string; keeperId: string; error: string }> = [];
       for (const job of jobs) {
         try {
           await authorizeSpace(db, user, job.spaceId, "members:write", ["household", "trip", "society", "group"]);

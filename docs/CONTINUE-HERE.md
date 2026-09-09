@@ -37,8 +37,9 @@ npm install
 | منع تكرار الاسم/الهاتف/البريد + زر تحرير البيانات | ✅ |
 | أداة دمج المكررات داخل الجمعية فقط (بدون المساس بالآخرين) | ✅ |
 | دعوة: جهات من الهاتف أو رفع/تنزيل vCard وCSV | ✅ |
+| Next.js 16.3.4 لتمرير `npm audit` ونشر Vercel | ✅ |
 
-**الإنتاج:** `GET https://wazen.bhd-om.com/api/health` — تحقق أن `buildId` حديث.
+**الإنتاج:** `GET https://wazen.bhd-om.com/api/health` — `buildId` يجب أن يطابق commit بعد رفع 16.3.4 (ليس `625adb4`).
 
 ---
 
