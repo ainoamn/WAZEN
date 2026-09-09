@@ -76,7 +76,7 @@ export function parseCsvContacts(source: string): ImportedContact[] {
   const rows = hasHeader ? lines.slice(1) : lines;
   for (const line of rows) {
     const cells = parseCsvLine(line);
-    const pick = (key: string, fallbackIndex: number) => {
+    const pick = (key: "name" | "email" | "phone", fallbackIndex: number) => {
       const index = headerCells.indexOf(key);
       return cleanName(cells[index >= 0 ? index : fallbackIndex] ?? "");
     };

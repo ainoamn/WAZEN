@@ -201,8 +201,8 @@ async function reassignOrMergeInstallments(db: D1Database, keeperId: string, dup
       status: string;
     }>();
   for (const row of dupRows.results ?? []) {
-    const existing = await db.prepare("SELECT id, amount_minor, paid_minor FROM member_installments WHERE member_id=? AND period_index=?")
-      .bind(keeperId, row.period_index).first<{ id: string; amount_minor: number; paid_minor: number }>();
+    const existing = await db.prepare("SELECT id, period_index, amount_minor, paid_minor FROM member_installments WHERE member_id=? AND period_index=?")
+      .bind(keeperId, row.period_index).first<{ id: string; period_index: number; amount_minor: number; paid_minor: number }>();
     if (existing) {
       const merged = mergeInstallmentPair(existing, row);
       await db.prepare("UPDATE member_installments SET amount_minor=?, paid_minor=?, status=? WHERE id=?")
