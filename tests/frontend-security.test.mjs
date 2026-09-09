@@ -371,6 +371,10 @@ test("adding a member blocks duplicate phone numbers and offers to edit existing
   assert.match(dashboard, /onEditExisting/);
   assert.match(dashboard, /تحرير البيانات/);
   assert.match(dashboard, /startEditingContact=\{editMemberOnOpen\}/);
+  assert.match(dashboard, /person-edit-hit/);
+  assert.match(dashboard, /onOpenPerson\(person.id, "all", true\)/);
+  const profile = fs.readFileSync(path.join(root, "components/members/association-members.tsx"), "utf8");
+  assert.match(profile, /تعديل بيانات التواصل/);
   assert.match(unique, /MEMBER_PHONE_TAKEN/);
   assert.match(unique, /لا يُسمح بتكرار رقم الهاتف/);
 });
@@ -391,6 +395,7 @@ test("groups view can merge duplicate accounts and import phone or file contacts
   assert.match(panel, /توحيد كشخص واحد/);
   assert.match(panel, /findMultiAssociationPeople/);
   assert.match(dashboard, /associationCount/);
+  assert.match(dashboard, /person-edit-hit/);
   assert.match(dashboardApi, /action === "unifyMemberPerson"/);
   assert.match(merge, /findMultiAssociationPeople/);
   assert.match(merge, /findSameSpaceNameClusters/);

@@ -616,7 +616,8 @@ export function MemberPersonProfile({
     setPhone(primary?.phone ?? "");
     setInviteNote("");
     setInviteError("");
-  }, [primary?.id, primary?.display_name, primary?.email, primary?.phone]);
+    if (startEditingContact) setEditingContact(true);
+  }, [primary?.id, primary?.display_name, primary?.email, primary?.phone, startEditingContact]);
   const selected = records.find((row) => row.space_id === spaceId) ?? null;
   const space = spaces.find((item) => item.id === selected?.space_id);
   const plan = plans.find((item) => item.space_id === selected?.space_id);
@@ -776,8 +777,8 @@ export function MemberPersonProfile({
             <div><span>{locale === "ar" ? "عليه" : "Owes"}</span><b>{money(remaining, currency, locale)}</b></div>
             <div><span>{locale === "ar" ? "المستلم / له" : "Received / credit"}</span><b>{money(paid + extra, currency, locale)} · {money(credit, currency, locale)}</b></div>
             <div className="member-contact-actions">
-              <button type="button" className="secondary-button" onClick={() => setEditingContact(true)}>
-                {locale === "ar" ? "تعديل البريد والهاتف" : "Edit email & phone"}
+              <button type="button" className="primary-button" onClick={() => setEditingContact(true)}>
+                {locale === "ar" ? "تعديل بيانات التواصل" : "Edit contact details"}
               </button>
               {canResendInvite ? (
                 <button type="button" className="secondary-button" disabled={resendingInvite} onClick={() => void resendInvite()}>
