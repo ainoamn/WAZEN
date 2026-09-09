@@ -364,25 +364,31 @@ test("dashboard GET skips ledger rebuild; current schema skips oauth/bhd patches
   assert.match(adminSession, /Promise\.race/);
 });
 
-test("adding a member blocks duplicate contacts and offers to edit existing data", () => {
+test("adding a member blocks duplicate phone numbers and offers to edit existing data", () => {
   const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
   const unique = fs.readFileSync(path.join(root, "lib/member-contact-unique.ts"), "utf8");
   assert.match(dashboard, /findMemberContactConflictInRows/);
   assert.match(dashboard, /onEditExisting/);
   assert.match(dashboard, /تحرير البيانات/);
   assert.match(dashboard, /startEditingContact=\{editMemberOnOpen\}/);
-  assert.match(unique, /MEMBER_NAME_TAKEN/);
-  assert.match(unique, /للمتابعة حرّر بياناته/);
+  assert.match(unique, /MEMBER_PHONE_TAKEN/);
+  assert.match(unique, /لا يُسمح بتكرار رقم الهاتف/);
 });
 
 test("groups view can merge duplicate accounts and import phone or file contacts", () => {
   const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
   const merge = fs.readFileSync(path.join(root, "lib/member-duplicates.ts"), "utf8");
   const contacts = fs.readFileSync(path.join(root, "components/members/contact-source-bar.tsx"), "utf8");
+  const panel = fs.readFileSync(path.join(root, "components/members/duplicate-merge-panel.tsx"), "utf8");
   assert.match(dashboard, /DuplicateMergePanel/);
   assert.match(dashboard, /ContactSourceBar/);
+  assert.match(dashboard, /googleClientId=\{data.googleContactsClientId\}/);
   assert.match(merge, /MERGE_CROSS_SPACE/);
   assert.match(merge, /mergedLedgerTotals/);
+  assert.match(panel, /دمج المكرر/);
+  assert.doesNotMatch(panel, /if \(!summary.clusterCount\) return null/);
   assert.match(contacts, /select\(\["name", "email", "tel"\]/);
   assert.match(contacts, /parseContactFile/);
+  assert.match(contacts, /importGoogleContacts/);
+  assert.match(contacts, /من Gmail/);
 });

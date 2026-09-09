@@ -26,6 +26,44 @@ function downloadBlob(filename: string, mime: string, body: string) {
   URL.revokeObjectURL(url);
 }
 
+async function loadGoogleIdentity() {
+  if (window.google?.accounts?.oauth2) return;
+  await new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>("script[data-wazen-gsi]");
+    if (existing) {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("GOOGLE_CONTACTS_FAILED")), { once: true });
+      if (window.google?.accounts?.oauth2) resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.dataset.wazenGsi = "1";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("GOOGLE_CONTACTS_FAILED"));
+    document.head.appendChild(script);
+  });
+}
+
+function requestGoogleContactsToken(clientId: string) {
+  return new Promise<string>((resolve, reject) => {
+    const client = window.google?.accounts?.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: "https://www.googleapis.com/auth/contacts.readonly",
+      callback: (response: { access_token?: string; error?: string }) => {
+        if (response.access_token) resolve(response.access_token);
+        else reject(new Error(response.error === "access_denied" ? "GOOGLE_CONTACTS_DENIED" : "GOOGLE_CONTACTS_FAILED"));
+      },
+    });
+    if (!client) {
+      reject(new Error("GOOGLE_CONTACTS_FAILED"));
+      return;
+    }
+    client.requestAccessToken();
+  });
+}
+
 async function pickFromDevice(): Promise<ImportedContact[]> {
   const contactsApi = (navigator as Navigator & {
     contacts?: {
@@ -48,11 +86,13 @@ async function pickFromDevice(): Promise<ImportedContact[]> {
 export function ContactSourceBar({
   locale,
   savedContacts,
+  googleClientId,
   onApply,
   onContactsSaved,
 }: {
   locale: Locale;
   savedContacts: SavedContact[];
+  googleClientId?: string;
   onApply: (contact: ImportedContact) => void;
   onContactsSaved?: (contacts: SavedContact[]) => void;
 }) {
@@ -90,16 +130,65 @@ export function ContactSourceBar({
       const picked = await pickFromDevice();
       if (!picked.length) return;
       await persist(picked);
-      if (picked.length === 1) onApply(picked[0]);
+      onApply(picked[0]);
       setNote(locale === "ar"
-        ? `تم جلب ${picked.length} جهة من الهاتف. اختر واحدة بالأسفل أو تُعبأ الحقول مباشرة.`
-        : `Imported ${picked.length} contact(s) from the phone. Pick one below or the form is filled.`);
-      if (picked.length > 1) onApply(picked[0]);
+        ? `تم جلب ${picked.length} جهة من الهاتف. اختر واحدة من القائمة بالأسفل.`
+        : `Imported ${picked.length} contact(s) from the phone. Pick one from the list below.`);
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : "";
       setNote(code === "CONTACTS_UNSUPPORTED" || /NotSupported|undefined/i.test(code)
-        ? (locale === "ar" ? "المتصفح لا يدعم دفتر الهاتف مباشرة. ارفع ملف vCard أو CSV من جهات اتصال الهاتف أو البريد." : "This browser cannot open the phone book. Upload a vCard/CSV exported from your phone or email.")
+        ? (locale === "ar" ? "المتصفح لا يفتح دفتر الهاتف مباشرة. استخدم «من Gmail» أو ارفع ملفاً." : "This browser cannot open the phone book. Use Gmail or upload a file.")
         : (locale === "ar" ? "لم يتم منح صلاحية جهات الاتصال، أو أُلغي الاختيار." : "Contact permission was denied or the picker was cancelled."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const fromGmail = async () => {
+    if (!googleClientId) {
+      setNote(locale === "ar" ? "ربط Gmail غير مهيأ على هذا الموقع." : "Gmail contact linking is not configured.");
+      return;
+    }
+    setBusy(true);
+    setNote("");
+    try {
+      await loadGoogleIdentity();
+      const accessToken = await requestGoogleContactsToken(googleClientId);
+      const response = await apiFetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "importGoogleContacts",
+          idempotencyKey: crypto.randomUUID(),
+          accessToken,
+        }),
+      });
+      const result = await response.json() as { error?: string; contacts?: SavedContact[]; imported?: number };
+      if (!response.ok) throw new Error(result.error ?? "GOOGLE_CONTACTS_FAILED");
+      onContactsSaved?.(result.contacts ?? []);
+      const first = (result.contacts ?? []).find((item) => item.phone || item.email);
+      if (first) {
+        onApply({
+          displayName: first.display_name,
+          email: first.email ?? "",
+          phone: first.phone ?? "",
+        });
+      }
+      setNote(locale === "ar"
+        ? `تم ربط ${result.imported ?? 0} جهة من Gmail. اختر واحدة من «سجل العناوين» بالأسفل.`
+        : `Linked ${result.imported ?? 0} Gmail contact(s). Pick one from the address book below.`);
+    } catch (caught) {
+      const code = caught instanceof Error ? caught.message : "GOOGLE_CONTACTS_FAILED";
+      const messages: Record<string, string> = locale === "ar"
+        ? {
+          GOOGLE_CONTACTS_DENIED: "لم يتم منح صلاحية قراءة جهات اتصال Gmail.",
+          GOOGLE_CONTACTS_FAILED: "تعذر جلب جهات Gmail. أعد المحاولة أو ارفع ملفاً.",
+        }
+        : {
+          GOOGLE_CONTACTS_DENIED: "Gmail contact permission was denied.",
+          GOOGLE_CONTACTS_FAILED: "Could not import Gmail contacts. Try again or upload a file.",
+        };
+      setNote(messages[code] ?? messages.GOOGLE_CONTACTS_FAILED);
     } finally {
       setBusy(false);
     }
@@ -146,14 +235,17 @@ export function ContactSourceBar({
         <button type="button" className="secondary-button" disabled={busy} onClick={() => void fromPhone()}>
           <Phone size={14} />{locale === "ar" ? "من الهاتف" : "From phone"}
         </button>
+        <button type="button" className="secondary-button" disabled={busy || !googleClientId} onClick={() => void fromGmail()}>
+          <Mail size={14} />{locale === "ar" ? "من Gmail" : "From Gmail"}
+        </button>
         <button type="button" className="secondary-button" disabled={busy} onClick={() => fileRef.current?.click()}>
-          <Upload size={14} />{locale === "ar" ? "رفع ملف / بريد" : "Upload file / email"}
+          <Upload size={14} />{locale === "ar" ? "رفع ملف" : "Upload file"}
         </button>
         <button type="button" className="secondary-button" disabled={busy || !savedContacts.length} onClick={() => download("vcf")}>
           <Download size={14} />{locale === "ar" ? "تنزيل vCard" : "Download vCard"}
         </button>
         <button type="button" className="secondary-button" disabled={busy || !savedContacts.length} onClick={() => download("csv")}>
-          <Mail size={14} />{locale === "ar" ? "تنزيل CSV" : "Download CSV"}
+          <Download size={14} />{locale === "ar" ? "تنزيل CSV" : "Download CSV"}
         </button>
       </div>
       <input
@@ -167,9 +259,13 @@ export function ContactSourceBar({
         }}
       />
       <small className="field-hint">
-        {pickerOk
-          ? (locale === "ar" ? "بعد منح الصلاحية يمكنك اختيار جهات من دفتر الهاتف مباشرة." : "After permission, pick contacts directly from the phone book.")
-          : (locale === "ar" ? "صدّر جهات الهاتف أو Gmail/Outlook كملف vCard أو CSV ثم ارفعها هنا." : "Export phone or Gmail/Outlook contacts as vCard or CSV, then upload here.")}
+        {locale === "ar"
+          ? (pickerOk
+            ? "من الهاتف يفتح دفتر الجهاز. من Gmail يجلب جهات بريدك بعد منح الصلاحية، دون تنزيل ملف."
+            : "على هذا المتصفح استخدم «من Gmail» لربط جهات البريد مباشرة، أو ارفع ملف vCard/CSV.")
+          : (pickerOk
+            ? "From phone opens the device book. From Gmail links your mailbox contacts after permission, with no file download."
+            : "On this browser use From Gmail to link mailbox contacts directly, or upload a vCard/CSV file.")}
       </small>
       {note ? <p className="modal-note">{note}</p> : null}
     </div>

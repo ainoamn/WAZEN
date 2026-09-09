@@ -1034,8 +1034,10 @@ export async function GET(request: Request) {
       try {
         notifications = await listUserNotifications(db, user.id, 20);
       } catch { /* optional */ }
+      const { googleClientId } = await import("../../../lib/google-oauth");
       return Response.json({
         user: { ...user, role },
+        googleContactsClientId: googleClientId(),
         entitlements,
         revision,
         workspaceAlerts: workspaceAlerts.slice(0, 12),
@@ -1986,6 +1988,31 @@ export async function POST(request: Request) {
           phone,
         }, createdAt);
         imported += 1;
+      }
+      const saved = await db.prepare("SELECT id,display_name,email,phone FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name")
+        .bind(user.id).all();
+      const body = { ok: true, imported, contacts: saved.results ?? [] };
+      await completeIdempotency(db, user.id, idempotencyKey, body);
+      claimRef.current = null;
+      return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+    } else if (action === "importGoogleContacts") {
+      const parsed = z.object({
+        accessToken: z.string().trim().min(20).max(4096),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "GOOGLE_CONTACTS_DENIED");
+      const { fetchGooglePeopleContacts } = await import("../../../lib/google-contacts");
+      const contacts = await fetchGooglePeopleContacts(parsed.data.accessToken);
+      const createdAt = now();
+      let imported = 0;
+      for (const contact of contacts) {
+        const emailRaw = String(contact.email ?? "").trim().toLowerCase();
+        const email = emailRaw.includes("@") ? emailRaw : null;
+        const phone = contact.phone?.trim() ? (toWhatsAppNumber(contact.phone) || contact.phone.trim()) : null;
+        const displayName = contact.displayName.trim().slice(0, 80);
+        if (!displayName || (!email && !phone)) continue;
+        await upsertSavedContact(db, user.id, { displayName, email, phone }, createdAt);
+        imported += 1;
+        if (imported >= 500) break;
       }
       const saved = await db.prepare("SELECT id,display_name,email,phone FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name")
         .bind(user.id).all();

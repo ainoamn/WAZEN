@@ -1,4 +1,4 @@
-/** Prevent duplicate name/email/phone among active members of the same space. */
+/** Prevent duplicate phone numbers among active members of the same space. Email and name may repeat. */
 
 import { ApiError } from "./api-error";
 import { digitsOnly, toWhatsAppNumber } from "./phone";
@@ -21,16 +21,10 @@ export type MemberContactRow = {
 };
 
 export const MEMBER_CONTACT_TAKEN_CODES = [
-  "MEMBER_EMAIL_TAKEN",
   "MEMBER_PHONE_TAKEN",
-  "MEMBER_NAME_TAKEN",
 ] as const;
 
 export type MemberContactTakenCode = (typeof MEMBER_CONTACT_TAKEN_CODES)[number];
-
-function normalizeEmail(value: string) {
-  return String(value ?? "").trim().toLowerCase();
-}
 
 export function normalizeMemberName(value: string) {
   return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
@@ -39,20 +33,18 @@ export function normalizeMemberName(value: string) {
 function phonesMatch(a: string, b: string) {
   const left = toWhatsAppNumber(a) || digitsOnly(a);
   const right = toWhatsAppNumber(b) || digitsOnly(b);
-  if (!left || !right) return false;
-  return left === right;
+  if (!left || !right || left.length < 7 || right.length < 7) return false;
+  if (left === right) return true;
+  const tail = (value: string) => value.slice(-8);
+  return tail(left) === tail(right) && tail(left).length >= 7;
 }
 
-export function memberContactTakenCode(field: MemberContactField): MemberContactTakenCode {
-  if (field === "email") return "MEMBER_EMAIL_TAKEN";
-  if (field === "phone") return "MEMBER_PHONE_TAKEN";
-  return "MEMBER_NAME_TAKEN";
+export function memberContactTakenCode(_field: MemberContactField): MemberContactTakenCode {
+  return "MEMBER_PHONE_TAKEN";
 }
 
 export function memberContactTakenField(code: string | null | undefined): MemberContactField | null {
-  if (code === "MEMBER_EMAIL_TAKEN") return "email";
   if (code === "MEMBER_PHONE_TAKEN") return "phone";
-  if (code === "MEMBER_NAME_TAKEN") return "name";
   return null;
 }
 
@@ -64,32 +56,18 @@ export function findMemberContactConflictInRows(
   rows: MemberContactRow[],
   input: { email?: string | null; phone?: string | null; displayName?: string | null; excludeMemberId?: string | null },
 ): MemberContactConflict | null {
-  const email = normalizeEmail(String(input.email ?? ""));
   const phoneRaw = String(input.phone ?? "").trim();
   const phone = phoneRaw ? (toWhatsAppNumber(phoneRaw) || digitsOnly(phoneRaw)) : "";
-  const name = normalizeMemberName(String(input.displayName ?? ""));
   const excludeId = input.excludeMemberId ? String(input.excludeMemberId) : "";
+  if (!phone) return null;
 
   const active = rows.filter((row) => {
     if (excludeId && row.id === excludeId) return false;
     return (row.status ?? "active") === "active";
   });
 
-  if (email) {
-    const row = active.find((item) => normalizeEmail(String(item.email ?? "")) === email);
-    if (row) return { field: "email", memberId: row.id, displayName: row.display_name };
-  }
-
-  if (phone) {
-    const row = active.find((item) => phonesMatch(phone, String(item.phone ?? "")));
-    if (row) return { field: "phone", memberId: row.id, displayName: row.display_name };
-  }
-
-  if (name) {
-    const row = active.find((item) => normalizeMemberName(item.display_name) === name);
-    if (row) return { field: "name", memberId: row.id, displayName: row.display_name };
-  }
-
+  const row = active.find((item) => phonesMatch(phone, String(item.phone ?? "")));
+  if (row) return { field: "phone", memberId: row.id, displayName: row.display_name };
   return null;
 }
 
@@ -121,19 +99,7 @@ export function memberContactConflictMessage(
 ) {
   const name = conflict.displayName || (locale === "ar" ? "عضو آخر" : "another member");
   if (locale === "ar") {
-    if (conflict.field === "email") {
-      return `هذا البريد مسجّل لمستخدم موجود («${name}»). للمتابعة حرّر بياناته.`;
-    }
-    if (conflict.field === "phone") {
-      return `هذا الرقم مسجّل لمستخدم موجود («${name}»). للمتابعة حرّر بياناته.`;
-    }
-    return `هذا المستخدم موجود («${name}»). للمتابعة حرّر بياناته.`;
+    return `هذا الرقم مسجّل لمستخدم موجود («${name}»). لا يُسمح بتكرار رقم الهاتف داخل الجمعية. للمتابعة حرّر بياناته.`;
   }
-  if (conflict.field === "email") {
-    return `This email already belongs to “${name}”. To continue, edit their details.`;
-  }
-  if (conflict.field === "phone") {
-    return `This phone number already belongs to “${name}”. To continue, edit their details.`;
-  }
-  return `This member already exists (“${name}”). To continue, edit their details.`;
+  return `This phone number already belongs to “${name}”. Phone numbers cannot be repeated in this association. To continue, edit their details.`;
 }

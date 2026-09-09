@@ -23,7 +23,7 @@ export type DuplicateMember = {
 export type DuplicateCluster = {
   spaceId: string;
   key: string;
-  field: "phone" | "email" | "mixed";
+  field: "phone";
   members: DuplicateMember[];
   keeperId: string;
   extraCount: number;
@@ -54,7 +54,9 @@ export function phonesEquivalent(a: string | null | undefined, b: string | null 
   const left = canonicalMemberPhone(a);
   const right = canonicalMemberPhone(b);
   if (!left || !right || left.length < 7 || right.length < 7) return false;
-  return left === right;
+  if (left === right) return true;
+  const tail = (value: string) => value.slice(-8);
+  return tail(left) === tail(right) && tail(left).length >= 7;
 }
 
 export function chooseKeeper(members: DuplicateMember[]) {
@@ -104,9 +106,7 @@ export function findDuplicateClusters(members: DuplicateMember[]): DuplicateClus
       for (let j = i + 1; j < rows.length; j += 1) {
         const left = rows[i];
         const right = rows[j];
-        const phoneHit = phonesEquivalent(left.phone, right.phone);
-        const emailHit = Boolean(canonicalMemberEmail(left.email) && canonicalMemberEmail(left.email) === canonicalMemberEmail(right.email));
-        if (phoneHit || emailHit) union(left.id, right.id);
+        if (phonesEquivalent(left.phone, right.phone)) union(left.id, right.id);
       }
     }
     const groups = new Map<string, DuplicateMember[]>();
@@ -120,12 +120,11 @@ export function findDuplicateClusters(members: DuplicateMember[]): DuplicateClus
       if (group.length < 2) continue;
       const keeper = chooseKeeper(group);
       const phoneKeys = new Set(group.map((item) => canonicalMemberPhone(item.phone)).filter((item) => item.length >= 7));
-      const emailKeys = new Set(group.map((item) => canonicalMemberEmail(item.email)).filter(Boolean));
-      const field = phoneKeys.size && emailKeys.size ? "mixed" : phoneKeys.size ? "phone" : "email";
+      if (!phoneKeys.size) continue;
       clusters.push({
         spaceId,
-        key: `${spaceId}:${[...phoneKeys, ...emailKeys].sort().join("|")}`,
-        field,
+        key: `${spaceId}:${[...phoneKeys].sort().join("|")}`,
+        field: "phone",
         members: group,
         keeperId: keeper.id,
         extraCount: group.length - 1,

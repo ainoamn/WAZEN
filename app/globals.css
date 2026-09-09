@@ -934,6 +934,7 @@ html[data-theme="dark"] .space-picker-field select { background: var(--surface);
 .contact-source-bar > span { font-size: 12px; font-weight: 800; color: #244c56; }
 .contact-source-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .contact-source-actions .secondary-button { height: 32px; padding: 0 10px; font-size: 11px; }
+.duplicate-merge-trigger.has-duplicates { background: #ecfdf3; border-color: #0f766e; color: #0f766e; font-weight: 800; }
 .duplicate-cluster-list { display: grid; gap: 8px; max-height: 320px; overflow: auto; }
 .duplicate-cluster { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid #d7e0db; border-radius: 12px; background: #f8faf9; }
 .duplicate-cluster.is-blocked { border-color: #f2c9c9; background: #fff7f7; }

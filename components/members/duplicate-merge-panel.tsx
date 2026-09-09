@@ -24,7 +24,6 @@ export function DuplicateMergePanel({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  if (!summary.clusterCount) return null;
 
   const spaceName = (id: string) => {
     const space = spaces.find((item) => item.id === id);
@@ -62,15 +61,15 @@ export function DuplicateMergePanel({
         ? {
           MERGE_CONFLICT_ACCOUNTS: "لا يمكن الدمج: حسابان مرتبطان بتسجيل دخول مختلف.",
           OWNER_MEMBER_LOCKED: "لا يمكن حذف عضوية المالك.",
-          NOTHING_TO_MERGE: "لا توجد حسابات مكررة قابلة للدمج.",
-          NOT_DUPLICATES: "هذه السجلات ليست تكراراً مؤكداً لنفس الشخص.",
+          NOTHING_TO_MERGE: "لا توجد أرقام هاتف مكررة داخل الجمعية نفسها.",
+          NOT_DUPLICATES: "هذه السجلات ليست تكراراً لنفس رقم الهاتف.",
           MERGE_CROSS_SPACE: "الدمج داخل الجمعية الواحدة فقط حتى لا تتأثر الجمعيات الأخرى.",
         }
         : {
           MERGE_CONFLICT_ACCOUNTS: "Cannot merge: two different signed-in accounts share this number.",
           OWNER_MEMBER_LOCKED: "The owner membership cannot be removed.",
-          NOTHING_TO_MERGE: "No mergeable duplicates found.",
-          NOT_DUPLICATES: "These records are not confirmed duplicates.",
+          NOTHING_TO_MERGE: "No duplicate phone numbers were found in the same association.",
+          NOT_DUPLICATES: "These records are not the same phone number.",
           MERGE_CROSS_SPACE: "Merge stays inside one association so other wallets are unchanged.",
         };
       setError(messages[code] ?? code);
@@ -81,45 +80,66 @@ export function DuplicateMergePanel({
 
   return (
     <>
-      <button type="button" className="secondary-button duplicate-merge-trigger" onClick={() => setOpen(true)}>
+      <button
+        type="button"
+        className={`secondary-button duplicate-merge-trigger${summary.extraAccounts ? " has-duplicates" : ""}`}
+        onClick={() => { setError(""); setOpen(true); }}
+      >
         <Users size={16} />
-        {locale === "ar" ? `دمج المكرر (${summary.extraAccounts})` : `Merge duplicates (${summary.extraAccounts})`}
+        {locale === "ar"
+          ? (summary.extraAccounts ? `دمج المكرر (${summary.extraAccounts})` : "دمج المكرر")
+          : (summary.extraAccounts ? `Merge duplicates (${summary.extraAccounts})` : "Merge duplicates")}
       </button>
       {open ? (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setOpen(false); }}>
-          <section className="modal-card wide-modal" role="dialog" aria-modal="true" aria-label={locale === "ar" ? "دمج الحسابات المكررة" : "Merge duplicate accounts"}>
+          <section className="modal-card wide-modal" role="dialog" aria-modal="true" aria-label={locale === "ar" ? "دمج الأرقام المكررة" : "Merge duplicate numbers"}>
             <div className="modal-header">
-              <h2>{locale === "ar" ? "دمج الأرقام والحسابات المكررة" : "Merge duplicate numbers and accounts"}</h2>
+              <h2>{locale === "ar" ? "دمج الأرقام المكررة" : "Merge duplicate phone numbers"}</h2>
               <button type="button" onClick={() => setOpen(false)} disabled={saving} aria-label="Close">×</button>
             </div>
             <div className="modal-form">
               <p className="modal-note">
                 {locale === "ar"
-                  ? `${summary.clusterCount} مجموعة تكرار · ${summary.extraAccounts} حساب إضافي. الدمج يتم داخل الجمعية نفسها فقط، ولا يغيّر أرصدة الأعضاء الآخرين.`
-                  : `${summary.clusterCount} duplicate group(s) · ${summary.extraAccounts} extra account(s). Merge stays inside the same association and does not change other members’ balances.`}
+                  ? "يُدمج فقط من يشتركون في نفس رقم الهاتف داخل الجمعية الواحدة. تكرار البريد مسموح. نفس الشخص في جمعيتين مختلفتين ليس تكراراً."
+                  : "Only matching phone numbers inside the same association are merged. Repeated emails are allowed. The same person in two associations is not a duplicate."}
               </p>
-              <div className="duplicate-cluster-list">
-                {clusters.map((cluster) => {
-                  const keeper = cluster.members.find((item) => item.id === cluster.keeperId) ?? cluster.members[0];
-                  return (
-                    <article key={cluster.key} className={`duplicate-cluster${cluster.blockedReason ? " is-blocked" : ""}`}>
-                      <header>
-                        <strong>{spaceName(cluster.spaceId)}</strong>
-                        <span>{locale === "ar" ? `${cluster.members.length} سجلات` : `${cluster.members.length} records`}</span>
-                      </header>
-                      <p>{cluster.members.map((item) => item.display_name).join(" · ")}</p>
-                      <small>{keeper.phone || keeper.email || "—"}</small>
-                      {cluster.blockedReason ? (
-                        <em>{locale === "ar" ? "محظور: حسابان مرتبطان بتسجيل دخول مختلف" : "Blocked: two different signed-in accounts"}</em>
-                      ) : (
-                        <button type="button" className="secondary-button" disabled={saving} onClick={() => void merge(cluster)}>
-                          {locale === "ar" ? `دمج في «${keeper.display_name}»` : `Merge into “${keeper.display_name}”`}
-                        </button>
-                      )}
-                    </article>
-                  );
-                })}
-              </div>
+              {summary.clusterCount ? (
+                <>
+                  <p className="modal-note">
+                    {locale === "ar"
+                      ? `${summary.clusterCount} مجموعة تكرار · ${summary.extraAccounts} حساب إضافي.`
+                      : `${summary.clusterCount} duplicate group(s) · ${summary.extraAccounts} extra account(s).`}
+                  </p>
+                  <div className="duplicate-cluster-list">
+                    {clusters.map((cluster) => {
+                      const keeper = cluster.members.find((item) => item.id === cluster.keeperId) ?? cluster.members[0];
+                      return (
+                        <article key={cluster.key} className={`duplicate-cluster${cluster.blockedReason ? " is-blocked" : ""}`}>
+                          <header>
+                            <strong>{spaceName(cluster.spaceId)}</strong>
+                            <span>{locale === "ar" ? `${cluster.members.length} سجلات` : `${cluster.members.length} records`}</span>
+                          </header>
+                          <p>{cluster.members.map((item) => item.display_name).join(" · ")}</p>
+                          <small>{keeper.phone || "—"}</small>
+                          {cluster.blockedReason ? (
+                            <em>{locale === "ar" ? "محظور: حسابان مرتبطان بتسجيل دخول مختلف" : "Blocked: two different signed-in accounts"}</em>
+                          ) : (
+                            <button type="button" className="secondary-button" disabled={saving} onClick={() => void merge(cluster)}>
+                              {locale === "ar" ? `دمج في «${keeper.display_name}»` : `Merge into “${keeper.display_name}”`}
+                            </button>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <p className="modal-note">
+                  {locale === "ar"
+                    ? "لا توجد أرقام هاتف مكررة داخل أي جمعية حالياً."
+                    : "No duplicate phone numbers were found in any association."}
+                </p>
+              )}
               {error ? <p className="modal-error">{error}</p> : null}
               <p className="modal-note duplicate-safety">
                 <ShieldCheck size={14} />

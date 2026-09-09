@@ -42,13 +42,11 @@ export type AssociationMember = {
   joined_at?: string;
 };
 
-export function personIdentityKey(member: Pick<AssociationMember, "phone" | "email" | "display_name">) {
+export function personIdentityKey(member: Pick<AssociationMember, "id" | "phone" | "email" | "display_name">) {
   const rawPhone = String(member.phone ?? "").trim();
   const phone = rawPhone ? (toWhatsAppNumber(rawPhone) || digitsOnly(rawPhone)) : "";
-  const email = String(member.email ?? "").trim().toLowerCase();
   if (phone.length >= 7) return `p:${phone}`;
-  if (email) return `e:${email}`;
-  return `n:${member.display_name.trim().toLowerCase()}`;
+  return `id:${member.id}`;
 }
 
 export type AssociationInstallment = InstallmentLike & { member_id?: string; space_id?: string; due_at?: string };

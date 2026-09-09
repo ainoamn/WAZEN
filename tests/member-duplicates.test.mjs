@@ -9,6 +9,7 @@ import {
   phonesEquivalent,
 } from "../lib/member-duplicates.ts";
 import { parseContactFile, parseCsvContacts, parseVcardContacts, contactsToCsv, contactsToVcard } from "../lib/contact-file.ts";
+import { contactsFromGooglePeople } from "../lib/google-contacts.ts";
 
 const space = "space-1";
 const other = "space-2";
@@ -34,6 +35,14 @@ test("duplicate clusters stay inside one association and ignore other wallets", 
   const summary = duplicateSummary(clusters);
   assert.equal(summary.clusterCount, 1);
   assert.equal(summary.extraAccounts, 1);
+});
+
+test("same email with different phones is not a duplicate cluster", () => {
+  const clusters = findDuplicateClusters([
+    { id: "a1", space_id: space, display_name: "سالم", email: "shared@x.com", phone: "9904406", role: "member", paid_minor: 0, due_minor: 0, extra_minor: 0 },
+    { id: "a2", space_id: space, display_name: "محمد", email: "shared@x.com", phone: "91112222", role: "member", paid_minor: 0, due_minor: 0, extra_minor: 0 },
+  ]);
+  assert.equal(clusters.length, 0);
 });
 
 test("two linked logins in the same wallet are blocked from merging", () => {
@@ -86,4 +95,16 @@ test("vcard and csv contact files parse names emails and phones", () => {
   const roundTrip = parseContactFile("book.csv", contactsToCsv(fromCsv));
   assert.equal(roundTrip[0].email, "mohd@x.com");
   assert.match(contactsToVcard(fromVcf), /BEGIN:VCARD/);
+});
+
+test("google people connections map to saved contacts", () => {
+  const rows = contactsFromGooglePeople({
+    connections: [
+      { names: [{ displayName: "سالم" }], emailAddresses: [{ value: "salem@gmail.com" }], phoneNumbers: [{ value: "+968 9904 406" }] },
+      { names: [{ displayName: "" }], emailAddresses: [], phoneNumbers: [] },
+    ],
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].displayName, "سالم");
+  assert.equal(rows[0].email, "salem@gmail.com");
 });
