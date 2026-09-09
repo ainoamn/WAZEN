@@ -41,7 +41,7 @@ npm install
 | دعوة: من الهاتف أو **من Gmail** مباشرة أو رفع/تنزيل vCard وCSV | ✅ |
 | Next.js 16.3.4 لتمرير `npm audit` ونشر Vercel | ✅ |
 
-**الإنتاج:** https://wazen.bhd-om.com — `buildId` الحي: `93c68c1dd1e5bc043e1be2225bd907adf2c2538a`
+**الإنتاج:** https://wazen.bhd-om.com — `buildId` الحي: `3522f54f37d776ddff7f93038c79aa17e50fa443`
 
 ---
 
