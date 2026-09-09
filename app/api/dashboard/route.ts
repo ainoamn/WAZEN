@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
 import { authenticateRequest, clearCsrfCookie, clearSessionCookie, csrfCookie, issueCsrfToken } from "../../../lib/auth";
-import { buildCircleOrder, minimizeSettlements, splitContributionPayment, splitEvenly, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
+import { buildCircleOrder, splitContributionPayment, splitEvenly, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
+import { rebuildSpaceTripSettlements } from "../../../lib/trip-settlements";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
 import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf, actorCanIssueSpaceDocuments } from "../../../lib/authorization";
 import { prepareAudit, writeAudit } from "../../../lib/audit";
@@ -582,6 +583,7 @@ async function rebuildTripExpenseShares(
   userId: string,
   expense: TripExpenseRecord,
   next: { amountMinor: number; description: string; paidByMemberId: string },
+  options?: { skipNet?: boolean },
 ) {
   if ((expense.status ?? "posted") === "voided") throw new ApiError(409, "EXPENSE_VOIDED");
   const settled = await db.prepare("SELECT COUNT(*) AS count FROM settlements WHERE expense_id=? AND status='settled'").bind(expense.id).first<{ count: number }>();
@@ -610,19 +612,6 @@ async function rebuildTripExpenseShares(
   for (const split of splits) {
     statements.push(db.prepare("INSERT INTO expense_splits (id,expense_id,member_id,share_minor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), expense.id, split.memberId, split.shareMinor));
   }
-  if (!paidFromFund) {
-    const balances = members.results.map((member) => {
-      const share = splits.find((item) => item.memberId === member.id)?.shareMinor ?? 0;
-      const paid = member.id === next.paidByMemberId ? next.amountMinor : 0;
-      return { memberId: member.id, balanceMinor: paid - share };
-    });
-    for (const settlement of minimizeSettlements(balances)) {
-      statements.push(
-        db.prepare("INSERT INTO settlements (id,space_id,from_member_id,to_member_id,amount_minor,status,created_at,expense_id) VALUES (?,?,?,?,?,'pending',?,?)")
-          .bind(crypto.randomUUID(), expense.space_id, settlement.fromMemberId, settlement.toMemberId, settlement.amountMinor, createdAt, expense.id),
-      );
-    }
-  }
   statements.push(prepareAudit(db, {
     userId,
     action: "trip.expense_resplit",
@@ -632,6 +621,7 @@ async function rebuildTripExpenseShares(
     createdAt,
   }));
   await db.batch(statements);
+  if (!options?.skipNet) await rebuildSpaceTripSettlements(db, expense.space_id, userId);
   await rebuildSpaceBalance(db, [expense.space_id]);
 }
 
@@ -2729,17 +2719,6 @@ export async function POST(request: Request) {
           db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
             .bind(crypto.randomUUID(), entryId, "liability:member_payable", paidByMemberId, 0, amountMinor, createdAt),
         );
-        const balances = members.results.map((member) => {
-          const share = splits.find((item) => item.memberId === member.id)?.shareMinor ?? 0;
-          const paid = member.id === paidByMemberId ? amountMinor : 0;
-          return { memberId: member.id, balanceMinor: paid - share };
-        });
-        minimizeSettlements(balances).forEach((settlement) => {
-          statements.push(
-            db.prepare("INSERT INTO settlements (id,space_id,from_member_id,to_member_id,amount_minor,status,created_at,expense_id) VALUES (?,?,?,?,?,'pending',?,?)")
-              .bind(crypto.randomUUID(), parsed.data.spaceId, settlement.fromMemberId, settlement.toMemberId, settlement.amountMinor, createdAt, expenseId),
-          );
-        });
       }
       splits.forEach((split) => statements.push(db.prepare("INSERT INTO expense_splits (id,expense_id,member_id,share_minor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), expenseId, split.memberId, split.shareMinor)));
       statements.push(prepareAudit(db, {
@@ -2759,6 +2738,7 @@ export async function POST(request: Request) {
         metadata: { amountMinor },
       }));
       await db.batch(statements);
+      await rebuildSpaceTripSettlements(db, parsed.data.spaceId, user.id);
       await rebuildSpaceBalance(db, [parsed.data.spaceId]);
       try {
         const { queueSpaceMemberStatementEmails } = await import("../../../lib/member-statement-email");
@@ -2793,9 +2773,9 @@ export async function POST(request: Request) {
       await db.batch([
         db.prepare("UPDATE trip_expenses SET status='voided' WHERE id=?").bind(expense.id),
         db.prepare("UPDATE settlements SET status='voided' WHERE expense_id=? AND status='pending'").bind(expense.id),
-        db.prepare("UPDATE settlements SET status='voided' WHERE space_id=? AND status='pending' AND created_at=? AND expense_id IS NULL").bind(expense.space_id, expense.created_at),
         prepareAudit(db, { userId: user.id, action: "trip.expense_voided", entityType: "trip_expense", entityId: expense.id, metadata: { spaceId: expense.space_id }, createdAt: now() }),
       ]);
+      await rebuildSpaceTripSettlements(db, expense.space_id, user.id);
       await rebuildSpaceBalance(db, [expense.space_id]);
     } else if (action === "updateTripExpense") {
       const parsed = z.object({
@@ -2837,8 +2817,14 @@ export async function POST(request: Request) {
           amountMinor: Number(expense.amount_minor),
           description: expense.description,
           paidByMemberId: expense.paid_by_member_id,
-        });
+        }, { skipNet: true });
       }
+      await rebuildSpaceTripSettlements(db, parsed.data.spaceId, user.id);
+    } else if (action === "netTripSettlements") {
+      const parsed = z.object({ spaceId: z.string().min(1).max(120) }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_TRIP_EXPENSE");
+      await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["household", "trip", "society", "group"]);
+      await rebuildSpaceTripSettlements(db, parsed.data.spaceId, user.id);
     } else if (action === "voidSettlement") {
       const parsed = z.object({ settlementId: z.string().min(1).max(120) }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_SETTLEMENT");

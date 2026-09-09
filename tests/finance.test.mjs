@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCreditToDebits, buildCircleOrder, extraAddonMinorFromTransactions, memberCashCreditMinor, memberDisplayCreditMinor, minimizeSettlements, pendingSettlementsWithCredit, netMemberClaim, splitContributionPayment, splitEvenly, validateJournal } from "../lib/finance.ts";
+import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, extraAddonMinorFromTransactions, memberCashCreditMinor, memberDisplayCreditMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, splitContributionPayment, splitEvenly, validateJournal } from "../lib/finance.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 import { bankCustodySplit } from "../lib/wallet-links.ts";
 
@@ -55,12 +55,53 @@ test("journal validation rejects unbalanced entries", () => {
   assert.equal(validateJournal([{ debitMinor: 500, creditMinor: 500 }]), false);
 });
 
-test("settlement optimizer closes debtor and creditor balances", () => {
+test("settlement optimizer pays the largest debtor first", () => {
   assert.deepEqual(minimizeSettlements([
     { memberId: "payer", balanceMinor: 900 }, { memberId: "one", balanceMinor: -300 }, { memberId: "two", balanceMinor: -600 },
   ]), [
-    { fromMemberId: "one", toMemberId: "payer", amountMinor: 300 },
     { fromMemberId: "two", toMemberId: "payer", amountMinor: 600 },
+    { fromMemberId: "one", toMemberId: "payer", amountMinor: 300 },
+  ]);
+});
+
+test("trip nets combine pocket expenses into few large transfers", () => {
+  const balances = netTripMemberBalances({
+    memberIds: ["a", "b", "c"],
+    expenses: [
+      { id: "e1", paid_by_member_id: "a", amount_minor: 90 },
+      { id: "e2", paid_by_member_id: "b", amount_minor: 30 },
+      { id: "e3", paid_by_member_id: "a", amount_minor: 12, paid_from: "common_fund" },
+    ],
+    splits: [
+      { expense_id: "e1", member_id: "a", share_minor: 30 },
+      { expense_id: "e1", member_id: "b", share_minor: 30 },
+      { expense_id: "e1", member_id: "c", share_minor: 30 },
+      { expense_id: "e2", member_id: "a", share_minor: 10 },
+      { expense_id: "e2", member_id: "b", share_minor: 10 },
+      { expense_id: "e2", member_id: "c", share_minor: 10 },
+      { expense_id: "e3", member_id: "a", share_minor: 4 },
+      { expense_id: "e3", member_id: "b", share_minor: 4 },
+      { expense_id: "e3", member_id: "c", share_minor: 4 },
+    ],
+  });
+  assert.deepEqual(Object.fromEntries(balances.map((row) => [row.memberId, row.balanceMinor])), { a: 50, b: -10, c: -40 });
+  assert.deepEqual(minimizeSettlements(balances), [
+    { fromMemberId: "c", toMemberId: "a", amountMinor: 40 },
+    { fromMemberId: "b", toMemberId: "a", amountMinor: 10 },
+  ]);
+});
+
+test("settled transfers reduce remaining trip nets", () => {
+  const remaining = applySettledTransfers(
+    [
+      { memberId: "ali", balanceMinor: 100 },
+      { memberId: "hamid", balanceMinor: -70 },
+      { memberId: "omar", balanceMinor: -30 },
+    ],
+    [{ fromMemberId: "hamid", toMemberId: "ali", amountMinor: 70 }],
+  );
+  assert.deepEqual(minimizeSettlements(remaining), [
+    { fromMemberId: "omar", toMemberId: "ali", amountMinor: 30 },
   ]);
 });
 

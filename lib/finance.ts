@@ -36,9 +36,18 @@ export function splitEvenly(amountMinor: number, memberIds: string[]) {
 }
 
 export type Balance = { memberId: string; balanceMinor: number };
+
+function byLargestThenId<T extends { memberId: string; balanceMinor: number }>(left: T, right: T) {
+  return right.balanceMinor - left.balanceMinor || left.memberId.localeCompare(right.memberId);
+}
+
+/** Greedy netting: each debtor clears the current creditor fully, leftover goes to the next person. */
 export function minimizeSettlements(balances: Balance[]) {
-  const creditors = balances.filter((item) => item.balanceMinor > 0).map((item) => ({ ...item }));
-  const debtors = balances.filter((item) => item.balanceMinor < 0).map((item) => ({ memberId: item.memberId, balanceMinor: -item.balanceMinor }));
+  const creditors = balances.filter((item) => item.balanceMinor > 0).map((item) => ({ ...item })).sort(byLargestThenId);
+  const debtors = balances
+    .filter((item) => item.balanceMinor < 0)
+    .map((item) => ({ memberId: item.memberId, balanceMinor: -item.balanceMinor }))
+    .sort(byLargestThenId);
   const settlements: { fromMemberId: string; toMemberId: string; amountMinor: number }[] = [];
   let debtorIndex = 0;
   let creditorIndex = 0;
@@ -53,6 +62,41 @@ export function minimizeSettlements(balances: Balance[]) {
     if (creditor.balanceMinor === 0) creditorIndex += 1;
   }
   return settlements;
+}
+
+/** Pocket-paid trip expenses only: paid minus share. Fund expenses are excluded. */
+export function netTripMemberBalances(input: {
+  memberIds: string[];
+  expenses: Array<{ id: string; paid_by_member_id: string; amount_minor: number; paid_from?: string | null }>;
+  splits: Array<{ expense_id: string; member_id: string; share_minor: number }>;
+}): Balance[] {
+  const live = input.expenses.filter((expense) => String(expense.paid_from ?? "member") !== "common_fund");
+  const liveIds = new Set(live.map((expense) => expense.id));
+  const map = new Map(input.memberIds.map((id) => [id, 0]));
+  for (const expense of live) {
+    if (!map.has(expense.paid_by_member_id)) continue;
+    map.set(expense.paid_by_member_id, (map.get(expense.paid_by_member_id) ?? 0) + (Number(expense.amount_minor) || 0));
+  }
+  for (const split of input.splits) {
+    if (!liveIds.has(split.expense_id) || !map.has(split.member_id)) continue;
+    map.set(split.member_id, (map.get(split.member_id) ?? 0) - (Number(split.share_minor) || 0));
+  }
+  return [...map.entries()].map(([memberId, balanceMinor]) => ({ memberId, balanceMinor }));
+}
+
+/** Settled transfers reduce remaining net: payer’s debt drops, payee’s credit drops. */
+export function applySettledTransfers(
+  balances: Balance[],
+  settled: Array<{ fromMemberId: string; toMemberId: string; amountMinor: number }>,
+): Balance[] {
+  const map = new Map(balances.map((item) => [item.memberId, item.balanceMinor]));
+  for (const row of settled) {
+    const amount = Number(row.amountMinor) || 0;
+    if (amount <= 0) continue;
+    if (map.has(row.fromMemberId)) map.set(row.fromMemberId, (map.get(row.fromMemberId) ?? 0) + amount);
+    if (map.has(row.toMemberId)) map.set(row.toMemberId, (map.get(row.toMemberId) ?? 0) - amount);
+  }
+  return [...map.entries()].map(([memberId, balanceMinor]) => ({ memberId, balanceMinor }));
 }
 
 export function validateJournal(lines: { debitMinor: number; creditMinor: number }[]) {

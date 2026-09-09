@@ -5,7 +5,8 @@ import { prepareAudit } from "./audit";
 import { coveringPeriod } from "./accounting-periods";
 import { ApiError } from "./security";
 import { formatMoneyMinor, parseMoneyToMinor } from "./money";
-import { splitEvenly, minimizeSettlements } from "./finance";
+import { splitEvenly } from "./finance";
+import { rebuildSpaceTripSettlements } from "./trip-settlements";
 import { voidApprovedTransaction, writeApprovedCashBalance } from "./ledger-void";
 
 export async function listV1Expenses(
@@ -136,17 +137,6 @@ export async function createV1Expense(
       db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
         .bind(crypto.randomUUID(), entryId, "liability:member_payable", paidByMemberId, 0, amountMinor, createdAt),
     );
-    const balances = members.results.map((member) => {
-      const share = splits.find((item) => item.memberId === member.id)?.shareMinor ?? 0;
-      const paid = member.id === paidByMemberId ? amountMinor : 0;
-      return { memberId: member.id, balanceMinor: paid - share };
-    });
-    for (const settlement of minimizeSettlements(balances)) {
-      statements.push(
-        db.prepare("INSERT INTO settlements (id,space_id,from_member_id,to_member_id,amount_minor,status,created_at,expense_id) VALUES (?,?,?,?,?,'pending',?,?)")
-          .bind(crypto.randomUUID(), space.id, settlement.fromMemberId, settlement.toMemberId, settlement.amountMinor, createdAt, expenseId),
-      );
-    }
   }
 
   for (const split of splits) {
@@ -166,6 +156,7 @@ export async function createV1Expense(
 
   await db.batch(statements);
   try { await writeApprovedCashBalance(db, space.id); } catch { /* best-effort */ }
+  await rebuildSpaceTripSettlements(db, space.id, user.id);
 
   return {
     id: expenseId,
@@ -233,6 +224,7 @@ export async function voidV1Expense(
     }),
   ]);
   try { await writeApprovedCashBalance(db, space.id); } catch { /* best-effort */ }
+  await rebuildSpaceTripSettlements(db, space.id, user.id);
 
   return { id: expense.id, spaceId: space.id, status: "voided" as const, voidedAt: createdAt };
 }
@@ -255,6 +247,7 @@ async function rebuildV1ExpenseShares(
   userId: string,
   expense: TripExpenseRecord,
   next: { amountMinor: number; description: string; paidByMemberId: string },
+  options?: { skipNet?: boolean },
 ) {
   if ((expense.status ?? "posted") === "voided") throw new ApiError(409, "EXPENSE_VOIDED");
   const settled = await db.prepare("SELECT COUNT(*) AS count FROM settlements WHERE expense_id=? AND status='settled'")
@@ -302,19 +295,6 @@ async function rebuildV1ExpenseShares(
         .bind(crypto.randomUUID(), expense.id, split.memberId, split.shareMinor),
     );
   }
-  if (!paidFromFund) {
-    const balances = members.results.map((member) => {
-      const share = splits.find((item) => item.memberId === member.id)?.shareMinor ?? 0;
-      const paid = member.id === next.paidByMemberId ? next.amountMinor : 0;
-      return { memberId: member.id, balanceMinor: paid - share };
-    });
-    for (const settlement of minimizeSettlements(balances)) {
-      statements.push(
-        db.prepare("INSERT INTO settlements (id,space_id,from_member_id,to_member_id,amount_minor,status,created_at,expense_id) VALUES (?,?,?,?,?,'pending',?,?)")
-          .bind(crypto.randomUUID(), expense.space_id, settlement.fromMemberId, settlement.toMemberId, settlement.amountMinor, createdAt, expense.id),
-      );
-    }
-  }
   statements.push(prepareAudit(db, {
     userId,
     action: "trip.expense_resplit",
@@ -330,6 +310,7 @@ async function rebuildV1ExpenseShares(
   }));
   await db.batch(statements);
   try { await writeApprovedCashBalance(db, expense.space_id); } catch { /* best-effort */ }
+  if (!options?.skipNet) await rebuildSpaceTripSettlements(db, expense.space_id, userId);
 }
 
 export async function updateV1Expense(
@@ -402,8 +383,9 @@ export async function resplitV1Expenses(
       amountMinor: Number(expense.amount_minor),
       description: expense.description,
       paidByMemberId: expense.paid_by_member_id,
-    });
+    }, { skipNet: true });
     updated += 1;
   }
+  await rebuildSpaceTripSettlements(db, space.id, user.id);
   return { spaceId: space.id, updated, skipped };
 }

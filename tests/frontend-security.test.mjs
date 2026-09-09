@@ -439,3 +439,16 @@ test("statement print opens immediately with a floating print bar and associatio
   assert.match(share, /statement-share-toolbar/);
   assert.match(share, /statement-share-movements/);
 });
+
+test("trip settlements net across the space instead of each bill", () => {
+  const dashboard = fs.readFileSync(path.join(root, "app/wazen-dashboard.tsx"), "utf8");
+  const dashboardApi = fs.readFileSync(path.join(root, "app/api/dashboard/route.ts"), "utf8");
+  const v1 = fs.readFileSync(path.join(root, "lib/v1-expenses.ts"), "utf8");
+  const nets = fs.readFileSync(path.join(root, "lib/trip-settlements.ts"), "utf8");
+  assert.match(dashboard, /action: "netTripSettlements"/);
+  assert.match(dashboard, /تصفية التسويات/);
+  assert.match(dashboardApi, /action === "netTripSettlements"/);
+  assert.match(dashboardApi, /rebuildSpaceTripSettlements/);
+  assert.match(nets, /trip.settlements_netted/);
+  assert.doesNotMatch(v1, /minimizeSettlements\(balances\)/);
+});
