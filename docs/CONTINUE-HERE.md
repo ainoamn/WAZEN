@@ -39,7 +39,7 @@ npm install
 | دعوة: من الهاتف أو **من Gmail** مباشرة أو رفع/تنزيل vCard وCSV | ✅ |
 | Next.js 16.3.4 لتمرير `npm audit` ونشر Vercel | ✅ |
 
-**الإنتاج:** `GET https://wazen.bhd-om.com/api/health` — `buildId` يجب أن يطابق commit بعد رفع 16.3.4 (ليس `625adb4`).
+**الإنتاج:** https://wazen.bhd-om.com — `buildId` الحي: `6d013e45f202f7498b92420ca92f99886bf96553`
 
 ---
 
@@ -54,7 +54,8 @@ npm install
 - [ ] ضبط `WHATSAPP_*` / SMS / `RESEND_*` على Vercel إن لم تُضبط
 - [ ] اختبار يدوي: معاملة جماعية → وصول بريد للأعضاء
 - [ ] بريد كشف من بطاقة العضو
-- [ ] Contact Picker غير متاح في بعض المتصفحات (Safari) — استخدم رفع الملف
+- [ ] Contact Picker غير متاح في بعض المتصفحات (Safari) — استخدم **من Gmail** أو رفع الملف
+- [ ] نطاق Google Contacts (`contacts.readonly`) على شاشة موافقة OAuth إن رُفض زر «من Gmail»
 
 ---
 
