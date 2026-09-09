@@ -7,6 +7,7 @@ export type EmailTemplateId =
   | "member_receipt"
   | "member_statement"
   | "dues_digest"
+  | "personal_bill_reminder"
   | "privacy_export_ready"
   | "privacy_deletion_done";
 
@@ -30,6 +31,7 @@ export const EMAIL_TEMPLATE_IDS: EmailTemplateId[] = [
   "member_receipt",
   "member_statement",
   "dues_digest",
+  "personal_bill_reminder",
   "privacy_export_ready",
   "privacy_deletion_done",
 ];
@@ -134,6 +136,17 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<EmailTemplateId, EmailTemplateDefin
     bodyHtmlEn: `<p style="margin:0 0 12px;font-size:15px;line-height:1.7;">{{messageHtml}}</p>`,
     textAr: "{{message}}",
     textEn: "{{message}}",
+  },
+  personal_bill_reminder: {
+    id: "personal_bill_reminder",
+    labelAr: "تذكير دفعة شخصية",
+    labelEn: "Personal payment reminder",
+    subjectAr: "تذكير دفع متكرر — وازون",
+    subjectEn: "Recurring payment reminder — Wazen",
+    bodyHtmlAr: `<p style="margin:0 0 12px;font-size:15px;line-height:1.7;">{{messageHtml}}</p>`,
+    bodyHtmlEn: `<p style="margin:0 0 12px;font-size:15px;line-height:1.7;">{{messageHtml}}</p>`,
+    textAr: "{{message}}\n\n{{link}}",
+    textEn: "{{message}}\n\n{{link}}",
   },
   privacy_export_ready: {
     id: "privacy_export_ready",

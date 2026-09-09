@@ -1,6 +1,7 @@
 import { periodKeyFromDate } from "./installments";
+import { formatMoneyMinor } from "./money";
 
-export function monthKeysThroughNow(startAt: string, endsAt: string | null | undefined, asOf = new Date(), cap = 24) {
+export function monthKeysThroughNow(startAt: string, endsAt: string | null | undefined, asOf = new Date(), cap = 36) {
   const start = new Date(startAt);
   if (Number.isNaN(start.getTime())) return [];
   const endLimit = endsAt ? new Date(endsAt) : asOf;
@@ -17,11 +18,85 @@ export function monthKeysThroughNow(startAt: string, endsAt: string | null | und
   return keys;
 }
 
-export function monthKeysForRule(input: { startsAt: string; endsAt?: string | null; schedule?: string | null }) {
+export function monthKeysForRule(input: { startsAt: string; endsAt?: string | null; schedule?: string | null; asOf?: Date }) {
   const schedule = input.schedule || "monthly";
   if (schedule === "unscheduled") return [];
   if (schedule === "once") return [periodKeyFromDate(new Date(input.startsAt).toISOString())];
-  return monthKeysThroughNow(input.startsAt, input.endsAt);
+  const horizon = input.asOf ?? new Date(Date.now() + 40 * 86_400_000);
+  return monthKeysThroughNow(input.startsAt, input.endsAt, horizon);
+}
+
+export function clampDueDay(dueDay: number) {
+  const day = Math.round(Number(dueDay) || 1);
+  return Math.min(31, Math.max(1, day));
+}
+
+export function resolveInstallmentAmounts(input: { amountMinor: number; totalMinor: number; durationMonths: number }) {
+  let amountMinor = Math.max(0, Math.round(Number(input.amountMinor) || 0));
+  let totalMinor = Math.max(0, Math.round(Number(input.totalMinor) || 0));
+  let durationMonths = Math.max(0, Math.round(Number(input.durationMonths) || 0));
+  if (totalMinor > 0 && durationMonths > 0 && amountMinor <= 0) amountMinor = Math.round(totalMinor / durationMonths);
+  if (totalMinor > 0 && amountMinor > 0 && durationMonths <= 0) durationMonths = Math.ceil(totalMinor / amountMinor);
+  if (amountMinor > 0 && durationMonths > 0 && totalMinor <= 0) totalMinor = amountMinor * durationMonths;
+  return { amountMinor, totalMinor, durationMonths: Math.min(360, durationMonths) };
+}
+
+export function endsAtFromDuration(startsAt: string, durationMonths: number) {
+  const start = new Date(startsAt);
+  if (Number.isNaN(start.getTime()) || durationMonths <= 0) return null;
+  return new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + durationMonths, 0, 12, 0, 0)).toISOString();
+}
+
+export function reminderKindForDue(dueAtIso: string, asOf = new Date()): "due" | "eve" | null {
+  const dueDay = String(dueAtIso || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDay)) return null;
+  const today = asOf.toISOString().slice(0, 10);
+  const tomorrow = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate() + 1)).toISOString().slice(0, 10);
+  if (dueDay === today) return "due";
+  if (dueDay === tomorrow) return "eve";
+  return null;
+}
+
+export type PersonalDueOccurrence = {
+  id: string;
+  space_id: string;
+  due_at: string;
+  status?: string | null;
+  expected_minor?: number | null;
+  rule_name?: string | null;
+  rule_kind?: string | null;
+  total_minor?: number | null;
+  rule_paid_minor?: number | null;
+};
+
+export function personalDueAlerts(
+  occurrences: PersonalDueOccurrence[],
+  spaces: Array<{ id: string; type?: string; name_ar?: string; name_en?: string }>,
+  asOf = new Date(),
+) {
+  const personalIds = new Set(spaces.filter((space) => space.type === "personal").map((space) => space.id));
+  const alerts: Array<{ id: string; severity: "info" | "warning" | "danger"; href?: string; ar: string; en: string }> = [];
+  for (const row of occurrences) {
+    if ((row.status ?? "pending") !== "pending") continue;
+    if (!personalIds.has(row.space_id)) continue;
+    const kind = reminderKindForDue(row.due_at, asOf);
+    if (!kind) continue;
+    const space = spaces.find((item) => item.id === row.space_id);
+    const name = row.rule_name || (kind === "due" ? "دفعة" : "قسط");
+    const amount = formatMoneyMinor(Number(row.expected_minor) || 0, "OMR", "ar");
+    const remaining = Math.max(0, Number(row.total_minor || 0) - Number(row.rule_paid_minor || 0));
+    const remainingLabel = remaining > 0 ? ` · متبقي ${formatMoneyMinor(remaining, "OMR", "ar")}` : "";
+    const whenAr = kind === "eve" ? "غداً" : "اليوم";
+    const whenEn = kind === "eve" ? "tomorrow" : "today";
+    alerts.push({
+      id: `personal-bill:${kind}:${row.id}`,
+      severity: kind === "due" ? "warning" : "info",
+      href: `/dashboard?view=personal&space=${encodeURIComponent(row.space_id)}`,
+      ar: `${whenAr} استحقاق «${name}» بمبلغ ${amount}${remainingLabel}${space?.name_ar ? ` — ${space.name_ar}` : ""}. دفع متكرر.`,
+      en: `${whenEn}: “${name}” is due (${formatMoneyMinor(Number(row.expected_minor) || 0, "OMR", "en")})${remaining > 0 ? ` · remaining ${formatMoneyMinor(remaining, "OMR", "en")}` : ""}. Recurring payment.`,
+    });
+  }
+  return alerts.slice(0, 8);
 }
 
 export function nextPeriodKey(periodKey: string) {
@@ -32,8 +107,11 @@ export function nextPeriodKey(periodKey: string) {
 
 export function dueAtForPeriod(periodKey: string, dueDay: number) {
   const [year, month] = periodKey.split("-").map(Number);
-  const day = Math.min(Math.max(1, dueDay || 1), 28);
-  return new Date(Date.UTC(year, (month || 1) - 1, day, 12, 0, 0)).toISOString();
+  const y = year || 1970;
+  const m = (month || 1) - 1;
+  const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const day = Math.min(clampDueDay(dueDay), lastDay);
+  return new Date(Date.UTC(y, m, day, 12, 0, 0)).toISOString();
 }
 
 export function omrMajor(minor: number) {

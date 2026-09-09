@@ -64,6 +64,12 @@ function ctaMeta(template: string, locale: "ar" | "en", link: string, receiptUrl
   if (template === "member_invitation") return { ctaUrl: href, ctaLabel: locale === "ar" ? "قبول الدعوة" : "Accept invite" };
   if (template === "member_receipt") return { ctaUrl: href, ctaLabel: locale === "ar" ? "عرض الإيصال" : "View receipt" };
   if (template === "member_statement") return { ctaUrl: href, ctaLabel: locale === "ar" ? "عرض الكشف التفصيلي" : "View full statement" };
+  if (template === "personal_bill_reminder") {
+    const origin = publicOrigin();
+    const target = href || "/dashboard?view=personal";
+    const ctaUrl = /^https?:\/\//i.test(target) ? target : `${origin}${target.startsWith("/") ? target : `/${target}`}`;
+    return { ctaUrl, ctaLabel: locale === "ar" ? "فتح المحفظة الشخصية" : "Open personal wallet" };
+  }
   return { ctaUrl: href, ctaLabel: locale === "ar" ? "فتح الرابط" : "Open link" };
 }
 

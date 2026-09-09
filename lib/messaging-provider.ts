@@ -56,10 +56,10 @@ function inviteBody(data: InvitePayload) {
   return `${inviter} دعاك للانضمام إلى «${space}» في وازن.\nافتح الرابط: ${link}`;
 }
 
-async function sendWhatsAppCloud(toE164Digits: string, data: InvitePayload) {
+async function sendWhatsAppCloud(toE164Digits: string, data: InvitePayload, templateName?: string) {
   const token = env("WHATSAPP_TOKEN");
   const phoneNumberId = env("WHATSAPP_PHONE_NUMBER_ID");
-  const template = env("WHATSAPP_INVITE_TEMPLATE");
+  const inviteTemplate = env("WHATSAPP_INVITE_TEMPLATE");
   const lang = env("WHATSAPP_TEMPLATE_LANG") || "ar";
   if (!token || !phoneNumberId) throw new Error("WHATSAPP_NOT_CONFIGURED");
 
@@ -69,15 +69,16 @@ async function sendWhatsAppCloud(toE164Digits: string, data: InvitePayload) {
     authorization: `Bearer ${token}`,
   };
 
+  const useInviteTemplate = Boolean(inviteTemplate) && (templateName ?? "member_invitation") === "member_invitation";
   let body: Record<string, unknown>;
-  if (template) {
+  if (useInviteTemplate) {
     // Approved template: body params = inviter, space, link (order depends on your Meta template).
     body = {
       messaging_product: "whatsapp",
       to: toE164Digits,
       type: "template",
       template: {
-        name: template,
+        name: inviteTemplate,
         language: { code: lang },
         components: [{
           type: "body",
@@ -168,7 +169,7 @@ export async function deliverOutboxMessage(row: MessageOutboxRow) {
   if (!digits || digits.length < 8) throw new Error("INVALID_PHONE");
 
   if (row.channel === "whatsapp") {
-    await sendWhatsAppCloud(digits, data);
+    await sendWhatsAppCloud(digits, data, row.template);
     return;
   }
 

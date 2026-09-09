@@ -390,6 +390,15 @@ async function ensureSchemaPatches(db: D1Database) {
       UNIQUE(user_id, digest_day)
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_dues_digest_day ON dues_digest_log(digest_day)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS personal_reminder_log (
+      id TEXT PRIMARY KEY,
+      occurrence_id TEXT NOT NULL,
+      reminder_kind TEXT NOT NULL,
+      reminder_day TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(occurrence_id, reminder_kind, reminder_day)
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_personal_reminder_day ON personal_reminder_log(reminder_day)"),
     db.prepare(`CREATE TABLE IF NOT EXISTS privacy_artifacts (
       id TEXT PRIMARY KEY,
       request_id TEXT NOT NULL UNIQUE,

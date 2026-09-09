@@ -1035,7 +1035,7 @@ html[data-theme="dark"] .space-picker-field select { background: var(--surface);
 .personal-rule-actions { display: flex; gap: 4px; }
 .personal-rule-actions button { width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 8px; background: white; display: grid; place-items: center; cursor: pointer; color: #3e514b; }
 .personal-rule-actions button.danger { color: #b42318; }
-.personal-loan-row { grid-template-columns: 1.4fr 1fr auto; align-items: center; }
+.personal-loan-row { grid-template-columns: 1.4fr 1fr auto auto; align-items: center; }
 .personal-month-block { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .personal-month-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; margin-bottom: 8px; }
 .personal-month-head span { color: #809089; font-size: 12px; }

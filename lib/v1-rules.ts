@@ -3,7 +3,7 @@
 import type { RequestUser } from "../db/runtime";
 import { prepareAudit } from "./audit";
 import { parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "./money";
-import { dueAtForPeriod, monthKeysForRule } from "./personal-finance";
+import { clampDueDay, dueAtForPeriod, endsAtFromDuration, monthKeysForRule, resolveInstallmentAmounts } from "./personal-finance";
 import { ApiError } from "./security";
 
 type PersonalRuleRow = {
@@ -162,10 +162,11 @@ export async function createV1PersonalRule(
   } catch {
     throw new ApiError(400, "INVALID_AMOUNT");
   }
-  const duration = input.durationMonths ?? 0;
-  if (totalMinor > 0 && duration > 0 && amountMinor <= 0) {
-    amountMinor = Math.round(totalMinor / duration);
-  }
+  const durationInput = input.durationMonths ?? 0;
+  const resolved = resolveInstallmentAmounts({ amountMinor, totalMinor, durationMonths: durationInput });
+  amountMinor = resolved.amountMinor;
+  totalMinor = input.kind === "expense" && schedule === "monthly" ? resolved.totalMinor : totalMinor;
+  const duration = input.kind === "expense" && schedule === "monthly" ? resolved.durationMonths : durationInput;
   if (schedule !== "unscheduled" && amountMode === "fixed" && amountMinor <= 0) {
     throw new ApiError(400, "INVALID_AMOUNT");
   }
@@ -179,8 +180,9 @@ export async function createV1PersonalRule(
   }
 
   const startsAt = parseStartDate(input.startsAt);
-  const endsAt = schedule === "once" ? startsAt : (input.endsAt ? parseStartDate(input.endsAt) : null);
-  const dueDay = Math.min(28, Math.max(1, input.dueDay ?? 1));
+  let endsAt = schedule === "once" ? startsAt : (input.endsAt ? parseStartDate(input.endsAt) : null);
+  if (!endsAt && duration > 0 && schedule === "monthly") endsAt = endsAtFromDuration(startsAt, duration);
+  const dueDay = clampDueDay(input.dueDay ?? 1);
   const createdAt = new Date().toISOString();
   const ruleId = crypto.randomUUID();
 
@@ -301,10 +303,11 @@ export async function updateV1PersonalRule(
   } catch {
     throw new ApiError(400, "INVALID_AMOUNT");
   }
-  const duration = input.durationMonths ?? (Number(rule.duration_months) || 0);
-  if (totalMinor > 0 && duration > 0 && amountMinor <= 0) {
-    amountMinor = Math.round(totalMinor / duration);
-  }
+  const durationInput = input.durationMonths ?? (Number(rule.duration_months) || 0);
+  const resolved = resolveInstallmentAmounts({ amountMinor, totalMinor, durationMonths: durationInput });
+  amountMinor = resolved.amountMinor;
+  totalMinor = (input.kind ?? rule.kind) === "expense" && schedule === "monthly" ? resolved.totalMinor : totalMinor;
+  const duration = (input.kind ?? rule.kind) === "expense" && schedule === "monthly" ? resolved.durationMonths : durationInput;
   if (schedule !== "unscheduled" && amountMode === "fixed" && amountMinor <= 0) {
     throw new ApiError(400, "INVALID_AMOUNT");
   }
@@ -319,10 +322,11 @@ export async function updateV1PersonalRule(
   }
 
   const startsAt = input.startsAt ? parseStartDate(input.startsAt) : rule.starts_at;
-  const endsAt = schedule === "once"
+  let endsAt = schedule === "once"
     ? startsAt
     : (input.endsAt === undefined ? rule.ends_at : (input.endsAt ? parseStartDate(input.endsAt) : null));
-  const dueDay = Math.min(28, Math.max(1, input.dueDay ?? (Number(rule.due_day) || 1)));
+  if (!endsAt && duration > 0 && schedule === "monthly") endsAt = endsAtFromDuration(startsAt, duration);
+  const dueDay = clampDueDay(input.dueDay ?? (Number(rule.due_day) || 1));
   const status = input.status ?? rule.status;
   const createdAt = new Date().toISOString();
 

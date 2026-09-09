@@ -19,7 +19,7 @@ import type { StatementTxnFilter } from "../../../lib/account-statement";
 import { computeWorkspaceAlerts } from "../../../lib/workspace-alerts";
 import { upsertUserNotifications, listUserNotifications } from "../../../lib/user-notifications";
 import { runWithDbUser } from "../../../lib/db-request-context";
-import { accountLiveBalance, dueAtForPeriod, monthKeysForRule, occurrenceLedgerStatus } from "../../../lib/personal-finance";
+import { accountLiveBalance, clampDueDay, dueAtForPeriod, endsAtFromDuration, monthKeysForRule, occurrenceLedgerStatus, personalDueAlerts, resolveInstallmentAmounts } from "../../../lib/personal-finance";
 import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-forecast";
 import { filterSpacesByPlan } from "../../../lib/plan-features";
 import { filterSpacesForPlanAccess } from "../../../lib/plan-retention";
@@ -1016,6 +1016,14 @@ export async function GET(request: Request) {
         planStatus: entitlements.status,
         graceEndsAt: entitlements.retention?.graceEndsAt ?? null,
       });
+      workspaceAlerts.unshift(...personalDueAlerts(
+        (dashboard.personalOccurrences ?? []) as Array<{
+          id: string; space_id: string; due_at: string; status?: string | null;
+          expected_minor?: number | null; rule_name?: string | null; rule_kind?: string | null;
+          total_minor?: number | null; rule_paid_minor?: number | null;
+        }>,
+        dashboard.spaces,
+      ));
       let pendingInvites: Awaited<ReturnType<typeof import("../../../lib/pending-invites").listPendingInvitesForEmail>> = [];
       try {
         const { listPendingInvitesForEmail, pendingInvitesAsWorkspaceAlerts } = await import("../../../lib/pending-invites");
@@ -1503,7 +1511,7 @@ export async function POST(request: Request) {
         amountMode: z.enum(["fixed", "variable"]).default("fixed"),
         schedule: z.enum(["monthly", "once", "unscheduled"]).default("monthly"),
         amount: z.union([z.string(), z.number()]).optional(),
-        dueDay: z.coerce.number().int().min(1).max(28).default(1),
+        dueDay: z.coerce.number().int().min(1).max(31).default(1),
         startsAt: z.string().min(8).max(40),
         endsAt: z.string().min(8).max(40).optional(),
         total: z.union([z.string(), z.number()]).optional(),
@@ -1517,17 +1525,22 @@ export async function POST(request: Request) {
         if (parsed.data.amount !== undefined && parsed.data.amount !== "") amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency);
         if (parsed.data.total !== undefined && parsed.data.total !== "") totalMinor = parseNonNegativeMoneyToMinor(parsed.data.total, space.currency);
       } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
-      const duration = parsed.data.durationMonths ?? 0;
-      if (totalMinor > 0 && duration > 0 && amountMinor <= 0) amountMinor = Math.round(totalMinor / duration);
+      const durationInput = parsed.data.durationMonths ?? 0;
+      const resolved = resolveInstallmentAmounts({ amountMinor, totalMinor, durationMonths: durationInput });
+      amountMinor = resolved.amountMinor;
+      totalMinor = parsed.data.kind === "expense" && parsed.data.schedule === "monthly" ? resolved.totalMinor : totalMinor;
+      const duration = parsed.data.kind === "expense" && parsed.data.schedule === "monthly" ? resolved.durationMonths : durationInput;
       if (parsed.data.schedule !== "unscheduled" && parsed.data.amountMode === "fixed" && amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
       if (parsed.data.schedule === "unscheduled" && amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
       const startsAt = parseStartDate(parsed.data.startsAt);
-      const endsAt = parsed.data.schedule === "once" ? startsAt : (parsed.data.endsAt ? parseStartDate(parsed.data.endsAt) : null);
+      let endsAt = parsed.data.schedule === "once" ? startsAt : (parsed.data.endsAt ? parseStartDate(parsed.data.endsAt) : null);
+      if (!endsAt && duration > 0 && parsed.data.schedule === "monthly") endsAt = endsAtFromDuration(startsAt, duration);
+      const dueDay = clampDueDay(parsed.data.dueDay);
       const createdAt = now();
       const ruleId = crypto.randomUUID();
       await db.batch([
         db.prepare("INSERT INTO personal_rules (id,space_id,account_id,kind,name,amount_mode,schedule,amount_minor,due_day,starts_at,ends_at,total_minor,duration_months,paid_minor,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0,'active',?)")
-          .bind(ruleId, parsed.data.spaceId, parsed.data.accountId ?? null, parsed.data.kind, parsed.data.name, parsed.data.amountMode, parsed.data.schedule, amountMinor, parsed.data.dueDay, startsAt, endsAt, totalMinor, duration, createdAt),
+          .bind(ruleId, parsed.data.spaceId, parsed.data.accountId ?? null, parsed.data.kind, parsed.data.name, parsed.data.amountMode, parsed.data.schedule, amountMinor, dueDay, startsAt, endsAt, totalMinor, duration, createdAt),
         prepareAudit(db, { userId: user.id, action: "personal.rule_added", entityType: "personal_rule", entityId: ruleId, metadata: { name: parsed.data.name, kind: parsed.data.kind }, createdAt }),
       ]);
       await generatePersonalOccurrences(db, [parsed.data.spaceId]);
@@ -1539,7 +1552,7 @@ export async function POST(request: Request) {
         amountMode: z.enum(["fixed", "variable"]).default("fixed"),
         schedule: z.enum(["monthly", "once", "unscheduled"]).default("monthly"),
         amount: z.union([z.string(), z.number()]).optional(),
-        dueDay: z.coerce.number().int().min(1).max(28).default(1),
+        dueDay: z.coerce.number().int().min(1).max(31).default(1),
         startsAt: z.string().min(8).max(40),
         endsAt: z.string().min(8).max(40).optional(),
         total: z.union([z.string(), z.number()]).optional(),
@@ -1555,16 +1568,21 @@ export async function POST(request: Request) {
         if (parsed.data.amount !== undefined && parsed.data.amount !== "") amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency);
         if (parsed.data.total !== undefined && parsed.data.total !== "") totalMinor = parseNonNegativeMoneyToMinor(parsed.data.total, space.currency);
       } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
-      const duration = parsed.data.durationMonths ?? 0;
-      if (totalMinor > 0 && duration > 0 && amountMinor <= 0) amountMinor = Math.round(totalMinor / duration);
+      const durationInput = parsed.data.durationMonths ?? 0;
+      const resolved = resolveInstallmentAmounts({ amountMinor, totalMinor, durationMonths: durationInput });
+      amountMinor = resolved.amountMinor;
+      totalMinor = rule.kind === "expense" && parsed.data.schedule === "monthly" ? resolved.totalMinor : totalMinor;
+      const duration = rule.kind === "expense" && parsed.data.schedule === "monthly" ? resolved.durationMonths : durationInput;
       if (parsed.data.schedule !== "unscheduled" && parsed.data.amountMode === "fixed" && amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
       if (parsed.data.schedule === "unscheduled" && amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
       const startsAt = parseStartDate(parsed.data.startsAt);
-      const endsAt = parsed.data.schedule === "once" ? startsAt : (parsed.data.endsAt ? parseStartDate(parsed.data.endsAt) : null);
+      let endsAt = parsed.data.schedule === "once" ? startsAt : (parsed.data.endsAt ? parseStartDate(parsed.data.endsAt) : null);
+      if (!endsAt && duration > 0 && parsed.data.schedule === "monthly") endsAt = endsAtFromDuration(startsAt, duration);
+      const dueDay = clampDueDay(parsed.data.dueDay);
       const createdAt = now();
       await db.batch([
         db.prepare("UPDATE personal_rules SET account_id=?, name=?, amount_mode=?, schedule=?, amount_minor=?, due_day=?, starts_at=?, ends_at=?, total_minor=?, duration_months=? WHERE id=?")
-          .bind(parsed.data.accountId ?? null, parsed.data.name, parsed.data.amountMode, parsed.data.schedule, amountMinor, parsed.data.dueDay, startsAt, endsAt, totalMinor, duration, rule.id),
+          .bind(parsed.data.accountId ?? null, parsed.data.name, parsed.data.amountMode, parsed.data.schedule, amountMinor, dueDay, startsAt, endsAt, totalMinor, duration, rule.id),
         db.prepare("DELETE FROM personal_occurrences WHERE rule_id=? AND status='pending'").bind(rule.id),
         prepareAudit(db, { userId: user.id, action: "personal.rule_updated", entityType: "personal_rule", entityId: rule.id, metadata: { name: parsed.data.name }, createdAt }),
       ]);

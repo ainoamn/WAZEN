@@ -65,7 +65,7 @@ export async function POST(
           amountMode: z.enum(["fixed", "variable"]).optional(),
           schedule: z.enum(["monthly", "once", "unscheduled"]).optional(),
           amount: z.union([z.string(), z.number()]).optional(),
-          dueDay: z.coerce.number().int().min(1).max(28).optional(),
+          dueDay: z.coerce.number().int().min(1).max(31).optional(),
           startsAt: z.string().min(8).max(40),
           endsAt: z.string().min(8).max(40).optional(),
           total: z.union([z.string(), z.number()]).optional(),

@@ -6,6 +6,7 @@ import { drainEmailOutbox } from "../../../../lib/email-provider";
 import { drainMessageOutbox, isMessagingConfigured } from "../../../../lib/messaging-provider";
 import { runMaintenanceJob } from "../../../../lib/jobs-maintenance";
 import { runDuesDigest } from "../../../../lib/dues-digest";
+import { runPersonalBillReminders } from "../../../../lib/personal-bill-reminders";
 import { processPrivacyRequests } from "../../../../lib/privacy-requests";
 import { processWebhookOutbox } from "../../../../lib/integration-webhooks";
 
@@ -14,8 +15,8 @@ export const maxDuration = 60;
 
 /**
  * Unified cron tick for Vercel Cron / external schedulers.
- * GET or POST /api/jobs/tick?tasks=email,messaging,push,maintenance,privacy,dues,webhooks
- * Default: email + messaging + push + webhooks every run; privacy at 03:00 UTC; dues digest at 06:00 UTC; maintenance at 02:00 UTC when tasks omitted.
+ * GET or POST /api/jobs/tick?tasks=email,messaging,push,maintenance,privacy,dues,personal,webhooks
+ * Default: email + messaging + push + webhooks every run; privacy at 03:00 UTC; dues digest and personal bill reminders at 06:00 UTC; maintenance at 02:00 UTC when tasks omitted.
  */
 export async function GET(request: Request) {
   return runTick(request);
@@ -42,6 +43,7 @@ async function runTick(request: Request) {
     const runWebhooks = !requested.length || requested.includes("webhooks");
     const runPrivacy = requested.includes("privacy") || (!requested.length && hour === 3);
     const runDues = requested.includes("dues") || (!requested.length && hour === 6);
+    const runPersonal = requested.includes("personal") || requested.includes("personal-reminders") || (!requested.length && hour === 6);
     const runMaintenance = requested.includes("maintenance") || (!requested.length && hour === 2);
 
     const result: Record<string, unknown> = { ok: true, at: new Date().toISOString() };
@@ -75,6 +77,11 @@ async function runTick(request: Request) {
       const dues = await runDuesDigest(db);
       result.dues = dues;
       await recordJobRun(db, "dues", "ok", dues);
+    }
+    if (runPersonal) {
+      const personal = await runPersonalBillReminders(db);
+      result.personal = personal;
+      await recordJobRun(db, "personal-reminders", "ok", personal);
     }
     if (runMaintenance) {
       const maintenance = await runMaintenanceJob(db);
