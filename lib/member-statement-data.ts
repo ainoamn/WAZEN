@@ -110,6 +110,7 @@ export async function loadMemberStatementSection(
     settlements: (settlements.results ?? []) as never[],
     tripExpenses: (tripExpenses.results ?? []) as never[],
     expenseSplits: (expenseSplits.results ?? []) as never[],
+    spaceType: space.type,
   });
   const money = (minor: number) => formatMoneyMinor(minor, space.currency || "OMR", locale);
   const lines = filterMemberLedgerLines(ledger.lines, focus);

@@ -190,3 +190,41 @@ test("printable member html includes name and movements table", () => {
   assert.match(html, /كشف العضو التفصيلي/);
   assert.match(html, /onclick="window.print\(\)"/);
 });
+
+test("trip wallet does not treat the savings goal as an expense debt after settlements", () => {
+  const ledger = buildMemberLedger({
+    member: { ...member, due_minor: 10_000, paid_minor: 0, addon_minor: 0 },
+    spaceNameAr: "بندر الصقله",
+    spaceNameEn: "Trip",
+    currency: "OMR",
+    spaceType: "trip",
+    plan: { amount_minor: 10_000, duration_months: 1, starts_at: "2026-09-05T00:00:00.000Z" },
+    installments: [],
+    transactions: [],
+    settlements: [{
+      id: "st1",
+      space_id: "s1",
+      from_member_id: "m1",
+      to_member_id: "m2",
+      amount_minor: 13_803,
+      status: "settled",
+      settled_at: "2026-09-09T12:00:00.000Z",
+    }],
+    tripExpenses: [{
+      id: "e1",
+      space_id: "s1",
+      paid_by_member_id: "m2",
+      paid_by_name: "حارث",
+      amount_minor: 50_400,
+      description: "راشن",
+      occurred_at: "2026-09-05T12:00:00.000Z",
+      paid_from: "member",
+    }],
+    expenseSplits: [{ expense_id: "e1", member_id: "m1", share_minor: 8_400 }],
+  });
+  assert.equal(ledger.owesMinor, 0);
+  assert.equal(ledger.creditMinor, 0);
+  assert.ok(ledger.lines.some((line) => line.titleAr.includes("هدف الرحلة")));
+  assert.equal(ledger.lines.some((line) => line.titleAr.includes("مستحق شهر")), false);
+  assert.equal(ledger.lines.some((line) => line.titleAr.includes("إضافي / حصص")), false);
+});

@@ -8,9 +8,11 @@ import {
 } from "./installments.ts";
 import {
   isFundPaidExpense,
+  isPeerSettlementTransfer,
   memberDisplayCreditMinor,
   memberExtraCreditMinor,
   memberFundPoolNet,
+  memberTripPocketMinor,
   netMemberClaim,
 } from "./finance.ts";
 import { formatMoneyMinor } from "./money.ts";
@@ -118,6 +120,7 @@ export function buildMemberLedger(input: {
     paid_from?: string | null;
   }>;
   expenseSplits: Array<{ expense_id: string; member_id: string; share_minor: number }>;
+  spaceType?: string;
 }) {
   const member = input.member;
   const months = resolveMonths(member, input.installments, input.plan);
@@ -130,7 +133,7 @@ export function buildMemberLedger(input: {
   const lines: MemberLedgerLine[] = [];
 
   const payments = input.transactions
-    .filter((txn) => txn.member_id === member.id && txn.space_id === member.space_id && isLive(txn.status) && ["contribution", "income"].includes(txn.kind))
+    .filter((txn) => txn.member_id === member.id && txn.space_id === member.space_id && isLive(txn.status) && ["contribution", "income"].includes(txn.kind) && !isPeerSettlementTransfer(txn))
     .sort((a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime());
 
   const working = months.map((row) => ({ ...row, paid_minor: 0, status: "unpaid" }));
@@ -206,29 +209,31 @@ export function buildMemberLedger(input: {
     }
   }
 
-  for (const month of months) {
-    const remaining = remainingInstallmentMinor(month);
-    const due = month.due_at || month.period_key;
-    if (remaining > 0) {
-      const dueMs = month.due_at ? new Date(month.due_at).getTime() : NaN;
-      const elapsed = Number.isNaN(dueMs) ? month.period_key <= new Date().toISOString().slice(0, 7) : dueMs <= Date.now();
-      if (elapsed) {
-        lines.push({
-          at: due,
-          focus: "owes",
-          direction: "out",
-          titleAr: `مستحق شهر ${month.period_index} (${month.period_key})`,
-          titleEn: `Due month ${month.period_index} (${month.period_key})`,
-          detailAr: "اشتراك لم يُسدَّد بعد — هكذا صار عليه هذا الجزء",
-          detailEn: "Unpaid subscription — this is how this owed amount arose",
-          amountMinor: remaining,
-          status: month.status,
-        });
+  if (input.spaceType !== "trip") {
+    for (const month of months) {
+      const remaining = remainingInstallmentMinor(month);
+      const due = month.due_at || month.period_key;
+      if (remaining > 0) {
+        const dueMs = month.due_at ? new Date(month.due_at).getTime() : NaN;
+        const elapsed = Number.isNaN(dueMs) ? month.period_key <= new Date().toISOString().slice(0, 7) : dueMs <= Date.now();
+        if (elapsed) {
+          lines.push({
+            at: due,
+            focus: "owes",
+            direction: "out",
+            titleAr: `مستحق شهر ${month.period_index} (${month.period_key})`,
+            titleEn: `Due month ${month.period_index} (${month.period_key})`,
+            detailAr: "اشتراك لم يُسدَّد بعد — هكذا صار عليه هذا الجزء",
+            detailEn: "Unpaid subscription — this is how this owed amount arose",
+            amountMinor: remaining,
+            status: month.status,
+          });
+        }
       }
     }
   }
 
-  for (const txn of input.transactions.filter((row) => row.member_id === member.id && row.space_id === member.space_id && isLive(row.status) && ["expense", "reimbursement"].includes(row.kind))) {
+  for (const txn of input.transactions.filter((row) => row.member_id === member.id && row.space_id === member.space_id && isLive(row.status) && ["expense", "reimbursement"].includes(row.kind) && !isPeerSettlementTransfer(row))) {
     const spent = txn.kind === "expense";
     lines.push({
       at: txn.occurred_at,
@@ -376,7 +381,21 @@ export function buildMemberLedger(input: {
       amountMinor: Number(member.extra_minor) || 0,
     });
   }
-  if (Number(member.addon_minor ?? 0) > 0) {
+  const tripPocket = input.spaceType === "trip"
+    ? memberTripPocketMinor(member.id, member.space_id, input.tripExpenses)
+    : 0;
+  if (input.spaceType === "trip" && tripPocket > 0) {
+    lines.push({
+      at: member.joined_at || new Date().toISOString(),
+      focus: "spent",
+      direction: "out",
+      titleAr: "مدفوع من الجيب",
+      titleEn: "Paid from pocket",
+      detailAr: "فواتير الرحلة التي دفعها نقداً — ليست ديناً بعد التسوية",
+      detailEn: "Trip bills he paid in cash — not a debt after settlement",
+      amountMinor: tripPocket,
+    });
+  } else if (input.spaceType !== "trip" && Number(member.addon_minor ?? 0) > 0) {
     lines.push({
       at: member.joined_at || new Date().toISOString(),
       focus: "spent",
@@ -421,7 +440,19 @@ export function buildMemberLedger(input: {
   const baseCredit = fundSharesTotal > 0
     ? memberExtraCreditMinor(member, input.transactions)
     : cashCredit;
-  const debit = remainingDue + Math.max(0, expenseDebit);
+  if (input.spaceType === "trip" && remainingDue > 0) {
+    lines.push({
+      at: member.joined_at || new Date().toISOString(),
+      focus: "paid",
+      direction: "info",
+      titleAr: "هدف الرحلة غير المحصّل",
+      titleEn: "Uncollected trip goal",
+      detailAr: "هدف المساهمة للرحلة، وليس ديناً من مصروفات الجيب بعد التسوية",
+      detailEn: "Trip savings target, not a pocket-expense debt after settlements",
+      amountMinor: remainingDue,
+    });
+  }
+  const debit = (input.spaceType === "trip" ? 0 : remainingDue) + Math.max(0, expenseDebit);
   const credit = baseCredit + Math.max(0, expenseCredit);
   const net = netMemberClaim(debit, credit);
   lines.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());

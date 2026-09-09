@@ -1006,6 +1006,87 @@ html[data-theme="dark"] .settlement-alert.is-posted { background: #16352e; color
   .report-filters { grid-template-columns: 1fr; }
 }
 
+.personal-workspace { display: grid; gap: 16px; }
+.personal-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  position: sticky;
+  top: 10px;
+  z-index: 6;
+  box-shadow: var(--shadow);
+}
+.personal-section-nav button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 800;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.personal-section-nav button em {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--field);
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  display: inline-grid;
+  place-items: center;
+}
+.personal-section-nav button.is-income { color: var(--green); }
+.personal-section-nav button.is-spend { color: var(--rose); }
+.personal-section-nav button.active { background: var(--field); border-color: var(--line); }
+.personal-section-nav button.active.is-income { background: var(--green-soft); border-color: color-mix(in srgb, var(--green) 30%, var(--line)); }
+.personal-section-nav button.active.is-spend { background: var(--rose-soft); border-color: color-mix(in srgb, var(--rose) 30%, var(--line)); }
+.personal-section-nav button.active.is-income em { background: #fff; color: var(--green); }
+.personal-section-nav button.active.is-spend em { background: #fff; color: var(--rose); }
+.personal-lane-panel.is-income { border-color: color-mix(in srgb, var(--green) 28%, var(--line)); border-inline-start: 5px solid var(--green); }
+.personal-lane-panel.is-spend { border-color: color-mix(in srgb, var(--rose) 28%, var(--line)); border-inline-start: 5px solid var(--rose); }
+.personal-lane-amount.is-income { color: var(--green) !important; }
+.personal-lane-amount.is-spend { color: var(--rose) !important; }
+.personal-month-lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.personal-lane { padding: 12px; border-radius: 14px; border: 1px solid var(--line); min-width: 0; }
+.personal-lane h3 { margin: 0 0 8px; font-size: 14px; }
+.personal-lane.is-income { background: color-mix(in srgb, var(--green-soft) 70%, #fff); border-color: color-mix(in srgb, var(--green) 22%, var(--line)); }
+.personal-lane.is-spend { background: color-mix(in srgb, var(--rose-soft) 75%, #fff); border-color: color-mix(in srgb, var(--rose) 22%, var(--line)); }
+.personal-lane.is-income h3 { color: var(--green); }
+.personal-lane.is-spend h3 { color: var(--rose); }
+.personal-loan-row.is-income,
+.personal-occ-row.is-income,
+.personal-rule-row.is-income {
+  background: color-mix(in srgb, var(--green-soft) 78%, #fff);
+  border-color: color-mix(in srgb, var(--green) 24%, var(--line));
+}
+.personal-loan-row.is-spend,
+.personal-occ-row.is-spend,
+.personal-rule-row.is-spend {
+  background: color-mix(in srgb, var(--rose-soft) 82%, #fff);
+  border-color: color-mix(in srgb, var(--rose) 24%, var(--line));
+}
+.personal-cat-chip.is-income { background: var(--green-soft); color: var(--green); border-color: color-mix(in srgb, var(--green) 25%, var(--line)); }
+.personal-cat-chip.is-spend { background: var(--rose-soft); color: var(--rose); border-color: color-mix(in srgb, var(--rose) 25%, var(--line)); }
+.personal-cashflow-heading.is-income { color: var(--green); }
+.personal-cashflow-heading.is-spend { color: var(--rose); }
+.personal-coach-metric.is-income { background: var(--green-soft); border-color: color-mix(in srgb, var(--green) 20%, var(--line)); }
+.personal-coach-metric.is-spend { background: var(--rose-soft); border-color: color-mix(in srgb, var(--rose) 20%, var(--line)); }
+.personal-occ-row.is-spend .primary-button { background: var(--rose); border-color: var(--rose); }
+.transaction-row.is-income,
+.transaction-row.is-contribution { background: color-mix(in srgb, var(--green-soft) 55%, transparent); }
+.transaction-row.is-expense { background: color-mix(in srgb, var(--rose-soft) 60%, transparent); }
+.transaction-row.is-reimbursement { background: color-mix(in srgb, var(--amber-soft) 60%, transparent); }
 .personal-account-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
 .personal-account-card { min-height: 72px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; display: grid; grid-template-columns: 34px 1fr auto; grid-template-rows: auto auto; align-items: center; gap: 8px 10px; background: #fbfcfb; }
 .personal-account-guard { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
@@ -1064,6 +1145,8 @@ html[data-theme="dark"] .settlement-alert.is-posted { background: #16352e; color
   .personal-account-grid { grid-template-columns: 1fr 1fr; }
   .personal-occ-row, .personal-occ-fields { grid-template-columns: 1fr; }
   .personal-month-head { flex-direction: column; align-items: flex-start; }
+  .personal-month-lanes { grid-template-columns: 1fr; }
+  .personal-section-nav { top: 6px; }
   .personal-coach-metrics { grid-template-columns: 1fr 1fr; }
 }
 
@@ -1104,10 +1187,21 @@ html[data-theme="dark"] .space-toolbar button,
 html[data-theme="dark"] .user-menu-panel,
 html[data-theme="dark"] .notification-panel,
 html[data-theme="dark"] .action-menu-panel,
-html[data-theme="dark"] .personal-account-card,
-html[data-theme="dark"] .personal-occ-row,
-html[data-theme="dark"] .personal-rule-row,
-html[data-theme="dark"] .personal-cat-chip { color: var(--ink); background: var(--green-soft); }
+html[data-theme="dark"] .personal-account-card { color: var(--ink); background: var(--green-soft); }
+html[data-theme="dark"] .personal-section-nav { background: var(--surface); }
+html[data-theme="dark"] .personal-occ-row.is-income,
+html[data-theme="dark"] .personal-rule-row.is-income,
+html[data-theme="dark"] .personal-loan-row.is-income,
+html[data-theme="dark"] .personal-lane.is-income,
+html[data-theme="dark"] .personal-cat-chip.is-income { color: var(--ink); background: color-mix(in srgb, var(--green-soft) 70%, var(--surface)); }
+html[data-theme="dark"] .personal-occ-row.is-spend,
+html[data-theme="dark"] .personal-rule-row.is-spend,
+html[data-theme="dark"] .personal-loan-row.is-spend,
+html[data-theme="dark"] .personal-lane.is-spend,
+html[data-theme="dark"] .personal-cat-chip.is-spend { color: var(--ink); background: color-mix(in srgb, var(--rose-soft) 55%, var(--surface)); }
+html[data-theme="dark"] .transaction-row.is-income,
+html[data-theme="dark"] .transaction-row.is-contribution { background: color-mix(in srgb, var(--green-soft) 45%, transparent); }
+html[data-theme="dark"] .transaction-row.is-expense { background: color-mix(in srgb, var(--rose-soft) 40%, transparent); }
 html[data-theme="dark"] .personal-coach-tip,
 html[data-theme="dark"] .personal-defer-box,
 html[data-theme="dark"] .personal-defer-presets .chip,

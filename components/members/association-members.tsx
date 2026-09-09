@@ -250,6 +250,7 @@ function MemberLedgerBody({
     settlements,
     tripExpenses,
     expenseSplits,
+    spaceType: space.type,
   }), [member, space, plan, installments, transactions, settlements, tripExpenses, expenseSplits]);
   const months = ledger.months;
   const rows = filterMemberLedgerLines(ledger.lines, tab);
@@ -319,6 +320,7 @@ function MemberLedgerBody({
         settlements,
         tripExpenses,
         expenseSplits,
+        spaceType: linked.type,
       });
     return {
       spaceName: locale === "ar" ? linked.name_ar : linked.name_en,

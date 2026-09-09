@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { Archive, Banknote, Bell, CalendarClock, Check, ChevronDown, Link2, Lock, Pause, Pencil, Play, Plus, Printer, Repeat2, Sparkles, Trash2, Unlock, WalletCards, X } from "lucide-react";
 import { CollapsiblePanel, FoldWrap } from "../ui/collapsible-panel";
 import { apiFetch } from "../../lib/client-api";
@@ -114,6 +114,48 @@ function money(minor: number, locale: Locale) {
   return formatMoneyMinor(minor, "OMR", locale);
 }
 
+type PersonalSection = "overview" | "income" | "spend" | "months" | "activity";
+
+function laneOf(kind?: string | null) {
+  return kind === "income" ? "is-income" : "is-spend";
+}
+
+function PersonalSectionNav({
+  locale,
+  section,
+  onChange,
+  counts,
+}: {
+  locale: Locale;
+  section: PersonalSection;
+  onChange: (next: PersonalSection) => void;
+  counts: { income: number; spend: number; months: number; pending: number };
+}) {
+  const items: Array<{ id: PersonalSection; ar: string; en: string; tone?: "income" | "spend"; count?: number }> = [
+    { id: "overview", ar: "نظرة عامة", en: "Overview" },
+    { id: "income", ar: "الدخل", en: "Income", tone: "income", count: counts.income },
+    { id: "spend", ar: "المصروف", en: "Spend", tone: "spend", count: counts.spend },
+    { id: "months", ar: "الأشهر", en: "Months", count: counts.pending || counts.months },
+    { id: "activity", ar: "المعاملات", en: "Activity" },
+  ];
+  return (
+    <nav className="personal-section-nav" aria-label={locale === "ar" ? "أقسام المحفظة الشخصية" : "Personal wallet sections"}>
+      {items.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          className={`${item.tone ? `is-${item.tone}` : ""}${section === item.id ? " active" : ""}`.trim()}
+          aria-current={section === item.id ? "page" : undefined}
+          onClick={() => onChange(item.id)}
+        >
+          {locale === "ar" ? item.ar : item.en}
+          {item.count ? <em>{item.count}</em> : null}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 function printOccurrenceStatement(item: PersonalOccurrence, locale: Locale, entityName: string) {
   const expected = Number(item.expected_minor);
   const actual = Number(item.actual_minor ?? item.expected_minor);
@@ -165,6 +207,8 @@ export function PersonalWalletPanel({
   spaceBankLinks = [],
   members = [],
   issuerName = "WAZEN",
+  overviewExtra,
+  activity,
   onChanged,
 }: {
   spaceId: string;
@@ -190,9 +234,24 @@ export function PersonalWalletPanel({
   spaces?: LinkedSpace[];
   spaceLinks?: SpaceLink[];
   spaceBankLinks?: SpaceBankLink[];
+  overviewExtra?: ReactNode;
+  activity?: ReactNode;
   onChanged: (next: Record<string, unknown>) => void;
 }) {
   const [accountOpen, setAccountOpen] = useState<PersonalAccount | true | null>(null);
+  const [section, setSection] = useState<PersonalSection>("overview");
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(`wazen-personal-section:${spaceId}`);
+      if (stored === "overview" || stored === "income" || stored === "spend" || stored === "months" || stored === "activity") {
+        setSection(stored);
+      }
+    } catch { /* ignore */ }
+  }, [spaceId]);
+  const changeSection = (next: PersonalSection) => {
+    setSection(next);
+    try { sessionStorage.setItem(`wazen-personal-section:${spaceId}`, next); } catch { /* ignore */ }
+  };
   const holdings = spaceBankLinks
     .filter((row) => row.hub_space_id === spaceId)
     .map((row) => {
@@ -257,124 +316,180 @@ export function PersonalWalletPanel({
     if (!response.ok) { window.alert(result.error === "ACCOUNT_HAS_ACTIVITY" ? (locale === "ar" ? "لا يمكن الحذف: عليه حركات. أرشف الحساب بدلاً من ذلك." : "Cannot delete: it has posted activity. Archive it instead.") : (result.error ?? "FAILED")); return; }
     onChanged(result);
   };
-  return (
-    <>
-      <CollapsiblePanel
-        id={`${spaceId}:accounts`}
-        heading={<><span className="section-kicker"><WalletCards size={15} />{locale === "ar" ? "حساباتك" : "Your accounts"}</span><h2>{locale === "ar" ? "البنوك والنقد" : "Banks and cash"}</h2></>}
-        actions={<><button type="button" className="secondary-button" onClick={() => printWallet()}><Printer size={15} />{locale === "ar" ? "كشف المحفظة" : "Wallet statement"}</button><button type="button" className="primary-button" onClick={() => setAccountOpen(true)}><Plus size={15} />{locale === "ar" ? "إضافة حساب" : "Add account"}</button></>}
-        foldLabel={locale === "ar" ? "طي الحسابات" : "Fold accounts"}
-      >
-        <p className="modal-note">{locale === "ar" ? "كل حساب منفصل. الرصيد الافتتاحي هو ما لديك الآن، والدخل والخصم لا يُعتمدان إلا بعد «اعتماد الدخل» أو «اعتماد الخصم»، أو تجاهل، أو تأجيل للشهر التالي." : "Each account is separate. Opening is what you hold now. Income and bills post only after you approve, skip, or defer them."}</p>
-        <div className="personal-account-grid">
-          {spaceAccounts.map((account) => (
-            <AccountCard
-              key={account.id}
-              account={account}
-              locale={locale}
-              holdings={holdingsForAccount(account.id, holdings).map((row) => ({ name: row.name ?? row.spaceId, balanceMinor: row.balanceMinor }))}
-              onEdit={() => setAccountOpen(account)}
-              onPause={() => void mutateAccount(account.id, (account.status ?? "active") === "paused" ? "active" : "paused")}
-              onArchive={() => void mutateAccount(account.id, (account.status ?? "active") === "archived" ? "active" : "archived")}
-              onDelete={() => void removeAccount(account.id)}
-              onPrint={() => printWallet(account.id)}
-            />
-          ))}
-          {!spaceAccounts.length && <p className="empty-state">{locale === "ar" ? "أضف حساب بنك نزوى أو مسقط أو النقد أولاً." : "Add Bank Nizwa, Muscat, or cash first."}</p>}
+  const monthlyRules = spaceRules.filter((rule) => rule.status === "active" && (rule.schedule ?? "monthly") === "monthly");
+  const incomeCount = monthlyRules.filter((rule) => rule.kind === "income").length + unscheduled.length;
+  const spendCount = monthlyRules.filter((rule) => rule.kind !== "income").length;
+  const pendingCount = spaceOcc.filter((row) => row.status === "pending").length;
+  const walletName = spaceTitle(spaces.find((row) => row.id === spaceId) ?? { id: spaceId, name_ar: "وازن", name_en: "WAZEN", type: "personal", balance_minor: 0 }, locale);
+  const renderPosted = (item: PersonalOccurrence) => {
+    const income = item.rule_kind === "income";
+    const expected = Number(item.expected_minor);
+    const actual = Number(item.actual_minor ?? item.expected_minor);
+    const showVariance = item.status === "posted" && item.amount_mode !== "variable" && expected > 0;
+    const statusLabel = item.status === "posted" ? (locale === "ar" ? "معتمد" : "Posted")
+      : item.status === "deferred" ? (locale === "ar" ? "مؤجّل" : "Deferred")
+      : item.status === "voided" ? (locale === "ar" ? "ملغى" : "Voided")
+      : item.status === "superseded" ? (locale === "ar" ? "مستبدل" : "Replaced")
+      : item.status === "skipped" ? (locale === "ar" ? "موقوف" : "Paused")
+      : (locale === "ar" ? "متجاهل" : "Skipped");
+    return (
+      <div className={`personal-rule-row ${laneOf(item.rule_kind)}${["voided", "superseded", "skipped"].includes(item.status) ? " is-inactive" : ""}`} key={item.id}>
+        <div>
+          <strong>{item.rule_name}</strong>
+          <span>
+            {statusLabel}
+            {` · ${personalCategoryLabel(income ? "income" : "expense", item.rule_category, locale, item.rule_name)}`}
+            {showVariance ? ` · ${occurrenceVarianceCopy(expected, actual, locale)}` : ""}
+          </span>
         </div>
-      </CollapsiblePanel>
-      <WalletLinksPanel
-        spaceId={spaceId}
+        <b className={`personal-lane-amount ${laneOf(item.rule_kind)}`}>{income ? "+" : "−"}{money(actual, locale)}</b>
+        {item.status === "posted" && (
+          <button type="button" className="secondary-button compact" onClick={() => printOccurrenceStatement(item, locale, walletName)}>
+            <Printer size={14} />{locale === "ar" ? "كشف البند" : "Item statement"}
+          </button>
+        )}
+      </div>
+    );
+  };
+  return (
+    <div className="personal-workspace">
+      <PersonalSectionNav
         locale={locale}
-        accounts={activeAccounts}
-        spaces={spaces}
-        spaceLinks={spaceLinks}
-        spaceBankLinks={spaceBankLinks}
-        onChanged={onChanged}
+        section={section}
+        onChange={changeSection}
+        counts={{ income: incomeCount, spend: spendCount, months: byMonth.size, pending: pendingCount }}
       />
-      <PersonalCoachPanel locale={locale} spaceId={spaceId} rules={spaceRules} occurrences={spaceOcc} />
-      <RecurringBillsPanel
-        spaceId={spaceId}
-        locale={locale}
-        accounts={activeAccounts}
-        rules={spaceRules}
-        occurrences={spaceOcc}
-        onChanged={onChanged}
-      />
-      {byMonth.size > 0 && (
+      {section === "overview" && (
+        <>
+          {overviewExtra}
+          <CollapsiblePanel
+            id={`${spaceId}:accounts`}
+            heading={<><span className="section-kicker"><WalletCards size={15} />{locale === "ar" ? "حساباتك" : "Your accounts"}</span><h2>{locale === "ar" ? "البنوك والنقد" : "Banks and cash"}</h2></>}
+            actions={<><button type="button" className="secondary-button" onClick={() => printWallet()}><Printer size={15} />{locale === "ar" ? "كشف المحفظة" : "Wallet statement"}</button><button type="button" className="primary-button" onClick={() => setAccountOpen(true)}><Plus size={15} />{locale === "ar" ? "إضافة حساب" : "Add account"}</button></>}
+            foldLabel={locale === "ar" ? "طي الحسابات" : "Fold accounts"}
+          >
+            <p className="modal-note">{locale === "ar" ? "كل حساب منفصل. الرصيد الافتتاحي هو ما لديك الآن. الدخل والمصروف لكل منهما صفحة خاصة، والمعاملات في تبويب منفصل." : "Each account is separate. Opening is what you hold now. Income, spend, and transactions each have their own page."}</p>
+            <div className="personal-account-grid">
+              {spaceAccounts.map((account) => (
+                <AccountCard
+                  key={account.id}
+                  account={account}
+                  locale={locale}
+                  holdings={holdingsForAccount(account.id, holdings).map((row) => ({ name: row.name ?? row.spaceId, balanceMinor: row.balanceMinor }))}
+                  onEdit={() => setAccountOpen(account)}
+                  onPause={() => void mutateAccount(account.id, (account.status ?? "active") === "paused" ? "active" : "paused")}
+                  onArchive={() => void mutateAccount(account.id, (account.status ?? "active") === "archived" ? "active" : "archived")}
+                  onDelete={() => void removeAccount(account.id)}
+                  onPrint={() => printWallet(account.id)}
+                />
+              ))}
+              {!spaceAccounts.length && <p className="empty-state">{locale === "ar" ? "أضف حساب بنك نزوى أو مسقط أو النقد أولاً." : "Add Bank Nizwa, Muscat, or cash first."}</p>}
+            </div>
+          </CollapsiblePanel>
+          <WalletLinksPanel
+            spaceId={spaceId}
+            locale={locale}
+            accounts={activeAccounts}
+            spaces={spaces}
+            spaceLinks={spaceLinks}
+            spaceBankLinks={spaceBankLinks}
+            onChanged={onChanged}
+          />
+          <PersonalCoachPanel locale={locale} spaceId={spaceId} rules={spaceRules} occurrences={spaceOcc} />
+        </>
+      )}
+      {section === "income" && (
+        <>
+          <RecurringBillsPanel
+            spaceId={spaceId}
+            locale={locale}
+            focus="income"
+            accounts={activeAccounts}
+            rules={spaceRules}
+            occurrences={spaceOcc}
+            onChanged={onChanged}
+          />
+          {unscheduled.length > 0 && (
+            <CollapsiblePanel id={`${spaceId}:unscheduled`} className="panel personal-lane-panel is-income" heading={<h2>{locale === "ar" ? "دخل آخر بدون موعد" : "Other income — no due date"}</h2>} foldLabel={locale === "ar" ? "طي الدخل الآخر" : "Fold other income"}>
+              {unscheduled.map((rule) => (
+                <UnscheduledRow key={rule.id} rule={rule} locale={locale} onChanged={onChanged} />
+              ))}
+            </CollapsiblePanel>
+          )}
+        </>
+      )}
+      {section === "spend" && (
+        <RecurringBillsPanel
+          spaceId={spaceId}
+          locale={locale}
+          focus="spend"
+          accounts={activeAccounts}
+          rules={spaceRules}
+          occurrences={spaceOcc}
+          onChanged={onChanged}
+        />
+      )}
+      {section === "months" && (
         <CollapsiblePanel
           id={`${spaceId}:months`}
-          heading={<><span className="section-kicker">{locale === "ar" ? "حساب الأشهر" : "Month ledgers"}</span><h2>{locale === "ar" ? "كل شهر يظهر الدخل والصرف المعتمد، والمعلّق ينتظر الاعتماد" : "Each month shows posted income and spend; pending items wait for approval"}</h2></>}
+          heading={<><span className="section-kicker">{locale === "ar" ? "حساب الأشهر" : "Month ledgers"}</span><h2>{locale === "ar" ? "الدخل على اليمين أو في عمود أخضر، والمصروف في عمود أحمر" : "Income in the green column, spend in the rose column"}</h2></>}
           foldLabel={locale === "ar" ? "طي حساب الأشهر" : "Fold month ledgers"}
         >
-          {[...byMonth.entries()].map(([period, rows]) => {
+          {byMonth.size ? [...byMonth.entries()].map(([period, rows]) => {
             const postedIn = rows.filter((row) => row.rule_kind === "income" && row.status === "posted").reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
             const postedOut = rows.filter((row) => row.rule_kind !== "income" && row.status === "posted").reduce((sum, row) => sum + Number(row.actual_minor ?? row.expected_minor), 0);
             const pendingIn = rows.filter((row) => row.rule_kind === "income" && row.status === "pending").reduce((sum, row) => sum + Number(row.expected_minor), 0);
             const pendingOut = rows.filter((row) => row.rule_kind !== "income" && row.status === "pending").reduce((sum, row) => sum + Number(row.expected_minor), 0);
-            const pendingNote = pendingIn || pendingOut
-              ? (locale === "ar"
-                ? ` · معلّق دخل ${money(pendingIn, locale)} · خصم ${money(pendingOut, locale)}`
-                : ` · pending in ${money(pendingIn, locale)} · out ${money(pendingOut, locale)}`)
-              : "";
+            const incomeRows = rows.filter((row) => row.rule_kind === "income");
+            const spendRows = rows.filter((row) => row.rule_kind !== "income");
             return (
               <FoldWrap key={period} id={`${spaceId}:month:${period}`} label={locale === "ar" ? `طي ${period}` : `Fold ${period}`}>
               <div className="personal-month-block">
                 <div className="personal-month-head">
                   <strong>{period}</strong>
-                  <span>{locale === "ar" ? `دخل ${money(postedIn, locale)} · صرف ${money(postedOut, locale)} · متبقي ${money(postedIn - postedOut, locale)}${pendingNote}` : `In ${money(postedIn, locale)} · out ${money(postedOut, locale)} · left ${money(postedIn - postedOut, locale)}${pendingNote}`}</span>
+                  <span>
+                    <b className="personal-lane-amount is-income">{locale === "ar" ? "دخل" : "In"} {money(postedIn, locale)}</b>
+                    {" · "}
+                    <b className="personal-lane-amount is-spend">{locale === "ar" ? "صرف" : "Out"} {money(postedOut, locale)}</b>
+                    {" · "}
+                    {locale === "ar" ? `متبقي ${money(postedIn - postedOut, locale)}` : `left ${money(postedIn - postedOut, locale)}`}
+                    {pendingIn || pendingOut
+                      ? (locale === "ar" ? ` · معلّق دخل ${money(pendingIn, locale)} · خصم ${money(pendingOut, locale)}` : ` · pending in ${money(pendingIn, locale)} · out ${money(pendingOut, locale)}`)
+                      : ""}
+                  </span>
                 </div>
-                <div className="personal-occ-list">
-                  {rows.filter((row) => row.status === "pending").map((item) => (
-                    <OccurrenceRow key={item.id} item={item} locale={locale} accounts={activeAccounts} onChanged={onChanged} />
-                  ))}
-                  {rows.filter((row) => row.status !== "pending").map((item) => {
-                    const expected = Number(item.expected_minor);
-                    const actual = Number(item.actual_minor ?? item.expected_minor);
-                    const showVariance = item.status === "posted" && item.amount_mode !== "variable" && expected > 0;
-                    const statusLabel = item.status === "posted" ? (locale === "ar" ? "معتمد" : "Posted")
-                      : item.status === "deferred" ? (locale === "ar" ? "مؤجّل" : "Deferred")
-                      : item.status === "voided" ? (locale === "ar" ? "ملغى" : "Voided")
-                      : item.status === "superseded" ? (locale === "ar" ? "مستبدل" : "Replaced")
-                      : item.status === "skipped" ? (locale === "ar" ? "موقوف" : "Paused")
-                      : (locale === "ar" ? "متجاهل" : "Skipped");
-                    return (
-                    <div className={`personal-rule-row${["voided", "superseded", "skipped"].includes(item.status) ? " is-inactive" : ""}`} key={item.id}>
-                      <div>
-                        <strong>{item.rule_name}</strong>
-                        <span>
-                          {statusLabel}
-                          {` · ${personalCategoryLabel(item.rule_kind === "income" ? "income" : "expense", item.rule_category, locale, item.rule_name)}`}
-                          {showVariance ? ` · ${occurrenceVarianceCopy(expected, actual, locale)}` : ""}
-                        </span>
-                      </div>
-                      <b>{money(actual, locale)}</b>
-                      {item.status === "posted" && (
-                        <button type="button" className="secondary-button compact" onClick={() => printOccurrenceStatement(item, locale, spaceTitle(spaces.find((row) => row.id === spaceId) ?? { id: spaceId, name_ar: "وازن", name_en: "WAZEN", type: "personal", balance_minor: 0 }, locale))}>
-                          <Printer size={14} />{locale === "ar" ? "كشف البند" : "Item statement"}
-                        </button>
-                      )}
+                <div className="personal-month-lanes">
+                  <section className="personal-lane is-income">
+                    <h3>{locale === "ar" ? "الدخل" : "Income"}</h3>
+                    <div className="personal-occ-list">
+                      {incomeRows.filter((row) => row.status === "pending").map((item) => (
+                        <OccurrenceRow key={item.id} item={item} locale={locale} accounts={activeAccounts} onChanged={onChanged} />
+                      ))}
+                      {incomeRows.filter((row) => row.status !== "pending").map(renderPosted)}
+                      {!incomeRows.length && <p className="empty-state">{locale === "ar" ? "لا دخل في هذا الشهر." : "No income this month."}</p>}
                     </div>
-                    );
-                  })}
+                  </section>
+                  <section className="personal-lane is-spend">
+                    <h3>{locale === "ar" ? "المصروف" : "Spend"}</h3>
+                    <div className="personal-occ-list">
+                      {spendRows.filter((row) => row.status === "pending").map((item) => (
+                        <OccurrenceRow key={item.id} item={item} locale={locale} accounts={activeAccounts} onChanged={onChanged} />
+                      ))}
+                      {spendRows.filter((row) => row.status !== "pending").map(renderPosted)}
+                      {!spendRows.length && <p className="empty-state">{locale === "ar" ? "لا مصروف في هذا الشهر." : "No spend this month."}</p>}
+                    </div>
+                  </section>
                 </div>
               </div>
               </FoldWrap>
             );
-          })}
+          }) : <p className="empty-state">{locale === "ar" ? "لا أشهر بعد. أضف دخلاً أو مصروفاً ثابتاً ليظهر هنا كل شهر." : "No months yet. Add fixed income or spend so each month appears here."}</p>}
         </CollapsiblePanel>
       )}
-
-      {unscheduled.length > 0 && (
-        <CollapsiblePanel id={`${spaceId}:unscheduled`} heading={<h2>{locale === "ar" ? "دخل آخر بدون موعد" : "Other income — no due date"}</h2>} foldLabel={locale === "ar" ? "طي الدخل الآخر" : "Fold other income"}>
-          {unscheduled.map((rule) => (
-            <UnscheduledRow key={rule.id} rule={rule} locale={locale} onChanged={onChanged} />
-          ))}
-        </CollapsiblePanel>
-      )}
+      {section === "activity" && (activity ?? <p className="empty-state">{locale === "ar" ? "لا معاملات في هذه المحفظة بعد." : "No transactions in this wallet yet."}</p>)}
 
       {accountOpen && <AccountModal locale={locale} spaceId={spaceId} existing={accountOpen === true ? undefined : accountOpen} onClose={() => setAccountOpen(null)} onChanged={(next) => { onChanged(next); setAccountOpen(null); }} />}
-    </>
+    </div>
   );
 }
 
@@ -447,13 +562,13 @@ function PersonalCoachPanel({
       foldLabel={locale === "ar" ? "طي التقرير" : "Fold report"}
     >
       <div className="personal-coach-metrics">
-        <div className="personal-coach-metric">
+        <div className="personal-coach-metric is-income">
           <span>{locale === "ar" ? "دخل مبرمج" : "Planned in"}</span>
-          <b>{money(briefing.plannedInMinor, locale)}</b>
+          <b className="personal-lane-amount is-income">+{money(briefing.plannedInMinor, locale)}</b>
         </div>
-        <div className="personal-coach-metric">
+        <div className="personal-coach-metric is-spend">
           <span>{locale === "ar" ? "صرف مبرمج" : "Planned out"}</span>
-          <b>{money(briefing.plannedOutMinor, locale)}</b>
+          <b className="personal-lane-amount is-spend">−{money(briefing.plannedOutMinor, locale)}</b>
         </div>
         <div className={`personal-coach-metric${gap < 0 ? " is-danger" : gap > 0 ? " is-ok" : ""}`}>
           <span>{locale === "ar" ? "الفائض / الثغرة" : "Surplus / gap"}</span>
@@ -476,6 +591,7 @@ function PersonalCoachPanel({
 function RecurringBillsPanel({
   spaceId,
   locale,
+  focus,
   accounts,
   rules,
   occurrences,
@@ -483,6 +599,7 @@ function RecurringBillsPanel({
 }: {
   spaceId: string;
   locale: Locale;
+  focus: "income" | "spend";
   accounts: PersonalAccount[];
   rules: PersonalRule[];
   occurrences: PersonalOccurrence[];
@@ -493,6 +610,7 @@ function RecurringBillsPanel({
   const monthly = rules.filter((rule) => rule.space_id === spaceId && rule.status === "active" && (rule.schedule ?? "monthly") === "monthly");
   const incomes = monthly.filter((rule) => rule.kind === "income");
   const expenses = monthly.filter((rule) => rule.kind !== "income");
+  const incomeFocus = focus === "income";
   const renderRow = (rule: PersonalRule) => {
     const paid = Number(rule.paid_minor);
     const total = Number(rule.total_minor);
@@ -504,9 +622,9 @@ function RecurringBillsPanel({
     const cat = personalCategoryLabel(rule.kind === "income" ? "income" : "expense", rule.category, locale, rule.name);
     const income = rule.kind === "income";
     return (
-      <div className="personal-loan-row" key={rule.id}>
+      <div className={`personal-loan-row ${laneOf(rule.kind)}`} key={rule.id}>
         <div>
-          <strong>{rule.name} <em className="personal-cat-chip">{cat}</em></strong>
+          <strong>{rule.name} <em className={`personal-cat-chip ${laneOf(rule.kind)}`}>{cat}</em></strong>
           <span>
             {income
               ? (locale === "ar" ? `دخل ثابت ${money(rule.amount_minor, locale)} ${dueLabel}` : `Fixed income ${money(rule.amount_minor, locale)} ${dueLabel}`)
@@ -517,39 +635,50 @@ function RecurringBillsPanel({
           </span>
         </div>
         <div className="progress-track">{!income && total > 0 ? <span style={{ width: `${Math.min(100, Math.round((paid / total) * 100))}%` }} /> : null}</div>
-        <b>{income ? (locale === "ar" ? "دخل" : "Income") : total > 0 ? `${Math.min(100, Math.round((paid / total) * 100))}%` : (locale === "ar" ? "متكرر" : "Recurring")}</b>
+        <b className={`personal-lane-amount ${laneOf(rule.kind)}`}>{income ? `+${money(rule.amount_minor, locale)}` : total > 0 ? `${Math.min(100, Math.round((paid / total) * 100))}%` : `−${money(rule.amount_minor, locale)}`}</b>
         <button type="button" className="secondary-button compact" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => setEditRule(rule)}><Pencil size={14} /></button>
       </div>
     );
   };
   return (
     <CollapsiblePanel
-      id={`${spaceId}:recurring`}
-      heading={<><span className="section-kicker"><Bell size={15} />{locale === "ar" ? "دخل ومصروف شهري ثابت" : "Fixed monthly cashflow"}</span><h2>{locale === "ar" ? "النظام يولّد الاستحقاق كل شهر — أنت تعتمد أو تؤجّل أو تتجاهل فقط" : "Wazen creates each month; you only approve, defer, or skip"}</h2></>}
+      id={`${spaceId}:recurring:${focus}`}
+      className={`panel personal-lane-panel ${incomeFocus ? "is-income" : "is-spend"}`}
+      heading={<><span className="section-kicker"><Bell size={15} />{incomeFocus ? (locale === "ar" ? "صفحة الدخل" : "Income page") : (locale === "ar" ? "صفحة المصروف" : "Spend page")}</span><h2>{incomeFocus ? (locale === "ar" ? "رواتب ودخل ثابت فقط — بلا فواتير هنا" : "Salaries and fixed income only — no bills here") : (locale === "ar" ? "فواتير وأقساط فقط — بلا دخل هنا" : "Bills and installments only — no income here")}</h2></>}
       actions={
-        <>
-          <button type="button" className="secondary-button" onClick={() => setOpen("income")}><Banknote size={15} />{locale === "ar" ? "دخل شهري ثابت" : "Monthly income"}</button>
-          <button type="button" className="secondary-button" onClick={() => setOpen("bill")}><Repeat2 size={15} />{locale === "ar" ? "فاتورة شهرية" : "Monthly bill"}</button>
-          <button type="button" className="primary-button" onClick={() => setOpen("installment")}><Plus size={15} />{locale === "ar" ? "قسط / تمويل" : "Installment"}</button>
-        </>
+        incomeFocus
+          ? <button type="button" className="primary-button" onClick={() => setOpen("income")}><Banknote size={15} />{locale === "ar" ? "دخل شهري ثابت" : "Monthly income"}</button>
+          : (
+            <>
+              <button type="button" className="secondary-button" onClick={() => setOpen("bill")}><Repeat2 size={15} />{locale === "ar" ? "فاتورة شهرية" : "Monthly bill"}</button>
+              <button type="button" className="primary-button" onClick={() => setOpen("installment")}><Plus size={15} />{locale === "ar" ? "قسط / تمويل" : "Installment"}</button>
+            </>
+          )
       }
-      foldLabel={locale === "ar" ? "طي الدخل والمصروف" : "Fold cashflow"}
+      foldLabel={incomeFocus ? (locale === "ar" ? "طي الدخل" : "Fold income") : (locale === "ar" ? "طي المصروف" : "Fold spend")}
     >
       <p className="modal-note">
-        {locale === "ar"
-          ? "مثال الدخل: راتب 1200 يوم 1. مثال المصروف: سيارة 9000 بقسط 98 يوم 28، أو كهرباء 26 بداية الشهر. التذكير في التطبيق والبريد وواتساب قبل يوم وفي يوم الاستحقاق."
-          : "Income example: salary 1200 on day 1. Spend example: a 9000 car at 98 on the 28th, or a 26 electricity bill at month start. Reminders in-app, email, and WhatsApp the day before and on the due day."}
+        {incomeFocus
+          ? (locale === "ar" ? "مثال: راتب 1200 يوم 1. النظام يولّد الاستحقاق كل شهر، وأنت تعتمد الدخل أو تؤجله أو تتجاهله." : "Example: salary 1200 on day 1. Wazen creates the month; you approve, defer, or skip.")
+          : (locale === "ar" ? "مثال: سيارة 9000 بقسط 98 يوم 28، أو كهرباء 26 بداية الشهر. التذكير قبل يوم وفي يوم الاستحقاق." : "Example: a 9000 car at 98 on the 28th, or a 26 electricity bill at month start. Reminders the day before and on the due day.")}
       </p>
-      <h3 className="personal-cashflow-heading">{locale === "ar" ? "دخل شهري ثابت" : "Fixed monthly income"}</h3>
-      <div className="personal-loan-list">
-        {incomes.map(renderRow)}
-        {!incomes.length && <p className="empty-state">{locale === "ar" ? "لا دخل شهري بعد. أضف راتباً أو دخلاً تجارياً ليظهر كل شهر للاعتماد." : "No monthly income yet. Add a salary or business income so each month waits for approval."}</p>}
-      </div>
-      <h3 className="personal-cashflow-heading">{locale === "ar" ? "أقساط وفواتير متكررة" : "Installments & recurring bills"}</h3>
-      <div className="personal-loan-list">
-        {expenses.map(renderRow)}
-        {!expenses.length && <p className="empty-state">{locale === "ar" ? "لا أقساط أو فواتير بعد. أضف قسط سيارة أو فاتورة كهرباء من الأزرار أعلاه." : "No installments or bills yet. Add a car plan or electricity bill from the buttons above."}</p>}
-      </div>
+      {incomeFocus ? (
+        <>
+          <h3 className="personal-cashflow-heading is-income">{locale === "ar" ? "دخل شهري ثابت" : "Fixed monthly income"}</h3>
+          <div className="personal-loan-list">
+            {incomes.map(renderRow)}
+            {!incomes.length && <p className="empty-state">{locale === "ar" ? "لا دخل شهري بعد. أضف راتباً أو دخلاً تجارياً ليظهر كل شهر للاعتماد." : "No monthly income yet. Add a salary or business income so each month waits for approval."}</p>}
+          </div>
+        </>
+      ) : (
+        <>
+          <h3 className="personal-cashflow-heading is-spend">{locale === "ar" ? "أقساط وفواتير متكررة" : "Installments & recurring bills"}</h3>
+          <div className="personal-loan-list">
+            {expenses.map(renderRow)}
+            {!expenses.length && <p className="empty-state">{locale === "ar" ? "لا أقساط أو فواتير بعد. أضف قسط سيارة أو فاتورة كهرباء من الأزرار أعلاه." : "No installments or bills yet. Add a car plan or electricity bill from the buttons above."}</p>}
+          </div>
+        </>
+      )}
       {open && (
         <RecurringBillModal
           locale={locale}
@@ -733,12 +862,12 @@ export function PersonalRulesSetup({
       <p className="modal-note">{locale === "ar" ? "هنا تُعرَّف بنود الدخل والخصم. اعتماد الدفع والتأجيل يظهر في حساب الأشهر." : "Define income and bills here. Approving, skipping, and deferring stay in the month ledger."}</p>
       <div className="personal-rule-list">
         {spaceRules.map((rule) => (
-          <div className={`personal-rule-row ${rule.status !== "active" ? "is-paused" : ""}`} key={rule.id}>
+          <div className={`personal-rule-row ${laneOf(rule.kind)} ${rule.status !== "active" ? "is-paused" : ""}`} key={rule.id}>
             <div>
-              <strong>{rule.name}</strong>
-              <span>{rule.kind === "income" ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "مصروف" : "Expense")} · {personalCategoryLabel(rule.kind === "income" ? "income" : "expense", rule.category, locale, rule.name)} · {(rule.schedule ?? "monthly") === "once" ? (locale === "ar" ? `مجدول ${rule.starts_at.slice(0, 7)}` : `scheduled ${rule.starts_at.slice(0, 7)}`) : (rule.schedule ?? "monthly") === "unscheduled" ? (locale === "ar" ? "بدون موعد" : "no date") : (rule.amount_mode === "variable" ? (locale === "ar" ? "متغير شهرياً" : "variable monthly") : (locale === "ar" ? "ثابت شهرياً" : "fixed monthly"))}{rule.status === "paused" ? (locale === "ar" ? " · متوقف" : " · paused") : rule.status === "archived" ? (locale === "ar" ? " · مؤرشف" : " · archived") : ""}</span>
+              <strong>{rule.name} <em className={`personal-cat-chip ${laneOf(rule.kind)}`}>{personalCategoryLabel(rule.kind === "income" ? "income" : "expense", rule.category, locale, rule.name)}</em></strong>
+              <span>{rule.kind === "income" ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "مصروف" : "Expense")} · {(rule.schedule ?? "monthly") === "once" ? (locale === "ar" ? `مجدول ${rule.starts_at.slice(0, 7)}` : `scheduled ${rule.starts_at.slice(0, 7)}`) : (rule.schedule ?? "monthly") === "unscheduled" ? (locale === "ar" ? "بدون موعد" : "no date") : (rule.amount_mode === "variable" ? (locale === "ar" ? "متغير شهرياً" : "variable monthly") : (locale === "ar" ? "ثابت شهرياً" : "fixed monthly"))}{rule.status === "paused" ? (locale === "ar" ? " · متوقف" : " · paused") : rule.status === "archived" ? (locale === "ar" ? " · مؤرشف" : " · archived") : ""}</span>
             </div>
-            <b>{rule.amount_minor ? money(rule.amount_minor, locale) : (locale === "ar" ? "يُدخل عند الترحيل" : "enter when posting")}</b>
+            <b className={`personal-lane-amount ${laneOf(rule.kind)}`}>{rule.amount_minor ? `${rule.kind === "income" ? "+" : "−"}${money(rule.amount_minor, locale)}` : (locale === "ar" ? "يُدخل عند الترحيل" : "enter when posting")}</b>
             <div className="personal-rule-actions">
               <button type="button" title={locale === "ar" ? "تعديل" : "Edit"} onClick={() => setRuleOpen({ kind: rule.kind === "expense" ? "expense" : "income", schedule: (rule.schedule === "once" || rule.schedule === "unscheduled" ? rule.schedule : "monthly"), amountMode: rule.amount_mode === "variable" ? "variable" : "fixed", existing: rule })}><Pencil size={14} /></button>
               <button type="button" title={rule.status === "paused" ? (locale === "ar" ? "تشغيل" : "Resume") : (locale === "ar" ? "إيقاف" : "Pause")} onClick={() => void mutateRule(rule.id, rule.status === "paused" ? "active" : "paused")}>{rule.status === "paused" ? <Play size={14} /> : <Pause size={14} />}</button>
@@ -927,7 +1056,7 @@ function UnscheduledRow({ rule, locale, onChanged }: { rule: PersonalRule; local
     onChanged(result);
   };
   return (
-    <div className="personal-occ-row">
+    <div className="personal-occ-row is-income">
       <div>
         <strong>{rule.name}</strong>
         <span>{locale === "ar" ? "اختر الشهر الذي يسجَّل فيه هذا الدخل" : "Pick the month this income belongs to"}</span>
@@ -1003,10 +1132,10 @@ function OccurrenceRow({ item, locale, accounts, onChanged }: { item: PersonalOc
     { label: locale === "ar" ? "شهران" : "2 months", value: addMonthsIso(2) },
   ];
   return (
-    <div className="personal-occ-row">
+    <div className={`personal-occ-row ${laneOf(item.rule_kind)}`}>
       <div>
-        <strong>{item.rule_name}</strong>
-        <span>{formatDue(item.due_at) || item.period_key} · {income ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "خصم" : "Bill")} · {personalCategoryLabel(income ? "income" : "expense", item.rule_category, locale, item.rule_name)}{!variable && Number(item.expected_minor) > 0 ? (locale === "ar" ? ` · الالتزام ${money(Number(item.expected_minor), locale)}` : ` · due ${money(Number(item.expected_minor), locale)}`) : ""}{variable ? (locale === "ar" ? " · متغيرة — أدخل المبلغ" : " · variable — enter amount") : ""}</span>
+        <strong>{item.rule_name} <em className={`personal-cat-chip ${laneOf(item.rule_kind)}`}>{income ? (locale === "ar" ? "دخل" : "Income") : (locale === "ar" ? "مصروف" : "Spend")}</em></strong>
+        <span>{formatDue(item.due_at) || item.period_key} · {personalCategoryLabel(income ? "income" : "expense", item.rule_category, locale, item.rule_name)}{!variable && Number(item.expected_minor) > 0 ? (locale === "ar" ? ` · الالتزام ${money(Number(item.expected_minor), locale)}` : ` · due ${money(Number(item.expected_minor), locale)}`) : ""}{variable ? (locale === "ar" ? " · متغيرة — أدخل المبلغ" : " · variable — enter amount") : ""}</span>
       </div>
       <div className="personal-occ-fields">
         <label className="personal-occ-account">

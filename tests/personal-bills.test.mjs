@@ -79,6 +79,10 @@ test("personal wallet UI and cron expose installment reminders", () => {
   assert.match(ui, /قسط \/ تمويل/);
   assert.match(ui, /فاتورة شهرية/);
   assert.match(ui, /دخل شهري ثابت/);
+  assert.match(ui, /personal-section-nav/);
+  assert.match(ui, /صفحة الدخل/);
+  assert.match(ui, /صفحة المصروف/);
+  assert.match(ui, /المعاملات/);
   assert.match(ui, /يوم الدفع كل شهر/);
   const categories = fs.readFileSync(path.join(root, "lib/personal-categories.ts"), "utf8");
   assert.match(categories, /مصاريف البيت/);

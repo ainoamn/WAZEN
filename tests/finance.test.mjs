@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, extraAddonMinorFromTransactions, memberCashCreditMinor, memberDisplayCreditMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, splitContributionPayment, splitEvenly, validateJournal } from "../lib/finance.ts";
+import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, extraAddonMinorFromTransactions, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, splitContributionPayment, splitEvenly, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 import { bankCustodySplit } from "../lib/wallet-links.ts";
 
@@ -193,4 +193,23 @@ test("voided extra share transactions drop out of the extra column", () => {
   assert.equal(extraAddonMinorFromTransactions("m1", "s1", [
     { member_id: "m1", space_id: "s1", status: "voided", allocation: "extra", kind: "income", amount_minor: 23_333, description_ar: "تسوية حصة مصروف للصندوق" },
   ]), 0);
+});
+
+test("peer settlement journals are not salary or spend", () => {
+  assert.equal(isPeerSettlementTransfer({ description_ar: "مبلغ إضافي · تسوية حصة «مصروف جماعي» إلى علي" }), true);
+  assert.equal(isPeerSettlementTransfer({ description_ar: "استرداد مبلغ إضافي · تسوية حصة «مصروف جماعي» من داود عبد الله" }), true);
+  assert.equal(isPeerSettlementTransfer({ description_ar: "تحويل مسجّل", description_en: "Posted transfer" }), true);
+  assert.equal(isPeerSettlementTransfer({ description_ar: "راتب سبتمبر" }), false);
+});
+
+test("trip pocket spend is the bills a member paid, not settlement extras", () => {
+  const expenses = [
+    { space_id: "trip1", paid_by_member_id: "ali", amount_minor: 17_000, paid_from: "member", status: "posted" },
+    { space_id: "trip1", paid_by_member_id: "harith", amount_minor: 50_400, paid_from: "member", status: "posted" },
+    { space_id: "trip1", paid_by_member_id: "ali", amount_minor: 5_000, paid_from: "common_fund", paid_by_name: "صندوق الجمعية", status: "posted" },
+    { space_id: "other", paid_by_member_id: "ali", amount_minor: 9_000, paid_from: "member", status: "posted" },
+  ];
+  assert.equal(memberTripPocketMinor("ali", "trip1", expenses), 17_000);
+  assert.equal(memberTripPocketMinor("harith", "trip1", expenses), 50_400);
+  assert.equal(tripPostedSpendMinor("trip1", expenses), 72_400);
 });

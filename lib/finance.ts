@@ -256,6 +256,44 @@ export function isFundPaidExpense(expense: { paid_from?: string | null; paid_by_
     || expense.paid_by_name === "Association fund";
 }
 
+/** Peer settlement journal rows must not look like salary, spend, or extra dues. */
+export function isPeerSettlementTransfer(txn: { description_ar?: string | null; description_en?: string | null }) {
+  const text = `${txn.description_ar ?? ""} ${txn.description_en ?? ""}`;
+  return /تحويل مسجّل|استلام تحويل|تسوية حصة|مبلغ إضافي · تسوية|استرداد مبلغ إضافي|Posted transfer|Transfer received|netted trip expenses|direct member/i.test(text);
+}
+
+export function memberTripPocketMinor(
+  memberId: string,
+  spaceId: string,
+  expenses: Array<{
+    space_id?: string;
+    paid_by_member_id?: string;
+    amount_minor?: unknown;
+    paid_from?: string | null;
+    paid_by_name?: string | null;
+    status?: string | null;
+  }>,
+) {
+  return expenses.reduce((sum, expense) => {
+    if (expense.space_id && expense.space_id !== spaceId) return sum;
+    if (expense.paid_by_member_id !== memberId) return sum;
+    if ((expense.status ?? "posted") === "voided") return sum;
+    if (isFundPaidExpense(expense)) return sum;
+    return sum + asMinor(expense.amount_minor);
+  }, 0);
+}
+
+export function tripPostedSpendMinor(
+  spaceId: string,
+  expenses: Array<{ space_id?: string; amount_minor?: unknown; status?: string | null }>,
+) {
+  return expenses.reduce((sum, expense) => {
+    if (expense.space_id && expense.space_id !== spaceId) return sum;
+    if ((expense.status ?? "posted") === "voided") return sum;
+    return sum + asMinor(expense.amount_minor);
+  }, 0);
+}
+
 /**
  * Net member contributions against fund-paid expense shares.
  * Example: paid 200, share 165.5 → leftover 34.5 (له), shortfall 0.

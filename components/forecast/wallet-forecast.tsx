@@ -10,6 +10,7 @@ type Locale = "ar" | "en";
 export function WalletForecastPanel({
   locale,
   currency,
+  spaceType,
   balanceMinor,
   monthlyInflowMinor,
   monthlyOutflowMinor,
@@ -20,6 +21,7 @@ export function WalletForecastPanel({
 }: {
   locale: Locale;
   currency: string;
+  spaceType?: string;
   balanceMinor: number;
   monthlyInflowMinor: number;
   monthlyOutflowMinor: number;
@@ -33,14 +35,23 @@ export function WalletForecastPanel({
   const remainingIn = remainingInflowMinor ?? monthlyInflowMinor;
   const remainingOut = remainingOutflowMinor ?? monthlyOutflowMinor;
   const remainingNet = remainingIn - remainingOut;
+  const tripNote = remainingOut > 0
+    ? (locale === "ar"
+      ? `رحلة لمرة واحدة: لا راتب شهري. المتبقي بين الأعضاء ${money(remainingOut)} حتى تُصفّى التسويات. نقد الصندوق ${money(balanceMinor)}.`
+      : `One-off trip: no monthly salary. ${money(remainingOut)} still open between members until settled. Fund cash ${money(balanceMinor)}.`)
+    : (locale === "ar"
+      ? `رحلة لمرة واحدة: لا دخل شهري ولا خصم متكرر. نقد الصندوق ${money(balanceMinor)}. التسويات بين الأعضاء مسوّاة.`
+      : `One-off trip: no recurring inflow or outflow. Fund cash ${money(balanceMinor)}. Peer settlements are settled.`);
   return (
     <CollapsiblePanel
       id={foldId}
-      heading={<><span className="section-kicker"><TrendingUp size={15} />{locale === "ar" ? "تنبؤ 3 أشهر" : "3-month forecast"}</span><h2>{title ?? (locale === "ar" ? "الدخل المتوقع مقابل الخصم المتوقع" : "Expected inflows versus outflows")}</h2></>}
+      heading={<><span className="section-kicker"><TrendingUp size={15} />{locale === "ar" ? "تنبؤ 3 أشهر" : "3-month forecast"}</span><h2>{title ?? (spaceType === "trip" ? (locale === "ar" ? "صندوق الرحلة والتسويات" : "Trip fund and settlements") : (locale === "ar" ? "الدخل المتوقع مقابل الخصم المتوقع" : "Expected inflows versus outflows"))}</h2></>}
       foldLabel={locale === "ar" ? "طي التنبؤ" : "Fold forecast"}
     >
       <p className="modal-note">
-        {locale === "ar"
+        {spaceType === "trip"
+          ? tripNote
+          : locale === "ar"
           ? `المتبقي هذا الشهر (غير المرحّل): دخل ${money(remainingIn)} · خصم ${money(remainingOut)} · صافي ${money(remainingNet)}. الأشهر التالية تفترض الدخل والخصم غير الملغيين: ${money(monthlyInflowMinor)} − ${money(monthlyOutflowMinor)}.`
           : `Still open this month: in ${money(remainingIn)} · out ${money(remainingOut)} · net ${money(remainingNet)}. Later months use uncancelled schedule ${money(monthlyInflowMinor)} − ${money(monthlyOutflowMinor)}.`}
       </p>

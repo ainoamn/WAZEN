@@ -10,8 +10,8 @@ export async function getV1MemberLedger(
   focus: MemberLedgerFocus = "all",
 ) {
   const space = await db.prepare(
-    "SELECT id, name_ar, name_en, currency FROM spaces WHERE id=? LIMIT 1",
-  ).bind(spaceId).first<{ id: string; name_ar: string; name_en: string; currency: string }>();
+    "SELECT id, name_ar, name_en, type, currency FROM spaces WHERE id=? LIMIT 1",
+  ).bind(spaceId).first<{ id: string; name_ar: string; name_en: string; type: string; currency: string }>();
   if (!space) throw new ApiError(404, "WALLET_NOT_FOUND");
 
   const member = await db.prepare(`
@@ -69,6 +69,7 @@ export async function getV1MemberLedger(
     settlements: (settlements.results ?? []) as never[],
     tripExpenses: (tripExpenses.results ?? []) as never[],
     expenseSplits: (expenseSplits.results ?? []) as never[],
+    spaceType: space.type,
   });
 
   return {

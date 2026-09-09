@@ -132,6 +132,7 @@ export async function queueMemberStatementEmail(input: {
     settlements: input.bundle.settlements as never[],
     tripExpenses: input.bundle.tripExpenses as never[],
     expenseSplits: input.bundle.expenseSplits,
+    spaceType: input.bundle.space.type,
   });
 
   const money = (minor: number) => formatMoneyMinor(minor, currency, locale);
