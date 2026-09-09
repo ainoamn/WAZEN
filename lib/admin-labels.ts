@@ -267,6 +267,9 @@ const ERRORS: Record<string, Pair> = {
   INTERNAL_ERROR: ["تعذر إكمال الطلب. حاول مرة أخرى", "Could not complete the request. Try again"],
   INVALID_CREDENTIALS: ["كلمة المرور الحالية غير صحيحة", "The current password is incorrect"],
   PASSWORD_MUST_CHANGE: ["كلمة المرور الجديدة يجب أن تختلف عن الحالية", "The new password must be different"],
+  MEMBER_EMAIL_TAKEN: ["هذا البريد مسجّل لمستخدم موجود. للمتابعة حرّر بياناته", "This email already belongs to an existing member. To continue, edit their details"],
+  MEMBER_PHONE_TAKEN: ["هذا الرقم مسجّل لمستخدم موجود. للمتابعة حرّر بياناته", "This phone number already belongs to an existing member. To continue, edit their details"],
+  MEMBER_NAME_TAKEN: ["هذا المستخدم موجود. للمتابعة حرّر بياناته", "This member already exists. To continue, edit their details"],
 };
 
 export function errorLabel(value: string, locale: UiLocale) {

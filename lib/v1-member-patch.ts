@@ -37,6 +37,14 @@ export async function patchV1Member(
   if (displayName !== undefined && (displayName.length < 2 || displayName.length > 80)) {
     throw new ApiError(400, "INVALID_MEMBER");
   }
+  if (displayName) {
+    const { findSpaceMemberContactConflict, throwMemberContactConflict } = await import("./member-contact-unique");
+    const contactConflict = await findSpaceMemberContactConflict(db, space.id, {
+      displayName,
+      excludeMemberId: memberId,
+    });
+    if (contactConflict) throwMemberContactConflict(contactConflict);
+  }
 
   const nextRole = input.role ?? member.role;
   const nextStatus = input.status ?? member.status;

@@ -1760,6 +1760,7 @@ export async function POST(request: Request) {
       const contactConflict = await findSpaceMemberContactConflict(db, parsed.data.spaceId, {
         email: parsed.data.email || null,
         phone,
+        displayName: parsed.data.displayName,
       });
       if (contactConflict) throwMemberContactConflict(contactConflict);
       const space = await db.prepare("SELECT currency FROM spaces WHERE id=?").bind(parsed.data.spaceId).first<{ currency: string }>();
@@ -1900,6 +1901,98 @@ export async function POST(request: Request) {
       await completeIdempotency(db, user.id, idempotencyKey, body);
       claimRef.current = null;
       return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+    } else if (action === "mergeMemberDuplicates") {
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120).optional(),
+        keeperId: z.string().min(1).max(120).optional(),
+        duplicateIds: z.array(z.string().min(1).max(120)).max(20).optional(),
+        mergeAll: z.boolean().optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_MERGE");
+      const { findDuplicateClusters, mergeDuplicateCluster } = await import("../../../lib/member-duplicates");
+      const jobs: Array<{ spaceId: string; keeperId: string; duplicateIds: string[] }> = [];
+      if (parsed.data.mergeAll) {
+        const memberRows = await db.prepare(
+          `SELECT m.id,m.space_id,m.user_id,m.display_name,m.email,m.phone,m.role,m.status,m.due_minor,m.paid_minor,m.extra_minor,COALESCE(m.addon_minor,0) AS addon_minor,m.joined_at
+           FROM members m JOIN spaces s ON s.id=m.space_id
+           WHERE m.status='active' AND s.type IN ('household','trip','society','group')
+             AND (s.owner_user_id=? OR EXISTS (SELECT 1 FROM members x WHERE x.space_id=s.id AND x.user_id=? AND x.status='active'))`,
+        ).bind(user.id, user.id).all();
+        const clusters = findDuplicateClusters((memberRows.results ?? []) as Parameters<typeof findDuplicateClusters>[0]);
+        for (const cluster of clusters) {
+          if (cluster.blockedReason) continue;
+          jobs.push({
+            spaceId: cluster.spaceId,
+            keeperId: cluster.keeperId,
+            duplicateIds: cluster.members.map((item) => item.id).filter((id) => id !== cluster.keeperId),
+          });
+        }
+      } else if (parsed.data.spaceId && parsed.data.keeperId && parsed.data.duplicateIds?.length) {
+        jobs.push({
+          spaceId: parsed.data.spaceId,
+          keeperId: parsed.data.keeperId,
+          duplicateIds: parsed.data.duplicateIds,
+        });
+      } else {
+        throw new ApiError(400, "INVALID_MERGE");
+      }
+      if (!jobs.length) throw new ApiError(409, "NOTHING_TO_MERGE");
+      const merged = [];
+      const skipped = [];
+      for (const job of jobs) {
+        try {
+          await authorizeSpace(db, user, job.spaceId, "members:write", ["household", "trip", "society", "group"]);
+          merged.push(await mergeDuplicateCluster({
+            db,
+            actorUserId: user.id,
+            spaceId: job.spaceId,
+            keeperId: job.keeperId,
+            duplicateIds: job.duplicateIds,
+          }));
+        } catch (error) {
+          skipped.push({
+            spaceId: job.spaceId,
+            keeperId: job.keeperId,
+            error: error instanceof ApiError ? error.code : "MERGE_FAILED",
+          });
+        }
+      }
+      if (!merged.length) {
+        throw new ApiError(409, skipped[0]?.error === "MERGE_CONFLICT_ACCOUNTS" ? "MERGE_CONFLICT_ACCOUNTS" : "NOTHING_TO_MERGE");
+      }
+      const body = { ok: true, mergedCount: merged.reduce((sum, item) => sum + item.extraCount, 0), clusterCount: merged.length, skipped };
+      await completeIdempotency(db, user.id, idempotencyKey, body);
+      claimRef.current = null;
+      return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+    } else if (action === "importSavedContacts") {
+      const parsed = z.object({
+        contacts: z.array(z.object({
+          displayName: z.string().trim().min(1).max(80),
+          email: z.string().trim().max(254).optional(),
+          phone: z.string().trim().max(40).optional(),
+        })).min(1).max(200),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_CONTACTS");
+      const createdAt = now();
+      let imported = 0;
+      for (const contact of parsed.data.contacts) {
+        const emailRaw = String(contact.email ?? "").trim().toLowerCase();
+        const email = emailRaw.includes("@") ? emailRaw : null;
+        const phone = contact.phone?.trim() ? (toWhatsAppNumber(contact.phone) || contact.phone.trim()) : null;
+        if (!email && !phone) continue;
+        await upsertSavedContact(db, user.id, {
+          displayName: contact.displayName,
+          email,
+          phone,
+        }, createdAt);
+        imported += 1;
+      }
+      const saved = await db.prepare("SELECT id,display_name,email,phone FROM saved_contacts WHERE owner_user_id=? ORDER BY display_name")
+        .bind(user.id).all();
+      const body = { ok: true, imported, contacts: saved.results ?? [] };
+      await completeIdempotency(db, user.id, idempotencyKey, body);
+      claimRef.current = null;
+      return Response.json(body, { headers: { "Cache-Control": "no-store" } });
     } else if (action === "updateMemberContact") {
       const parsed = z.object({
         memberId: z.string().min(1).max(120),
@@ -1952,6 +2045,7 @@ export async function POST(request: Request) {
         const contactConflict = await findSpaceMemberContactConflict(db, row.space_id, {
           email: nextEmail,
           phone: nextPhone,
+          displayName: nextName,
           excludeMemberId: row.id,
         });
         if (contactConflict) throwMemberContactConflict(contactConflict);

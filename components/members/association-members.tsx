@@ -4,6 +4,8 @@ import { CheckCircle2, Clock3, Mail, MessageCircle, Pencil, Printer, Sparkles, X
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import OmrSymbol from "../brand/OmrSymbol";
 import { apiFetch } from "../../lib/client-api";
+import { toWhatsAppNumber, digitsOnly } from "../../lib/phone";
+import { isMemberContactTakenError, memberContactConflictMessage, memberContactTakenField } from "../../lib/member-contact-unique";
 import { buildMemberLedger, buildMemberLedgerHtml, filterMemberLedgerLines, type MemberLedgerFocus } from "../../lib/member-ledger";
 import { printWazenHtml } from "../../lib/print-document";
 import { consumePlanQuota } from "../../lib/plan-quota-client";
@@ -41,7 +43,8 @@ export type AssociationMember = {
 };
 
 export function personIdentityKey(member: Pick<AssociationMember, "phone" | "email" | "display_name">) {
-  const phone = String(member.phone ?? "").replace(/\D/g, "");
+  const rawPhone = String(member.phone ?? "").trim();
+  const phone = rawPhone ? (toWhatsAppNumber(rawPhone) || digitsOnly(rawPhone)) : "";
   const email = String(member.email ?? "").trim().toLowerCase();
   if (phone.length >= 7) return `p:${phone}`;
   if (email) return `e:${email}`;
@@ -572,6 +575,7 @@ export function MemberPersonProfile({
   onStatementSent,
   onContactSaved,
   canWhatsapp = true,
+  startEditingContact = false,
 }: {
   records: AssociationMember[];
   spaces: AssociationSpace[];
@@ -580,6 +584,7 @@ export function MemberPersonProfile({
   locale: Locale;
   issuerName: string;
   focus?: MemberLedgerFocus;
+  startEditingContact?: boolean;
   transactions?: LedgerInputs["transactions"];
   settlements?: LedgerInputs["settlements"];
   tripExpenses?: LedgerInputs["tripExpenses"];
@@ -602,7 +607,7 @@ export function MemberPersonProfile({
   const [phone, setPhone] = useState(primary?.phone ?? "");
   const [savingContact, setSavingContact] = useState(false);
   const [contactError, setContactError] = useState("");
-  const [editingContact, setEditingContact] = useState(!(primary?.email));
+  const [editingContact, setEditingContact] = useState(startEditingContact || !(primary?.email));
   const [resendingInvite, setResendingInvite] = useState(false);
   const [inviteNote, setInviteNote] = useState("");
   const [inviteError, setInviteError] = useState("");
@@ -662,11 +667,10 @@ export function MemberPersonProfile({
       });
       const result = await response.json() as { error?: string; conflictName?: string };
       if (!response.ok) {
-        if (result.error === "MEMBER_PHONE_TAKEN" || result.error === "MEMBER_EMAIL_TAKEN") {
+        if (isMemberContactTakenError(result.error)) {
+          const field = memberContactTakenField(result.error) ?? "name";
           const name = result.conflictName || (locale === "ar" ? "عضو آخر" : "another member");
-          throw new Error(result.error === "MEMBER_EMAIL_TAKEN"
-            ? (locale === "ar" ? `هذا البريد مستخدم للعضو «${name}».` : `This email is already used by “${name}”.`)
-            : (locale === "ar" ? `هذا الرقم مستخدم للعضو «${name}».` : `This phone number is already used by “${name}”.`));
+          throw new Error(memberContactConflictMessage({ field, displayName: name }, locale));
         }
         throw new Error(result.error ?? "UPDATE_FAILED");
       }

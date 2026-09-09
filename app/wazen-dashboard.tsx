@@ -5,6 +5,8 @@ import { WazenIcon } from "../components/brand/WazenLogo";
 import WazenPageLoader from "../components/brand/WazenPageLoader";
 import { ReportsPanel } from "../components/reports/ReportsPanel";
 import { MemberDetailModal, MemberPersonProfile, MemberStatementEmailModal, ReceiptChannelModal, RemainingInvoiceGrid, SmartAccountantModal, memberAccruedDueMinor, memberInstallments, personIdentityKey } from "../components/members/association-members";
+import { DuplicateMergePanel } from "../components/members/duplicate-merge-panel";
+import { ContactSourceBar } from "../components/members/contact-source-bar";
 import { SpaceRolePermissionsPanel } from "../components/members/space-role-permissions";
 import { PersonalRulesSetup, PersonalWalletPanel, confirmResetWalletData } from "../components/personal/personal-wallet";
 import { DateField } from "../components/ui/date-field";
@@ -16,6 +18,12 @@ import { isPeriodLocked } from "../lib/accounting-periods";
 import { buildReportHtml, printWazenHtml, buildReceiptBodyHtml, buildReceiptQrDataUrl } from "../lib/reports";
 import { wrapPrintDocument } from "../lib/print-document";
 import { composeWhatsAppPhone, splitPhoneParts, toWhatsAppNumber } from "../lib/phone";
+import {
+  findMemberContactConflictInRows,
+  isMemberContactTakenError,
+  memberContactConflictMessage,
+  memberContactTakenField,
+} from "../lib/member-contact-unique";
 import { openWhatsAppUrl } from "../lib/receipt-share";
 import { apiFetch } from "../lib/client-api";
 import { buildAccountStatementHtml, type StatementTxnFilter } from "../lib/account-statement";
@@ -869,6 +877,12 @@ function dashboardError(code: string, locale: Locale) {
       PLAN_WALLET_LIMIT: "وصلت إلى حد المحافظ في باقتك.",
       ROLE_PERMISSION_DENIED: "دورك لا يسمح بهذا الإجراء على العمليات. اطلب من المدير تعديل الصلاحيات.",
       HIGHER_ROLE_TRANSACTION: "لا يمكن تعديل أو إلغاء عملية أنشأها مسؤول أعلى منك.",
+      MEMBER_EMAIL_TAKEN: "هذا البريد مسجّل لمستخدم موجود. للمتابعة حرّر بياناته.",
+      MEMBER_PHONE_TAKEN: "هذا الرقم مسجّل لمستخدم موجود. للمتابعة حرّر بياناته.",
+      MEMBER_NAME_TAKEN: "هذا المستخدم موجود. للمتابعة حرّر بياناته.",
+      NOTHING_TO_MERGE: "لا توجد حسابات مكررة قابلة للدمج.",
+      MERGE_CONFLICT_ACCOUNTS: "لا يمكن الدمج: حسابان مرتبطان بتسجيل دخول مختلف.",
+      MERGE_CROSS_SPACE: "الدمج داخل الجمعية الواحدة فقط.",
     }
     : {
       INTERNAL_ERROR: "Could not complete the delete. Refresh and try again.",
@@ -900,6 +914,12 @@ function dashboardError(code: string, locale: Locale) {
       PLAN_WALLET_LIMIT: "You reached the wallet limit on your plan.",
       ROLE_PERMISSION_DENIED: "Your role cannot perform this transaction action. Ask the manager to update permissions.",
       HIGHER_ROLE_TRANSACTION: "You cannot edit or void a transaction created by a higher role.",
+      MEMBER_EMAIL_TAKEN: "This email already belongs to an existing member. To continue, edit their details.",
+      MEMBER_PHONE_TAKEN: "This phone number already belongs to an existing member. To continue, edit their details.",
+      MEMBER_NAME_TAKEN: "This member already exists. To continue, edit their details.",
+      NOTHING_TO_MERGE: "No mergeable duplicate accounts were found.",
+      MERGE_CONFLICT_ACCOUNTS: "Cannot merge: two different signed-in accounts share this number.",
+      MERGE_CROSS_SPACE: "Merge stays inside one association.",
     };
   return table[code as keyof typeof table] ?? code;
 }
@@ -1272,6 +1292,7 @@ export function WazenDashboard() {
   const [pickedSpaceId, setPickedSpaceId] = useState<Partial<Record<ViewId, string>>>({});
   const [activeMemberId, setActiveMemberId] = useState("");
   const [memberLedgerFocus, setMemberLedgerFocus] = useState<MemberLedgerFocus>("all");
+  const [editMemberOnOpen, setEditMemberOnOpen] = useState(false);
   const [receiptTxnId, setReceiptTxnId] = useState<string | undefined>(undefined);
   const [withdrawMemberId, setWithdrawMemberId] = useState("");
   const [editingExpenseId, setEditingExpenseId] = useState("");
@@ -1723,7 +1744,7 @@ export function WazenDashboard() {
           )}
           {activeView === "groups" && (viewLocked
             ? <UpgradeGate locale={locale} title={locale === "ar" ? "الأعضاء يستدعون ترقية الباقة" : "Members need a plan upgrade"} text={locale === "ar" ? "إدارة الأعضاء للجمعيات والمجموعات غير مضمّنة في باقتك الحالية." : "Member management for circles and groups is not included in your current plan."} />
-            : <MembersView data={data} locale={locale} onInvite={() => setModal("invite")} onOpenPerson={(memberId, focus) => { setActiveMemberId(memberId); setMemberLedgerFocus(focus ?? "all"); setModal("memberProfile"); }} onSmartPay={(memberId) => { if (!planHasFeature(planFeatures, "smart_accountant")) { showUpgradeNotice("smart_accountant", locale === "ar" ? "المحاسب الذكي" : "Smart accountant"); return; } setActiveMemberId(memberId); setModal("smartPay"); }} />)}
+            : <MembersView data={data} locale={locale} onInvite={() => setModal("invite")} onOpenPerson={(memberId, focus) => { setActiveMemberId(memberId); setMemberLedgerFocus(focus ?? "all"); setEditMemberOnOpen(false); setModal("memberProfile"); }} onSmartPay={(memberId) => { if (!planHasFeature(planFeatures, "smart_accountant")) { showUpgradeNotice("smart_accountant", locale === "ar" ? "المحاسب الذكي" : "Smart accountant"); return; } setActiveMemberId(memberId); setModal("smartPay"); }} onMerged={(message) => { flash(message); void load(true); }} />)}
           {activeView === "transactions" && <TransactionsView data={data} locale={locale} onChanged={(next) => { acceptWrite(next); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />}
           {activeView === "reports" && (viewLocked
             ? <UpgradeGate locale={locale} title={locale === "ar" ? "التقارير تستدعي ترقية الباقة" : "Reports need a plan upgrade"} text={locale === "ar" ? "التقارير التفصيلية والتصدير غير مضمّنة في باقتك. رقِّ الباقة لتفعيلها." : "Advanced reports and exports are not on your plan. Upgrade to unlock them."} />
@@ -1759,7 +1780,7 @@ export function WazenDashboard() {
           flash(activeSpace.type === "personal" ? (locale === "ar" ? "تم حفظ ضبط المحفظة" : "Wallet setup saved") : (locale === "ar" ? "تم تحديث بيانات الجمعية" : "Association details updated"));
         }} />
       )}
-      {modal === "invite" && <InviteModal data={data} locale={locale} preferredSpaceId={activeSpace?.id} onClose={() => setModal(null)} onDone={(message) => { setModal(null); flash(message); void load(); }} />}
+      {modal === "invite" && <InviteModal data={data} locale={locale} preferredSpaceId={activeSpace?.id} onClose={() => setModal(null)} onDone={(message) => { setModal(null); flash(message); void load(); }} onEditExisting={(memberId) => { setActiveMemberId(memberId); setMemberLedgerFocus("all"); setEditMemberOnOpen(true); setModal("memberProfile"); }} />}
       {modal === "tripExpense" && <TripExpenseModal data={data} locale={locale} preferredSpaceId={activeSpace?.id} expenseId={editingExpenseId || undefined} onClose={() => { setModal(null); setEditingExpenseId(""); }} onSaved={(next) => { acceptWrite(next); setModal(null); setEditingExpenseId(""); flash(locale === "ar" ? "تم حفظ المصروف وتحديث الحصص" : "Expense saved and shares updated"); }} />}
       {modal === "circleOrder" && activeSpace && <CircleOrderModal data={data} locale={locale} spaceId={activeSpace.id} onClose={() => setModal(null)} onSaved={(next) => { acceptWrite(next); setModal(null); flash(locale === "ar" ? "تم اعتماد ترتيب الأدوار" : "Turn order saved"); }} />}
       {modal === "clonePeriod" && activeSpace && <ClonePeriodModal data={data} locale={locale} space={activeSpace} onClose={() => setModal(null)} onSaved={(next) => { acceptWrite(next); setModal(null); flash(locale === "ar" ? "فُتحت فترة / جمعية جديدة بنفس الشروط" : "A new period was opened with the same terms"); }} />}
@@ -1825,11 +1846,12 @@ export function WazenDashboard() {
             locale={locale}
             issuerName={data.user.displayName}
             focus={memberLedgerFocus}
+            startEditingContact={editMemberOnOpen}
             transactions={data.transactions}
             settlements={data.settlements}
             tripExpenses={data.tripExpenses}
             expenseSplits={data.expenseSplits}
-            onClose={() => setModal(null)}
+            onClose={() => { setModal(null); setEditMemberOnOpen(false); }}
             onSmartPay={(memberId) => {
               if (!planHasFeature(planFeaturesOf(data), "smart_accountant")) { goToPricing(); return; }
               setActiveMemberId(memberId);
@@ -2429,7 +2451,7 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
   </div>;
 }
 
-function MembersView({ data, locale, onInvite, onOpenPerson, onSmartPay }: { data: DashboardData; locale: Locale; onInvite: () => void; onOpenPerson: (memberId: string, focus?: MemberLedgerFocus) => void; onSmartPay: (memberId: string) => void }) {
+function MembersView({ data, locale, onInvite, onOpenPerson, onSmartPay, onMerged }: { data: DashboardData; locale: Locale; onInvite: () => void; onOpenPerson: (memberId: string, focus?: MemberLedgerFocus) => void; onSmartPay: (memberId: string) => void; onMerged: (message: string) => void }) {
   const societies = data.spaces.filter((space) => space.type !== "personal");
   const groupMembers = data.members.filter((member) => societies.some((space) => space.id === member.space_id));
   const people = Array.from(new Map(groupMembers.map((member) => {
@@ -2439,7 +2461,7 @@ function MembersView({ data, locale, onInvite, onOpenPerson, onSmartPay }: { dat
   const t = copy[locale];
   const [query, setQuery] = useState("");
   const visible = people.filter((records) => `${records[0].display_name} ${records[0].email ?? ""} ${records[0].phone ?? ""}`.toLowerCase().includes(query.toLowerCase()));
-  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.memberProgress}</h2><p>{locale === "ar" ? "اضغط اسم العضو لفتح ملفه: حالته، الجمعيات المرتبطة، تقييم الانضباط، وما عليه وما استلمه." : "Open a member file: status, linked associations, discipline rating, amounts owed and received."}</p></div><div className="section-title-actions"><button className="secondary-button" onClick={() => onSmartPay(groupMembers[0]?.id ?? "")}><Sparkles size={16} />{locale === "ar" ? "المحاسب الذكي" : "Smart accountant"}{planHasFeature(planFeaturesOf(data), "smart_accountant") ? null : <PlanLockBadge locale={locale} />}</button><button className="primary-button" onClick={onInvite}><UserPlus size={17} />{t.invite}</button></div></div>
+  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.memberProgress}</h2><p>{locale === "ar" ? "اضغط اسم العضو لفتح ملفه: حالته، الجمعيات المرتبطة، تقييم الانضباط، وما عليه وما استلمه." : "Open a member file: status, linked associations, discipline rating, amounts owed and received."}</p></div><div className="section-title-actions"><DuplicateMergePanel members={groupMembers} spaces={societies} locale={locale} onMerged={onMerged} /><button className="secondary-button" onClick={() => onSmartPay(groupMembers[0]?.id ?? "")}><Sparkles size={16} />{locale === "ar" ? "المحاسب الذكي" : "Smart accountant"}{planHasFeature(planFeaturesOf(data), "smart_accountant") ? null : <PlanLockBadge locale={locale} />}</button><button className="primary-button" onClick={onInvite}><UserPlus size={17} />{t.invite}</button></div></div>
     <article className="panel members-panel person-table"><div className="panel-heading"><h2>{t.members} <span className="count-badge">{people.length}</span></h2><label className="search-field member-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={locale === "ar" ? "ابحث باسم العضو" : "Search member name"} /></label></div><div className="members-table"><div className="table-head person-head"><span>{locale === "ar" ? "العضو" : "Member"}</span><span>{locale === "ar" ? "الحالة" : "Status"}</span><span>{locale === "ar" ? "الجمعيات" : "Associations"}</span><span>{locale === "ar" ? "الانضباط" : "Discipline"}</span><span>{locale === "ar" ? "عليه" : "Owes"}</span><span>{locale === "ar" ? "المستلم" : "Received"}</span></div>{visible.map((records) => {
     const person = records[0];
     const active = records.some((row) => (row.status ?? "active") === "active");
@@ -3789,7 +3811,7 @@ function WalletModal({ data, locale, existing, defaultType = "trip", lockType = 
   return <Modal title={existing ? (locale === "ar" ? "ضبط المحفظة" : "Wallet setup") : t.newWallet} wide={Boolean(existing && (isPersonal || isGroup))} xl={Boolean(existing && isPersonal)} onClose={onClose}><form className={`modal-form${existing && isPersonal ? " wallet-setup-form" : ""}`} onSubmit={submit}><label><span>{t.walletName}</span><input required value={name} onChange={(event) => setName(event.target.value)} placeholder={locale === "ar" ? "مثال: سفرة الإخوة 2027" : "e.g. Siblings trip 2027"} /></label>{!lockType && !existing && <label><span>{t.walletType}</span><select value={type} onChange={(event) => setType(event.target.value)}>{Object.entries(typeLabels[locale]).map(([value, label]) => <option key={value} value={value} disabled={!planAllowsSpaceType(features, value)}>{label}{planAllowsSpaceType(features, value) ? "" : (locale === "ar" ? " — ترقية" : " — Upgrade")}</option>)}</select></label>}{isGroup && <div className="form-row"><label><span>{locale === "ar" ? "المساهمة الشهرية الإلزامية" : "Mandatory monthly contribution"}</span><div className="money-input"><input required min="0.01" step="0.001" type="number" value={monthlyContribution} onChange={(event) => setMonthlyContribution(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label><label><span>{locale === "ar" ? "مدة الخطة (أشهر)" : "Plan duration (months)"}</span><input required type="number" min="1" max="120" value={durationMonths} onChange={(event) => setDurationMonths(event.target.value)} /></label></div>}<label><span>{locale === "ar" ? "تاريخ بداية الجمعية / المحفظة" : "Association / wallet start date"}</span><DateField required value={startsAt} onChange={setStartsAt} /></label>{isGroup && <div className="modal-note split-preview"><span>{locale === "ar" ? "الهدف المالي للشخص = المساهمة × عدد الأشهر" : "Personal financial goal = contribution × months"}</span><strong>{formatMoney(Number.isFinite(liveGoalMinor) ? liveGoalMinor : 0, "OMR", locale)}</strong></div>}{isGroup && <p className="modal-note">{locale === "ar" ? "عند استلام مبلغ من عضو: يُخصم أولاً من المطالبات المتراكمة عليه، وأي زيادة تُسجَّل مقدّماً (له)." : "When a member pays: outstanding dues are cleared first, and any surplus is booked as advance credit."}</p>}{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : (existing ? t.save : t.create)}</button></div></form>{existing && isGroup && <SpaceRolePermissionsPanel embedded spaceId={existing.id} locale={locale} rolePermissionsJson={existing.role_permissions_json} canManage={canManageRoles} onSaved={(nextJson) => { onLiveData?.({ spaces: data.spaces.map((item) => item.id === existing.id ? { ...item, role_permissions_json: nextJson } : item) }); }} />}{existing && isPersonal && <PersonalRulesSetup spaceId={existing.id} locale={locale} accounts={data.personalAccounts ?? []} rules={data.personalRules ?? []} onChanged={(next) => onLiveData?.(next as Partial<DashboardData>)} />}{existing && <div className="personal-reset-box wallet-danger-zone"><div><strong>{locale === "ar" ? "منطقة الخطر" : "Danger zone"}</strong><p>{isPersonal ? (locale === "ar" ? "تصفية البيانات تبقي اسم المحفظة وتحذف الحسابات والعمليات. الحذف يزيل المحفظة بالكامل." : "Wipe keeps the wallet name and deletes accounts and transactions. Delete removes the wallet entirely.") : (locale === "ar" ? "تصفية البيانات تبقي الأعضاء وخطة المساهمة واسم المحفظة. الحذف يزيل الجمعية بالكامل مع الأعضاء." : "Wipe keeps members, the contribution plan, and the wallet name. Delete removes the association and its members entirely.")}</p></div><div className="wallet-danger-actions"><button type="button" className="danger-button" disabled={resetting || deleting} onClick={() => void resetExisting()}><Trash2 size={14} />{resetting ? "…" : (locale === "ar" ? "تصفية وتصفير" : "Wipe & reset")}</button><button type="button" className="danger-button" disabled={resetting || deleting} onClick={() => void deleteExisting()}><Trash2 size={14} />{deleting ? "…" : (locale === "ar" ? "حذف المحفظة" : "Delete wallet")}</button></div></div>}</Modal>;
 }
 
-function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data: DashboardData; locale: Locale; preferredSpaceId?: string; onClose: () => void; onDone: (message: string) => void }) {
+function InviteModal({ data, locale, preferredSpaceId, onClose, onDone, onEditExisting }: { data: DashboardData; locale: Locale; preferredSpaceId?: string; onClose: () => void; onDone: (message: string) => void; onEditExisting: (memberId: string) => void }) {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [dialIso2, setDialIso2] = useState(DEFAULT_DIAL_ISO2);
@@ -3803,6 +3825,8 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
   const [durationMonths, setDurationMonths] = useState(String(plan?.duration_months ?? 12));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [conflictMemberId, setConflictMemberId] = useState("");
+  const [savedContacts, setSavedContacts] = useState(data.contacts ?? []);
   const totalMinor = Math.round(Number(monthlyContribution || 0) * 1000) * Math.max(1, Number(durationMonths) || 1);
   const dialOptions = dialCodesForSelect(locale);
   const applyStoredPhone = (raw: string) => {
@@ -3815,26 +3839,16 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
     event.preventDefault();
     setSaving(true);
     setError("");
+    setConflictMemberId("");
     try {
       const fullPhone = phone.trim() ? composeWhatsAppPhone(dialCode, phone) : "";
-      const emailNorm = email.trim().toLowerCase();
-      const phoneDigits = fullPhone.replace(/\D/g, "");
-      const localConflict = data.members.find((member) => {
-        if (member.space_id !== spaceId || (member.status ?? "active") !== "active") return false;
-        if (emailNorm && String(member.email ?? "").trim().toLowerCase() === emailNorm) return true;
-        if (phoneDigits.length >= 7) {
-          const existing = String(member.phone ?? "").replace(/\D/g, "");
-          if (existing && (existing === phoneDigits || existing.endsWith(phoneDigits) || phoneDigits.endsWith(existing))) return true;
-        }
-        return false;
-      });
+      const localConflict = findMemberContactConflictInRows(
+        data.members.filter((member) => member.space_id === spaceId),
+        { email, phone: fullPhone, displayName },
+      );
       if (localConflict) {
-        const name = localConflict.display_name;
-        throw new Error(
-          emailNorm && String(localConflict.email ?? "").trim().toLowerCase() === emailNorm
-            ? (locale === "ar" ? `هذا البريد مستخدم للعضو «${name}».` : `This email is already used by “${name}”.`)
-            : (locale === "ar" ? `هذا الرقم مستخدم للعضو «${name}».` : `This phone number is already used by “${name}”.`),
-        );
+        setConflictMemberId(localConflict.memberId);
+        throw new Error(memberContactConflictMessage(localConflict, locale));
       }
       const response = await apiFetch(recordOnly ? "/api/dashboard" : "/api/platform", {
         method: "POST",
@@ -3851,13 +3865,14 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
           durationMonths: Number(durationMonths) || 12,
         }),
       });
-      const result = await response.json() as { error?: string; inviteDelivery?: string | null; conflictName?: string };
+      const result = await response.json() as { error?: string; inviteDelivery?: string | null; conflictName?: string; conflictMemberId?: string };
       if (!response.ok) {
-        if (result.error === "MEMBER_PHONE_TAKEN" || result.error === "MEMBER_EMAIL_TAKEN") {
+        if (isMemberContactTakenError(result.error)) {
+          const field = memberContactTakenField(result.error) ?? "name";
           const name = result.conflictName || (locale === "ar" ? "عضو آخر" : "another member");
-          throw new Error(result.error === "MEMBER_EMAIL_TAKEN"
-            ? (locale === "ar" ? `هذا البريد مستخدم للعضو «${name}».` : `This email is already used by “${name}”.`)
-            : (locale === "ar" ? `هذا الرقم مستخدم للعضو «${name}».` : `This phone number is already used by “${name}”.`));
+          const fallbackId = data.members.find((member) => member.space_id === spaceId && member.display_name === result.conflictName)?.id ?? "";
+          setConflictMemberId(result.conflictMemberId || fallbackId);
+          throw new Error(memberContactConflictMessage({ field, displayName: name }, locale));
         }
         throw new Error(result.error ?? "Unable to create invitation");
       }
@@ -3893,16 +3908,27 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
     <form className="modal-form" onSubmit={submit}>
       <div className="segmented-control"><button type="button" className={!recordOnly ? "active" : ""} onClick={() => setRecordOnly(false)}>{locale === "ar" ? "دعوة إلكترونية" : "Email invite"}</button><button type="button" className={recordOnly ? "active" : ""} onClick={() => setRecordOnly(true)}>{locale === "ar" ? "إضافة للسجل" : "Ledger member"}</button></div>
       <p className="modal-note">{locale === "ar" ? "عند إدخال البريد تُرسل دعوة فورية للانضمام وتثبيت التطبيق." : "When an email is provided, a join invite is sent immediately."}</p>
+      <p className="modal-note">{locale === "ar" ? "لا يُسمح بتكرار الاسم أو رقم الهاتف أو البريد داخل الجمعية. إن كان المساهم موجوداً تظهر ملاحظة لتحرير بياناته." : "Name, phone, and email must be unique in this association. If the member already exists, you will be asked to edit their details."}</p>
+      <ContactSourceBar
+        locale={locale}
+        savedContacts={savedContacts}
+        onApply={(contact) => {
+          setDisplayName(contact.displayName);
+          setEmail(contact.email);
+          applyStoredPhone(contact.phone);
+        }}
+        onContactsSaved={setSavedContacts}
+      />
       <label><span>{locale === "ar" ? "من سجل العناوين" : "From address book"}</span>
         <select value="" onChange={(event) => {
-          const contact = (data.contacts ?? []).find((item) => item.id === event.target.value);
+          const contact = savedContacts.find((item) => item.id === event.target.value);
           if (!contact) return;
           setDisplayName(contact.display_name);
           setEmail(contact.email ?? "");
           applyStoredPhone(contact.phone ?? "");
         }}>
           <option value="">{locale === "ar" ? "اختر عضواً محفوظاً (اختياري)" : "Pick a saved member (optional)"}</option>
-          {(data.contacts ?? []).map((contact) => <option key={contact.id} value={contact.id}>{contact.display_name}{contact.phone ? ` · ${contact.phone}` : ""}</option>)}
+          {savedContacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.display_name}{contact.phone ? ` · ${contact.phone}` : ""}</option>)}
         </select>
       </label>
       <label><span>{locale === "ar" ? "اسم المساهم" : "Member name"}</span><input required minLength={2} maxLength={80} value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
@@ -3936,7 +3962,16 @@ function InviteModal({ data, locale, preferredSpaceId, onClose, onDone }: { data
       </div>}
       {recordOnly && <div className="modal-note split-preview"><span>{locale === "ar" ? "الهدف المالي للشخص = الاشتراك × المدة" : "Personal financial goal = subscription × duration"}</span><strong>{formatMoney(Number.isFinite(totalMinor) ? totalMinor : 0, data.spaces.find((space) => space.id === spaceId)?.currency ?? "OMR", locale)}</strong></div>}
       <label><span>{locale === "ar" ? "الصلاحية" : "Access role"}</span><select value={role} onChange={(event) => setRole(event.target.value)}>{Object.entries(roles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-      {error && <p className="modal-error">{error}</p>}
+      {error && (
+        <div className={`modal-error${conflictMemberId ? " member-exists-note" : ""}`}>
+          <p>{error}</p>
+          {conflictMemberId ? (
+            <button type="button" className="secondary-button" onClick={() => onEditExisting(conflictMemberId)}>
+              {locale === "ar" ? "تحرير البيانات" : "Edit details"}
+            </button>
+          ) : null}
+        </div>
+      )}
       <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{copy[locale].cancel}</button><button className="primary-button" disabled={saving || groupSpaces.length === 0}>{saving ? copy[locale].saving : (recordOnly ? (locale === "ar" ? "إضافة المساهم" : "Add member") : copy[locale].invite)}</button></div>
     </form>
   </Modal>;

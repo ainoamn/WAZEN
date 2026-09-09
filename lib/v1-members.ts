@@ -52,6 +52,9 @@ export async function createV1Member(
   const role = input.role ?? "member";
   const phone = phoneRaw ? (toWhatsAppNumber(phoneRaw) || phoneRaw) : null;
   const email = input.email?.trim() || null;
+  const { findSpaceMemberContactConflict, throwMemberContactConflict } = await import("./member-contact-unique");
+  const contactConflict = await findSpaceMemberContactConflict(db, space.id, { email, phone, displayName });
+  if (contactConflict) throwMemberContactConflict(contactConflict);
   const memberId = crypto.randomUUID();
   const createdAt = new Date().toISOString();
 

@@ -709,7 +709,11 @@ export async function POST(request: Request) {
       const phone = parsed.data.phone?.trim() ? toWhatsAppNumber(parsed.data.phone) || parsed.data.phone.trim() : null;
       if (parsed.data.phone && !isLikelyPhone(parsed.data.phone)) throw new ApiError(400, "INVALID_PHONE");
       const { findSpaceMemberContactConflict, throwMemberContactConflict } = await import("../../../lib/member-contact-unique");
-      const contactConflict = await findSpaceMemberContactConflict(db, spaceId, { email, phone });
+      const contactConflict = await findSpaceMemberContactConflict(db, spaceId, {
+        email,
+        phone,
+        displayName: parsed.data.displayName,
+      });
       if (contactConflict) throwMemberContactConflict(contactConflict);
       const { sendSpaceMemberInvite } = await import("../../../lib/member-invite");
       const invitation = await sendSpaceMemberInvite({
