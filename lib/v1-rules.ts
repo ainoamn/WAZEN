@@ -306,8 +306,8 @@ export async function updateV1PersonalRule(
   const durationInput = input.durationMonths ?? (Number(rule.duration_months) || 0);
   const resolved = resolveInstallmentAmounts({ amountMinor, totalMinor, durationMonths: durationInput });
   amountMinor = resolved.amountMinor;
-  totalMinor = (input.kind ?? rule.kind) === "expense" && schedule === "monthly" ? resolved.totalMinor : totalMinor;
-  const duration = (input.kind ?? rule.kind) === "expense" && schedule === "monthly" ? resolved.durationMonths : durationInput;
+  totalMinor = rule.kind === "expense" && schedule === "monthly" ? resolved.totalMinor : totalMinor;
+  const duration = rule.kind === "expense" && schedule === "monthly" ? resolved.durationMonths : durationInput;
   if (schedule !== "unscheduled" && amountMode === "fixed" && amountMinor <= 0) {
     throw new ApiError(400, "INVALID_AMOUNT");
   }
