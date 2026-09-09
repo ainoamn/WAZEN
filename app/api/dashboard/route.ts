@@ -3242,28 +3242,58 @@ export async function POST(request: Request) {
     } else if (action === "createMemberStatementShare") {
       const parsed = z.object({
         memberId: z.string().min(1).max(120),
+        spaceId: z.string().min(1).max(120).optional(),
+        scope: z.enum(["one", "all"]).optional(),
         focus: z.enum(["all", "paid", "spent", "owes", "credit"]).optional(),
         locale: z.enum(["ar", "en"]).optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_STATEMENT");
       const locale = parsed.data.locale ?? "ar";
       const focus = (parsed.data.focus ?? "all") as MemberLedgerFocus;
-      const member = await db.prepare("SELECT * FROM members WHERE id=? AND status='active'").bind(parsed.data.memberId).first<MemberRow>();
-      if (!member) throw new ApiError(404, "MEMBER_NOT_FOUND");
-      const spaceAuth = await authorizeSpace(db, user, member.space_id, "read");
+      const scope = parsed.data.scope ?? "one";
+      const seed = await db.prepare("SELECT * FROM members WHERE id=? AND status='active'").bind(parsed.data.memberId).first<MemberRow>();
+      if (!seed) throw new ApiError(404, "MEMBER_NOT_FOUND");
+      const seedAuth = await authorizeSpace(db, user, seed.space_id, "read");
       const { assertPlanShareFeature } = await import("../../../services/admin/billing-service");
-      await assertPlanShareFeature(db, spaceAuth.owner_user_id, "whatsapp", user.id);
-      const space = await db.prepare("SELECT name_ar,name_en,currency FROM spaces WHERE id=?")
-        .bind(member.space_id)
-        .first<{ name_ar: string; name_en: string; currency: string }>();
+      await assertPlanShareFeature(db, seedAuth.owner_user_id, "whatsapp", user.id);
+      const { linkedMembershipsByPhone } = await import("../../../lib/member-duplicates");
+      const readable = await db.prepare(
+        `SELECT m.id, m.space_id, m.display_name, m.phone, m.paid_minor, m.due_minor, m.extra_minor, COALESCE(m.addon_minor,0) AS addon_minor,
+                s.name_ar, s.name_en, s.currency
+         FROM members m JOIN spaces s ON s.id=m.space_id
+         WHERE m.status='active' AND s.type IN ('household','trip','society','group')
+           AND (s.owner_user_id=? OR EXISTS (SELECT 1 FROM members x WHERE x.space_id=s.id AND x.user_id=? AND x.status='active'))`,
+      ).bind(user.id, user.id).all<{
+        id: string;
+        space_id: string;
+        display_name: string;
+        phone: string | null;
+        paid_minor: number;
+        due_minor: number;
+        extra_minor: number;
+        addon_minor: number;
+        name_ar: string;
+        name_en: string;
+        currency: string;
+      }>();
+      const linked = linkedMembershipsByPhone(seed, readable.results ?? []);
+      const chosen = scope === "one"
+        ? (linked.filter((item) => item.id === parsed.data.memberId).length
+          ? linked.filter((item) => item.id === parsed.data.memberId)
+          : linked.filter((item) => (parsed.data.spaceId ?? seed.space_id) === item.space_id))
+        : linked;
+      const targets = (chosen.length ? chosen : linked.filter((item) => item.id === seed.id));
+      if (!targets.length) throw new ApiError(404, "MEMBER_NOT_FOUND");
+      const primary = targets.find((item) => item.id === seed.id) ?? targets[0];
       const shareToken = signMemberStatementToken({
-        memberId: member.id,
-        spaceId: member.space_id,
+        memberId: primary.id,
+        spaceId: primary.space_id,
+        memberIds: targets.map((item) => item.id),
         focus,
         locale,
       });
       const statementUrl = `${appOrigin(request)}/s/${encodeURIComponent(shareToken)}`;
-      const money = (minor: number) => formatMoneyMinor(minor, space?.currency ?? "OMR", locale);
+      const money = (minor: number, currency: string) => formatMoneyMinor(minor, currency || "OMR", locale);
       const focusLabel = ({
         all: locale === "ar" ? "الكل" : "All",
         paid: locale === "ar" ? "المدفوع" : "Paid",
@@ -3271,22 +3301,30 @@ export async function POST(request: Request) {
         owes: locale === "ar" ? "عليه" : "Owes",
         credit: locale === "ar" ? "له" : "Credit",
       })[focus];
+      const associations = targets.map((item) => ({
+        walletName: locale === "ar" ? item.name_ar : item.name_en,
+        paidLabel: money(Number(item.paid_minor) || 0, item.currency),
+        owesLabel: money(Math.max(0, Number(item.due_minor) - Number(item.paid_minor)), item.currency),
+        creditLabel: money(Number(item.extra_minor) + Number(item.addon_minor ?? 0), item.currency),
+      }));
       const message = buildMemberStatementWhatsAppMessage({
         locale,
-        memberName: member.display_name,
-        walletName: locale === "ar" ? (space?.name_ar ?? "") : (space?.name_en ?? ""),
+        memberName: primary.display_name,
+        walletName: associations[0]?.walletName ?? "",
         focusLabel,
-        paidLabel: money(Number(member.paid_minor) || 0),
-        owesLabel: money(Math.max(0, Number(member.due_minor) - Number(member.paid_minor))),
-        creditLabel: money(Number(member.extra_minor) + Number(member.addon_minor ?? 0)),
+        paidLabel: associations[0]?.paidLabel ?? money(0, "OMR"),
+        owesLabel: associations[0]?.owesLabel ?? money(0, "OMR"),
+        creditLabel: associations[0]?.creditLabel ?? money(0, "OMR"),
         statementUrl,
+        scope: targets.length > 1 ? "all" : "one",
+        associations,
       });
-      const whatsappNumber = member.phone ? toWhatsAppNumber(member.phone) : "";
+      const whatsappNumber = (targets.find((item) => item.phone)?.phone || primary.phone) ? toWhatsAppNumber(targets.find((item) => item.phone)?.phone || primary.phone || "") : "";
       if (!whatsappNumber) throw new ApiError(400, "MEMBER_PHONE_MISSING");
       notification = {
         emailQueued: false,
         whatsappUrl: whatsappShareUrl(whatsappNumber, message),
-        transactionId: member.id,
+        transactionId: primary.id,
         receiptUrl: statementUrl,
       };
       await completeIdempotency(db, user.id, idempotencyKey, { ok: true, notification });

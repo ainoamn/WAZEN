@@ -6,7 +6,7 @@ import OmrSymbol from "../brand/OmrSymbol";
 import { apiFetch } from "../../lib/client-api";
 import { toWhatsAppNumber, digitsOnly } from "../../lib/phone";
 import { isMemberContactTakenError, memberContactConflictMessage, memberContactTakenField } from "../../lib/member-contact-unique";
-import { buildMemberLedger, buildMemberLedgerHtml, filterMemberLedgerLines, type MemberLedgerFocus } from "../../lib/member-ledger";
+import { buildMemberLedger, buildCombinedMemberLedgerHtml, filterMemberLedgerLines, type MemberLedgerFocus } from "../../lib/member-ledger";
 import { printWazenHtml } from "../../lib/print-document";
 import { consumePlanQuota } from "../../lib/plan-quota-client";
 import {
@@ -181,6 +181,9 @@ type LedgerInputs = {
     occurred_at: string;
   }>;
   expenseSplits?: Array<{ expense_id: string; member_id: string; share_minor: number }>;
+  personRecords?: AssociationMember[];
+  spaces?: AssociationSpace[];
+  plans?: AssociationPlan[];
   onSmartPay: () => void;
   /** Called after statement share succeeds (for toast). */
   onStatementSent?: (message: string) => void;
@@ -208,6 +211,9 @@ function MemberLedgerBody({
   settlements = [],
   tripExpenses = [],
   expenseSplits = [],
+  personRecords,
+  spaces,
+  plans,
   onSmartPay,
   onStatementSent,
   onInviteResent,
@@ -218,6 +224,8 @@ function MemberLedgerBody({
 }: LedgerInputs) {
   const [tab, setTab] = useState<MemberLedgerFocus>(focus);
   const [sending, setSending] = useState(false);
+  const [statementAction, setStatementAction] = useState<"print" | "send" | null>(null);
+  const [pickingSpace, setPickingSpace] = useState(false);
   const [resendingInvite, setResendingInvite] = useState(false);
   const [inviteNote, setInviteNote] = useState("");
   const [inviteError, setInviteError] = useState("");
@@ -287,29 +295,60 @@ function MemberLedgerBody({
       setRoleSaving(false);
     }
   };
-  const ledgerHtml = (logoUrl: string) => buildMemberLedgerHtml({
-    locale,
-    logoUrl,
-    issuerName,
-    memberName: member.display_name,
-    spaceName: locale === "ar" ? space.name_ar : space.name_en,
-    currency: space.currency,
-    joinedAt: member.joined_at,
-    phone: member.phone,
-    email: member.email,
-    focus: tab,
-    ledger,
-  });
-  const printLedger = () => {
-    void consumePlanQuota("print", locale, space.id);
-    void printWazenHtml((logoUrl) => ledgerHtml(logoUrl), true);
+  const relatedRecords = personRecords?.length ? personRecords : [member];
+  const relatedSpaces = spaces?.length ? spaces : [space];
+  const relatedPlans = plans?.length ? plans : (plan ? [plan] : []);
+  const statementTargets = relatedRecords.filter((row, index, list) => list.findIndex((item) => item.space_id === row.space_id) === index);
+  const spaceLabel = (spaceId: string) => {
+    const item = relatedSpaces.find((row) => row.id === spaceId);
+    return locale === "ar" ? (item?.name_ar || spaceId) : (item?.name_en || spaceId);
   };
-  const sendLedger = async () => {
+  const sectionFor = (row: AssociationMember) => {
+    const linked = relatedSpaces.find((item) => item.id === row.space_id) ?? space;
+    const linkedPlan = relatedPlans.find((item) => item.space_id === row.space_id) ?? (row.space_id === space.id ? plan : undefined);
+    const sectionLedger = row.id === member.id && row.space_id === space.id
+      ? ledger
+      : buildMemberLedger({
+        member: row,
+        spaceNameAr: linked.name_ar,
+        spaceNameEn: linked.name_en,
+        currency: linked.currency,
+        plan: linkedPlan,
+        installments,
+        transactions,
+        settlements,
+        tripExpenses,
+        expenseSplits,
+      });
+    return {
+      spaceName: locale === "ar" ? linked.name_ar : linked.name_en,
+      currency: linked.currency,
+      joinedAt: row.joined_at,
+      ledger: sectionLedger,
+    };
+  };
+  const printLedger = (scope: "one" | "all", target = member) => {
+    void consumePlanQuota("print", locale, target.space_id);
+    const sections = (scope === "all" ? statementTargets : [target]).map(sectionFor);
+    void printWazenHtml((logoUrl) => buildCombinedMemberLedgerHtml({
+      locale,
+      logoUrl,
+      issuerName,
+      memberName: target.display_name || member.display_name,
+      phone: target.phone || member.phone,
+      email: target.email || member.email,
+      focus: tab,
+      sections,
+    }), true);
+    setStatementAction(null);
+    setPickingSpace(false);
+  };
+  const sendLedger = async (scope: "one" | "all", target = member) => {
     if (!canWhatsapp) {
       window.location.assign("/pricing");
       return;
     }
-    if (!member.phone) {
+    if (!(target.phone || member.phone)) {
       window.alert(locale === "ar" ? "سجّل رقم هاتف العضو أولاً لإرسال الكشف عبر واتساب." : "Add the member’s phone number first to send the statement on WhatsApp.");
       return;
     }
@@ -322,7 +361,9 @@ function MemberLedgerBody({
         body: JSON.stringify({
           action: "createMemberStatementShare",
           idempotencyKey: crypto.randomUUID(),
-          memberId: member.id,
+          memberId: target.id,
+          spaceId: target.space_id,
+          scope,
           focus: tab,
           locale,
         }),
@@ -333,13 +374,32 @@ function MemberLedgerBody({
         openWhatsAppUrl(result.notification.whatsappUrl);
       }
       onStatementSent?.(locale === "ar"
-        ? "تم فتح واتساب برابط كشف واضح للجوال (مثل إيصال العملية)."
-        : "WhatsApp opened with a clear phone statement link (like a receipt).");
+        ? (scope === "all"
+          ? "تم فتح واتساب بكشف كامل لكل الجمعيات."
+          : "تم فتح واتساب بكشف الجمعية المختارة.")
+        : (scope === "all"
+          ? "WhatsApp opened with a full statement for every association."
+          : "WhatsApp opened with the selected association statement."));
+      setStatementAction(null);
+      setPickingSpace(false);
     } catch {
       window.alert(locale === "ar" ? "تعذر تجهيز رابط الكشف للإرسال." : "Could not prepare the statement link to send.");
     } finally {
       setSending(false);
     }
+  };
+  const startStatement = (action: "print" | "send") => {
+    if (statementTargets.length < 2) {
+      if (action === "print") printLedger("one", member);
+      else void sendLedger("one", member);
+      return;
+    }
+    setStatementAction(action);
+    setPickingSpace(false);
+  };
+  const runStatement = (scope: "one" | "all", target = member) => {
+    if (statementAction === "print") printLedger(scope, target);
+    else void sendLedger(scope, target);
   };
   const canResendInvite = showInviteActions && Boolean(member.email) && !member.user_id;
   const resendInvite = async () => {
@@ -494,8 +554,8 @@ function MemberLedgerBody({
         {!rows.length && <p className="modal-note">{locale === "ar" ? "لا توجد تفاصيل في هذا القسم." : "No detail in this section."}</p>}
       </div>
       <div className="modal-actions">
-        <button type="button" className="secondary-button" onClick={printLedger}><Printer size={16} />{locale === "ar" ? "طباعة الكشف" : "Print statement"}</button>
-        <button type="button" className={`secondary-button${canWhatsapp ? "" : " is-plan-locked"}`} disabled={sending} onClick={() => { void sendLedger(); }}>
+        <button type="button" className="secondary-button" onClick={() => startStatement("print")}><Printer size={16} />{locale === "ar" ? "طباعة الكشف" : "Print statement"}</button>
+        <button type="button" className={`secondary-button${canWhatsapp ? "" : " is-plan-locked"}`} disabled={sending} onClick={() => startStatement("send")}>
           <MessageCircle size={16} />
           {sending
             ? (locale === "ar" ? "جارٍ التجهيز…" : "Preparing…")
@@ -503,6 +563,30 @@ function MemberLedgerBody({
         </button>
         <button type="button" className="primary-button" onClick={onSmartPay}><Sparkles size={16} />{locale === "ar" ? "المحاسب الذكي" : "Smart accountant"}</button>
       </div>
+      {statementAction ? (
+        <div className="statement-scope-picker">
+          <p>{locale === "ar" ? "اختر نوع الكشف قبل الإرسال أو الطباعة." : "Choose the statement type before sending or printing."}</p>
+          <button type="button" className="primary-button" disabled={sending} onClick={() => runStatement("all", member)}>
+            {locale === "ar" ? `كشف كامل — كل الجمعيات (${statementTargets.length})` : `Full statement — all associations (${statementTargets.length})`}
+          </button>
+          <button type="button" className="secondary-button" disabled={sending} onClick={() => setPickingSpace(true)}>
+            {locale === "ar" ? "جمعية معينة" : "A specific association"}
+          </button>
+          {pickingSpace ? (
+            <div className="assoc-chip-list">
+              {statementTargets.map((row) => (
+                <button type="button" key={row.id} className="assoc-chip" disabled={sending} onClick={() => runStatement("one", row)}>
+                  <strong>{spaceLabel(row.space_id)}</strong>
+                  <span>{row.phone || row.email || "—"}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <button type="button" className="secondary-button" disabled={sending} onClick={() => { setStatementAction(null); setPickingSpace(false); }}>
+            {locale === "ar" ? "إلغاء" : "Cancel"}
+          </button>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -829,6 +913,9 @@ export function MemberPersonProfile({
             onSmartPay={() => onSmartPay(selected.id)}
             onStatementSent={onStatementSent}
             canWhatsapp={canWhatsapp}
+            personRecords={records}
+            spaces={spaces}
+            plans={plans}
           />
         )}
       </div>

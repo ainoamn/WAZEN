@@ -135,6 +135,10 @@ export function findDuplicateClusters(members: DuplicateMember[]): DuplicateClus
   return clusters.sort((a, b) => b.extraCount - a.extraCount);
 }
 
+export function linkedMembershipsByPhone<T extends { id: string; phone?: string | null }>(seed: T, rows: T[]) {
+  return rows.filter((row) => row.id === seed.id || phonesEquivalent(row.phone, seed.phone));
+}
+
 export function findMultiAssociationPeople(members: DuplicateMember[]) {
   const byPhone = new Map<string, DuplicateMember[]>();
   for (const member of members) {

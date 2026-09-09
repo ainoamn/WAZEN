@@ -396,6 +396,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .table-head, .member-row { min-width: 1040px; display: grid; grid-template-columns: 1.8fr repeat(6, .7fr) .9fr; align-items: center; gap: 15px; }
 .person-table .person-head, .person-table .person-row { min-width: 1040px; grid-template-columns: 1.8fr .7fr .75fr .7fr .75fr .85fr .7fr; }
 .person-edit-hit { justify-self: start; gap: 6px; }
+.statement-scope-picker { display: grid; gap: 10px; margin-top: 12px; padding: 14px; border: 1px solid #d7e0db; border-radius: 14px; background: #f8faf9; }
+.statement-scope-picker p { margin: 0; color: #5d6f69; font-size: 13px; font-weight: 700; }
 .secondary-button.compact { min-height: 34px; padding: 0 12px; font-size: 13px; }
 .table-head { min-height: 40px; padding: 0 12px; background: #f5f7f4; border-radius: 9px; color: #86918d; font-size: 12px; font-weight: 700; }
 .member-row { min-height: 66px; padding: 0 10px; border-bottom: 1px solid #eef1ee; }

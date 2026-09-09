@@ -531,3 +531,113 @@ export function buildMemberLedgerHtml(input: {
     bodyHtml,
   });
 }
+
+export function buildCombinedMemberLedgerHtml(input: {
+  locale: MemberLedgerLocale;
+  logoUrl: string;
+  issuerName: string;
+  memberName: string;
+  phone?: string | null;
+  email?: string | null;
+  focus: MemberLedgerFocus;
+  sections: Array<{
+    spaceName: string;
+    currency: string;
+    joinedAt?: string;
+    ledger: {
+      paidMinor: number;
+      addonMinor: number;
+      owesMinor: number;
+      creditMinor: number;
+      lines: MemberLedgerLine[];
+    };
+  }>;
+}) {
+  const locale = input.locale;
+  if (input.sections.length === 1) {
+    return buildMemberLedgerHtml({
+      locale,
+      logoUrl: input.logoUrl,
+      issuerName: input.issuerName,
+      memberName: input.memberName,
+      spaceName: input.sections[0].spaceName,
+      currency: input.sections[0].currency,
+      joinedAt: input.sections[0].joinedAt,
+      phone: input.phone,
+      email: input.email,
+      focus: input.focus,
+      ledger: input.sections[0].ledger,
+    });
+  }
+  const money = (minor: number, currency: string) => formatMoneyMinor(minor, currency, locale);
+  const title = text(locale, "كشف كامل لكل الجمعيات", "Full statement for every association");
+  const typeLabel = (focus: MemberLedgerLine["focus"]) => ({
+    paid: text(locale, "مدفوع", "Paid"),
+    spent: text(locale, "صرف", "Spent"),
+    owes: text(locale, "عليه", "Owes"),
+    credit: text(locale, "له", "Credit"),
+  })[focus];
+  const bodyHtml = input.sections.map((section) => {
+    const rows = filterMemberLedgerLines(section.ledger.lines, input.focus);
+    const cards = rows.map((line) => {
+      const when = new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB");
+      const titleText = locale === "ar" ? line.titleAr : line.titleEn;
+      const detail = locale === "ar" ? line.detailAr : line.detailEn;
+      const cls = line.direction === "in" ? "in" : line.direction === "out" ? "out" : "";
+      return `<article class="statement-card">
+        <header>
+          <strong>${escapeHtml(titleText)}</strong>
+          <em class="num ${cls}">${escapeHtml(money(line.amountMinor, section.currency))}</em>
+        </header>
+        <p>${escapeHtml(detail)}</p>
+        <footer>
+          <span>${escapeHtml(when)}</span>
+          <span>${escapeHtml(typeLabel(line.focus))}</span>
+        </footer>
+      </article>`;
+    }).join("");
+    return `<section class="statement-block">
+      <h2>${escapeHtml(section.spaceName)}</h2>
+      <p>${escapeHtml(text(locale, "المدفوع", "Paid"))}: ${escapeHtml(money(section.ledger.paidMinor, section.currency))}
+         · ${escapeHtml(text(locale, "عليه", "Owes"))}: ${escapeHtml(money(section.ledger.owesMinor, section.currency))}
+         · ${escapeHtml(text(locale, "له", "Credit"))}: ${escapeHtml(money(section.ledger.creditMinor, section.currency))}</p>
+      <div class="statement-cards">
+        ${cards || `<p class="empty">${escapeHtml(text(locale, "لا توجد بنود في هذا القسم.", "No rows in this section."))}</p>`}
+      </div>
+    </section>`;
+  }).join("");
+  const sameCurrency = input.sections.every((item) => item.currency === input.sections[0]?.currency);
+  const currency = input.sections[0]?.currency ?? "OMR";
+  const paid = input.sections.reduce((sum, item) => sum + item.ledger.paidMinor, 0);
+  const spent = input.sections.reduce((sum, item) => sum + item.ledger.addonMinor, 0);
+  const owes = input.sections.reduce((sum, item) => sum + item.ledger.owesMinor, 0);
+  const credit = input.sections.reduce((sum, item) => sum + item.ledger.creditMinor, 0);
+  return wrapPrintDocument({
+    locale,
+    title,
+    entityName: `${input.memberName} · ${text(locale, "كل الجمعيات", "All associations")}`,
+    logoUrl: input.logoUrl,
+    subtitle: text(locale, "كشف مفصل لكل جمعية ينتمي إليها العضو.", "A detailed statement for every association this member belongs to."),
+    orientation: "portrait",
+    variant: "statement",
+    meta: [
+      { label: text(locale, "العضو", "Member"), value: input.memberName },
+      { label: text(locale, "الجمعيات", "Associations"), value: String(input.sections.length) },
+      { label: text(locale, "الهاتف / البريد", "Phone / email"), value: [input.phone, input.email].filter(Boolean).join(" · ") || "—" },
+      { label: text(locale, "أُصدر بواسطة", "Issued by"), value: input.issuerName },
+      { label: text(locale, "تاريخ الإصدار", "Issued at"), value: new Date().toLocaleString(locale === "ar" ? "ar-OM" : "en-GB") },
+    ],
+    kpis: sameCurrency
+      ? [
+          { label: text(locale, "المدفوع", "Paid"), value: money(paid, currency) },
+          { label: text(locale, "إضافي / صرف", "Extra / spent"), value: money(spent, currency) },
+          { label: text(locale, "عليه", "Owes"), value: money(owes, currency) },
+          { label: text(locale, "له", "Credit"), value: money(credit, currency) },
+        ]
+      : input.sections.map((section) => ({
+          label: section.spaceName,
+          value: money(section.ledger.owesMinor, section.currency),
+        })),
+    bodyHtml,
+  });
+}

@@ -6,6 +6,7 @@ import {
   findDuplicateClusters,
   findMultiAssociationPeople,
   findSameSpaceNameClusters,
+  linkedMembershipsByPhone,
   mergedLedgerTotals,
   mergeInstallmentPair,
   phonesEquivalent,
@@ -50,6 +51,17 @@ test("membership in two associations is listed separately and is not a merge clu
   assert.equal(multi.length, 1);
   assert.equal(multi[0].associationCount, 2);
   assert.equal(multi[0].members.length, 2);
+});
+
+test("linked memberships by phone include every association for the same person", () => {
+  const seed = { id: "a1", phone: "96895655200" };
+  const linked = linkedMembershipsByPhone(seed, [
+    seed,
+    { id: "a2", phone: "96895655200" },
+    { id: "b1", phone: "96899260305" },
+  ]);
+  assert.equal(linked.length, 2);
+  assert.deepEqual(linked.map((item) => item.id), ["a1", "a2"]);
 });
 
 test("same name with different phones inside one association is a name cluster", () => {

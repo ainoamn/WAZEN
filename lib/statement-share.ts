@@ -48,6 +48,7 @@ export type MemberStatementSharePayload = {
   kind: "member_statement";
   memberId: string;
   spaceId: string;
+  memberIds?: string[];
   focus: MemberLedgerFocus;
   locale: "ar" | "en";
   exp: number;
@@ -67,11 +68,16 @@ const FILTERS = new Set<StatementTxnFilter>(["full", "valid", "voided", "all"]);
 export function signMemberStatementToken(input: {
   memberId: string;
   spaceId: string;
+  memberIds?: string[];
   focus?: MemberLedgerFocus;
   locale?: "ar" | "en";
   ttlMs?: number;
 }) {
   const focus = FOCUSES.has(input.focus as MemberLedgerFocus) ? (input.focus as MemberLedgerFocus) : "all";
+  const memberIds = [...new Set([input.memberId, ...(input.memberIds ?? [])])]
+    .map((id) => String(id ?? "").trim())
+    .filter((id) => id.length >= 1 && id.length <= 120)
+    .slice(0, 20);
   const payload: MemberStatementSharePayload = {
     kind: "member_statement",
     memberId: input.memberId,
@@ -80,6 +86,7 @@ export function signMemberStatementToken(input: {
     locale: input.locale ?? "ar",
     exp: Date.now() + (input.ttlMs ?? DEFAULT_TTL_MS),
   };
+  if (memberIds.length > 1) payload.memberIds = memberIds;
   return signBody(payload);
 }
 
@@ -90,6 +97,10 @@ export function verifyMemberStatementToken(token: string): MemberStatementShareP
   if (payload.exp < Date.now()) return null;
   if (!FOCUSES.has(payload.focus)) payload.focus = "all";
   if (payload.locale !== "en") payload.locale = "ar";
+  if (Array.isArray(payload.memberIds)) {
+    payload.memberIds = [...new Set(payload.memberIds.map((id) => String(id ?? "").trim()).filter((id) => id.length >= 1 && id.length <= 120))].slice(0, 20);
+    if (payload.memberIds.length < 2) delete payload.memberIds;
+  }
   return payload;
 }
 
@@ -133,8 +144,48 @@ export function buildMemberStatementWhatsAppMessage(input: {
   creditLabel: string;
   paidLabel: string;
   statementUrl: string;
+  scope?: "one" | "all";
+  associations?: Array<{ walletName: string; paidLabel: string; owesLabel: string; creditLabel: string }>;
 }) {
   const name = String(input.memberName || "").trim() || (input.locale === "ar" ? "عزيزي العضو" : "Member");
+  const associations = input.associations?.filter((item) => item.walletName) ?? [];
+  const combined = input.scope === "all" || associations.length > 1;
+  if (combined) {
+    const sections = (associations.length ? associations : [{
+      walletName: input.walletName,
+      paidLabel: input.paidLabel,
+      owesLabel: input.owesLabel,
+      creditLabel: input.creditLabel,
+    }]).flatMap((item) => [
+      item.walletName,
+      input.locale === "ar" ? `المدفوع: ${item.paidLabel}` : `Paid: ${item.paidLabel}`,
+      input.locale === "ar" ? `عليه: ${item.owesLabel}` : `Owes: ${item.owesLabel}`,
+      input.locale === "ar" ? `له: ${item.creditLabel}` : `Credit: ${item.creditLabel}`,
+      "",
+    ]);
+    const body = input.locale === "ar"
+      ? [
+          `السلام عليكم ${name}`,
+          "",
+          "كشف حساب وازن — كشف كامل",
+          `القسم: ${input.focusLabel}`,
+          "",
+          ...sections,
+          "افتح الكشف المفصل لكل الجمعيات على الجوال:",
+          input.statementUrl,
+        ]
+      : [
+          `Hello ${name}`,
+          "",
+          "WAZEN statement — full statement",
+          `Section: ${input.focusLabel}`,
+          "",
+          ...sections,
+          "Open the detailed statement for every association on your phone:",
+          input.statementUrl,
+        ];
+    return body.join("\n");
+  }
   const body = input.locale === "ar"
     ? [
         `السلام عليكم ${name}`,

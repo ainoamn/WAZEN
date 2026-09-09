@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import WazenLogo from "../../../components/brand/WazenLogo";
-import { buildMemberLedgerHtml } from "../../../lib/member-ledger";
+import { buildCombinedMemberLedgerHtml } from "../../../lib/member-ledger";
 import { downloadReportHtml, printWazenHtml } from "../../../lib/print-document";
 
 type MemberLine = {
@@ -30,8 +30,24 @@ type AssociationLine = {
   live: boolean;
 };
 
+type MemberSection = {
+  walletName: string;
+  currency: string;
+  joinedAt?: string | null;
+  paidLabel: string;
+  spentLabel: string;
+  owesLabel: string;
+  creditLabel: string;
+  paidMinor: number;
+  spentMinor: number;
+  owesMinor: number;
+  creditMinor: number;
+  lines: MemberLine[];
+};
+
 type MemberPayload = {
   kind?: "member_statement";
+  combined?: boolean;
   locale: "ar" | "en";
   focus: "all" | "paid" | "spent" | "owes" | "credit";
   focusLabel: string;
@@ -51,6 +67,7 @@ type MemberPayload = {
   owesMinor: number;
   creditMinor: number;
   lines: MemberLine[];
+  sections?: MemberSection[];
 };
 
 type AssociationPayload = {
@@ -158,25 +175,39 @@ export default function StatementShareClient({ token }: { token: string }) {
         return;
       }
 
-      const htmlBuilder = (logoUrl: string) => buildMemberLedgerHtml({
-        locale: data.locale,
-        logoUrl,
-        issuerName: "WAZEN",
-        memberName: data.memberName,
-        spaceName: data.walletName,
-        currency: data.currency,
-        joinedAt: data.joinedAt ?? undefined,
-        phone: data.phone,
-        email: data.email,
-        focus: data.focus,
-        ledger: {
+      const htmlBuilder = (logoUrl: string) => {
+        const sections = (data.sections?.length ? data.sections : [{
+          walletName: data.walletName,
+          currency: data.currency,
+          joinedAt: data.joinedAt,
           paidMinor: data.paidMinor,
-          addonMinor: data.spentMinor,
+          spentMinor: data.spentMinor,
           owesMinor: data.owesMinor,
           creditMinor: data.creditMinor,
           lines: data.lines,
-        },
-      });
+        }]).map((section) => ({
+          spaceName: section.walletName,
+          currency: section.currency,
+          joinedAt: section.joinedAt ?? undefined,
+          ledger: {
+            paidMinor: section.paidMinor,
+            addonMinor: section.spentMinor,
+            owesMinor: section.owesMinor,
+            creditMinor: section.creditMinor,
+            lines: section.lines,
+          },
+        }));
+        return buildCombinedMemberLedgerHtml({
+          locale: data.locale,
+          logoUrl,
+          issuerName: "WAZEN",
+          memberName: data.memberName,
+          phone: data.phone,
+          email: data.email,
+          focus: data.focus,
+          sections,
+        });
+      };
       if (mode === "print") {
         await printWazenHtml(htmlBuilder, true);
       } else {
@@ -282,30 +313,47 @@ export default function StatementShareClient({ token }: { token: string }) {
           </dl>
 
           <section className="statement-share-lines">
-            <h2>{locale === "ar" ? "الحركات" : "Movements"}</h2>
-            {data.lines.length ? data.lines.map((line, index) => {
-              const amount = new Intl.NumberFormat(locale === "ar" ? "ar-OM" : "en-OM", {
-                style: "currency",
-                currency: data.currency || "OMR",
-                minimumFractionDigits: 3,
-                maximumFractionDigits: 3,
-              }).format((line.amountMinor || 0) / 1000);
-              return (
-                <article key={`${line.at}:${index}`} className={`statement-share-line is-${line.direction}`}>
-                  <header>
-                    <strong>{locale === "ar" ? line.titleAr : line.titleEn}</strong>
-                    <em className={line.direction === "out" ? "amount-negative" : line.direction === "in" ? "amount-positive" : ""}>{amount}</em>
-                  </header>
-                  <p>{locale === "ar" ? line.detailAr : line.detailEn}</p>
-                  <footer>
-                    <span>{new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</span>
-                    <span>{typeLabel(line.focus, locale)}</span>
-                  </footer>
-                </article>
-              );
-            }) : (
-              <p className="receipt-share-status">{locale === "ar" ? "لا توجد حركات في هذا القسم." : "No movements in this section."}</p>
-            )}
+            {(data.combined && data.sections?.length ? data.sections : [{
+              walletName: data.walletName,
+              currency: data.currency,
+              paidLabel: data.paidLabel,
+              spentLabel: data.spentLabel,
+              owesLabel: data.owesLabel,
+              creditLabel: data.creditLabel,
+              lines: data.lines,
+            }]).map((section, sectionIndex) => (
+              <div key={`${section.walletName}:${sectionIndex}`}>
+                <h2>{section.walletName}</h2>
+                {data.combined ? (
+                  <p className="receipt-share-status">{locale === "ar"
+                    ? `المدفوع ${section.paidLabel} · عليه ${section.owesLabel} · له ${section.creditLabel}`
+                    : `Paid ${section.paidLabel} · Owes ${section.owesLabel} · Credit ${section.creditLabel}`}</p>
+                ) : null}
+                {section.lines.length ? section.lines.map((line, index) => {
+                  const amount = new Intl.NumberFormat(locale === "ar" ? "ar-OM" : "en-OM", {
+                    style: "currency",
+                    currency: section.currency || data.currency || "OMR",
+                    minimumFractionDigits: 3,
+                    maximumFractionDigits: 3,
+                  }).format((line.amountMinor || 0) / 1000);
+                  return (
+                    <article key={`${section.walletName}:${line.at}:${index}`} className={`statement-share-line is-${line.direction}`}>
+                      <header>
+                        <strong>{locale === "ar" ? line.titleAr : line.titleEn}</strong>
+                        <em className={line.direction === "out" ? "amount-negative" : line.direction === "in" ? "amount-positive" : ""}>{amount}</em>
+                      </header>
+                      <p>{locale === "ar" ? line.detailAr : line.detailEn}</p>
+                      <footer>
+                        <span>{new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</span>
+                        <span>{typeLabel(line.focus, locale)}</span>
+                      </footer>
+                    </article>
+                  );
+                }) : (
+                  <p className="receipt-share-status">{locale === "ar" ? "لا توجد حركات في هذا القسم." : "No movements in this section."}</p>
+                )}
+              </div>
+            ))}
           </section>
 
           <div className="receipt-share-actions">

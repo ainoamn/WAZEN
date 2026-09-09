@@ -10,65 +10,73 @@ import { formatMoneyMinor } from "../../../../lib/money";
 
 export const runtime = "nodejs";
 
-async function memberStatementJson(payload: MemberStatementSharePayload) {
-  const db = await getRawDb();
-  await ensureSchema(db);
+type StatementMemberRow = {
+  id: string;
+  space_id: string;
+  display_name: string;
+  email: string | null;
+  phone: string | null;
+  role: string;
+  status: string | null;
+  due_minor: number;
+  paid_minor: number;
+  extra_minor: number;
+  addon_minor: number | null;
+  avatar: string;
+  joined_at: string | null;
+};
 
-  const member = await db.prepare(`
-    SELECT id, space_id, display_name, email, phone, role, status, due_minor, paid_minor, extra_minor, addon_minor, avatar, joined_at
-    FROM members WHERE id=? AND space_id=? LIMIT 1
-  `).bind(payload.memberId, payload.spaceId).first<{
-    id: string;
-    space_id: string;
-    display_name: string;
-    email: string | null;
-    phone: string | null;
-    role: string;
-    status: string | null;
-    due_minor: number;
-    paid_minor: number;
-    extra_minor: number;
-    addon_minor: number | null;
-    avatar: string;
-    joined_at: string | null;
-  }>();
+async function memberSectionJson(
+  db: Awaited<ReturnType<typeof getRawDb>>,
+  memberId: string,
+  spaceId: string | undefined,
+  locale: "ar" | "en",
+  focus: MemberLedgerFocus,
+) {
+  const member = spaceId
+    ? await db.prepare(`
+        SELECT id, space_id, display_name, email, phone, role, status, due_minor, paid_minor, extra_minor, addon_minor, avatar, joined_at
+        FROM members WHERE id=? AND space_id=? LIMIT 1
+      `).bind(memberId, spaceId).first<StatementMemberRow>()
+    : await db.prepare(`
+        SELECT id, space_id, display_name, email, phone, role, status, due_minor, paid_minor, extra_minor, addon_minor, avatar, joined_at
+        FROM members WHERE id=? LIMIT 1
+      `).bind(memberId).first<StatementMemberRow>();
   if (!member) return null;
 
   const space = await db.prepare(`
     SELECT id, name_ar, name_en, type, currency FROM spaces WHERE id=? LIMIT 1
-  `).bind(payload.spaceId).first<{ id: string; name_ar: string; name_en: string; type: string; currency: string }>();
+  `).bind(member.space_id).first<{ id: string; name_ar: string; name_en: string; type: string; currency: string }>();
   if (!space) return null;
 
   const [plan, installments, transactions, settlements, tripExpenses, expenseSplits] = await Promise.all([
     db.prepare("SELECT space_id, amount_minor, duration_months, starts_at FROM contribution_plans WHERE space_id=? LIMIT 1")
-      .bind(payload.spaceId)
+      .bind(member.space_id)
       .first<{ space_id: string; amount_minor: number; duration_months: number; starts_at: string }>(),
     db.prepare("SELECT * FROM member_installments WHERE member_id=? AND space_id=? ORDER BY period_index")
-      .bind(payload.memberId, payload.spaceId)
+      .bind(member.id, member.space_id)
       .all(),
     db.prepare("SELECT * FROM transactions WHERE space_id=? ORDER BY occurred_at DESC LIMIT 250")
-      .bind(payload.spaceId)
+      .bind(member.space_id)
       .all(),
     db.prepare("SELECT * FROM settlements WHERE space_id=?")
-      .bind(payload.spaceId)
+      .bind(member.space_id)
       .all(),
     db.prepare(`SELECT te.id, te.space_id, te.paid_by_member_id, te.amount_minor, te.description, te.occurred_at,
         COALESCE(m.display_name, '') AS paid_by_name
       FROM trip_expenses te
       LEFT JOIN members m ON m.id=te.paid_by_member_id
       WHERE te.space_id=? AND COALESCE(te.status,'posted')<>'voided'`)
-      .bind(payload.spaceId)
+      .bind(member.space_id)
       .all(),
     db.prepare(`SELECT es.expense_id, es.member_id, es.share_minor
       FROM expense_splits es
       JOIN trip_expenses te ON te.id=es.expense_id
       WHERE te.space_id=? AND COALESCE(te.status,'posted')<>'voided'`)
-      .bind(payload.spaceId)
+      .bind(member.space_id)
       .all(),
   ]);
 
-  const locale = payload.locale;
-  const focus = payload.focus as MemberLedgerFocus;
   const ledger = buildMemberLedger({
     member: {
       id: member.id,
@@ -93,7 +101,7 @@ async function memberStatementJson(payload: MemberStatementSharePayload) {
     tripExpenses: (tripExpenses.results ?? []) as never[],
     expenseSplits: (expenseSplits.results ?? []) as never[],
   });
-
+  const money = (minor: number) => formatMoneyMinor(minor, space.currency || "OMR", locale);
   const lines = filterMemberLedgerLines(ledger.lines, focus).map((line) => ({
     at: line.at,
     titleAr: line.titleAr,
@@ -104,27 +112,12 @@ async function memberStatementJson(payload: MemberStatementSharePayload) {
     direction: line.direction,
     focus: line.focus,
   }));
-
-  const money = (minor: number) => formatMoneyMinor(minor, space.currency || "OMR", locale);
-  const focusLabel = ({
-    all: locale === "ar" ? "الكل" : "All",
-    paid: locale === "ar" ? "المدفوع" : "Paid",
-    spent: locale === "ar" ? "الصرف" : "Spent",
-    owes: locale === "ar" ? "عليه" : "Owes",
-    credit: locale === "ar" ? "له" : "Credit",
-  })[focus];
-
   return {
-    kind: "member_statement" as const,
-    locale,
-    focus,
-    focusLabel,
-    title: locale === "ar" ? "كشف حساب وازن" : "WAZEN statement",
-    memberName: member.display_name,
+    member,
+    space,
+    ledger,
+    lines,
     walletName: locale === "ar" ? space.name_ar : space.name_en,
-    phone: member.phone,
-    email: member.email,
-    joinedAt: member.joined_at,
     currency: space.currency || "OMR",
     paidLabel: money(ledger.paidMinor),
     spentLabel: money(ledger.addonMinor),
@@ -134,7 +127,74 @@ async function memberStatementJson(payload: MemberStatementSharePayload) {
     spentMinor: ledger.addonMinor,
     owesMinor: ledger.owesMinor,
     creditMinor: ledger.creditMinor,
-    lines,
+  };
+}
+
+async function memberStatementJson(payload: MemberStatementSharePayload) {
+  const db = await getRawDb();
+  await ensureSchema(db);
+  const locale = payload.locale;
+  const focus = payload.focus as MemberLedgerFocus;
+  const ids = payload.memberIds?.length ? payload.memberIds : [payload.memberId];
+  const sections = [];
+  for (const id of ids) {
+    const section = await memberSectionJson(db, id, id === payload.memberId ? payload.spaceId : undefined, locale, focus);
+    if (section) sections.push(section);
+  }
+  if (!sections.length) return null;
+  const first = sections[0];
+  const focusLabel = ({
+    all: locale === "ar" ? "الكل" : "All",
+    paid: locale === "ar" ? "المدفوع" : "Paid",
+    spent: locale === "ar" ? "الصرف" : "Spent",
+    owes: locale === "ar" ? "عليه" : "Owes",
+    credit: locale === "ar" ? "له" : "Credit",
+  })[focus];
+  const combined = sections.length > 1;
+  const sameCurrency = sections.every((item) => item.currency === first.currency);
+  const paidMinor = sections.reduce((sum, item) => sum + item.paidMinor, 0);
+  const spentMinor = sections.reduce((sum, item) => sum + item.spentMinor, 0);
+  const owesMinor = sections.reduce((sum, item) => sum + item.owesMinor, 0);
+  const creditMinor = sections.reduce((sum, item) => sum + item.creditMinor, 0);
+  const money = (minor: number) => formatMoneyMinor(minor, first.currency, locale);
+  return {
+    kind: "member_statement" as const,
+    combined,
+    locale,
+    focus,
+    focusLabel,
+    title: combined
+      ? (locale === "ar" ? "كشف كامل لكل الجمعيات" : "Full statement for every association")
+      : (locale === "ar" ? "كشف حساب وازن" : "WAZEN statement"),
+    memberName: first.member.display_name,
+    walletName: combined ? (locale === "ar" ? "كل الجمعيات" : "All associations") : first.walletName,
+    phone: sections.map((item) => item.member.phone).find(Boolean) ?? first.member.phone,
+    email: sections.map((item) => item.member.email).find(Boolean) ?? first.member.email,
+    joinedAt: first.member.joined_at,
+    currency: first.currency,
+    paidLabel: sameCurrency ? money(paidMinor) : first.paidLabel,
+    spentLabel: sameCurrency ? money(spentMinor) : first.spentLabel,
+    owesLabel: sameCurrency ? money(owesMinor) : first.owesLabel,
+    creditLabel: sameCurrency ? money(creditMinor) : first.creditLabel,
+    paidMinor: sameCurrency ? paidMinor : first.paidMinor,
+    spentMinor: sameCurrency ? spentMinor : first.spentMinor,
+    owesMinor: sameCurrency ? owesMinor : first.owesMinor,
+    creditMinor: sameCurrency ? creditMinor : first.creditMinor,
+    lines: combined ? first.lines : first.lines,
+    sections: sections.map((item) => ({
+      walletName: item.walletName,
+      currency: item.currency,
+      joinedAt: item.member.joined_at,
+      paidLabel: item.paidLabel,
+      spentLabel: item.spentLabel,
+      owesLabel: item.owesLabel,
+      creditLabel: item.creditLabel,
+      paidMinor: item.paidMinor,
+      spentMinor: item.spentMinor,
+      owesMinor: item.owesMinor,
+      creditMinor: item.creditMinor,
+      lines: item.lines,
+    })),
   };
 }
 

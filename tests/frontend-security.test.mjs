@@ -385,6 +385,7 @@ test("groups view can merge duplicate accounts and import phone or file contacts
   const merge = fs.readFileSync(path.join(root, "lib/member-duplicates.ts"), "utf8");
   const contacts = fs.readFileSync(path.join(root, "components/members/contact-source-bar.tsx"), "utf8");
   const panel = fs.readFileSync(path.join(root, "components/members/duplicate-merge-panel.tsx"), "utf8");
+  const membersUi = fs.readFileSync(path.join(root, "components/members/association-members.tsx"), "utf8");
   assert.match(dashboard, /DuplicateMergePanel/);
   assert.match(dashboard, /ContactSourceBar/);
   assert.match(dashboard, /googleClientId=\{data.googleContactsClientId\}/);
@@ -404,6 +405,9 @@ test("groups view can merge duplicate accounts and import phone or file contacts
   assert.match(contacts, /parseContactFile/);
   assert.match(contacts, /importGoogleContacts/);
   assert.match(contacts, /من Gmail/);
+  assert.match(membersUi, /كشف كامل/);
+  assert.match(membersUi, /جمعية معينة/);
+  assert.match(dashboardApi, /scope: z.enum\(\["one", "all"\]\)/);
   assert.match(contacts, /error_callback/);
   assert.match(contacts, /GOOGLE_CONTACTS_DENIED/);
   assert.match(contacts, /لم يُتحقق بعد لنطاق جهات الاتصال/);
