@@ -101,6 +101,7 @@
 
 - **من الهاتف:** Contact Picker (Chrome/Android بعد الصلاحية)
 - **من Gmail:** ربط جهات اتصال البريد مباشرة عبر صلاحية Google Contacts (بدون تنزيل ملف)
+- إن ظهر `403: access_denied` / «لم يكمل تطبيق bhd-om.com عملية التحقق»: أضف البريد في [OAuth Audience → Test users](https://console.cloud.google.com/auth/audience). النطاق `contacts.readonly` حسّاس ولا يعمل للعامة قبل تحقق Google. البديل: تصدير جهات Google كـ vCard ثم **رفع ملف**
 - **رفع ملف:** vCard (`.vcf`) أو CSV من الهاتف أو Outlook
 - **تنزيل:** الجهات المحفوظة vCard / CSV
 - الحفظ: `POST /api/dashboard` · `action=importSavedContacts` أو `importGoogleContacts`

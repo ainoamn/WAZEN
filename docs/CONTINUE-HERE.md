@@ -57,7 +57,7 @@ npm install
 - [ ] اختبار يدوي: معاملة جماعية → وصول بريد للأعضاء
 - [ ] بريد كشف من بطاقة العضو
 - [ ] Contact Picker غير متاح في بعض المتصفحات (Safari) — استخدم **من Gmail** أو رفع الملف
-- [ ] نطاق Google Contacts (`contacts.readonly`) على شاشة موافقة OAuth إن رُفض زر «من Gmail»
+- [x] نطاق Google Contacts (`contacts.readonly`) على شاشة موافقة OAuth إن رُفض زر «من Gmail» — أضف المختبرين في Audience؛ التحقق الكامل مطلوب للعامة
 
 ---
 

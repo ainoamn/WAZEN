@@ -404,4 +404,7 @@ test("groups view can merge duplicate accounts and import phone or file contacts
   assert.match(contacts, /parseContactFile/);
   assert.match(contacts, /importGoogleContacts/);
   assert.match(contacts, /من Gmail/);
+  assert.match(contacts, /error_callback/);
+  assert.match(contacts, /GOOGLE_CONTACTS_DENIED/);
+  assert.match(contacts, /لم يُتحقق بعد لنطاق جهات الاتصال/);
 });

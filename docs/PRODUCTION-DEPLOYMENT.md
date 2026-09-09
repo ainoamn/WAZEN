@@ -69,7 +69,8 @@ WAZEN_TRUST_OAI_HEADERS=0
 4. اختياري في Vercel: `GOOGLE_CLIENT_ID` بنفس القيمة. إن تُرك فارغاً يستخدم وازن نفس معرّف حسابي.
 5. `WAZEN_APP_ORIGIN=https://wazen.bhd-om.com`
 6. إن كان التطبيق Testing: أضف البريد في Audience.
-7. **Redeploy** ثم اختبر على `https://wazen.bhd-om.com/login`.
+7. **جهات اتصال Gmail** (`contacts.readonly`) نطاق حسّاس. بدون تحقق Google يظهر `403: access_denied` لكل حساب غير مدرج كمختبر. الحل الفوري: [Audience](https://console.cloud.google.com/auth/audience) → Test users → أضف البريد (مثل `ameed95655200@gmail.com`). لفتحه لكل المستخدمين: انشر التطبيق وقدّم تحقق النطاق.
+8. **Redeploy** ثم اختبر على `https://wazen.bhd-om.com/login`.
 
 مسار الإرجاع القديم (`/api/auth/google/callback`) يبقى احتياطياً ويتطلب سراً صحيحاً إن استُخدم. الزر في `/login` لم يعد يمر به.
 

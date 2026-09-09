@@ -48,12 +48,23 @@ async function loadGoogleIdentity() {
 
 function requestGoogleContactsToken(clientId: string) {
   return new Promise<string>((resolve, reject) => {
+    const fail = (error?: string) => {
+      const code = String(error ?? "").toLowerCase();
+      if (code.includes("access_denied") || code.includes("popup_closed")) {
+        reject(new Error("GOOGLE_CONTACTS_DENIED"));
+        return;
+      }
+      reject(new Error("GOOGLE_CONTACTS_FAILED"));
+    };
     const client = window.google?.accounts?.oauth2.initTokenClient({
       client_id: clientId,
       scope: "https://www.googleapis.com/auth/contacts.readonly",
       callback: (response: { access_token?: string; error?: string }) => {
         if (response.access_token) resolve(response.access_token);
-        else reject(new Error(response.error === "access_denied" ? "GOOGLE_CONTACTS_DENIED" : "GOOGLE_CONTACTS_FAILED"));
+        else fail(response.error);
+      },
+      error_callback: (error: { type?: string; message?: string }) => {
+        fail(error?.type || error?.message);
       },
     });
     if (!client) {
@@ -181,11 +192,11 @@ export function ContactSourceBar({
       const code = caught instanceof Error ? caught.message : "GOOGLE_CONTACTS_FAILED";
       const messages: Record<string, string> = locale === "ar"
         ? {
-          GOOGLE_CONTACTS_DENIED: "لم يتم منح صلاحية قراءة جهات اتصال Gmail.",
+          GOOGLE_CONTACTS_DENIED: "جوجل حظر الحساب لأن تطبيق bhd-om.com لم يُتحقق بعد لنطاق جهات الاتصال. أضف البريد كمختبر في شاشة موافقة OAuth، أو صدّر جهات Gmail كملف vCard ثم استخدم «رفع ملف».",
           GOOGLE_CONTACTS_FAILED: "تعذر جلب جهات Gmail. أعد المحاولة أو ارفع ملفاً.",
         }
         : {
-          GOOGLE_CONTACTS_DENIED: "Gmail contact permission was denied.",
+          GOOGLE_CONTACTS_DENIED: "Google blocked this account because bhd-om.com is not verified for the Contacts scope. Add the Gmail as an OAuth test user, or export a vCard from Google Contacts and use Upload file.",
           GOOGLE_CONTACTS_FAILED: "Could not import Gmail contacts. Try again or upload a file.",
         };
       setNote(messages[code] ?? messages.GOOGLE_CONTACTS_FAILED);
