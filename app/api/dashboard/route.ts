@@ -13,6 +13,7 @@ import { appOrigin } from "../../../lib/app-origin";
 import { buildReceiptWhatsAppMessage, signReceiptShareToken, whatsappShareUrl } from "../../../lib/receipt-share";
 import { buildMemberStatementWhatsAppMessage, buildAssociationStatementWhatsAppMessage, signMemberStatementToken, signAssociationStatementToken } from "../../../lib/statement-share";
 import type { MemberLedgerFocus } from "../../../lib/member-ledger";
+import { loadMemberStatementSection } from "../../../lib/member-statement-data";
 import type { StatementTxnFilter } from "../../../lib/account-statement";
 import { computeWorkspaceAlerts } from "../../../lib/workspace-alerts";
 import { upsertUserNotifications, listUserNotifications } from "../../../lib/user-notifications";
@@ -3301,12 +3302,16 @@ export async function POST(request: Request) {
         owes: locale === "ar" ? "عليه" : "Owes",
         credit: locale === "ar" ? "له" : "Credit",
       })[focus];
-      const associations = targets.map((item) => ({
-        walletName: locale === "ar" ? item.name_ar : item.name_en,
-        paidLabel: money(Number(item.paid_minor) || 0, item.currency),
-        owesLabel: money(Math.max(0, Number(item.due_minor) - Number(item.paid_minor)), item.currency),
-        creditLabel: money(Number(item.extra_minor) + Number(item.addon_minor ?? 0), item.currency),
-      }));
+      const associations = [];
+      for (const item of targets) {
+        const section = await loadMemberStatementSection(db, item.id, item.space_id, locale, focus);
+        associations.push({
+          walletName: section?.walletName ?? (locale === "ar" ? item.name_ar : item.name_en),
+          paidLabel: section?.paidLabel ?? money(Number(item.paid_minor) || 0, item.currency),
+          owesLabel: section?.owesLabel ?? money(0, item.currency),
+          creditLabel: section?.creditLabel ?? money(0, item.currency),
+        });
+      }
       const message = buildMemberStatementWhatsAppMessage({
         locale,
         memberName: primary.display_name,

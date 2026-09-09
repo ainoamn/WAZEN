@@ -80,13 +80,17 @@ body {
 }
 body.page-landscape { font-size: 12px; line-height: 1.4; }
 .print-actions {
-  position: sticky; top: 0; z-index: 5;
+  position: fixed; top: 0; inset-inline: 0; z-index: 20;
   display: flex; justify-content: flex-end; gap: 8px;
   padding: 10px 16px;
-  background: rgba(255,255,255,.92);
+  padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  background: rgba(255,255,255,.96);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgba(18,35,31,.12);
 }
+body { padding-top: 64px; }
+body.page-landscape { padding-top: 56px; }
 .print-actions button {
   border: 0; border-radius: 12px; padding: 11px 18px;
   background: var(--green); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
@@ -350,12 +354,46 @@ body.is-statement {
   line-height: 1.5;
   letter-spacing: 0;
 }
-body.is-statement .sheet { max-width: 640px; margin: 16px auto 36px; }
+body.is-statement .sheet { max-width: 860px; margin: 16px auto 36px; }
 body.is-statement .head { text-align: center; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
 body.is-statement .head h1 { font-size: 24px; letter-spacing: 0; }
 body.is-statement .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 body.is-statement .kpi strong { font-size: 16px; }
 .statement-block { padding: 8px 20px 16px; }
+.statement-index, .statement-association { padding: 8px 20px 20px; }
+.statement-association { break-inside: avoid; page-break-inside: auto; border-top: 1px solid var(--line); margin-top: 8px; }
+.statement-association:first-of-type { border-top: 0; margin-top: 0; }
+.statement-assoc-head h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  color: var(--green-deep);
+  font-weight: 800;
+}
+.statement-assoc-head p, .statement-association h3 {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.statement-association h3 { margin: 14px 0 8px; color: var(--green-deep); font-size: 15px; }
+.statement-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 0 12px; }
+.statement-totals, .statement-movements, .statement-index-table {
+  width: 100%;
+  min-width: 480px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+}
+.statement-totals th, .statement-index-table th, .statement-movements th {
+  background: #eef6f2;
+  color: var(--green-deep);
+}
+.statement-totals td, .statement-index-table td, .statement-movements td {
+  font-size: 14px;
+}
+.statement-movements td strong { display: block; font-size: 14px; font-weight: 800; }
+.statement-movements td small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; font-weight: 600; }
 .statement-cards { display: grid; gap: 10px; }
 .statement-card {
   border: 1px solid var(--line);
@@ -441,6 +479,7 @@ body.page-landscape td.col-desc { min-width: 160px; white-space: normal; overflo
   body.page-landscape { font-size: 11px; }
   body.is-receipt { font-size: 13px; line-height: 1.35; }
   .print-actions { display: none !important; }
+  body, body.page-landscape { padding-top: 0 !important; }
   .sheet { margin: 0; border: 0; border-radius: 0; max-width: none; overflow: visible; box-shadow: none; min-height: 0 !important; }
   body.is-receipt .sheet { max-width: none; margin: 0; min-height: 0 !important; }
   .brand-bar, th, .meta, .kpi, .receipt-amount, .sheet-accent, .receipt-fields > div:nth-child(even) { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
@@ -483,7 +522,7 @@ body.page-landscape td.col-desc { min-width: 160px; white-space: normal; overflo
 }
 @media screen and (max-width: 760px) {
   body { background: #f4f7f5; }
-  .print-actions { justify-content: stretch; padding: 10px 12px; }
+  .print-actions { justify-content: stretch; padding: 10px 12px; padding-top: calc(10px + env(safe-area-inset-top, 0px)); }
   .print-actions button { width: 100%; min-height: 48px; border-radius: 14px; font-size: 16px; }
   .sheet {
     margin: 0;
@@ -685,7 +724,26 @@ function waitForPrintReady(win: Window) {
       image.addEventListener("load", () => resolve(), { once: true });
       image.addEventListener("error", () => resolve(), { once: true });
     });
-  })).then(() => new Promise<void>((resolve) => window.setTimeout(resolve, 80)));
+  })).then(() => new Promise<void>((resolve) => window.setTimeout(resolve, 20)));
+}
+
+function withAutoPrint(html: string) {
+  if (!html.includes("</body>")) return html;
+  const script = `<script>
+    window.addEventListener("load", function () {
+      window.setTimeout(function () {
+        try { window.focus(); window.print(); } catch (e) {}
+      }, 40);
+    });
+  </script>`;
+  return html.replace("</body>", `${script}</body>`);
+}
+
+/** Instant logo URL for HTML print — do not wait to convert the lockup to a data URL. */
+export function printLogoUrlNow() {
+  if (logoDataUrl) return logoDataUrl;
+  if (typeof window !== "undefined") return `${window.location.origin}${OFFICIAL_LOCKUP}`;
+  return OFFICIAL_LOCKUP;
 }
 
 function pdfFilename(filename: string) {
@@ -829,13 +887,11 @@ function printViaIframe(html: string) {
       iframe.remove();
       return;
     }
-    void waitForPrintReady(win).then(() => {
-      try {
-        win.focus();
-        win.print();
-      } catch { /* user can use on-page print */ }
-      window.setTimeout(() => iframe.remove(), 120_000);
-    });
+    try {
+      win.focus();
+      win.print();
+    } catch { /* user can use on-page print */ }
+    window.setTimeout(() => iframe.remove(), 120_000);
   });
   return true;
 }
@@ -843,20 +899,12 @@ function printViaIframe(html: string) {
 /** HTML fallback if canvas PDF generation fails. */
 export function openReportPreview(html: string, autoPrint = false) {
   if (typeof window === "undefined") return false;
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const documentHtml = autoPrint ? withAutoPrint(html) : html;
+  const blob = new Blob([documentHtml], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const orientation = printOrientationFromHtml(html);
   const popup = window.open(url, "_blank", orientation === "landscape" ? "width=1280,height=900" : "width=960,height=900");
   if (popup) {
-    const onReady = () => {
-      void waitForPrintReady(popup).then(() => {
-        if (autoPrint) {
-          try { popup.focus(); popup.print(); } catch { printViaIframe(html); }
-        }
-      });
-    };
-    popup.addEventListener("load", onReady);
-    window.setTimeout(onReady, 700);
     window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
     return true;
   }
@@ -883,7 +931,8 @@ export async function downloadReportHtml(html: string, filename: string) {
 
 /** Build document then print. Arabic receipts use HTML print (correct shaping), not canvas PDF. */
 export async function printWazenHtml(build: (logoUrl: string) => string, autoPrint = true) {
-  const logoUrl = await resolvePrintLogoUrl();
+  const logoUrl = printLogoUrlNow();
+  void resolvePrintLogoUrl();
   const html = build(logoUrl);
   if (typeof window === "undefined") return false;
   if (/lang=["']ar["']/i.test(html) && (/\bis-receipt\b/.test(html) || /\bis-statement\b/.test(html))) {

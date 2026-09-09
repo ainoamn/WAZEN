@@ -231,6 +231,14 @@ export default function StatementShareClient({ token }: { token: string }) {
       {data && isAssociation(data) && (
         <article className="receipt-share-card statement-share-card">
           <div className="receipt-share-accent" aria-hidden="true" />
+          <div className="statement-share-toolbar">
+            <button type="button" className="primary-button" disabled={busy !== null} onClick={() => void printOrDownload("print")}>
+              {busy === "print" ? "…" : (locale === "ar" ? "طباعة" : "Print")}
+            </button>
+            <button type="button" className="secondary-button" disabled={busy !== null} onClick={() => void printOrDownload("download")}>
+              {busy === "download" ? "…" : (locale === "ar" ? "تنزيل / فتح" : "Download / open")}
+            </button>
+          </div>
           <p className="receipt-share-eyebrow">{data.walletName}</p>
           <h1>{data.title}</h1>
           <p className="receipt-share-date">{data.subtitle}</p>
@@ -276,14 +284,6 @@ export default function StatementShareClient({ token }: { token: string }) {
             )}
           </section>
 
-          <div className="receipt-share-actions">
-            <button type="button" className="primary-button" disabled={busy !== null} onClick={() => void printOrDownload("download")}>
-              {busy === "download" ? "…" : (locale === "ar" ? "تنزيل / فتح" : "Download / open")}
-            </button>
-            <button type="button" className="secondary-button" disabled={busy !== null} onClick={() => void printOrDownload("print")}>
-              {busy === "print" ? "…" : (locale === "ar" ? "فتح للطباعة" : "Open to print")}
-            </button>
-          </div>
           <p className="receipt-share-foot">
             {locale === "ar"
               ? "هذا كشف جمعية إلكتروني من موقع وازن — واضح على الجوال والكمبيوتر"
@@ -294,6 +294,14 @@ export default function StatementShareClient({ token }: { token: string }) {
       {data && !isAssociation(data) && (
         <article className="receipt-share-card statement-share-card">
           <div className="receipt-share-accent" aria-hidden="true" />
+          <div className="statement-share-toolbar">
+            <button type="button" className="primary-button" disabled={busy !== null} onClick={() => void printOrDownload("print")}>
+              {busy === "print" ? "…" : (locale === "ar" ? "طباعة" : "Print")}
+            </button>
+            <button type="button" className="secondary-button" disabled={busy !== null} onClick={() => void printOrDownload("download")}>
+              {busy === "download" ? "…" : (locale === "ar" ? "تنزيل / فتح" : "Download / open")}
+            </button>
+          </div>
           <p className="receipt-share-eyebrow">{data.walletName}</p>
           <h1>{data.title}</h1>
           <p className="receipt-share-date">{data.memberName} · {data.focusLabel}</p>
@@ -322,48 +330,69 @@ export default function StatementShareClient({ token }: { token: string }) {
               creditLabel: data.creditLabel,
               lines: data.lines,
             }]).map((section, sectionIndex) => (
-              <div key={`${section.walletName}:${sectionIndex}`}>
-                <h2>{section.walletName}</h2>
-                {data.combined ? (
-                  <p className="receipt-share-status">{locale === "ar"
-                    ? `المدفوع ${section.paidLabel} · عليه ${section.owesLabel} · له ${section.creditLabel}`
-                    : `Paid ${section.paidLabel} · Owes ${section.owesLabel} · Credit ${section.creditLabel}`}</p>
-                ) : null}
-                {section.lines.length ? section.lines.map((line, index) => {
-                  const amount = new Intl.NumberFormat(locale === "ar" ? "ar-OM" : "en-OM", {
-                    style: "currency",
-                    currency: section.currency || data.currency || "OMR",
-                    minimumFractionDigits: 3,
-                    maximumFractionDigits: 3,
-                  }).format((line.amountMinor || 0) / 1000);
-                  return (
-                    <article key={`${section.walletName}:${line.at}:${index}`} className={`statement-share-line is-${line.direction}`}>
-                      <header>
-                        <strong>{locale === "ar" ? line.titleAr : line.titleEn}</strong>
-                        <em className={line.direction === "out" ? "amount-negative" : line.direction === "in" ? "amount-positive" : ""}>{amount}</em>
-                      </header>
-                      <p>{locale === "ar" ? line.detailAr : line.detailEn}</p>
-                      <footer>
-                        <span>{new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</span>
-                        <span>{typeLabel(line.focus, locale)}</span>
-                      </footer>
-                    </article>
-                  );
-                }) : (
+              <div key={`${section.walletName}:${sectionIndex}`} className="statement-share-association">
+                <h2>{sectionIndex + 1}. {section.walletName}</h2>
+                <div className="statement-share-table-wrap">
+                  <table className="statement-share-totals">
+                    <thead>
+                      <tr>
+                        <th>{locale === "ar" ? "المدفوع" : "Paid"}</th>
+                        <th>{locale === "ar" ? "الصرف" : "Spent"}</th>
+                        <th>{locale === "ar" ? "عليه" : "Owes"}</th>
+                        <th>{locale === "ar" ? "له" : "Credit"}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>{section.paidLabel}</td>
+                        <td>{section.spentLabel}</td>
+                        <td>{section.owesLabel}</td>
+                        <td>{section.creditLabel}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                {section.lines.length ? (
+                  <div className="statement-share-table-wrap">
+                    <table className="statement-share-movements">
+                      <thead>
+                        <tr>
+                          <th>{locale === "ar" ? "التاريخ" : "Date"}</th>
+                          <th>{locale === "ar" ? "البند" : "Item"}</th>
+                          <th>{locale === "ar" ? "النوع" : "Type"}</th>
+                          <th>{locale === "ar" ? "المبلغ" : "Amount"}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {section.lines.map((line, index) => {
+                          const amount = new Intl.NumberFormat(locale === "ar" ? "ar-OM" : "en-OM", {
+                            style: "currency",
+                            currency: section.currency || data.currency || "OMR",
+                            minimumFractionDigits: 3,
+                            maximumFractionDigits: 3,
+                          }).format((line.amountMinor || 0) / 1000);
+                          return (
+                            <tr key={`${section.walletName}:${line.at}:${index}`}>
+                              <td>{new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</td>
+                              <td>
+                                <strong>{locale === "ar" ? line.titleAr : line.titleEn}</strong>
+                                <small>{locale === "ar" ? line.detailAr : line.detailEn}</small>
+                              </td>
+                              <td>{typeLabel(line.focus, locale)}</td>
+                              <td className={line.direction === "out" ? "amount-negative" : line.direction === "in" ? "amount-positive" : ""}>{amount}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
                   <p className="receipt-share-status">{locale === "ar" ? "لا توجد حركات في هذا القسم." : "No movements in this section."}</p>
                 )}
               </div>
             ))}
           </section>
 
-          <div className="receipt-share-actions">
-            <button type="button" className="primary-button" disabled={busy !== null} onClick={() => void printOrDownload("download")}>
-              {busy === "download" ? "…" : (locale === "ar" ? "تنزيل / فتح" : "Download / open")}
-            </button>
-            <button type="button" className="secondary-button" disabled={busy !== null} onClick={() => void printOrDownload("print")}>
-              {busy === "print" ? "…" : (locale === "ar" ? "فتح للطباعة" : "Open to print")}
-            </button>
-          </div>
           <p className="receipt-share-foot">
             {locale === "ar"
               ? "هذا كشف إلكتروني من موقع وازن — واضح على الجوال والكمبيوتر"

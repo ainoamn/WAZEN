@@ -90,6 +90,9 @@ test("combined print html includes a section for each association", () => {
     ],
   });
   assert.match(html, /كشف كامل لكل الجمعيات/);
+  assert.match(html, /ملخص الجمعيات/);
+  assert.match(html, /statement-association/);
+  assert.match(html, /statement-totals/);
   assert.match(html, /جمعية السفر للاخوان/);
   assert.match(html, /بندر الصقله/);
 });
@@ -190,7 +193,8 @@ test("member ledger print uses portrait statement cards", () => {
     },
   });
   assert.match(html, /is-statement/);
-  assert.match(html, /statement-card/);
+  assert.match(html, /statement-association/);
+  assert.match(html, /statement-movements/);
   assert.match(html, /دفعة اشتراك/);
   assert.match(html, /data-orientation="portrait"/);
 });

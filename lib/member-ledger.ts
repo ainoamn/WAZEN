@@ -441,6 +441,115 @@ export function filterMemberLedgerLines(lines: MemberLedgerLine[], focus: Member
   return lines.filter((line) => line.focus === focus);
 }
 
+function ledgerTypeLabel(locale: MemberLedgerLocale, focus: MemberLedgerLine["focus"]) {
+  return ({
+    paid: text(locale, "مدفوع", "Paid"),
+    spent: text(locale, "صرف", "Spent"),
+    owes: text(locale, "عليه", "Owes"),
+    credit: text(locale, "له", "Credit"),
+  })[focus];
+}
+
+function statementTotalsTable(
+  locale: MemberLedgerLocale,
+  money: (minor: number) => string,
+  ledger: { paidMinor: number; addonMinor: number; owesMinor: number; creditMinor: number },
+) {
+  return `<div class="statement-table-wrap">
+    <table class="statement-totals">
+      <thead>
+        <tr>
+          <th>${escapeHtml(text(locale, "المدفوع", "Paid"))}</th>
+          <th>${escapeHtml(text(locale, "الصرف", "Spent"))}</th>
+          <th>${escapeHtml(text(locale, "عليه", "Owes"))}</th>
+          <th>${escapeHtml(text(locale, "له", "Credit"))}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num in">${escapeHtml(money(ledger.paidMinor))}</td>
+          <td class="num">${escapeHtml(money(ledger.addonMinor))}</td>
+          <td class="num out">${escapeHtml(money(ledger.owesMinor))}</td>
+          <td class="num in">${escapeHtml(money(ledger.creditMinor))}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>`;
+}
+
+function statementMovementsTable(
+  locale: MemberLedgerLocale,
+  money: (minor: number) => string,
+  rows: MemberLedgerLine[],
+) {
+  if (!rows.length) {
+    return `<p class="empty">${escapeHtml(text(locale, "لا توجد بنود في هذا القسم.", "No rows in this section."))}</p>`;
+  }
+  const body = rows.map((line) => {
+    const when = new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB");
+    const titleText = locale === "ar" ? line.titleAr : line.titleEn;
+    const detail = locale === "ar" ? line.detailAr : line.detailEn;
+    const cls = line.direction === "in" ? "in" : line.direction === "out" ? "out" : "";
+    return `<tr>
+      <td class="col-date">${escapeHtml(when)}</td>
+      <td><strong>${escapeHtml(titleText)}</strong>${detail ? `<small>${escapeHtml(detail)}</small>` : ""}</td>
+      <td>${escapeHtml(ledgerTypeLabel(locale, line.focus))}</td>
+      <td class="num ${cls}">${escapeHtml(money(line.amountMinor))}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="statement-table-wrap">
+    <table class="statement-movements">
+      <thead>
+        <tr>
+          <th>${escapeHtml(text(locale, "التاريخ", "Date"))}</th>
+          <th>${escapeHtml(text(locale, "البند", "Item"))}</th>
+          <th>${escapeHtml(text(locale, "النوع", "Type"))}</th>
+          <th class="num">${escapeHtml(text(locale, "المبلغ", "Amount"))}</th>
+        </tr>
+      </thead>
+      <tbody>${body}</tbody>
+    </table>
+  </div>`;
+}
+
+function statementAssociationHtml(input: {
+  locale: MemberLedgerLocale;
+  index?: number;
+  spaceName: string;
+  currency: string;
+  joinedAt?: string;
+  focus: MemberLedgerFocus;
+  ledger: {
+    paidMinor: number;
+    addonMinor: number;
+    owesMinor: number;
+    creditMinor: number;
+    lines: MemberLedgerLine[];
+  };
+}) {
+  const locale = input.locale;
+  const money = (minor: number) => formatMoneyMinor(minor, input.currency, locale);
+  const rows = filterMemberLedgerLines(input.ledger.lines, input.focus);
+  const heading = input.index
+    ? `${input.index}. ${input.spaceName}`
+    : input.spaceName;
+  const joined = input.joinedAt
+    ? new Date(input.joinedAt).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB")
+    : "";
+  return `<section class="statement-association">
+    <header class="statement-assoc-head">
+      <h2>${escapeHtml(heading)}</h2>
+      <p>${escapeHtml([
+        text(locale, "عملة الكشف", "Statement currency") + ": " + input.currency,
+        joined ? text(locale, "الانضمام", "Joined") + ": " + joined : "",
+      ].filter(Boolean).join(" · "))}</p>
+    </header>
+    ${statementTotalsTable(locale, money, input.ledger)}
+    <h3>${escapeHtml(text(locale, "تفاصيل الحركات", "Movement detail"))}</h3>
+    ${statementMovementsTable(locale, money, rows)}
+  </section>`;
+}
+
 export function buildMemberLedgerHtml(input: {
   locale: MemberLedgerLocale;
   logoUrl: string;
@@ -470,41 +579,14 @@ export function buildMemberLedgerHtml(input: {
     credit: ["تفاصيل ما له", "What is owed to him"],
   };
   const title = text(locale, focusTitle[input.focus][0], focusTitle[input.focus][1]);
-  const rows = filterMemberLedgerLines(input.ledger.lines, input.focus);
-  const typeLabel = (focus: MemberLedgerLine["focus"]) => {
-    const map = {
-      paid: text(locale, "مدفوع", "Paid"),
-      spent: text(locale, "صرف", "Spent"),
-      owes: text(locale, "عليه", "Owes"),
-      credit: text(locale, "له", "Credit"),
-    };
-    return map[focus];
-  };
-
-  const cards = rows.map((line) => {
-    const when = new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB");
-    const titleText = locale === "ar" ? line.titleAr : line.titleEn;
-    const detail = locale === "ar" ? line.detailAr : line.detailEn;
-    const cls = line.direction === "in" ? "in" : line.direction === "out" ? "out" : "";
-    return `<article class="statement-card">
-      <header>
-        <strong>${escapeHtml(titleText)}</strong>
-        <em class="num ${cls}">${escapeHtml(money(line.amountMinor))}</em>
-      </header>
-      <p>${escapeHtml(detail)}</p>
-      <footer>
-        <span>${escapeHtml(when)}</span>
-        <span>${escapeHtml(typeLabel(line.focus))}</span>
-      </footer>
-    </article>`;
-  }).join("");
-
-  const bodyHtml = `<section class="statement-block">
-    <h2>${escapeHtml(text(locale, "الحركات والتفاصيل", "Movements and detail"))}</h2>
-    <div class="statement-cards">
-      ${cards || `<p class="empty">${escapeHtml(text(locale, "لا توجد بنود في هذا القسم.", "No rows in this section."))}</p>`}
-    </div>
-  </section>`;
+  const bodyHtml = statementAssociationHtml({
+    locale,
+    spaceName: input.spaceName,
+    currency: input.currency,
+    joinedAt: input.joinedAt,
+    focus: input.focus,
+    ledger: input.ledger,
+  });
 
   return wrapPrintDocument({
     locale,
@@ -571,41 +653,37 @@ export function buildCombinedMemberLedgerHtml(input: {
   }
   const money = (minor: number, currency: string) => formatMoneyMinor(minor, currency, locale);
   const title = text(locale, "كشف كامل لكل الجمعيات", "Full statement for every association");
-  const typeLabel = (focus: MemberLedgerLine["focus"]) => ({
-    paid: text(locale, "مدفوع", "Paid"),
-    spent: text(locale, "صرف", "Spent"),
-    owes: text(locale, "عليه", "Owes"),
-    credit: text(locale, "له", "Credit"),
-  })[focus];
-  const bodyHtml = input.sections.map((section) => {
-    const rows = filterMemberLedgerLines(section.ledger.lines, input.focus);
-    const cards = rows.map((line) => {
-      const when = new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB");
-      const titleText = locale === "ar" ? line.titleAr : line.titleEn;
-      const detail = locale === "ar" ? line.detailAr : line.detailEn;
-      const cls = line.direction === "in" ? "in" : line.direction === "out" ? "out" : "";
-      return `<article class="statement-card">
-        <header>
-          <strong>${escapeHtml(titleText)}</strong>
-          <em class="num ${cls}">${escapeHtml(money(line.amountMinor, section.currency))}</em>
-        </header>
-        <p>${escapeHtml(detail)}</p>
-        <footer>
-          <span>${escapeHtml(when)}</span>
-          <span>${escapeHtml(typeLabel(line.focus))}</span>
-        </footer>
-      </article>`;
-    }).join("");
-    return `<section class="statement-block">
-      <h2>${escapeHtml(section.spaceName)}</h2>
-      <p>${escapeHtml(text(locale, "المدفوع", "Paid"))}: ${escapeHtml(money(section.ledger.paidMinor, section.currency))}
-         · ${escapeHtml(text(locale, "عليه", "Owes"))}: ${escapeHtml(money(section.ledger.owesMinor, section.currency))}
-         · ${escapeHtml(text(locale, "له", "Credit"))}: ${escapeHtml(money(section.ledger.creditMinor, section.currency))}</p>
-      <div class="statement-cards">
-        ${cards || `<p class="empty">${escapeHtml(text(locale, "لا توجد بنود في هذا القسم.", "No rows in this section."))}</p>`}
-      </div>
-    </section>`;
-  }).join("");
+  const indexRows = input.sections.map((section, index) => `<tr>
+    <td>${index + 1}. ${escapeHtml(section.spaceName)}</td>
+    <td class="num in">${escapeHtml(money(section.ledger.paidMinor, section.currency))}</td>
+    <td class="num out">${escapeHtml(money(section.ledger.owesMinor, section.currency))}</td>
+    <td class="num in">${escapeHtml(money(section.ledger.creditMinor, section.currency))}</td>
+  </tr>`).join("");
+  const indexHtml = `<section class="statement-index">
+    <h2>${escapeHtml(text(locale, "ملخص الجمعيات", "Association summary"))}</h2>
+    <div class="statement-table-wrap">
+      <table class="statement-index-table">
+        <thead>
+          <tr>
+            <th>${escapeHtml(text(locale, "الجمعية", "Association"))}</th>
+            <th class="num">${escapeHtml(text(locale, "المدفوع", "Paid"))}</th>
+            <th class="num">${escapeHtml(text(locale, "عليه", "Owes"))}</th>
+            <th class="num">${escapeHtml(text(locale, "له", "Credit"))}</th>
+          </tr>
+        </thead>
+        <tbody>${indexRows}</tbody>
+      </table>
+    </div>
+  </section>`;
+  const bodyHtml = indexHtml + input.sections.map((section, index) => statementAssociationHtml({
+    locale,
+    index: index + 1,
+    spaceName: section.spaceName,
+    currency: section.currency,
+    joinedAt: section.joinedAt,
+    focus: input.focus,
+    ledger: section.ledger,
+  })).join("");
   const sameCurrency = input.sections.every((item) => item.currency === input.sections[0]?.currency);
   const currency = input.sections[0]?.currency ?? "OMR";
   const paid = input.sections.reduce((sum, item) => sum + item.ledger.paidMinor, 0);
@@ -617,7 +695,7 @@ export function buildCombinedMemberLedgerHtml(input: {
     title,
     entityName: `${input.memberName} · ${text(locale, "كل الجمعيات", "All associations")}`,
     logoUrl: input.logoUrl,
-    subtitle: text(locale, "كشف مفصل لكل جمعية ينتمي إليها العضو.", "A detailed statement for every association this member belongs to."),
+    subtitle: text(locale, "كل جمعية في جدول مستقل بعناوين واضحة، والمبالغ هي نفس كشف العضو.", "Each association in its own titled table. Amounts match the member ledger."),
     orientation: "portrait",
     variant: "statement",
     meta: [

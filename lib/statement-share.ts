@@ -156,7 +156,8 @@ export function buildMemberStatementWhatsAppMessage(input: {
       paidLabel: input.paidLabel,
       owesLabel: input.owesLabel,
       creditLabel: input.creditLabel,
-    }]).flatMap((item) => [
+    }    ]).flatMap((item) => [
+      "────────",
       item.walletName,
       input.locale === "ar" ? `المدفوع: ${item.paidLabel}` : `Paid: ${item.paidLabel}`,
       input.locale === "ar" ? `عليه: ${item.owesLabel}` : `Owes: ${item.owesLabel}`,

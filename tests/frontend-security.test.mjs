@@ -408,6 +408,8 @@ test("groups view can merge duplicate accounts and import phone or file contacts
   assert.match(membersUi, /كشف كامل/);
   assert.match(membersUi, /جمعية معينة/);
   assert.match(dashboardApi, /scope: z.enum\(\["one", "all"\]\)/);
+  assert.match(dashboardApi, /loadMemberStatementSection/);
+  assert.doesNotMatch(dashboardApi, /due_minor\) - Number\(item\.paid_minor\)/);
   assert.match(contacts, /error_callback/);
   assert.match(contacts, /GOOGLE_CONTACTS_DENIED/);
   assert.match(contacts, /لم يُتحقق بعد لنطاق جهات الاتصال/);
@@ -422,4 +424,18 @@ test("dark theme keeps groups form fields readable on a dark canvas", () => {
   assert.match(globals, /html\[data-theme="dark"\] \.statement-scope-picker/);
   assert.match(globals, /html\[data-theme="dark"\] input:-webkit-autofill/);
   assert.match(globals, /--field:\s*#121c19/);
+});
+
+test("statement print opens immediately with a floating print bar and association tables", () => {
+  const printDoc = fs.readFileSync(path.join(root, "lib/print-document.ts"), "utf8");
+  const ledger = fs.readFileSync(path.join(root, "lib/member-ledger.ts"), "utf8");
+  const share = fs.readFileSync(path.join(root, "app/s/[token]/statement-share-client.tsx"), "utf8");
+  assert.match(printDoc, /printLogoUrlNow/);
+  assert.match(printDoc, /withAutoPrint/);
+  assert.match(printDoc, /position: fixed/);
+  assert.doesNotMatch(printDoc, /window\.setTimeout\(onReady, 700\)/);
+  assert.match(ledger, /statement-association/);
+  assert.match(ledger, /ملخص الجمعيات/);
+  assert.match(share, /statement-share-toolbar/);
+  assert.match(share, /statement-share-movements/);
 });
