@@ -449,6 +449,8 @@ test("trip settlements net across the space instead of each bill", () => {
   assert.match(dashboard, /تصفية التسويات/);
   assert.match(dashboardApi, /action === "netTripSettlements"/);
   assert.match(dashboardApi, /rebuildSpaceTripSettlements/);
+  assert.match(dashboardApi, /migratePerExpenseTripSettlements/);
   assert.match(nets, /trip.settlements_netted/);
+  assert.match(nets, /expense_id IS NOT NULL/);
   assert.doesNotMatch(v1, /minimizeSettlements\(balances\)/);
 });

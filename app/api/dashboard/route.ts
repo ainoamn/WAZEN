@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
 import { authenticateRequest, clearCsrfCookie, clearSessionCookie, csrfCookie, issueCsrfToken } from "../../../lib/auth";
 import { buildCircleOrder, splitContributionPayment, splitEvenly, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
-import { rebuildSpaceTripSettlements } from "../../../lib/trip-settlements";
+import { migratePerExpenseTripSettlements, rebuildSpaceTripSettlements } from "../../../lib/trip-settlements";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
 import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf, actorCanIssueSpaceDocuments } from "../../../lib/authorization";
 import { prepareAudit, writeAudit } from "../../../lib/audit";
@@ -675,6 +675,10 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
   const ids = allowed.map((space) => space.id);
   if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results ?? [], periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [] };
 
+  try {
+    await migratePerExpenseTripSettlements(db, ids);
+  } catch { /* keep serving dashboard if netting fails */ }
+
   if (options?.refreshDerived !== false) {
     try {
       await reconcileMemberLedgers(db, ids);
@@ -707,7 +711,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     FROM settlements s
     LEFT JOIN members tm ON tm.id=s.to_member_id
     LEFT JOIN members fm ON fm.id=s.from_member_id
-      WHERE s.space_id IN (${placeholders}) AND s.status='pending' ORDER BY s.created_at DESC LIMIT 50`).bind(...ids).all(),
+      WHERE s.space_id IN (${placeholders}) AND s.status='pending' ORDER BY s.amount_minor DESC, s.created_at DESC LIMIT 50`).bind(...ids).all(),
     db.prepare(`SELECT * FROM member_installments WHERE space_id IN (${placeholders}) ORDER BY member_id, period_index`).bind(...ids).all(),
     writeMode
       ? Promise.resolve({ results: [] as Array<Record<string, unknown>> })

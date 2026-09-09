@@ -3,6 +3,21 @@
 import { applySettledTransfers, minimizeSettlements, netTripMemberBalances } from "./finance.ts";
 import { prepareAudit } from "./audit.ts";
 
+/** One-shot: old rows were one transfer per bill (`expense_id` set). Collapse those spaces to net transfers. */
+export async function migratePerExpenseTripSettlements(db: D1Database, spaceIds: string[]) {
+  if (!spaceIds.length) return;
+  const placeholders = spaceIds.map(() => "?").join(",");
+  const stale = await db.prepare(`SELECT DISTINCT space_id FROM settlements
+    WHERE space_id IN (${placeholders})
+      AND status='pending'
+      AND expense_id IS NOT NULL
+      AND from_member_id NOT LIKE 'space:%'
+      AND to_member_id NOT LIKE 'space:%'`).bind(...spaceIds).all<{ space_id: string }>();
+  for (const row of stale.results ?? []) {
+    await rebuildSpaceTripSettlements(db, row.space_id);
+  }
+}
+
 export async function rebuildSpaceTripSettlements(db: D1Database, spaceId: string, userId?: string) {
   const [members, expenses, splits, settled] = await Promise.all([
     db.prepare("SELECT id FROM members WHERE space_id=? AND status='active' ORDER BY joined_at")
