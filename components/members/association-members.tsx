@@ -529,7 +529,7 @@ function MemberLedgerBody({
         ))}
       </div>
       <div className="month-grid">
-        {months.map((row: AssociationInstallment) => (
+        {space.type !== "trip" && months.map((row: AssociationInstallment) => (
           <article key={row.id} className={`month-chip ${row.status}`}>
             <small>{locale === "ar" ? `شهر ${row.period_index}` : `Month ${row.period_index}`}</small>
             <strong>{row.period_key}</strong>

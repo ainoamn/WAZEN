@@ -266,8 +266,8 @@ export function buildMemberLedger(input: {
           direction: "out",
           titleAr: `حصة من: ${expense.description || "مصروف"}`,
           titleEn: `Share of: ${expense.description || "expense"}`,
-          detailAr: "حصة من مصروف صندوق الجمعية — تُخصم من مساهمته المدفوعة",
-          detailEn: "Share of a fund-paid expense — deducted from his paid contributions",
+          detailAr: "استهلاك من مساهمته في الصندوق — ليست دفعة ثانية ولا صرفاً من الجيب",
+          detailEn: "Consumed from his fund contribution — not a second payment and not pocket spend",
           amountMinor: shareMinor,
         });
       }
@@ -314,21 +314,7 @@ export function buildMemberLedger(input: {
     const fromFundSettle = String(settlement.from_member_id).startsWith("space:");
     if (settlement.from_member_id === member.id) {
       // Fund-deficit settlements are superseded by counting each fund expense share above.
-      if (toFund) {
-        if (pending) {
-          lines.push({
-            at: new Date().toISOString(),
-            focus: "owes",
-            direction: "out",
-            titleAr: "عجز الصندوق (مُغطى ضمن الحصص)",
-            titleEn: "Fund deficit (already in shares)",
-            detailAr: "للمتابعة فقط — المبلغ مُغطى ضمن صافي مساهمته مقابل حصص الصندوق",
-            detailEn: "Informational — covered by netting paid contributions against fund shares",
-            amountMinor: amount,
-            status: settlement.status,
-          });
-        }
-      } else {
+      if (!toFund) {
         if (pending) expenseDebit += amount;
         lines.push({
           at: settlement.settled_at || settlement.created_at || new Date().toISOString(),
@@ -386,15 +372,15 @@ export function buildMemberLedger(input: {
   const tripShare = input.spaceType === "trip"
     ? memberTripShareMinor(member.id, member.space_id, input.tripExpenses, input.expenseSplits)
     : 0;
-  if (input.spaceType === "trip" && tripShare > 0) {
+  if (input.spaceType === "trip" && tripShare > 0 && Number(member.paid_minor) <= 0) {
     lines.push({
       at: member.joined_at || new Date().toISOString(),
       focus: "paid",
       direction: "in",
       titleAr: "حصته من مصروفات الرحلة",
       titleEn: "Share of trip expenses",
-      detailAr: "مجموع حصصه من فواتير الرحلة بعد التقسيم — هذا عمود «مدفوع»",
-      detailEn: "Total of his split shares of trip bills — this is the Paid column",
+      detailAr: "مجموع حصصه من فواتير الرحلة بعد التقسيم — هذا عمود «مدفوع» لأن الصندوق بلا مساهمة",
+      detailEn: "Total of his split shares of trip bills — this is the Paid column when nobody contributed cash",
       amountMinor: tripShare,
     });
   }
@@ -476,7 +462,9 @@ export function buildMemberLedger(input: {
       : Number(member.paid_minor) || 0,
     extraMinor: Number(member.extra_minor) || 0,
     addonMinor: Number(member.addon_minor ?? 0),
-    spentMinor: Number(member.addon_minor ?? 0) + lines.filter((line) => line.focus === "spent" && line.direction === "out").reduce((sum, line) => sum + (line.titleAr.startsWith("حصة") || line.titleEn.startsWith("Share") ? line.amountMinor : 0), 0),
+    spentMinor: input.spaceType === "trip"
+      ? tripPocket
+      : Number(member.addon_minor ?? 0) + lines.filter((line) => line.focus === "spent" && line.direction === "out").reduce((sum, line) => sum + (line.titleAr.startsWith("حصة") || line.titleEn.startsWith("Share") ? line.amountMinor : 0), 0),
     accruedDueMinor: accrued,
     remainingDueMinor: remainingDue,
     cashCreditMinor: cashCredit,
@@ -490,7 +478,11 @@ export function buildMemberLedger(input: {
 
 export function filterMemberLedgerLines(lines: MemberLedgerLine[], focus: MemberLedgerFocus) {
   if (focus === "all") return lines;
-  return lines.filter((line) => line.focus === focus);
+  return lines.filter((line) => {
+    if (line.focus !== focus) return false;
+    if (focus === "spent" && line.detailAr.includes("استهلاك من مساهمته")) return false;
+    return true;
+  });
 }
 
 export type MemberLedgerTone = "paid" | "spend" | "owes" | "credit" | "info";
@@ -533,7 +525,7 @@ function ledgerTypeLabel(locale: MemberLedgerLocale, focus: MemberLedgerLine["fo
 function statementTotalsTable(
   locale: MemberLedgerLocale,
   money: (minor: number) => string,
-  ledger: { paidMinor: number; addonMinor: number; owesMinor: number; creditMinor: number },
+  ledger: { paidMinor: number; spentMinor?: number; addonMinor: number; owesMinor: number; creditMinor: number },
 ) {
   return `<div class="statement-table-wrap">
     <table class="statement-totals">
@@ -548,7 +540,7 @@ function statementTotalsTable(
       <tbody>
         <tr>
           <td class="num in">${escapeHtml(money(ledger.paidMinor))}</td>
-          <td class="num">${escapeHtml(money(ledger.addonMinor))}</td>
+          <td class="num">${escapeHtml(money(ledger.spentMinor ?? ledger.addonMinor))}</td>
           <td class="num out">${escapeHtml(money(ledger.owesMinor))}</td>
           <td class="num in">${escapeHtml(money(ledger.creditMinor))}</td>
         </tr>
@@ -605,6 +597,7 @@ function statementAssociationHtml(input: {
   focus: MemberLedgerFocus;
   ledger: {
     paidMinor: number;
+    spentMinor?: number;
     addonMinor: number;
     owesMinor: number;
     creditMinor: number;
@@ -647,6 +640,7 @@ export function buildMemberLedgerHtml(input: {
   focus: MemberLedgerFocus;
   ledger: {
     paidMinor: number;
+    spentMinor?: number;
     addonMinor: number;
     owesMinor: number;
     creditMinor: number;
@@ -712,6 +706,7 @@ export function buildCombinedMemberLedgerHtml(input: {
     joinedAt?: string;
     ledger: {
       paidMinor: number;
+      spentMinor?: number;
       addonMinor: number;
       owesMinor: number;
       creditMinor: number;

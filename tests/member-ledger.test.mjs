@@ -93,8 +93,8 @@ test("fund-paid expense share nets against paid → leftover under credit", () =
   });
   assert.equal(ledger.owesMinor, 0);
   assert.equal(ledger.creditMinor, 34_500);
-  const spent = filterMemberLedgerLines(ledger.lines, "spent");
-  assert.equal(spent.some((row) => row.titleAr.includes("حصة")), true);
+  assert.equal(ledger.lines.some((row) => row.titleAr.includes("حصة")), true);
+  assert.equal(filterMemberLedgerLines(ledger.lines, "spent").some((row) => row.titleAr.includes("حصة")), false);
   const credit = filterMemberLedgerLines(ledger.lines, "credit");
   assert.equal(credit.some((row) => row.titleAr.includes("متبقي")), true);
 });
@@ -264,4 +264,71 @@ test("posted settlement payments use the paid tone, not spend red", () => {
     assert.equal(memberLedgerTone(share), "paid");
     assert.equal(memberLedgerAmountClass(share), "amount-positive");
   }
+});
+
+test("Azerbaijan trip file matches the members table: paid 200, pocket 0, owes 18.422 once", () => {
+  const ledger = buildMemberLedger({
+    member: { ...member, due_minor: 200_000, paid_minor: 200_000, addon_minor: 0 },
+    spaceNameAr: "اذربيجان و جورجيا",
+    spaceNameEn: "Azerbaijan",
+    currency: "OMR",
+    spaceType: "trip",
+    plan: { amount_minor: 200_000, duration_months: 1, starts_at: "2026-08-30T00:00:00.000Z" },
+    installments: [],
+    transactions: [{
+      id: "t1",
+      space_id: "s1",
+      member_id: "m1",
+      kind: "contribution",
+      amount_minor: 200_000,
+      description_ar: "مساهمة ABDUL HAMID · سداد 2026-08",
+      description_en: "Contribution",
+      status: "posted",
+      occurred_at: "2026-08-30T16:00:00.000Z",
+    }],
+    settlements: [{
+      id: "st-fund",
+      space_id: "s1",
+      from_member_id: "m1",
+      to_member_id: "space:s1",
+      amount_minor: 18_422,
+      status: "pending",
+    }],
+    tripExpenses: [
+      {
+        id: "e-muscat",
+        space_id: "s1",
+        paid_by_member_id: "",
+        paid_by_name: "صندوق الجمعية",
+        amount_minor: 331_000,
+        description: "تذاكر الطيران من مسقط",
+        occurred_at: "2026-08-30T16:00:00.000Z",
+        paid_from: "common_fund",
+      },
+      {
+        id: "e-geo",
+        space_id: "s1",
+        paid_by_member_id: "",
+        paid_by_name: "صندوق الجمعية",
+        amount_minor: 105_843,
+        description: "تذاكر من اذربيجان الى جورجيا",
+        occurred_at: "2026-09-01T16:00:00.000Z",
+        paid_from: "common_fund",
+      },
+    ],
+    expenseSplits: [
+      { expense_id: "e-muscat", member_id: "m1", share_minor: 165_500 },
+      { expense_id: "e-geo", member_id: "m1", share_minor: 52_922 },
+    ],
+  });
+  assert.equal(ledger.paidMinor, 200_000);
+  assert.equal(ledger.spentMinor, 0);
+  assert.equal(ledger.owesMinor, 18_422);
+  assert.equal(ledger.creditMinor, 0);
+  assert.equal(ledger.lines.filter((line) => line.titleAr.includes("حصته من مصروفات الرحلة")).length, 0);
+  assert.equal(ledger.lines.filter((line) => line.titleAr.includes("عجز الصندوق")).length, 0);
+  assert.equal(ledger.lines.filter((line) => line.titleAr.includes("عجز مساهمته")).length, 1);
+  assert.ok(ledger.lines.some((line) => line.titleAr.includes("مساهمة ABDUL HAMID") && line.amountMinor === 200_000));
+  const paidLines = filterMemberLedgerLines(ledger.lines, "paid");
+  assert.equal(paidLines.reduce((sum, line) => sum + line.amountMinor, 0), 200_000);
 });
