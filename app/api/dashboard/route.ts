@@ -1036,13 +1036,11 @@ export async function GET(request: Request) {
         pendingInvites = await listPendingInvitesForEmail(db, user.email);
         workspaceAlerts.unshift(...pendingInvitesAsWorkspaceAlerts(pendingInvites));
       } catch { /* pending invites optional */ }
-      try {
-        await upsertUserNotifications(db, user.id, workspaceAlerts);
-      } catch { /* notifications are best-effort */ }
       let notifications: Awaited<ReturnType<typeof listUserNotifications>> = [];
       try {
         notifications = await listUserNotifications(db, user.id, 20);
       } catch { /* optional */ }
+      void upsertUserNotifications(db, user.id, workspaceAlerts).catch(() => {});
       const { googleClientId } = await import("../../../lib/google-oauth");
       return Response.json({
         user: { ...user, role },

@@ -1414,6 +1414,14 @@ export function WazenDashboard() {
   const t = copy[locale];
 
   useEffect(() => {
+    if (data) return;
+    const cached = readDashboardCache<DashboardData>();
+    if (!cached) return;
+    setDataState(cached);
+    setLoading(false);
+  }, [data]);
+
+  useEffect(() => {
     setDismissedAlerts(readDismissedWorkspaceAlerts());
   }, []);
 
@@ -4335,7 +4343,7 @@ function Modal({ title, onClose, children, wide = false, xl = false, className =
 
 function Empty({ locale }: { locale: Locale }) { return <div className="empty-state"><ReceiptText size={24} /><span>{copy[locale].empty}</span></div>; }
 function LoadingScreen({ locale }: { locale: Locale }) {
-  return <WazenPageLoader label={locale === "ar" ? "جاري تحميل لوحة وازن…" : "Loading Wazen…"} />;
+  return <WazenPageLoader compact label={locale === "ar" ? "جاري تحميل لوحة وازن…" : "Loading Wazen…"} />;
 }
 function ErrorScreen({ message, retry }: { message: string; retry: () => void }) {
   return (

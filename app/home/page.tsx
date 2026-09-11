@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default function HomePage() {
   return (
-    <Suspense fallback={<WazenPageLoader label="…" />}>
+    <Suspense fallback={<WazenPageLoader compact label="…" />}>
       <HomeClient />
     </Suspense>
   );

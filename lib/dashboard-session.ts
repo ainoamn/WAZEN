@@ -1,4 +1,4 @@
-/** In-memory dashboard payload so Home ↔ Control does not re-splash. */
+/** Dashboard payload cache so Home ↔ Control and refresh do not re-splash. */
 
 import { clearPageCache } from "./page-cache";
 
@@ -6,21 +6,61 @@ type CacheEntry = { data: unknown; at: number };
 
 let cache: CacheEntry | null = null;
 let inflight: Promise<unknown> | null = null;
+let hydrated = false;
 
 const FRESH_MS = 20_000;
+const STORED_MS = 30 * 60 * 1000;
 const FETCH_MS = 14_000;
+const STORAGE_KEY = "wazen-dashboard-session";
+
+function readStored(): CacheEntry | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CacheEntry;
+    if (!parsed || typeof parsed !== "object" || typeof parsed.at !== "number" || !parsed.data) return null;
+    if (Date.now() - parsed.at > STORED_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function persist(entry: CacheEntry | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (!entry) window.sessionStorage.removeItem(STORAGE_KEY);
+    else window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(entry));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function hydrateFromStorage() {
+  if (hydrated || cache) {
+    hydrated = true;
+    return;
+  }
+  hydrated = true;
+  const stored = readStored();
+  if (stored) cache = stored;
+}
 
 export function readDashboardCache<T>(): T | null {
+  hydrateFromStorage();
   return (cache?.data as T | undefined) ?? null;
 }
 
 export function writeDashboardCache(data: unknown) {
   cache = { data, at: Date.now() };
+  persist(cache);
 }
 
 export function clearDashboardCache() {
   cache = null;
   inflight = null;
+  persist(null);
   clearPageCache();
 }
 
@@ -31,6 +71,7 @@ function loadFailed(status: number) {
 }
 
 export async function fetchDashboardSession<T>(force = false): Promise<{ status: number; data: T | null }> {
+  hydrateFromStorage();
   if (!force && cache && Date.now() - cache.at < FRESH_MS) {
     return { status: 200, data: cache.data as T };
   }
@@ -59,8 +100,7 @@ export async function fetchDashboardSession<T>(force = false): Promise<{ status:
         timeoutGuard,
       ]);
       if (response.status === 401) {
-        cache = null;
-        clearPageCache();
+        clearDashboardCache();
         const error = new Error("AUTHENTICATION_REQUIRED") as Error & { status: number };
         error.status = 401;
         throw error;
@@ -89,5 +129,6 @@ export async function fetchDashboardSession<T>(force = false): Promise<{ status:
 }
 
 export function dashboardCacheIsFresh() {
+  hydrateFromStorage();
   return Boolean(cache && Date.now() - cache.at < FRESH_MS);
 }

@@ -163,6 +163,15 @@ export function HomeClient() {
   const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, string>>({});
   const [acceptingInviteId, setAcceptingInviteId] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (data) return;
+    const cached = readDashboardCache<HomeData>();
+    if (!cached) return;
+    setData(cached);
+    setSessionUser(cached.user);
+    setLoading(false);
+  }, [data]);
+
   const load = useCallback(async (force = false) => {
     try {
       setError(false);
@@ -351,7 +360,7 @@ export function HomeClient() {
             </div>
           </header>
         )}
-        <WazenPageLoader label={locale === "ar" ? "جاري التحميل…" : "Loading…"} />
+        <WazenPageLoader compact label={locale === "ar" ? "جاري تحميل محافظك…" : "Loading your wallets…"} />
       </div>
     );
   }

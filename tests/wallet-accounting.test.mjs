@@ -158,6 +158,25 @@ test("trip: Bandar pocket bills, nets, and paid shares match the live wallet", (
   assert.equal(abdul.paidMinor, 13_803);
 });
 
+test("trip: Azerbaijan fund contributions are paid; fund ticket shares are not added on top", () => {
+  const extras = {
+    expenses: [
+      { id: "t1", space_id: "az", paid_from: "common_fund", status: "posted" },
+      { id: "t2", space_id: "az", paid_from: "common_fund", status: "posted" },
+    ],
+    splits: [
+      { expense_id: "t1", member_id: "abdul", share_minor: 52_922 },
+      { expense_id: "t2", member_id: "abdul", share_minor: 165_500 },
+      { expense_id: "t1", member_id: "dawood", share_minor: 52_921 },
+      { expense_id: "t2", member_id: "dawood", share_minor: 165_500 },
+    ],
+  };
+  assert.equal(memberTripPaidMinor("abdul", "az", 200_000, [], extras), 200_000);
+  assert.equal(memberTripPaidMinor("dawood", "az", 200_000, [], extras), 200_000);
+  const pool = memberFundPoolNet(200_000, 218_422);
+  assert.equal(pool.shortfallMinor, 18_422);
+});
+
 test("peer settlement journals never count as society salary or trip income", () => {
   assert.equal(isPeerSettlementTransfer({ description_ar: "مبلغ إضافي · تسوية حصة «مصروف جماعي» إلى علي" }), true);
   assert.equal(isPeerSettlementTransfer({ description_ar: "راتب سبتمبر" }), false);

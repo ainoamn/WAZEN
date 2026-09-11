@@ -245,3 +245,15 @@ test("trip paid column uses each member’s bill share when splits exist", () =>
   assert.equal(memberTripPaidMinor("harith", "trip1", 0, [], extras), 15_200);
   assert.equal(memberTripPaidMinor("abdul", "trip1", 0, [], extras), 0);
 });
+
+test("trip paid stays fund cash when the member already contributed", () => {
+  const extras = {
+    expenses: [{ id: "tickets", space_id: "az", status: "posted" }],
+    splits: [
+      { expense_id: "tickets", member_id: "abdul", share_minor: 218_422 },
+      { expense_id: "tickets", member_id: "dawood", share_minor: 218_421 },
+    ],
+  };
+  assert.equal(memberTripPaidMinor("abdul", "az", 200_000, [], extras), 200_000);
+  assert.equal(memberTripPaidMinor("dawood", "az", 200_000, [], extras), 200_000);
+});

@@ -338,7 +338,7 @@ export function memberTripShareMinor(
   }, 0);
 }
 
-/** Trip «مدفوع»: fund cash plus each member’s bill share (not only outgoing P2P transfers). */
+/** Trip «مدفوع»: cash put in the fund. If nobody contributed, show bill shares (pocket trips like Bandar). */
 export function memberTripPaidMinor(
   memberId: string,
   spaceId: string,
@@ -356,11 +356,13 @@ export function memberTripPaidMinor(
     splits?: Array<{ expense_id?: string; member_id?: string; share_minor?: unknown }>;
   },
 ) {
+  const contributed = asMinor(paidMinor);
+  if (contributed > 0) return contributed;
   const splits = extras?.splits;
-  const share = Array.isArray(splits) && splits.length > 0
-    ? memberTripShareMinor(memberId, spaceId, extras?.expenses ?? [], splits)
-    : memberTripSettlementPaidMinor(memberId, spaceId, settlements);
-  return asMinor(paidMinor) + share;
+  if (Array.isArray(splits) && splits.length > 0) {
+    return memberTripShareMinor(memberId, spaceId, extras?.expenses ?? [], splits);
+  }
+  return memberTripSettlementPaidMinor(memberId, spaceId, settlements);
 }
 
 /**
