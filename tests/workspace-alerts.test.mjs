@@ -27,3 +27,19 @@ test("workspace alerts include plan grace", () => {
   });
   assert.ok(alerts.some((item) => item.id === "plan-grace"));
 });
+
+test("uncollected trip goal is a reminder, not dues-overdue", () => {
+  const alerts = computeWorkspaceAlerts({
+    spaces: [
+      { id: "t1", name_ar: "رحلة", name_en: "Trip", type: "trip", balance_minor: 0 },
+    ],
+    members: [
+      { id: "m1", space_id: "t1", display_name: "ماجد", due_minor: 10_000, paid_minor: 0, status: "active" },
+    ],
+  });
+  assert.equal(alerts.some((item) => item.id === "dues-overdue"), false);
+  const reminder = alerts.find((item) => item.id === "trip-goal-uncollected");
+  assert.ok(reminder);
+  assert.match(reminder.ar, /ماجد/);
+  assert.match(reminder.ar, /10\.000/);
+});

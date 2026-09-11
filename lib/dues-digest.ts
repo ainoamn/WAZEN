@@ -62,8 +62,19 @@ export async function runDuesDigest(db: D1Database, options?: { limitOwners?: nu
     const currency = rows[0]?.currency || "OMR";
     const outstanding = rows.reduce((sum, row) => sum + (Number(row.due_minor) - Number(row.paid_minor)), 0);
     const amountLabel = formatMoneyMinor(outstanding, currency, "ar");
-    const ar = `${count} عضو عليهم مستحقات (مثل: ${sample}${count > 3 ? "…" : ""}) — إجمالي تقريبي ${amountLabel}.`;
-    const en = `${count} member(s) with outstanding dues (e.g. ${sample}${count > 3 ? "…" : ""}) — about ${formatMoneyMinor(outstanding, currency, "en")}.`;
+    const tripCount = rows.filter((row) => row.type === "trip").length;
+    const otherCount = count - tripCount;
+    const extra = count > 3 ? "…" : "";
+    const ar = otherCount === 0
+      ? `هدف الرحلة غير محصّل — على ${sample}${extra} سداد مساهمتهم — إجمالي ${amountLabel}.`
+      : tripCount === 0
+        ? `${count} عضو عليهم مستحقات (مثل: ${sample}${extra}) — إجمالي تقريبي ${amountLabel}.`
+        : `${count} عضو عليهم مبلغ غير محصّل (مثل: ${sample}${extra}) — إجمالي تقريبي ${amountLabel}.`;
+    const en = otherCount === 0
+      ? `Trip goal not collected — ${sample}${extra} still owe their contribution — about ${formatMoneyMinor(outstanding, currency, "en")}.`
+      : tripCount === 0
+        ? `${count} member(s) have outstanding dues (e.g. ${sample}${extra}) — about ${formatMoneyMinor(outstanding, currency, "en")}.`
+        : `${count} member(s) still have an uncollected amount (e.g. ${sample}${extra}) — about ${formatMoneyMinor(outstanding, currency, "en")}.`;
 
     await upsertUserNotifications(db, ownerId, [{
       id: `dues-digest:${day}`,

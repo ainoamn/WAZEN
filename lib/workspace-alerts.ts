@@ -88,17 +88,38 @@ export function computeWorkspaceAlerts(input: {
     }
   }
 
+  const tripIds = new Set(input.spaces.filter((space) => space.type === "trip").map((space) => space.id));
+
   const overdue = input.members.filter((member) => {
     if (member.status && member.status !== "active") return false;
+    if (tripIds.has(member.space_id)) return false;
     return Number(member.due_minor) - Number(member.paid_minor) > 0;
   });
   if (overdue.length > 0) {
-    const sample = overdue.slice(0, 3).map((member) => member.display_name).join(overdue.length > 3 ? "، " : "، ");
+    const sample = overdue.slice(0, 3).map((member) => member.display_name).join("، ");
     alerts.push({
       id: "dues-overdue",
       severity: "warning",
       ar: `${overdue.length} عضو عليهم مستحقات (مثل: ${sample}${overdue.length > 3 ? "…" : ""}).`,
       en: `${overdue.length} member(s) have outstanding dues (e.g. ${sample}${overdue.length > 3 ? "…" : ""}).`,
+    });
+  }
+
+  const tripUncollected = input.members.filter((member) => {
+    if (member.status && member.status !== "active") return false;
+    if (!tripIds.has(member.space_id)) return false;
+    return Number(member.due_minor) - Number(member.paid_minor) > 0;
+  });
+  if (tripUncollected.length > 0) {
+    const sample = tripUncollected.slice(0, 3).map((member) => {
+      const left = Number(member.due_minor) - Number(member.paid_minor);
+      return `${member.display_name} (${(left / 1000).toFixed(3)})`;
+    }).join("، ");
+    alerts.push({
+      id: "trip-goal-uncollected",
+      severity: "warning",
+      ar: `هدف الرحلة غير محصّل — على ${sample}${tripUncollected.length > 3 ? "…" : ""} سداد مساهمتهم.`,
+      en: `Trip goal not collected — ${sample}${tripUncollected.length > 3 ? "…" : ""} still owe their contribution.`,
     });
   }
 

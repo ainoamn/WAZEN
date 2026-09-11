@@ -177,6 +177,14 @@ export async function updateV1Space(
     if (startsAt) {
       statements.push(db.prepare("UPDATE contribution_plans SET starts_at=? WHERE id=?").bind(startsAt, plan.id));
     }
+  } else if (!plan && contributionMinor !== undefined && contributionMinor > 0) {
+    const dur = durationMonths ?? 12;
+    const planStarts = startsAt || createdAt;
+    statements.push(
+      db.prepare(`INSERT INTO contribution_plans (id,space_id,amount_minor,interval,due_day,extra_policy,duration_months,starts_at)
+        VALUES (?, ?, ?, 'monthly', 1, 'personal_reserve', ?, ?)`)
+        .bind(`${space.id}-plan`, space.id, contributionMinor, dur, planStarts),
+    );
   }
 
   statements.push(prepareAudit(db, {

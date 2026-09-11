@@ -457,18 +457,7 @@ export function buildMemberLedger(input: {
   const baseCredit = fundSharesTotal > 0
     ? memberExtraCreditMinor(member, input.transactions)
     : cashCredit;
-  if (input.spaceType === "trip" && remainingDue > 0) {
-    lines.push({
-      at: member.joined_at || new Date().toISOString(),
-      focus: "paid",
-      direction: "info",
-      titleAr: "هدف الرحلة غير المحصّل",
-      titleEn: "Uncollected trip goal",
-      detailAr: "هدف المساهمة للرحلة، وليس ديناً من مصروفات الجيب بعد التسوية",
-      detailEn: "Trip savings target, not a pocket-expense debt after settlements",
-      amountMinor: remainingDue,
-    });
-  }
+  // Trip savings goal stays in the background until collected (contribution lines).
   const debit = (input.spaceType === "trip" ? 0 : remainingDue) + Math.max(0, expenseDebit);
   const credit = baseCredit + Math.max(0, expenseCredit);
   const net = netMemberClaim(debit, credit);

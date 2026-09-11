@@ -1309,6 +1309,14 @@ export async function POST(request: Request) {
         if (contributionMinor !== undefined) statements.push(db.prepare("UPDATE contribution_plans SET amount_minor=? WHERE id=?").bind(contributionMinor, plan.id));
         if (durationMonths) statements.push(db.prepare("UPDATE contribution_plans SET duration_months=? WHERE id=?").bind(durationMonths, plan.id));
         if (startsAt) statements.push(db.prepare("UPDATE contribution_plans SET starts_at=? WHERE id=?").bind(startsAt, plan.id));
+      } else if (!plan && contributionMinor !== undefined && contributionMinor > 0) {
+        const dur = durationMonths ?? 12;
+        const planStarts = startsAt || createdAt;
+        statements.push(
+          db.prepare(`INSERT INTO contribution_plans (id,space_id,amount_minor,interval,due_day,extra_policy,duration_months,starts_at)
+            VALUES (?, ?, ?, 'monthly', 1, 'personal_reserve', ?, ?)`)
+            .bind(`${parsed.data.spaceId}-plan`, parsed.data.spaceId, contributionMinor, dur, planStarts),
+        );
       }
       statements.push(prepareAudit(db, { userId: user.id, action: "wallet.updated", entityType: "space", entityId: parsed.data.spaceId, metadata: { name: parsed.data.name }, createdAt }));
       await db.batch(statements);
