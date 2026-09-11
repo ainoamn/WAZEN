@@ -19,7 +19,7 @@ async function flushWhenOnline() {
   if (typeof navigator !== "undefined" && navigator.onLine === false) return { sent: 0, remaining: readOfflineQueue().length };
   await fetch("/api/auth", { cache: "no-store", credentials: "same-origin" }).catch(() => {});
   const token = csrfToken();
-  const result = await flushOfflineQueue(async (url, init) => {
+  const result = await flushOfflineQueue(async (url, init = {}) => {
     const headers = new Headers(init.headers);
     if (token) headers.set("x-csrf-token", token);
     return fetch(url, { ...init, headers, credentials: "same-origin" });
