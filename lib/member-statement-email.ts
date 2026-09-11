@@ -2,7 +2,7 @@
 
 import { appOrigin } from "./app-origin.ts";
 import { buildMemberLedger } from "./member-ledger.ts";
-import { formatMoneyMinor } from "./money.ts";
+import { formatDebitMoneyMinor, formatMoneyMinor } from "./money.ts";
 import { planHasFeature } from "./plan-features.ts";
 import { getActivePlanEntitlements } from "../services/admin/billing-service.ts";
 import { flushOutboxByIds, isEmailProviderConfigured } from "./email-provider.ts";
@@ -136,7 +136,7 @@ export async function queueMemberStatementEmail(input: {
   });
 
   const money = (minor: number) => formatMoneyMinor(minor, currency, locale);
-  const owesLabel = money(ledger.owesMinor);
+  const owesLabel = formatDebitMoneyMinor(ledger.owesMinor, currency, locale);
   const creditLabel = money(ledger.creditMinor);
   const shareToken = signMemberStatementToken({
     memberId: input.member.id,

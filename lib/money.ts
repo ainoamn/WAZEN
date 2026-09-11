@@ -27,24 +27,34 @@ export function formatMoneyMinor(
 ) {
   const scale = currencyScale(currency);
   const divisor = 10 ** scale;
-  return new Intl.NumberFormat(locale === "ar" ? "ar-OM" : "en-OM", {
+  const amount = Number(minor) || 0;
+  const formatted = new Intl.NumberFormat(locale === "ar" ? "ar-OM" : "en-OM", {
     style: "currency",
     currency,
     minimumFractionDigits: scale,
     maximumFractionDigits: scale,
     notation: options?.compact ? "compact" : "standard",
-  }).format((minor ?? 0) / divisor);
+  }).format(Math.abs(amount) / divisor);
+  return amount < 0 ? `(${formatted})` : formatted;
 }
 
-/** Accounting display: negatives as red-ready parentheses, never a leading minus. */
+/** Signed balances: parentheses when negative, never a leading minus. */
 export function formatSignedMoneyMinor(
   minor: number,
   currency = "OMR",
   locale: "ar" | "en" = "ar",
 ) {
+  return formatMoneyMinor(minor, currency, locale);
+}
+
+/** Debit-side magnitude (spend / owes): parentheses even when stored as a positive. */
+export function formatDebitMoneyMinor(
+  minor: number,
+  currency = "OMR",
+  locale: "ar" | "en" = "ar",
+) {
   const amount = Number(minor) || 0;
-  const abs = formatMoneyMinor(Math.abs(amount), currency, locale);
-  return amount < 0 ? `(${abs})` : abs;
+  return amount === 0 ? formatMoneyMinor(0, currency, locale) : formatMoneyMinor(-Math.abs(amount), currency, locale);
 }
 
 export const DEFAULT_CURRENCY = "OMR";

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import WazenLogo from "../../../components/brand/WazenLogo";
-import { buildCombinedMemberLedgerHtml, memberLedgerAmountClass, memberLedgerTone } from "../../../lib/member-ledger";
+import { buildCombinedMemberLedgerHtml, formatMemberLedgerLineMoney, memberLedgerAmountClass, memberLedgerTone } from "../../../lib/member-ledger";
+import { formatMoneyMinor } from "../../../lib/money";
 import { downloadReportHtml, printWazenHtml } from "../../../lib/print-document";
 
 type MemberLine = {
@@ -244,10 +245,10 @@ export default function StatementShareClient({ token }: { token: string }) {
           <p className="receipt-share-date">{data.subtitle}</p>
 
           <div className="statement-share-kpis">
-            <div><span>{locale === "ar" ? "أول المدة" : "Opening"}</span><strong>{data.openingLabel}</strong></div>
+            <div><span>{locale === "ar" ? "أول المدة" : "Opening"}</span><strong className={data.openingMinor < 0 ? "amount-negative" : ""}>{data.openingLabel}</strong></div>
             <div><span>{locale === "ar" ? "إيداع" : "In"}</span><strong>{data.totalInLabel}</strong></div>
             <div><span>{locale === "ar" ? "سحب" : "Out"}</span><strong>{data.totalOutLabel}</strong></div>
-            <div><span>{locale === "ar" ? "آخر المدة" : "Closing"}</span><strong>{data.closingLabel}</strong></div>
+            <div><span>{locale === "ar" ? "آخر المدة" : "Closing"}</span><strong className={data.closingMinor < 0 ? "amount-negative" : ""}>{data.closingLabel}</strong></div>
           </div>
 
           <dl className="statement-share-meta">
@@ -260,12 +261,7 @@ export default function StatementShareClient({ token }: { token: string }) {
             <h2>{locale === "ar" ? "الحركات" : "Movements"}</h2>
             {data.lines.length ? data.lines.map((line, index) => {
               const amountMinor = line.depositMinor || -line.withdrawMinor;
-              const amount = new Intl.NumberFormat(locale === "ar" ? "ar-OM" : "en-OM", {
-                style: "currency",
-                currency: data.currency || "OMR",
-                minimumFractionDigits: 3,
-                maximumFractionDigits: 3,
-              }).format(amountMinor / 1000);
+              const amount = formatMoneyMinor(amountMinor, data.currency || "OMR", locale);
               return (
                 <article key={`${line.ref}:${index}`} className={`statement-share-line is-${line.depositMinor > 0 ? "in" : line.withdrawMinor > 0 ? "out" : "info"}`}>
                   <header>
@@ -307,10 +303,10 @@ export default function StatementShareClient({ token }: { token: string }) {
           <p className="receipt-share-date">{data.memberName} · {data.focusLabel}</p>
 
           <div className="statement-share-kpis">
-            <div><span>{locale === "ar" ? "المدفوع" : "Paid"}</span><strong>{data.paidLabel}</strong></div>
-            <div><span>{locale === "ar" ? "الصرف" : "Spent"}</span><strong>{data.spentLabel}</strong></div>
-            <div><span>{locale === "ar" ? "عليه" : "Owes"}</span><strong>{data.owesLabel}</strong></div>
-            <div><span>{locale === "ar" ? "له" : "Credit"}</span><strong>{data.creditLabel}</strong></div>
+            <div><span>{locale === "ar" ? "المدفوع" : "Paid"}</span><strong className="amount-positive">{data.paidLabel}</strong></div>
+            <div><span>{locale === "ar" ? "الصرف" : "Spent"}</span><strong className={data.spentMinor ? "amount-negative" : ""}>{data.spentLabel}</strong></div>
+            <div><span>{locale === "ar" ? "عليه" : "Owes"}</span><strong className={data.owesMinor ? "amount-negative" : ""}>{data.owesLabel}</strong></div>
+            <div><span>{locale === "ar" ? "له" : "Credit"}</span><strong className={data.creditMinor ? "amount-positive" : ""}>{data.creditLabel}</strong></div>
           </div>
 
           <dl className="statement-share-meta">
@@ -344,10 +340,10 @@ export default function StatementShareClient({ token }: { token: string }) {
                     </thead>
                     <tbody>
                       <tr>
-                        <td>{section.paidLabel}</td>
-                        <td>{section.spentLabel}</td>
-                        <td>{section.owesLabel}</td>
-                        <td>{section.creditLabel}</td>
+                        <td className="amount-positive">{section.paidLabel}</td>
+                        <td className={section.spentMinor ? "amount-negative" : ""}>{section.spentLabel}</td>
+                        <td className={section.owesMinor ? "amount-negative" : ""}>{section.owesLabel}</td>
+                        <td className={section.creditMinor ? "amount-positive" : ""}>{section.creditLabel}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -365,12 +361,7 @@ export default function StatementShareClient({ token }: { token: string }) {
                       </thead>
                       <tbody>
                         {section.lines.map((line, index) => {
-                          const amount = new Intl.NumberFormat(locale === "ar" ? "ar-OM" : "en-OM", {
-                            style: "currency",
-                            currency: section.currency || data.currency || "OMR",
-                            minimumFractionDigits: 3,
-                            maximumFractionDigits: 3,
-                          }).format((line.amountMinor || 0) / 1000);
+                          const amount = formatMemberLedgerLineMoney(line, section.currency || data.currency || "OMR", locale);
                           const tone = memberLedgerTone(line);
                           return (
                             <tr key={`${section.walletName}:${line.at}:${index}`} className={`is-${tone}`}>

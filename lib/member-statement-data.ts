@@ -1,7 +1,7 @@
 /** Shared member-statement ledger load so WhatsApp, print, and /s links use the same numbers. */
 
 import { buildMemberLedger, filterMemberLedgerLines, type MemberLedgerFocus } from "./member-ledger.ts";
-import { formatMoneyMinor } from "./money.ts";
+import { formatDebitMoneyMinor, formatMoneyMinor } from "./money.ts";
 
 export type StatementMemberRow = {
   id: string;
@@ -112,21 +112,24 @@ export async function loadMemberStatementSection(
     expenseSplits: (expenseSplits.results ?? []) as never[],
     spaceType: space.type,
   });
-  const money = (minor: number) => formatMoneyMinor(minor, space.currency || "OMR", locale);
+  const currency = space.currency || "OMR";
+  const money = (minor: number) => formatMoneyMinor(minor, currency, locale);
+  const debit = (minor: number) => formatDebitMoneyMinor(minor, currency, locale);
   const lines = filterMemberLedgerLines(ledger.lines, focus);
+  const spentMinor = ledger.spentMinor || ledger.addonMinor;
   return {
     member,
     space,
     ledger,
     lines,
     walletName: locale === "ar" ? space.name_ar : space.name_en,
-    currency: space.currency || "OMR",
+    currency,
     paidLabel: money(ledger.paidMinor),
-    spentLabel: money(ledger.addonMinor),
-    owesLabel: money(ledger.owesMinor),
+    spentLabel: debit(spentMinor),
+    owesLabel: debit(ledger.owesMinor),
     creditLabel: money(ledger.creditMinor),
     paidMinor: ledger.paidMinor,
-    spentMinor: ledger.addonMinor,
+    spentMinor,
     owesMinor: ledger.owesMinor,
     creditMinor: ledger.creditMinor,
   };

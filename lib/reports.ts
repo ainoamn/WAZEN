@@ -1,5 +1,6 @@
 /** Branded printable financial reports for Wazen wallets / associations. */
 
+import { formatDebitMoneyMinor, formatMoneyMinor } from "./money.ts";
 import { wrapPrintDocument } from "./print-document.ts";
 
 export { downloadReportHtml, openReportPreview, resolvePrintLogoUrl, printWazenHtml, shareWazenPdfWithText, buildReceiptBodyHtml, buildReceiptQrDataUrl, wrapPrintDocument } from "./print-document.ts";
@@ -123,13 +124,11 @@ function txnName(txn: ReportTransaction, locale: ReportLocale) {
 }
 
 function money(minor: number, currency: string, locale: ReportLocale) {
-  const scale = ["OMR", "BHD", "IQD", "JOD", "KWD", "LYD", "TND"].includes(currency.toUpperCase()) ? 3 : 2;
-  return new Intl.NumberFormat(locale === "ar" ? "ar-OM" : "en-OM", {
-    style: "currency",
-    currency: currency || "OMR",
-    minimumFractionDigits: scale,
-    maximumFractionDigits: scale,
-  }).format((minor || 0) / 10 ** scale);
+  return formatMoneyMinor(minor, currency || "OMR", locale);
+}
+
+function debit(minor: number, currency: string, locale: ReportLocale) {
+  return formatDebitMoneyMinor(minor, currency || "OMR", locale);
 }
 
 function escapeHtml(value: string) {
@@ -212,7 +211,7 @@ function buildSections(input: ReportInput): { subtitle: string; kpis: { label: s
     return [
       member.display_name,
       money(member.paid_minor, currency, locale),
-      money(m.remaining, currency, locale),
+      debit(m.remaining, currency, locale),
       money(m.credit, currency, locale),
       `${m.rate}%`,
       m.grade,
@@ -227,7 +226,7 @@ function buildSections(input: ReportInput): { subtitle: string; kpis: { label: s
           { label: t(locale, "رصيد الصندوق", "Fund balance"), value: money(balanceTotal, currency, locale) },
           { label: t(locale, "الأعضاء", "Members"), value: String(members.length) },
           { label: t(locale, "نسبة التحصيل", "Collection rate"), value: `${collectionRate}%` },
-          { label: t(locale, "المتأخرات", "Arrears"), value: money(arrearsTotal, currency, locale) },
+          { label: t(locale, "المتأخرات", "Arrears"), value: debit(arrearsTotal, currency, locale) },
         ],
         sections: [
           {
@@ -254,7 +253,7 @@ function buildSections(input: ReportInput): { subtitle: string; kpis: { label: s
           { label: t(locale, "الاشتراك المدفوع", "Subscription paid"), value: money(subscriptionPaid || (member?.paid_minor ?? 0), currency, locale) },
           { label: t(locale, "مبالغ إضافية دُفعت", "Extra amounts paid"), value: money(extraPaid, currency, locale) },
           { label: t(locale, "مبالغ إضافية استُردت", "Extra amounts recovered"), value: money(extraIn, currency, locale) },
-          { label: t(locale, "عليه / له", "Owes / credit"), value: `${money(m.remaining, currency, locale)} / ${money(m.credit, currency, locale)}` },
+          { label: t(locale, "عليه / له", "Owes / credit"), value: `${debit(m.remaining, currency, locale)} / ${money(m.credit, currency, locale)}` },
         ],
         sections: [
           {
@@ -311,7 +310,7 @@ function buildSections(input: ReportInput): { subtitle: string; kpis: { label: s
               [t(locale, "عدد الأعضاء", "Members"), String(members.length)],
               [t(locale, "المستحق الكلي", "Total due"), money(dueTotal, currency, locale)],
               [t(locale, "المدفوع نحو المستحق", "Paid toward due"), money(paidTotal, currency, locale)],
-              [t(locale, "المتأخرات", "Arrears"), money(arrearsTotal, currency, locale)],
+              [t(locale, "المتأخرات", "Arrears"), debit(arrearsTotal, currency, locale)],
               [t(locale, "الفوائض الشخصية", "Personal reserves"), money(reserveTotal, currency, locale)],
               [t(locale, "المقدمات", "Advances"), money(advanceTotal, currency, locale)],
             ],
@@ -343,7 +342,7 @@ function buildSections(input: ReportInput): { subtitle: string; kpis: { label: s
         subtitle: t(locale, "تقرير التأخير / المتأخرات", "Delay / arrears report"),
         kpis: [
           { label: t(locale, "عدد المتأخرين", "Late members"), value: String(delayed.length) },
-          { label: t(locale, "إجمالي المتأخرات", "Total arrears"), value: money(arrearsTotal, currency, locale) },
+          { label: t(locale, "إجمالي المتأخرات", "Total arrears"), value: debit(arrearsTotal, currency, locale) },
         ],
         sections: [{
           title: t(locale, "قائمة المتأخرات", "Arrears list"),
@@ -353,7 +352,7 @@ function buildSections(input: ReportInput): { subtitle: string; kpis: { label: s
               row.member.display_name,
               money(row.member.due_minor, currency, locale),
               money(row.member.paid_minor, currency, locale),
-              money(row.remaining, currency, locale),
+              debit(row.remaining, currency, locale),
               `${row.rate}%`,
             ]),
           ],
@@ -458,7 +457,7 @@ function buildSections(input: ReportInput): { subtitle: string; kpis: { label: s
       return {
         subtitle: t(locale, "تقرير الالتزامات (له / عليه)", "Obligations (owed / owes)"),
         kpis: [
-          { label: t(locale, "إجمالي عليه", "Total owes"), value: money(arrearsTotal, currency, locale) },
+          { label: t(locale, "إجمالي عليه", "Total owes"), value: debit(arrearsTotal, currency, locale) },
           { label: t(locale, "إجمالي له", "Total credit"), value: money(reserveTotal + advanceTotal, currency, locale) },
         ],
         sections: [{

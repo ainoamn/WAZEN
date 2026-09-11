@@ -17,7 +17,7 @@ import {
   memberTripShareMinor,
   netMemberClaim,
 } from "./finance.ts";
-import { formatMoneyMinor } from "./money.ts";
+import { formatDebitMoneyMinor, formatMoneyMinor } from "./money.ts";
 import { wrapPrintDocument } from "./print-document.ts";
 
 export type MemberLedgerFocus = "all" | "paid" | "spent" | "owes" | "credit";
@@ -505,8 +505,28 @@ export function memberLedgerAmountClass(line: Pick<MemberLedgerLine, "focus" | "
 export function memberLedgerPrintAmountClass(line: Pick<MemberLedgerLine, "focus" | "direction">) {
   const tone = memberLedgerTone(line);
   if (tone === "paid" || tone === "credit") return "in";
-  if (tone === "spend" || tone === "owes") return "out";
+  if (tone === "spend" || tone === "owes") return "out neg";
   return "";
+}
+
+export function formatMemberLedgerMoney(
+  minor: number,
+  currency: string,
+  locale: MemberLedgerLocale,
+  tone?: MemberLedgerTone | MemberLedgerFocus,
+) {
+  if (tone === "spend" || tone === "spent" || tone === "owes") {
+    return formatDebitMoneyMinor(minor, currency, locale);
+  }
+  return formatMoneyMinor(minor, currency, locale);
+}
+
+export function formatMemberLedgerLineMoney(
+  line: Pick<MemberLedgerLine, "focus" | "direction" | "amountMinor">,
+  currency: string,
+  locale: MemberLedgerLocale,
+) {
+  return formatMemberLedgerMoney(line.amountMinor, currency, locale, memberLedgerTone(line));
 }
 
 function ledgerTypeLabel(locale: MemberLedgerLocale, focus: MemberLedgerLine["focus"]) {
@@ -520,9 +540,10 @@ function ledgerTypeLabel(locale: MemberLedgerLocale, focus: MemberLedgerLine["fo
 
 function statementTotalsTable(
   locale: MemberLedgerLocale,
-  money: (minor: number) => string,
+  currency: string,
   ledger: { paidMinor: number; spentMinor?: number; addonMinor: number; owesMinor: number; creditMinor: number },
 ) {
+  const spentMinor = ledger.spentMinor ?? ledger.addonMinor;
   return `<div class="statement-table-wrap">
     <table class="statement-totals">
       <thead>
@@ -535,10 +556,10 @@ function statementTotalsTable(
       </thead>
       <tbody>
         <tr>
-          <td class="num in">${escapeHtml(money(ledger.paidMinor))}</td>
-          <td class="num">${escapeHtml(money(ledger.spentMinor ?? ledger.addonMinor))}</td>
-          <td class="num out">${escapeHtml(money(ledger.owesMinor))}</td>
-          <td class="num in">${escapeHtml(money(ledger.creditMinor))}</td>
+          <td class="num in">${escapeHtml(formatMemberLedgerMoney(ledger.paidMinor, currency, locale, "paid"))}</td>
+          <td class="num${spentMinor ? " out neg" : ""}">${escapeHtml(formatMemberLedgerMoney(spentMinor, currency, locale, "spend"))}</td>
+          <td class="num${ledger.owesMinor ? " out neg" : ""}">${escapeHtml(formatMemberLedgerMoney(ledger.owesMinor, currency, locale, "owes"))}</td>
+          <td class="num in">${escapeHtml(formatMemberLedgerMoney(ledger.creditMinor, currency, locale, "credit"))}</td>
         </tr>
       </tbody>
     </table>
@@ -547,7 +568,7 @@ function statementTotalsTable(
 
 function statementMovementsTable(
   locale: MemberLedgerLocale,
-  money: (minor: number) => string,
+  currency: string,
   rows: MemberLedgerLine[],
 ) {
   if (!rows.length) {
@@ -566,7 +587,7 @@ function statementMovementsTable(
       <td class="col-date">${escapeHtml(when)}</td>
       <td><strong>${escapeHtml(titleText)}${badge}</strong>${detail ? `<small>${escapeHtml(detail)}</small>` : ""}</td>
       <td>${escapeHtml(ledgerTypeLabel(locale, line.focus))}</td>
-      <td class="num ${cls}">${escapeHtml(money(line.amountMinor))}</td>
+      <td class="num ${cls}">${escapeHtml(formatMemberLedgerLineMoney(line, currency, locale))}</td>
     </tr>`;
   }).join("");
   return `<div class="statement-table-wrap">
@@ -601,7 +622,6 @@ function statementAssociationHtml(input: {
   };
 }) {
   const locale = input.locale;
-  const money = (minor: number) => formatMoneyMinor(minor, input.currency, locale);
   const rows = filterMemberLedgerLines(input.ledger.lines, input.focus);
   const heading = input.index
     ? `${input.index}. ${input.spaceName}`
@@ -617,9 +637,9 @@ function statementAssociationHtml(input: {
         joined ? text(locale, "الانضمام", "Joined") + ": " + joined : "",
       ].filter(Boolean).join(" · "))}</p>
     </header>
-    ${statementTotalsTable(locale, money, input.ledger)}
+    ${statementTotalsTable(locale, input.currency, input.ledger)}
     <h3>${escapeHtml(text(locale, "تفاصيل الحركات", "Movement detail"))}</h3>
-    ${statementMovementsTable(locale, money, rows)}
+    ${statementMovementsTable(locale, input.currency, rows)}
   </section>`;
 }
 
@@ -644,7 +664,7 @@ export function buildMemberLedgerHtml(input: {
   };
 }) {
   const locale = input.locale;
-  const money = (minor: number) => formatMoneyMinor(minor, input.currency, locale);
+  const money = (minor: number, tone?: MemberLedgerTone | MemberLedgerFocus) => formatMemberLedgerMoney(minor, input.currency, locale, tone);
   const focusTitle: Record<MemberLedgerFocus, [string, string]> = {
     all: ["كشف العضو التفصيلي", "Member detailed statement"],
     paid: ["تفاصيل المدفوع", "Paid breakdown"],
@@ -679,10 +699,10 @@ export function buildMemberLedgerHtml(input: {
       { label: text(locale, "تاريخ الإصدار", "Issued at"), value: new Date().toLocaleString(locale === "ar" ? "ar-OM" : "en-GB") },
     ],
     kpis: [
-      { label: text(locale, "المدفوع", "Paid"), value: money(input.ledger.paidMinor) },
-      { label: text(locale, "إضافي / صرف", "Extra / spent"), value: money(input.ledger.addonMinor) },
-      { label: text(locale, "عليه", "Owes"), value: money(input.ledger.owesMinor) },
-      { label: text(locale, "له", "Credit"), value: money(input.ledger.creditMinor) },
+      { label: text(locale, "المدفوع", "Paid"), value: money(input.ledger.paidMinor, "paid") },
+      { label: text(locale, "إضافي / صرف", "Extra / spent"), value: money(input.ledger.spentMinor ?? input.ledger.addonMinor, "spend"), tone: (input.ledger.spentMinor ?? input.ledger.addonMinor) > 0 ? "neg" : undefined },
+      { label: text(locale, "عليه", "Owes"), value: money(input.ledger.owesMinor, "owes"), tone: input.ledger.owesMinor > 0 ? "neg" : undefined },
+      { label: text(locale, "له", "Credit"), value: money(input.ledger.creditMinor, "credit") },
     ],
     bodyHtml,
   });
@@ -726,13 +746,13 @@ export function buildCombinedMemberLedgerHtml(input: {
       ledger: input.sections[0].ledger,
     });
   }
-  const money = (minor: number, currency: string) => formatMoneyMinor(minor, currency, locale);
+  const money = (minor: number, currency: string, tone?: MemberLedgerTone | MemberLedgerFocus) => formatMemberLedgerMoney(minor, currency, locale, tone);
   const title = text(locale, "كشف كامل لكل الجمعيات", "Full statement for every association");
   const indexRows = input.sections.map((section, index) => `<tr>
     <td>${index + 1}. ${escapeHtml(section.spaceName)}</td>
-    <td class="num in">${escapeHtml(money(section.ledger.paidMinor, section.currency))}</td>
-    <td class="num out">${escapeHtml(money(section.ledger.owesMinor, section.currency))}</td>
-    <td class="num in">${escapeHtml(money(section.ledger.creditMinor, section.currency))}</td>
+    <td class="num in">${escapeHtml(money(section.ledger.paidMinor, section.currency, "paid"))}</td>
+    <td class="num${section.ledger.owesMinor ? " out neg" : ""}">${escapeHtml(money(section.ledger.owesMinor, section.currency, "owes"))}</td>
+    <td class="num in">${escapeHtml(money(section.ledger.creditMinor, section.currency, "credit"))}</td>
   </tr>`).join("");
   const indexHtml = `<section class="statement-index">
     <h2>${escapeHtml(text(locale, "ملخص الجمعيات", "Association summary"))}</h2>
@@ -762,7 +782,7 @@ export function buildCombinedMemberLedgerHtml(input: {
   const sameCurrency = input.sections.every((item) => item.currency === input.sections[0]?.currency);
   const currency = input.sections[0]?.currency ?? "OMR";
   const paid = input.sections.reduce((sum, item) => sum + item.ledger.paidMinor, 0);
-  const spent = input.sections.reduce((sum, item) => sum + item.ledger.addonMinor, 0);
+  const spent = input.sections.reduce((sum, item) => sum + (item.ledger.spentMinor ?? item.ledger.addonMinor), 0);
   const owes = input.sections.reduce((sum, item) => sum + item.ledger.owesMinor, 0);
   const credit = input.sections.reduce((sum, item) => sum + item.ledger.creditMinor, 0);
   return wrapPrintDocument({
@@ -782,14 +802,15 @@ export function buildCombinedMemberLedgerHtml(input: {
     ],
     kpis: sameCurrency
       ? [
-          { label: text(locale, "المدفوع", "Paid"), value: money(paid, currency) },
-          { label: text(locale, "إضافي / صرف", "Extra / spent"), value: money(spent, currency) },
-          { label: text(locale, "عليه", "Owes"), value: money(owes, currency) },
-          { label: text(locale, "له", "Credit"), value: money(credit, currency) },
+          { label: text(locale, "المدفوع", "Paid"), value: money(paid, currency, "paid") },
+          { label: text(locale, "إضافي / صرف", "Extra / spent"), value: money(spent, currency, "spend"), tone: spent > 0 ? "neg" : undefined },
+          { label: text(locale, "عليه", "Owes"), value: money(owes, currency, "owes"), tone: owes > 0 ? "neg" : undefined },
+          { label: text(locale, "له", "Credit"), value: money(credit, currency, "credit") },
         ]
       : input.sections.map((section) => ({
           label: section.spaceName,
-          value: money(section.ledger.owesMinor, section.currency),
+          value: money(section.ledger.owesMinor, section.currency, "owes"),
+          tone: section.ledger.owesMinor > 0 ? "neg" as const : undefined,
         })),
     bodyHtml,
   });

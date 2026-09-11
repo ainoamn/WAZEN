@@ -1,7 +1,8 @@
 /** Pure helpers for member statement email content (no DB / billing). */
 
 import { buildMemberLedger, filterMemberLedgerLines } from "./member-ledger.ts";
-import { formatMoneyMinor } from "./money.ts";
+import { formatDebitMoneyMinor, formatMoneyMinor } from "./money.ts";
+import { formatMemberLedgerLineMoney } from "./member-ledger.ts";
 
 const GROUP_SPACE_TYPES = new Set(["household", "trip", "society", "group"]);
 
@@ -25,17 +26,18 @@ export function buildStatementSummaryHtml(input: {
 }) {
   const locale = input.locale;
   const money = (minor: number) => formatMoneyMinor(minor, input.currency, locale);
+  const debit = (minor: number) => formatDebitMoneyMinor(minor, input.currency, locale);
   const lines = filterMemberLedgerLines(input.ledger.lines, "all");
   const recent = lines.slice(-(input.maxLines ?? 18));
   const totals = locale === "ar"
     ? `<p style="margin:0 0 10px;font-size:14px;line-height:1.7;color:#24443c;">
         <strong>المدفوع:</strong> ${money(input.ledger.paidMinor)} ·
-        <strong>عليه:</strong> ${money(input.ledger.owesMinor)} ·
+        <strong>عليه:</strong> <span style="color:#b42318">${debit(input.ledger.owesMinor)}</span> ·
         <strong>له:</strong> ${money(input.ledger.creditMinor)}
       </p>`
     : `<p style="margin:0 0 10px;font-size:14px;line-height:1.7;color:#24443c;">
         <strong>Paid:</strong> ${money(input.ledger.paidMinor)} ·
-        <strong>Owes:</strong> ${money(input.ledger.owesMinor)} ·
+        <strong>Owes:</strong> <span style="color:#b42318">${debit(input.ledger.owesMinor)}</span> ·
         <strong>Credit:</strong> ${money(input.ledger.creditMinor)}
       </p>`;
 
@@ -52,13 +54,14 @@ export function buildStatementSummaryHtml(input: {
   const rows = recent.map((line) => {
     const date = new Date(line.at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB", { day: "numeric", month: "short" });
     const title = locale === "ar" ? line.titleAr : line.titleEn;
-    const sign = line.direction === "in" ? "+" : line.direction === "out" ? "−" : "";
+    const amount = formatMemberLedgerLineMoney(line, input.currency, locale);
+    const tone = line.focus === "owes" || line.focus === "spent" || line.direction === "out" ? "#b42318" : "#24443c";
     const align = locale === "ar" ? "right" : "left";
     const amountAlign = locale === "ar" ? "left" : "right";
     return `<tr>
       <td style="padding:7px 10px;border-top:1px solid #e3ece8;font-size:12px;white-space:nowrap;text-align:${align};">${escapeHtml(date)}</td>
       <td style="padding:7px 10px;border-top:1px solid #e3ece8;font-size:12px;text-align:${align};">${escapeHtml(title)}</td>
-      <td style="padding:7px 10px;border-top:1px solid #e3ece8;font-size:12px;white-space:nowrap;text-align:${amountAlign};">${sign}${money(line.amountMinor)}</td>
+      <td style="padding:7px 10px;border-top:1px solid #e3ece8;font-size:12px;white-space:nowrap;text-align:${amountAlign};color:${tone};">${escapeHtml(amount)}</td>
     </tr>`;
   }).join("");
 

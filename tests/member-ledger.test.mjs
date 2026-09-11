@@ -333,4 +333,18 @@ test("Azerbaijan trip file matches the members table: paid 200, pocket 0, owes 1
   assert.equal(paidLines.reduce((sum, line) => sum + line.amountMinor, 0), 200_000);
   const spentLines = filterMemberLedgerLines(ledger.lines, "spent");
   assert.equal(spentLines.reduce((sum, line) => sum + line.amountMinor, 0), 218_422);
+  const html = buildMemberLedgerHtml({
+    locale: "ar",
+    logoUrl: "/brand/wazen-lockup.png",
+    issuerName: "أمين",
+    memberName: "ABDUL HAMID",
+    spaceName: "اذربيجان و جورجيا",
+    currency: "OMR",
+    focus: "all",
+    ledger,
+  });
+  assert.match(html, /is-neg/);
+  assert.match(html, /class="num out neg"/);
+  assert.match(html, /\(/);
+  assert.doesNotMatch(html, /عليه[\s\S]*?؜-/);
 });

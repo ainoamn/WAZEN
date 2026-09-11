@@ -251,7 +251,7 @@ export function ReportsPanel({
       <section className="stat-grid compact">
         <article className="stat-card"><div className="stat-icon green"><TrendingUp size={18} /></div><div className="stat-copy"><span>{locale === "ar" ? "الدخل" : "Income"}</span><strong>{money(income, "OMR", locale)}</strong><small>{locale === "ar" ? "إجمالي مسجل" : "recorded total"}</small></div></article>
         <article className="stat-card"><div className="stat-icon rose"><TrendingDown size={18} /></div><div className="stat-copy"><span>{locale === "ar" ? "المصروف" : "Expense"}</span><strong>{money(totals.spend, "OMR", locale)}</strong><small>{locale === "ar" ? "إجمالي مسجل" : "recorded total"}</small></div></article>
-        <article className="stat-card"><div className="stat-icon navy"><WalletCards size={18} /></div><div className="stat-copy"><span>{locale === "ar" ? "صافي الرصيد" : "Net balance"}</span><strong>{money(totals.net, "OMR", locale)}</strong><small>{locale === "ar" ? "عبر كل المحافظ" : "across wallets"}</small></div></article>
+        <article className="stat-card"><div className="stat-icon navy"><WalletCards size={18} /></div><div className="stat-copy"><span>{locale === "ar" ? "صافي الرصيد" : "Net balance"}</span><strong className={totals.net < 0 ? "amount-negative" : ""}>{money(totals.net, "OMR", locale)}</strong><small>{locale === "ar" ? "عبر كل المحافظ" : "across wallets"}</small></div></article>
         <article className="stat-card"><div className="stat-icon amber"><ShieldCheck size={18} /></div><div className="stat-copy"><span>{locale === "ar" ? "فوائض شخصية" : "Reserves"}</span><strong>{money(totals.reserves ?? 0, "OMR", locale)}</strong><small>{locale === "ar" ? "محمي" : "protected"}</small></div></article>
       </section>
 

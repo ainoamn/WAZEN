@@ -455,7 +455,7 @@ export function HomeClient() {
           <article className="tone-teal">
             <WalletCards size={18} />
             <span>{locale === "ar" ? "المتوفر" : "Available"}</span>
-            <strong>{money(stats.available, stats.currency, locale)}</strong>
+            <strong className={stats.available < 0 ? "amount-negative" : ""}>{money(stats.available, stats.currency, locale)}</strong>
           </article>
           <article className="tone-rose">
             <TrendingDown size={18} />

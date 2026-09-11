@@ -7,7 +7,7 @@ import {
 import type { MemberLedgerFocus } from "../../../../lib/member-ledger";
 import { loadMemberStatementSection } from "../../../../lib/member-statement-data";
 import { buildAccountStatementModel, type StatementTxnFilter } from "../../../../lib/account-statement";
-import { formatMoneyMinor } from "../../../../lib/money";
+import { formatDebitMoneyMinor, formatMoneyMinor } from "../../../../lib/money";
 
 export const runtime = "nodejs";
 
@@ -38,6 +38,7 @@ async function memberStatementJson(payload: MemberStatementSharePayload) {
   const owesMinor = sections.reduce((sum, item) => sum + item.owesMinor, 0);
   const creditMinor = sections.reduce((sum, item) => sum + item.creditMinor, 0);
   const money = (minor: number) => formatMoneyMinor(minor, first.currency, locale);
+  const debit = (minor: number) => formatDebitMoneyMinor(minor, first.currency, locale);
   return {
     kind: "member_statement" as const,
     combined,
@@ -54,8 +55,8 @@ async function memberStatementJson(payload: MemberStatementSharePayload) {
     joinedAt: first.member.joined_at,
     currency: first.currency,
     paidLabel: sameCurrency ? money(paidMinor) : first.paidLabel,
-    spentLabel: sameCurrency ? money(spentMinor) : first.spentLabel,
-    owesLabel: sameCurrency ? money(owesMinor) : first.owesLabel,
+    spentLabel: sameCurrency ? debit(spentMinor) : first.spentLabel,
+    owesLabel: sameCurrency ? debit(owesMinor) : first.owesLabel,
     creditLabel: sameCurrency ? money(creditMinor) : first.creditLabel,
     paidMinor: sameCurrency ? paidMinor : first.paidMinor,
     spentMinor: sameCurrency ? spentMinor : first.spentMinor,

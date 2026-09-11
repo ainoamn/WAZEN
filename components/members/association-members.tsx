@@ -6,7 +6,7 @@ import OmrSymbol from "../brand/OmrSymbol";
 import { apiFetch } from "../../lib/client-api";
 import { toWhatsAppNumber, digitsOnly } from "../../lib/phone";
 import { isMemberContactTakenError, memberContactConflictMessage, memberContactTakenField } from "../../lib/member-contact-unique";
-import { buildMemberLedger, buildCombinedMemberLedgerHtml, filterMemberLedgerLines, memberLedgerAmountClass, memberLedgerTone, type MemberLedgerFocus } from "../../lib/member-ledger";
+import { buildMemberLedger, buildCombinedMemberLedgerHtml, filterMemberLedgerLines, formatMemberLedgerLineMoney, formatMemberLedgerMoney, memberLedgerAmountClass, memberLedgerTone, type MemberLedgerFocus } from "../../lib/member-ledger";
 import { printWazenHtml } from "../../lib/print-document";
 import { consumePlanQuota } from "../../lib/plan-quota-client";
 import {
@@ -524,7 +524,7 @@ function MemberLedgerBody({
         {tabs.map((item) => (
           <button type="button" key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>
             {locale === "ar" ? item.ar : item.en}
-            {item.id !== "all" ? <small>{money(item.amount, space.currency, locale)}</small> : null}
+            {item.id !== "all" ? <small className={item.id === "spent" || item.id === "owes" ? "amount-negative" : item.id === "paid" || item.id === "credit" ? "amount-positive" : ""}>{formatMemberLedgerMoney(item.amount, space.currency, locale, item.id)}</small> : null}
           </button>
         ))}
       </div>
@@ -555,7 +555,7 @@ function MemberLedgerBody({
               {tone === "paid" ? <em className="ledger-kind-badge">{locale === "ar" ? "دفع" : "Paid"}</em> : null}
             </strong>
             <span className="muted-amount">{locale === "ar" ? line.detailAr : line.detailEn}</span>
-            <strong className={memberLedgerAmountClass(line)}>{money(line.amountMinor, space.currency, locale)}</strong>
+            <strong className={memberLedgerAmountClass(line)}>{formatMemberLedgerLineMoney(line, space.currency, locale)}</strong>
           </div>
           );
         })}

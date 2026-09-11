@@ -2337,7 +2337,7 @@ function TransactionRow({ transaction, data, locale, onEdit, onVoid }: { transac
       <strong>{transactionName(transaction, locale)}{edited ? <em className="txn-edited-badge">{locale === "ar" ? "معدّلة" : "Edited"}</em> : null}</strong>
       <span>{space ? nameOf(space, locale) : "—"}{member ? ` · ${member.display_name}` : ""} · {new Intl.DateTimeFormat(locale === "ar" ? "ar-OM" : "en-GB", { day: "numeric", month: "short" }).format(new Date(transaction.occurred_at))} · {transactionStatusLabel(transaction.status, locale)}{edited && transaction.edit_count ? (locale === "ar" ? ` · ${transaction.edit_count} تعديل` : ` · ${transaction.edit_count} edit${Number(transaction.edit_count) === 1 ? "" : "s"}`) : ""}{locked ? (locale === "ar" ? " · الفترة مغلقة" : " · period closed") : ""}</span>
     </div>
-    <strong className={positive ? "amount-positive" : "amount-negative"}>{positive ? "+" : "−"}{formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale)}</strong>
+    <strong className={positive ? "amount-positive" : "amount-negative"}>{positive ? `+${formatMoney(transaction.amount_minor, space?.currency ?? "OMR", locale)}` : formatMoney(-Math.abs(transaction.amount_minor), space?.currency ?? "OMR", locale)}</strong>
     <div className="transaction-actions">
       <button type="button" title={locale === "ar" ? "إيصال" : "Receipt"} onClick={() => openTransactionReceipt(transaction, data, locale)}><Printer size={15} /></button>
       {isGroupSpace && (
@@ -2853,7 +2853,7 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
               <button type="button" className="amount-hit" onClick={() => open("spent")}><strong>{formatMoney(extraMinor, currency, locale)}</strong></button>
               <button type="button" className={`amount-hit ${debit ? "amount-negative" : "muted-amount"}`} onClick={() => open("owes")}>
                 <span className="claim-stack">
-                  <span>{formatMoney(debit, currency, locale)}</span>
+                  <span>{formatMoney(debit ? -Math.abs(debit) : 0, currency, locale)}</span>
                   {pos.reservedMinor > 0 && <small>{locale === "ar" ? `بعد حجز ${formatMoney(pos.reservedMinor, currency, locale)}` : `after ${formatMoney(pos.reservedMinor, currency, locale)} reserved`}</small>}
                 </span>
               </button>
