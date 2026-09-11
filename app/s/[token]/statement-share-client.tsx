@@ -324,6 +324,10 @@ export default function StatementShareClient({ token }: { token: string }) {
               spentLabel: data.spentLabel,
               owesLabel: data.owesLabel,
               creditLabel: data.creditLabel,
+              paidMinor: data.paidMinor,
+              spentMinor: data.spentMinor,
+              owesMinor: data.owesMinor,
+              creditMinor: data.creditMinor,
               lines: data.lines,
             }]).map((section, sectionIndex) => (
               <div key={`${section.walletName}:${sectionIndex}`} className="statement-share-association">
