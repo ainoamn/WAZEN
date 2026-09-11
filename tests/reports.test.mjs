@@ -108,6 +108,25 @@ test("account statement looks like a bank ledger with running balance", () => {
   assert.match(html, /@page \{ size: A4/);
 });
 
+test("account statement shows negative balances in red parentheses", () => {
+  const html = buildAccountStatementHtml({
+    locale: "ar",
+    logoUrl: "/brand/wazen-lockup.png",
+    issuerName: "أحمد",
+    spaces: [{ id: "s1", name_ar: "اذربيجان و جورجيا", name_en: "Trip", type: "trip", currency: "OMR", balance_minor: -36_843 }],
+    members: [{ id: "m1", space_id: "s1", display_name: "ماجد" }],
+    transactions: [
+      { id: "aaaaaaaa", space_id: "s1", member_id: "m1", kind: "contribution", amount_minor: 400_000, description_ar: "مساهمة", description_en: "In", occurred_at: "2026-08-30T08:00:00.000Z", status: "approved" },
+      { id: "bbbbbbbb", space_id: "s1", member_id: "m1", kind: "expense", amount_minor: 436_843, description_ar: "تذاكر", description_en: "Tickets", occurred_at: "2026-09-01T12:00:00.000Z", status: "approved" },
+    ],
+    spaceId: "s1",
+  });
+  assert.match(html, /is-neg/);
+  assert.match(html, /class="num neg"/);
+  assert.match(html, /\(/);
+  assert.doesNotMatch(html, /رصيد آخر المدة[\s\S]*?؜-/);
+});
+
 test("account statement print filters valid voided and all scopes", () => {
   const base = {
     locale: "ar",

@@ -162,6 +162,7 @@ body.page-portrait td:first-child { color: var(--muted); font-weight: 700; width
 .num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 16px; font-weight: 800; }
 .in { color: var(--green); font-weight: 800; }
 .out { color: #a84d58; font-weight: 800; }
+.neg, .kpi.is-neg strong, .footer-note.neg { color: #b42318; font-weight: 800; }
 .voided td { text-decoration: line-through; color: #5b6b66; }
 .footer-note { margin: 12px 0 0; font-weight: 800; color: var(--green); font-size: 15px; }
 .empty { color: #5b6b66; font-size: 15px; }
@@ -506,6 +507,7 @@ body.page-landscape td.col-desc { min-width: 160px; white-space: normal; overflo
   .brand-bar, th, .meta, .kpi, .receipt-amount, .sheet-accent, .receipt-fields > div:nth-child(even) { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .brand-bar small, .meta span, .kpi span, th, body.page-portrait td:first-child, footer.sheet-foot, .receipt-fields dt { color: #222 !important; }
   .brand-bar strong, .meta b, .kpi strong, td, .head p, .receipt-fields dd { color: #000 !important; }
+  .neg, .kpi.is-neg strong, .footer-note.neg { color: #b42318 !important; }
   .head h1 { font-size: 32px; color: #0a5c4c !important; }
   body.is-receipt .sheet-accent { height: 3px; }
   body.is-receipt .brand-bar { padding: 8px 14px 6px !important; }
@@ -661,7 +663,7 @@ export function wrapPrintDocument(options: {
   logoUrl: string;
   subtitle?: string;
   meta?: Array<{ label: string; value: string }>;
-  kpis?: Array<{ label: string; value: string }>;
+  kpis?: Array<{ label: string; value: string; tone?: "neg" | "pos" }>;
   bodyHtml: string;
   footer?: string;
   orientation?: PrintOrientation;
@@ -677,7 +679,7 @@ export function wrapPrintDocument(options: {
     .map((item) => `<div><span>${escapeHtml(item.label)}</span><b>${escapeHtml(item.value)}</b></div>`)
     .join("");
   const kpiHtml = (options.kpis ?? [])
-    .map((item) => `<div class="kpi"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`)
+    .map((item) => `<div class="kpi${item.tone ? ` is-${item.tone}` : ""}"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`)
     .join("");
   const pageRule = orientation === "landscape"
     ? "@page { size: A4 landscape; margin: 8mm; }"

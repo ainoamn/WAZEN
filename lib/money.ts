@@ -36,6 +36,17 @@ export function formatMoneyMinor(
   }).format((minor ?? 0) / divisor);
 }
 
+/** Accounting display: negatives as red-ready parentheses, never a leading minus. */
+export function formatSignedMoneyMinor(
+  minor: number,
+  currency = "OMR",
+  locale: "ar" | "en" = "ar",
+) {
+  const amount = Number(minor) || 0;
+  const abs = formatMoneyMinor(Math.abs(amount), currency, locale);
+  return amount < 0 ? `(${abs})` : abs;
+}
+
 export const DEFAULT_CURRENCY = "OMR";
 export const DEFAULT_COUNTRY = "OM";
 export const DEFAULT_TIMEZONE = "Asia/Muscat";

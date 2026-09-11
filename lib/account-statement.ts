@@ -1,5 +1,5 @@
 import { escapeHtml } from "./html.ts";
-import { formatMoneyMinor } from "./money.ts";
+import { formatMoneyMinor, formatSignedMoneyMinor } from "./money.ts";
 import { wrapPrintDocument } from "./print-document.ts";
 
 export type StatementLocale = "ar" | "en";
@@ -252,6 +252,8 @@ export function buildAccountStatementHtml(input: {
   const txnFilter = model.txnFilter;
   const currency = model.currency;
   const money = (minor: number) => formatMoneyMinor(minor, currency, locale);
+  const signedMoney = (minor: number) => formatSignedMoneyMinor(minor, currency, locale);
+  const signedTone = (minor: number): "neg" | undefined => (minor < 0 ? "neg" : undefined);
   const opening = model.openingMinor;
   const closing = model.closingMinor;
   const entityName = model.entityName;
@@ -283,7 +285,7 @@ export function buildAccountStatementHtml(input: {
       { text: line.userName, cls: "col-user" },
       { text: line.depositMinor > 0 ? money(line.depositMinor) : "—", cls: "num" },
       { text: line.withdrawMinor > 0 ? money(line.withdrawMinor) : "—", cls: "num" },
-      { text: line.balanceMinor != null ? money(line.balanceMinor) : "—", cls: "num" },
+      { text: line.balanceMinor != null ? signedMoney(line.balanceMinor) : "—", cls: `num${line.balanceMinor != null && line.balanceMinor < 0 ? " neg" : ""}` },
       { text: line.status, cls: "col-status" },
     ],
   }));
@@ -299,10 +301,10 @@ export function buildAccountStatementHtml(input: {
         : `<tr><td colspan="${head.length}">${escapeHtml(t(locale, "لا توجد حركات في هذا النطاق.", "No movements in this scope."))}</td></tr>`}
       </tbody>
     </table>
-    <p class="footer-note">${escapeHtml(
+    <p class="footer-note${txnFilter !== "voided" && closing < 0 ? " neg" : ""}">${escapeHtml(
       txnFilter === "voided"
         ? t(locale, `عدد المعاملات المحذوفة: ${rows.length}`, `Deleted movements: ${rows.length}`)
-        : t(locale, `الرصيد الختامي: ${money(closing)}`, `Closing balance: ${money(closing)}`),
+        : t(locale, `الرصيد الختامي: ${signedMoney(closing)}`, `Closing balance: ${signedMoney(closing)}`),
     )}</p>
   </section>`;
 
@@ -327,13 +329,13 @@ export function buildAccountStatementHtml(input: {
           { label: t(locale, "عدد الملغاة", "Voided count"), value: String(rows.length) },
           { label: t(locale, "إجمالي المبالغ", "Total amounts"), value: money(rows.reduce((sum, line) => sum + line.depositMinor + line.withdrawMinor, 0)) },
           { label: t(locale, "المحفظة", "Wallet"), value: entityName },
-          { label: t(locale, "الرصيد الحالي", "Current balance"), value: money(closing) },
+          { label: t(locale, "الرصيد الحالي", "Current balance"), value: signedMoney(closing), tone: signedTone(closing) },
         ]
       : [
-          { label: t(locale, "رصيد أول المدة", "Opening"), value: money(opening) },
+          { label: t(locale, "رصيد أول المدة", "Opening"), value: signedMoney(opening), tone: signedTone(opening) },
           { label: t(locale, "إجمالي الإيداع", "Total in"), value: money(model.totalInMinor) },
           { label: t(locale, "إجمالي السحب", "Total out"), value: money(model.totalOutMinor) },
-          { label: t(locale, "رصيد آخر المدة", "Closing"), value: money(closing) },
+          { label: t(locale, "رصيد آخر المدة", "Closing"), value: signedMoney(closing), tone: signedTone(closing) },
         ],
     bodyHtml: table,
   });
