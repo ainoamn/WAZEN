@@ -706,7 +706,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
       FROM trip_expenses te
       LEFT JOIN members m ON m.id=te.paid_by_member_id
       LEFT JOIN transactions t ON t.id=te.transaction_id
-      WHERE te.space_id IN (${placeholders}) AND COALESCE(te.status,'posted')<>'voided' ORDER BY te.occurred_at DESC LIMIT 50`).bind(...ids).all(),
+      WHERE te.space_id IN (${placeholders}) AND COALESCE(te.status,'posted')<>'voided' ORDER BY te.occurred_at DESC LIMIT 200`).bind(...ids).all(),
     db.prepare(`SELECT es.*,m.display_name FROM expense_splits es JOIN trip_expenses te ON te.id=es.expense_id
       JOIN members m ON m.id=es.member_id WHERE te.space_id IN (${placeholders}) AND COALESCE(te.status,'posted')<>'voided' ORDER BY es.expense_id,m.joined_at`).bind(...ids).all(),
     db.prepare(`SELECT s.*,
@@ -717,7 +717,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     LEFT JOIN members fm ON fm.id=s.from_member_id
       WHERE s.space_id IN (${placeholders}) AND s.status IN ('pending','settled')
       ORDER BY CASE s.status WHEN 'pending' THEN 0 ELSE 1 END, COALESCE(s.settled_at, s.created_at) DESC, s.amount_minor DESC
-      LIMIT 80`).bind(...ids).all(),
+      LIMIT 400`).bind(...ids).all(),
     db.prepare(`SELECT * FROM member_installments WHERE space_id IN (${placeholders}) ORDER BY member_id, period_index`).bind(...ids).all(),
     writeMode
       ? Promise.resolve({ results: [] as Array<Record<string, unknown>> })

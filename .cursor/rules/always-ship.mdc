@@ -1,0 +1,15 @@
+---
+description: Always publish, document, and merge live WAZEN fixes without asking
+alwaysApply: true
+---
+
+# Always ship
+
+When a live bug is fixed or a product change is ready on this repo:
+
+- Commit, push to `main`, and merge without asking. Do not stop at “هل أنشر؟”.
+- After Vercel is live, record `GET /api/health` `buildId` in `docs/CONTINUE-HERE.md` and the current handoff. Use a follow-up `docs:` commit (Vercel ignores those).
+- Keep `docs/WALLET-ACCOUNTING.md` aligned with any display-ledger change.
+- Never commit `public/brand/*-with-bg.png` or secrets.
+
+Do not re-implement already-shipped work (statement email, SSO logout, WhatsApp invites, fund-share netting, trip settlement netting, member merge, personal installments/coach, personal wallet tabs).

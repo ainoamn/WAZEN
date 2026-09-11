@@ -14,6 +14,7 @@ import {
   memberFundPoolNet,
   memberTripPaidMinor,
   memberTripPocketMinor,
+  memberTripShareMinor,
   netMemberClaim,
 } from "./finance.ts";
 import { formatMoneyMinor } from "./money.ts";
@@ -382,6 +383,21 @@ export function buildMemberLedger(input: {
       amountMinor: Number(member.extra_minor) || 0,
     });
   }
+  const tripShare = input.spaceType === "trip"
+    ? memberTripShareMinor(member.id, member.space_id, input.tripExpenses, input.expenseSplits)
+    : 0;
+  if (input.spaceType === "trip" && tripShare > 0) {
+    lines.push({
+      at: member.joined_at || new Date().toISOString(),
+      focus: "paid",
+      direction: "out",
+      titleAr: "حصته من مصروفات الرحلة",
+      titleEn: "Share of trip expenses",
+      detailAr: "مجموع حصصه من فواتير الرحلة بعد التقسيم — هذا عمود «مدفوع»",
+      detailEn: "Total of his split shares of trip bills — this is the Paid column",
+      amountMinor: tripShare,
+    });
+  }
   const tripPocket = input.spaceType === "trip"
     ? memberTripPocketMinor(member.id, member.space_id, input.tripExpenses)
     : 0;
@@ -464,7 +480,10 @@ export function buildMemberLedger(input: {
     joinedAt: member.joined_at || "",
     goalMinor: Number(member.due_minor) || 0,
     paidMinor: input.spaceType === "trip"
-      ? memberTripPaidMinor(member.id, member.space_id, member.paid_minor, input.settlements)
+      ? memberTripPaidMinor(member.id, member.space_id, member.paid_minor, input.settlements, {
+        expenses: input.tripExpenses,
+        splits: input.expenseSplits,
+      })
       : Number(member.paid_minor) || 0,
     extraMinor: Number(member.extra_minor) || 0,
     addonMinor: Number(member.addon_minor ?? 0),

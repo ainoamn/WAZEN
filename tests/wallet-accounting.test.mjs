@@ -72,7 +72,7 @@ test("society: unpaid goal is a debt; fund shares net against paid", () => {
   assert.ok(ledger.owesMinor >= 20_000);
 });
 
-test("trip: Bandar pocket bills, nets, and paid-to-members match the live wallet", () => {
+test("trip: Bandar pocket bills, nets, and paid shares match the live wallet", () => {
   const { bills, splits } = bandarExpenses();
   const expenses = bills.map((bill) => ({ ...bill, space_id: "bandar", paid_from: "member", status: "posted" }));
   assert.equal(tripPostedSpendMinor("bandar", expenses), 82_801);
@@ -120,12 +120,16 @@ test("trip: Bandar pocket bills, nets, and paid-to-members match the live wallet
     status: "settled",
     settled_at: "2026-09-09T12:00:00.000Z",
   }));
-  assert.equal(memberTripPaidMinor("abdul", "bandar", 0, settlements), 13_803);
-  assert.equal(memberTripPaidMinor("hamdan", "bandar", 0, settlements), 13_799);
-  assert.equal(memberTripPaidMinor("hamoud", "bandar", 0, settlements), 399);
-  assert.equal(memberTripPaidMinor("dawood", "bandar", 0, settlements), 11_799);
+  const extras = { expenses, splits };
+  const shareOf = (memberId) => splits.filter((row) => row.member_id === memberId).reduce((sum, row) => sum + row.share_minor, 0);
+  assert.equal(memberTripPaidMinor("abdul", "bandar", 0, settlements, extras), 13_803);
+  assert.equal(memberTripPaidMinor("ali", "bandar", 0, settlements, extras), 13_802);
+  assert.equal(memberTripPaidMinor("hamdan", "bandar", 0, settlements, extras), 13_799);
+  assert.equal(memberTripPaidMinor("hamoud", "bandar", 0, settlements, extras), 13_799);
+  assert.equal(memberTripPaidMinor("dawood", "bandar", 0, settlements, extras), 13_799);
+  assert.equal(memberTripPaidMinor("harith", "bandar", 0, settlements, extras), 13_799);
+  assert.equal(shareOf("abdul") + shareOf("ali") + shareOf("hamdan") + shareOf("hamoud") + shareOf("dawood") + shareOf("harith"), 82_801);
   assert.equal(memberTripPaidMinor("ali", "bandar", 0, settlements), 0);
-  assert.equal(memberTripPaidMinor("harith", "bandar", 0, settlements), 0);
 
   const abdul = buildMemberLedger({
     member: {

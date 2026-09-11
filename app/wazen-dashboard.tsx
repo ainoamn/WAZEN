@@ -2427,7 +2427,10 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
   const nextCircleTurn = data.circleTurns.find((turn) => turn.space_id === space.id && turn.status === "scheduled");
   const paidTotal = members.reduce((sum, member) => sum + (
     space.type === "trip"
-      ? memberTripPaidMinor(member.id, space.id, member.paid_minor, data.settlements)
+      ? memberTripPaidMinor(member.id, space.id, member.paid_minor, data.settlements, {
+        expenses: data.tripExpenses,
+        splits: data.expenseSplits,
+      })
       : member.paid_minor
   ), 0);
   const liveTransactions = transactions.filter((txn) => isLiveTransaction(txn) && !isPeerSettlementTransfer(txn));
@@ -2790,7 +2793,7 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
         <div className="table-head">
           <span>{locale === "ar" ? "العضو" : "Member"}</span>
           <span>{t.goal}</span>
-          <span>{data?.spaces.find((item) => item.id === spaceId)?.type === "trip" ? (locale === "ar" ? "سدّد للأعضاء" : "Paid members") : t.paid}</span>
+          <span title={data?.spaces.find((item) => item.id === spaceId)?.type === "trip" ? (locale === "ar" ? "حصته من فواتير الرحلة" : "Share of trip bills") : undefined}>{t.paid}</span>
           <span>{data?.spaces.find((item) => item.id === spaceId)?.type === "trip" ? (locale === "ar" ? "من الجيب" : "Pocket") : (locale === "ar" ? "إضافي" : "Extra")}</span>
           <span>{locale === "ar" ? "عليه" : "Owes"}</span>
           <span>{locale === "ar" ? "له" : "Owed"}</span>
@@ -2806,7 +2809,10 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
             ? memberTripPocketMinor(member.id, spaceId, data.tripExpenses)
             : Number(member.addon_minor ?? 0);
           const paidMinor = spaceType === "trip" && data && spaceId
-            ? memberTripPaidMinor(member.id, spaceId, member.paid_minor, data.settlements)
+            ? memberTripPaidMinor(member.id, spaceId, member.paid_minor, data.settlements, {
+              expenses: data.tripExpenses,
+              splits: data.expenseSplits,
+            })
             : Number(member.paid_minor) || 0;
           const open = (focus: MemberLedgerFocus) => onOpenMember?.(member.id, focus);
           const isActive = (member.status ?? "active") === "active";

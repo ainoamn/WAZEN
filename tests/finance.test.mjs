@@ -214,7 +214,7 @@ test("trip pocket spend is the bills a member paid, not settlement extras", () =
   assert.equal(tripPostedSpendMinor("trip1", expenses), 72_400);
 });
 
-test("trip paid column includes settled transfers to other members", () => {
+test("trip paid column falls back to settled transfers when splits are missing", () => {
   const settlements = [
     { space_id: "trip1", from_member_id: "abdul", to_member_id: "harith", amount_minor: 13_803, status: "settled" },
     { space_id: "trip1", from_member_id: "dawood", to_member_id: "ali", amount_minor: 2_799, status: "settled" },
@@ -226,4 +226,22 @@ test("trip paid column includes settled transfers to other members", () => {
   assert.equal(memberTripPaidMinor("dawood", "trip1", 0, settlements), 11_799);
   assert.equal(memberTripPaidMinor("omar", "trip1", 0, settlements), 0);
   assert.equal(memberTripPaidMinor("harith", "trip1", 0, settlements), 0);
+});
+
+test("trip paid column uses each member’s bill share when splits exist", () => {
+  const extras = {
+    expenses: [
+      { id: "cable", space_id: "trip1", status: "posted" },
+      { id: "meat", space_id: "trip1", status: "posted" },
+    ],
+    splits: [
+      { expense_id: "cable", member_id: "ali", share_minor: 8_500 },
+      { expense_id: "cable", member_id: "harith", share_minor: 8_500 },
+      { expense_id: "meat", member_id: "ali", share_minor: 6_700 },
+      { expense_id: "meat", member_id: "harith", share_minor: 6_700 },
+    ],
+  };
+  assert.equal(memberTripPaidMinor("ali", "trip1", 0, [], extras), 15_200);
+  assert.equal(memberTripPaidMinor("harith", "trip1", 0, [], extras), 15_200);
+  assert.equal(memberTripPaidMinor("abdul", "trip1", 0, [], extras), 0);
 });

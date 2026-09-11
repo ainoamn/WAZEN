@@ -304,19 +304,41 @@ export function memberTripSettlementPaidMinor(
     to_member_id?: string;
     amount_minor?: unknown;
     status?: string | null;
+    settled_at?: string | null;
   }>,
 ) {
   return settlements.reduce((sum, row) => {
-    if (row.space_id && row.space_id !== spaceId) return sum;
-    if (row.status !== "settled") return sum;
+    if (row.space_id && String(row.space_id) !== String(spaceId)) return sum;
+    const posted = row.status === "settled" || row.status === "posted" || Boolean(row.settled_at);
+    if (!posted) return sum;
     if (String(row.from_member_id ?? "").startsWith("space:")) return sum;
     if (String(row.to_member_id ?? "").startsWith("space:")) return sum;
-    if (row.from_member_id !== memberId) return sum;
+    if (String(row.from_member_id ?? "") !== String(memberId)) return sum;
     return sum + asMinor(row.amount_minor);
   }, 0);
 }
 
-/** Trip «مدفوع»: fund contributions plus money actually sent to other members after settlement. */
+/** Member’s share of posted trip bills — this is what «مدفوع» means after the trip is split. */
+export function memberTripShareMinor(
+  memberId: string,
+  spaceId: string,
+  expenses: Array<{ id?: string; space_id?: string; status?: string | null }>,
+  splits: Array<{ expense_id?: string; member_id?: string; share_minor?: unknown }>,
+) {
+  const liveIds = new Set(
+    expenses
+      .filter((expense) => (!expense.space_id || String(expense.space_id) === String(spaceId)) && (expense.status ?? "posted") !== "voided" && expense.id)
+      .map((expense) => String(expense.id)),
+  );
+  const scoped = expenses.length > 0;
+  return splits.reduce((sum, split) => {
+    if (String(split.member_id ?? "") !== String(memberId)) return sum;
+    if (scoped && !liveIds.has(String(split.expense_id ?? ""))) return sum;
+    return sum + asMinor(split.share_minor);
+  }, 0);
+}
+
+/** Trip «مدفوع»: fund cash plus each member’s bill share (not only outgoing P2P transfers). */
 export function memberTripPaidMinor(
   memberId: string,
   spaceId: string,
@@ -327,9 +349,18 @@ export function memberTripPaidMinor(
     to_member_id?: string;
     amount_minor?: unknown;
     status?: string | null;
-  }>,
+    settled_at?: string | null;
+  }> = [],
+  extras?: {
+    expenses?: Array<{ id?: string; space_id?: string; status?: string | null }>;
+    splits?: Array<{ expense_id?: string; member_id?: string; share_minor?: unknown }>;
+  },
 ) {
-  return asMinor(paidMinor) + memberTripSettlementPaidMinor(memberId, spaceId, settlements);
+  const splits = extras?.splits;
+  const share = Array.isArray(splits) && splits.length > 0
+    ? memberTripShareMinor(memberId, spaceId, extras?.expenses ?? [], splits)
+    : memberTripSettlementPaidMinor(memberId, spaceId, settlements);
+  return asMinor(paidMinor) + share;
 }
 
 /**
