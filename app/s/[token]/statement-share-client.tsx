@@ -67,6 +67,7 @@ type MemberPayload = {
   spentMinor: number;
   owesMinor: number;
   creditMinor: number;
+  payInstruction?: string;
   lines: MemberLine[];
   sections?: MemberSection[];
 };
@@ -308,6 +309,9 @@ export default function StatementShareClient({ token }: { token: string }) {
             <div><span>{locale === "ar" ? "عليه" : "Owes"}</span><strong className={data.owesMinor ? "amount-negative" : ""}>{data.owesLabel}</strong></div>
             <div><span>{locale === "ar" ? "له" : "Credit"}</span><strong className={data.creditMinor ? "amount-positive" : ""}>{data.creditLabel}</strong></div>
           </div>
+          {data.payInstruction ? (
+            <p className="statement-share-pay">{locale === "ar" ? "كيف تسدّد: " : "How to pay: "}{data.payInstruction}</p>
+          ) : null}
 
           <dl className="statement-share-meta">
             <div><dt>{locale === "ar" ? "العضو" : "Member"}</dt><dd>{data.memberName}</dd></div>

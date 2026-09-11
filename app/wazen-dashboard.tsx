@@ -34,6 +34,7 @@ import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, sele
 import { formatMoneyMinor, currencyScale, parseMoneyToMinor } from "../lib/money";
 import { isFundPaidExpense, isPeerSettlementTransfer, memberDisplayCreditMinor, memberExtraCreditMinor, memberFundPoolNet, memberTripPaidMinor, memberTripPocketMinor, netMemberClaim, pendingSettlementsWithCredit, tripPostedSpendMinor } from "../lib/finance";
 import { memberRemainingSettlementOwe } from "../lib/settlement-posting";
+import { canConfirmSettlement, settlementConfirmLabel } from "../lib/settlement-pay-instructions";
 import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, quotaRemaining, quotaWarningCopy, upgradeNoticeFor, canPrintSpaceArtifacts } from "../lib/plan-features";
 import { clientCanSpaceTxnAction, spaceRoleLabel } from "../lib/space-role-permissions";
 import { userGraceWarningCopy } from "../lib/plan-retention-rules";
@@ -919,8 +920,22 @@ function TripSettlementLedger({
               {settlement.reservedMinor > 0 && <s className="claim-struck">{formatMoney(settlement.amountMinor, space.currency, locale)}</s>}
               {formatMoney(settlement.payableMinor, space.currency, locale)}
             </b>
-            <button type="button" onClick={() => onSettle(settlement.id)}>{locale === "ar" ? "تم التسوية" : "Mark settled"}</button>
-            <button type="button" className="secondary-button compact" onClick={() => voidRow(settlement.id)}>{locale === "ar" ? "حذف" : "Delete"}</button>
+            {(() => {
+              const toMember = members.find((item) => item.id === settlement.to_member_id);
+              const decision = canConfirmSettlement({
+                actorRole: myRoleInSpace(data, space),
+                actorUserId: data.user.id,
+                toMemberId: settlement.to_member_id,
+                toMemberUserId: toMember?.user_id ?? null,
+              });
+              const canManage = ["owner", "manager", "supervisor", "treasurer"].includes(myRoleInSpace(data, space));
+              return (
+                <>
+                  {decision.ok ? <button type="button" onClick={() => onSettle(settlement.id)}>{settlementConfirmLabel(decision.as, locale)}</button> : null}
+                  {canManage ? <button type="button" className="secondary-button compact" onClick={() => voidRow(settlement.id)}>{locale === "ar" ? "حذف" : "Delete"}</button> : null}
+                </>
+              );
+            })()}
           </div>
         );
       })}
@@ -1950,6 +1965,9 @@ export function WazenDashboard() {
               });
               flash(locale === "ar" ? "تم تحديث دور العضو" : "Member role updated");
             }}
+            actorUserId={data.user.id}
+            actorRole={myRoleInSpace(data, space)}
+            onConfirmSettlement={(settlementId) => void settleReimbursement(settlementId)}
           />
         );
       })()}
@@ -1981,6 +1999,9 @@ export function WazenDashboard() {
             onStatementSent={(message) => flash(message)}
             onContactSaved={(message) => { flash(message); void load(true); }}
             canWhatsapp={planHasFeature(planFeaturesOf(data), "whatsapp")}
+            actorUserId={data.user.id}
+            actorRole={data.spaces.find((space) => space.id === seed.space_id) ? myRoleInSpace(data, data.spaces.find((space) => space.id === seed.space_id)!) : null}
+            onConfirmSettlement={(settlementId) => void settleReimbursement(settlementId)}
           />
         );
       })()}

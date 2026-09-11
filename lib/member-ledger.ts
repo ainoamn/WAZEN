@@ -612,6 +612,7 @@ function statementAssociationHtml(input: {
   currency: string;
   joinedAt?: string;
   focus: MemberLedgerFocus;
+  payInstruction?: string;
   ledger: {
     paidMinor: number;
     spentMinor?: number;
@@ -638,6 +639,7 @@ function statementAssociationHtml(input: {
       ].filter(Boolean).join(" · "))}</p>
     </header>
     ${statementTotalsTable(locale, input.currency, input.ledger)}
+    ${input.payInstruction ? `<p class="footer-note">${escapeHtml(text(locale, `كيف تسدّد: ${input.payInstruction}`, `How to pay: ${input.payInstruction}`))}</p>` : ""}
     <h3>${escapeHtml(text(locale, "تفاصيل الحركات", "Movement detail"))}</h3>
     ${statementMovementsTable(locale, input.currency, rows)}
   </section>`;
@@ -654,6 +656,7 @@ export function buildMemberLedgerHtml(input: {
   phone?: string | null;
   email?: string | null;
   focus: MemberLedgerFocus;
+  payInstruction?: string;
   ledger: {
     paidMinor: number;
     spentMinor?: number;
@@ -679,6 +682,7 @@ export function buildMemberLedgerHtml(input: {
     currency: input.currency,
     joinedAt: input.joinedAt,
     focus: input.focus,
+    payInstruction: input.payInstruction,
     ledger: input.ledger,
   });
 
@@ -720,6 +724,7 @@ export function buildCombinedMemberLedgerHtml(input: {
     spaceName: string;
     currency: string;
     joinedAt?: string;
+    payInstruction?: string;
     ledger: {
       paidMinor: number;
       spentMinor?: number;
@@ -743,6 +748,7 @@ export function buildCombinedMemberLedgerHtml(input: {
       phone: input.phone,
       email: input.email,
       focus: input.focus,
+      payInstruction: input.sections[0].payInstruction,
       ledger: input.sections[0].ledger,
     });
   }
@@ -777,6 +783,7 @@ export function buildCombinedMemberLedgerHtml(input: {
     currency: section.currency,
     joinedAt: section.joinedAt,
     focus: input.focus,
+    payInstruction: section.payInstruction,
     ledger: section.ledger,
   })).join("");
   const sameCurrency = input.sections.every((item) => item.currency === input.sections[0]?.currency);

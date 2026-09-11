@@ -3,6 +3,7 @@
 import { appOrigin } from "./app-origin.ts";
 import { buildMemberLedger } from "./member-ledger.ts";
 import { formatDebitMoneyMinor, formatMoneyMinor } from "./money.ts";
+import { formatPayInstructionSentence, pendingPayInstructions } from "./settlement-pay-instructions.ts";
 import { planHasFeature } from "./plan-features.ts";
 import { getActivePlanEntitlements } from "../services/admin/billing-service.ts";
 import { flushOutboxByIds, isEmailProviderConfigured } from "./email-provider.ts";
@@ -145,7 +146,12 @@ export async function queueMemberStatementEmail(input: {
     locale,
   });
   const statementUrl = `${origin}/s/${encodeURIComponent(shareToken)}`;
-  const statementSummaryHtml = buildStatementSummaryHtml({ locale, currency, ledger });
+  const payInstruction = formatPayInstructionSentence(
+    pendingPayInstructions(input.member.id, input.bundle.settlements as never[], { locale }),
+    currency,
+    locale,
+  );
+  const statementSummaryHtml = buildStatementSummaryHtml({ locale, currency, ledger, payInstruction });
   const balanceAlertHtml = buildBalanceAlertHtml({
     locale,
     owesLabel,

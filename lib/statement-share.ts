@@ -145,7 +145,8 @@ export function buildMemberStatementWhatsAppMessage(input: {
   paidLabel: string;
   statementUrl: string;
   scope?: "one" | "all";
-  associations?: Array<{ walletName: string; paidLabel: string; owesLabel: string; creditLabel: string }>;
+  associations?: Array<{ walletName: string; paidLabel: string; owesLabel: string; creditLabel: string; payInstruction?: string }>;
+  payInstruction?: string;
 }) {
   const name = String(input.memberName || "").trim() || (input.locale === "ar" ? "عزيزي العضو" : "Member");
   const associations = input.associations?.filter((item) => item.walletName) ?? [];
@@ -162,6 +163,9 @@ export function buildMemberStatementWhatsAppMessage(input: {
       input.locale === "ar" ? `المدفوع: ${item.paidLabel}` : `Paid: ${item.paidLabel}`,
       input.locale === "ar" ? `عليه: ${item.owesLabel}` : `Owes: ${item.owesLabel}`,
       input.locale === "ar" ? `له: ${item.creditLabel}` : `Credit: ${item.creditLabel}`,
+      item.payInstruction
+        ? (input.locale === "ar" ? `كيف تسدّد: ${item.payInstruction}` : `How to pay: ${item.payInstruction}`)
+        : "",
       "",
     ]);
     const body = input.locale === "ar"
@@ -197,6 +201,7 @@ export function buildMemberStatementWhatsAppMessage(input: {
         `المدفوع: ${input.paidLabel}`,
         `عليه: ${input.owesLabel}`,
         `له: ${input.creditLabel}`,
+        ...(input.payInstruction ? ["", "كيف تسدّد:", input.payInstruction] : []),
         "",
         "افتح الكشف الواضح على الجوال:",
         input.statementUrl,
@@ -210,6 +215,7 @@ export function buildMemberStatementWhatsAppMessage(input: {
         `Paid: ${input.paidLabel}`,
         `Owes: ${input.owesLabel}`,
         `Credit: ${input.creditLabel}`,
+        ...(input.payInstruction ? ["", "How to pay:", input.payInstruction] : []),
         "",
         "Open the clear statement on your phone:",
         input.statementUrl,

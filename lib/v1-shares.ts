@@ -118,15 +118,18 @@ export async function createV1MemberStatementShare(
     owes: locale === "ar" ? "عليه" : "Owes",
     credit: locale === "ar" ? "له" : "Credit",
   })[focus];
+  const { loadMemberStatementSection } = await import("./member-statement-data");
+  const section = await loadMemberStatementSection(db, member.id, member.space_id, locale, focus);
   const message = buildMemberStatementWhatsAppMessage({
     locale,
     memberName: member.display_name,
     walletName: locale === "ar" ? (spaceRow?.name_ar ?? "") : (spaceRow?.name_en ?? ""),
     focusLabel,
-    paidLabel: money(Number(member.paid_minor) || 0),
-    owesLabel: money(Math.max(0, Number(member.due_minor) - Number(member.paid_minor))),
-    creditLabel: money(Number(member.extra_minor) + Number(member.addon_minor ?? 0)),
+    paidLabel: section?.paidLabel ?? money(Number(member.paid_minor) || 0),
+    owesLabel: section?.owesLabel ?? money(Math.max(0, Number(member.due_minor) - Number(member.paid_minor))),
+    creditLabel: section?.creditLabel ?? money(Number(member.extra_minor) + Number(member.addon_minor ?? 0)),
     statementUrl: shareUrl,
+    payInstruction: section?.payInstruction || "",
   });
   const whatsappNumber = member.phone ? toWhatsAppNumber(member.phone) : "";
   if (!whatsappNumber) throw new ApiError(400, "MEMBER_PHONE_MISSING");

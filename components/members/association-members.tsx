@@ -7,6 +7,7 @@ import { apiFetch } from "../../lib/client-api";
 import { toWhatsAppNumber, digitsOnly } from "../../lib/phone";
 import { isMemberContactTakenError, memberContactConflictMessage, memberContactTakenField } from "../../lib/member-contact-unique";
 import { buildMemberLedger, buildCombinedMemberLedgerHtml, filterMemberLedgerLines, formatMemberLedgerLineMoney, formatMemberLedgerMoney, memberLedgerAmountClass, memberLedgerTone, type MemberLedgerFocus } from "../../lib/member-ledger";
+import { canConfirmSettlement, formatPayInstructionSentence, pendingPayInstructions, settlementConfirmLabel } from "../../lib/settlement-pay-instructions";
 import { printWazenHtml } from "../../lib/print-document";
 import { consumePlanQuota } from "../../lib/plan-quota-client";
 import {
@@ -195,6 +196,9 @@ type LedgerInputs = {
   /** Owner/manager can change this member’s role from the detail modal. */
   canManageRole?: boolean;
   onRoleChanged?: (next: { memberId: string; role: string }) => void;
+  actorUserId?: string;
+  actorRole?: string | null;
+  onConfirmSettlement?: (settlementId: string) => void;
 };
 
 const ASSIGNABLE_MEMBER_ROLES = ["manager", "supervisor", "treasurer", "member", "auditor", "viewer"] as const;
@@ -221,6 +225,9 @@ function MemberLedgerBody({
   showInviteActions = false,
   canManageRole = false,
   onRoleChanged,
+  actorUserId,
+  actorRole,
+  onConfirmSettlement,
 }: LedgerInputs) {
   const [tab, setTab] = useState<MemberLedgerFocus>(focus);
   const [sending, setSending] = useState(false);
@@ -254,6 +261,9 @@ function MemberLedgerBody({
   }), [member, space, plan, installments, transactions, settlements, tripExpenses, expenseSplits]);
   const months = ledger.months;
   const rows = filterMemberLedgerLines(ledger.lines, tab);
+  const payItems = pendingPayInstructions(member.id, settlements, { locale });
+  const payInstruction = formatPayInstructionSentence(payItems, space.currency, locale);
+  const incomingPending = settlements.filter((row) => row.status === "pending" && row.to_member_id === member.id && !String(row.to_member_id).startsWith("space:"));
   const tabs: Array<{ id: MemberLedgerFocus; ar: string; en: string; amount: number }> = [
     { id: "all", ar: "الكل", en: "All", amount: 0 },
     { id: "paid", ar: "المدفوع", en: "Paid", amount: ledger.paidMinor },
@@ -326,6 +336,7 @@ function MemberLedgerBody({
       spaceName: locale === "ar" ? linked.name_ar : linked.name_en,
       currency: linked.currency,
       joinedAt: row.joined_at,
+      payInstruction: formatPayInstructionSentence(pendingPayInstructions(row.id, settlements, { locale }), linked.currency, locale),
       ledger: sectionLedger,
     };
   };
@@ -538,6 +549,53 @@ function MemberLedgerBody({
           </article>
         ))}
       </div>
+      {payInstruction ? (
+        <div className="statement-pay-box">
+          <strong>{locale === "ar" ? "كيف تسدّد" : "How to pay"}</strong>
+          <p>{payInstruction}</p>
+          {onConfirmSettlement ? payItems.map((item) => {
+            const decision = canConfirmSettlement({
+              actorRole,
+              actorUserId: actorUserId ?? "",
+              toMemberId: item.toMemberId,
+              toMemberUserId: null,
+            });
+            if (!decision.ok) return null;
+            return (
+              <p key={item.settlementId}>
+                <button type="button" className="secondary-button compact" onClick={() => onConfirmSettlement(item.settlementId)}>
+                  {settlementConfirmLabel(decision.as, locale)} · {item.toName}
+                </button>
+              </p>
+            );
+          }) : null}
+        </div>
+      ) : null}
+      {incomingPending.length && onConfirmSettlement ? (
+        <div className="statement-pay-box">
+          <strong>{locale === "ar" ? "تحويلات بانتظار التأكيد" : "Transfers awaiting confirmation"}</strong>
+          {incomingPending.map((row) => {
+            const decision = canConfirmSettlement({
+              actorRole,
+              actorUserId: actorUserId ?? "",
+              toMemberId: row.to_member_id,
+              toMemberUserId: member.user_id ?? null,
+            });
+            if (!decision.ok) return null;
+            return (
+              <p key={row.id}>
+                {locale === "ar"
+                  ? `من ${row.from_member_name || "عضو"} ${money(row.amount_minor, space.currency, locale)}`
+                  : `From ${row.from_member_name || "member"} ${money(row.amount_minor, space.currency, locale)}`}
+                {" "}
+                <button type="button" className="secondary-button compact" onClick={() => onConfirmSettlement(row.id)}>
+                  {settlementConfirmLabel(decision.as, locale)}
+                </button>
+              </p>
+            );
+          })}
+        </div>
+      ) : null}
       <div className="members-table member-ledger-table">
         <div className="table-head person-head">
           <span>{locale === "ar" ? "التاريخ" : "Date"}</span>
@@ -619,6 +677,9 @@ export function MemberDetailModal({
   showInviteActions = true,
   canManageRole = false,
   onRoleChanged,
+  actorUserId,
+  actorRole,
+  onConfirmSettlement,
 }: LedgerInputs & { onClose: () => void }) {
   return (
     <Modal title={member.display_name} onClose={onClose}>
@@ -642,6 +703,9 @@ export function MemberDetailModal({
           showInviteActions={showInviteActions}
           canManageRole={canManageRole}
           onRoleChanged={onRoleChanged}
+          actorUserId={actorUserId}
+          actorRole={actorRole}
+          onConfirmSettlement={onConfirmSettlement}
         />
       </div>
     </Modal>
@@ -666,6 +730,9 @@ export function MemberPersonProfile({
   onContactSaved,
   canWhatsapp = true,
   startEditingContact = false,
+  actorUserId,
+  actorRole,
+  onConfirmSettlement,
 }: {
   records: AssociationMember[];
   spaces: AssociationSpace[];
@@ -684,6 +751,9 @@ export function MemberPersonProfile({
   onStatementSent?: (message: string) => void;
   onContactSaved?: (message: string) => void;
   canWhatsapp?: boolean;
+  actorUserId?: string;
+  actorRole?: string | null;
+  onConfirmSettlement?: (settlementId: string) => void;
 }) {
   const primary = records[0];
   const preferred = records.find((row) => {
@@ -924,6 +994,9 @@ export function MemberPersonProfile({
             personRecords={records}
             spaces={spaces}
             plans={plans}
+            actorUserId={actorUserId}
+            actorRole={actorRole}
+            onConfirmSettlement={onConfirmSettlement}
           />
         )}
       </div>

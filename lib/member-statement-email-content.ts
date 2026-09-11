@@ -23,13 +23,19 @@ export function buildStatementSummaryHtml(input: {
   currency: string;
   ledger: ReturnType<typeof buildMemberLedger>;
   maxLines?: number;
+  payInstruction?: string;
 }) {
   const locale = input.locale;
   const money = (minor: number) => formatMoneyMinor(minor, input.currency, locale);
   const debit = (minor: number) => formatDebitMoneyMinor(minor, input.currency, locale);
   const lines = filterMemberLedgerLines(input.ledger.lines, "all");
   const recent = lines.slice(-(input.maxLines ?? 18));
-  const totals = locale === "ar"
+  const how = input.payInstruction
+    ? (locale === "ar"
+      ? `<p style="margin:0 0 10px;font-size:14px;line-height:1.7;color:#7c4a03;"><strong>كيف تسدّد:</strong> ${escapeHtml(input.payInstruction)}</p>`
+      : `<p style="margin:0 0 10px;font-size:14px;line-height:1.7;color:#7c4a03;"><strong>How to pay:</strong> ${escapeHtml(input.payInstruction)}</p>`)
+    : "";
+  const totals = (locale === "ar"
     ? `<p style="margin:0 0 10px;font-size:14px;line-height:1.7;color:#24443c;">
         <strong>المدفوع:</strong> ${money(input.ledger.paidMinor)} ·
         <strong>عليه:</strong> <span style="color:#b42318">${debit(input.ledger.owesMinor)}</span> ·
@@ -39,7 +45,7 @@ export function buildStatementSummaryHtml(input: {
         <strong>Paid:</strong> ${money(input.ledger.paidMinor)} ·
         <strong>Owes:</strong> <span style="color:#b42318">${debit(input.ledger.owesMinor)}</span> ·
         <strong>Credit:</strong> ${money(input.ledger.creditMinor)}
-      </p>`;
+      </p>`) + how;
 
   if (!recent.length) {
     return totals + (locale === "ar"

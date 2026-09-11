@@ -2598,7 +2598,18 @@ export async function POST(request: Request) {
       const settlement = await db.prepare(`SELECT st.id,st.space_id,st.from_member_id,st.to_member_id,st.amount_minor,st.expense_id,s.balance_minor FROM settlements st
         JOIN spaces s ON s.id=st.space_id WHERE st.id=? AND st.status='pending'`).bind(parsed.data.settlementId).first<{ id: string; space_id: string; from_member_id: string; to_member_id: string; amount_minor: number; expense_id: string | null; balance_minor: number }>();
       if (!settlement) throw new ApiError(404, "SETTLEMENT_NOT_FOUND");
-      const settlementSpace = await authorizeSpace(db, user, settlement.space_id, "settlements:write", ["household", "trip", "society", "group"]);
+      const settlementSpace = await authorizeSpace(db, user, settlement.space_id, "read", ["household", "trip", "society", "group"]);
+      const payee = String(settlement.to_member_id).startsWith("space:")
+        ? null
+        : await db.prepare("SELECT user_id FROM members WHERE id=?").bind(settlement.to_member_id).first<{ user_id: string | null }>();
+      const { canConfirmSettlement } = await import("../../../lib/settlement-pay-instructions");
+      const confirm = canConfirmSettlement({
+        actorRole: settlementSpace.effective_role,
+        actorUserId: user.id,
+        toMemberId: settlement.to_member_id,
+        toMemberUserId: payee?.user_id ?? null,
+      });
+      if (!confirm.ok) throw new ApiError(403, "FORBIDDEN");
       await guardOwnerTransactionQuota(db, settlementSpace.owner_user_id, 2);
       const fromFund = String(settlement.from_member_id).startsWith("space:");
       const toFund = String(settlement.to_member_id).startsWith("space:");
@@ -3318,6 +3329,7 @@ export async function POST(request: Request) {
           paidLabel: section?.paidLabel ?? money(Number(item.paid_minor) || 0, item.currency),
           owesLabel: section?.owesLabel ?? money(0, item.currency),
           creditLabel: section?.creditLabel ?? money(0, item.currency),
+          payInstruction: section?.payInstruction || "",
         });
       }
       const message = buildMemberStatementWhatsAppMessage({
@@ -3331,6 +3343,7 @@ export async function POST(request: Request) {
         statementUrl,
         scope: targets.length > 1 ? "all" : "one",
         associations,
+        payInstruction: associations[0]?.payInstruction || "",
       });
       const whatsappNumber = (targets.find((item) => item.phone)?.phone || primary.phone) ? toWhatsAppNumber(targets.find((item) => item.phone)?.phone || primary.phone || "") : "";
       if (!whatsappNumber) throw new ApiError(400, "MEMBER_PHONE_MISSING");

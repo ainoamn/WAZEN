@@ -2,6 +2,7 @@
 
 import { buildMemberLedger, filterMemberLedgerLines, type MemberLedgerFocus } from "./member-ledger.ts";
 import { formatDebitMoneyMinor, formatMoneyMinor } from "./money.ts";
+import { formatPayInstructionSentence, pendingPayInstructions, type PayInstruction } from "./settlement-pay-instructions.ts";
 
 export type StatementMemberRow = {
   id: string;
@@ -34,6 +35,8 @@ export type MemberStatementSection = {
   spentMinor: number;
   owesMinor: number;
   creditMinor: number;
+  payInstruction: string;
+  payInstructions: PayInstruction[];
 };
 
 export async function loadMemberStatementSection(
@@ -59,7 +62,7 @@ export async function loadMemberStatementSection(
   `).bind(member.space_id).first<{ id: string; name_ar: string; name_en: string; type: string; currency: string }>();
   if (!space) return null;
 
-  const [plan, installments, transactions, settlements, tripExpenses, expenseSplits] = await Promise.all([
+  const [plan, installments, transactions, settlements, tripExpenses, expenseSplits, spaceMembers] = await Promise.all([
     db.prepare("SELECT space_id, amount_minor, duration_months, starts_at FROM contribution_plans WHERE space_id=? LIMIT 1")
       .bind(member.space_id)
       .first<{ space_id: string; amount_minor: number; duration_months: number; starts_at: string }>(),
@@ -85,6 +88,9 @@ export async function loadMemberStatementSection(
       WHERE te.space_id=? AND COALESCE(te.status,'posted')<>'voided'`)
       .bind(member.space_id)
       .all(),
+    db.prepare("SELECT id, display_name FROM members WHERE space_id=?")
+      .bind(member.space_id)
+      .all<{ id: string; display_name: string }>(),
   ]);
 
   const ledger = buildMemberLedger({
@@ -117,6 +123,9 @@ export async function loadMemberStatementSection(
   const debit = (minor: number) => formatDebitMoneyMinor(minor, currency, locale);
   const lines = filterMemberLedgerLines(ledger.lines, focus);
   const spentMinor = ledger.spentMinor || ledger.addonMinor;
+  const nameById = new Map((spaceMembers.results ?? []).map((row) => [row.id, row.display_name]));
+  const payInstructions = pendingPayInstructions(member.id, (settlements.results ?? []) as never[], { locale, nameById });
+  const payInstruction = formatPayInstructionSentence(payInstructions, currency, locale);
   return {
     member,
     space,
@@ -132,5 +141,7 @@ export async function loadMemberStatementSection(
     spentMinor,
     owesMinor: ledger.owesMinor,
     creditMinor: ledger.creditMinor,
+    payInstruction,
+    payInstructions,
   };
 }

@@ -412,6 +412,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .member-ledger-tabs button { min-height: 38px; border: 1px solid #dce6e1; border-radius: 10px; background: #fff; padding: 6px 12px; font: inherit; font-weight: 700; cursor: pointer; display: inline-flex; flex-direction: column; align-items: flex-start; }
 .member-ledger-tabs button small { color: #66766f; font-weight: 600; }
 .member-ledger-tabs button.active { border-color: #0d7a65; background: #eef7f4; color: #0d7a65; }
+.statement-pay-box { margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; background: #fff7ed; border: 1px solid #f5c26b; }
+.statement-pay-box strong { display: block; margin-bottom: 6px; color: #7c4a03; }
+.statement-pay-box p { margin: 0 0 8px; font-weight: 700; color: #5c3d08; }
+.statement-pay-box p:last-child { margin-bottom: 0; }
 .member-ledger-table .person-head, .member-ledger-table .member-ledger-row { min-width: 720px; grid-template-columns: .9fr 1fr 1.6fr .7fr; }
 .member-ledger-row.is-payment,
 .member-ledger-row.is-paid {
@@ -2011,6 +2015,7 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
   font-weight: 700;
   margin-bottom: 4px;
 }
+.statement-share-pay { margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; background: #fff7ed; border: 1px solid #f5c26b; font-weight: 700; color: #7c4a03; }
 .statement-share-kpis strong {
   font-size: 15px;
   font-weight: 800;
