@@ -1,6 +1,7 @@
-/** Dashboard payload cache so Home ↔ Control and refresh do not re-splash. */
+/** Dashboard payload cache so the installed app opens from the device, then refreshes in the background. */
 
 import { clearPageCache } from "./page-cache";
+import { clearOfflineQueue, notifyOfflineCachesCleared } from "./offline-queue";
 
 type CacheEntry = { data: unknown; at: number };
 
@@ -9,18 +10,28 @@ let inflight: Promise<unknown> | null = null;
 let hydrated = false;
 
 const FRESH_MS = 20_000;
-const STORED_MS = 30 * 60 * 1000;
+const STORED_MS = 14 * 24 * 60 * 60 * 1000;
 const FETCH_MS = 14_000;
 const STORAGE_KEY = "wazen-dashboard-session";
 
-function readStored(): CacheEntry | null {
+function storageOf(): Storage | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function readStored(allowStale = true): CacheEntry | null {
+  const storage = storageOf();
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(STORAGE_KEY) || (typeof sessionStorage !== "undefined" ? sessionStorage.getItem(STORAGE_KEY) : null);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CacheEntry;
     if (!parsed || typeof parsed !== "object" || typeof parsed.at !== "number" || !parsed.data) return null;
-    if (Date.now() - parsed.at > STORED_MS) return null;
+    if (!allowStale && Date.now() - parsed.at > STORED_MS) return null;
     return parsed;
   } catch {
     return null;
@@ -28,10 +39,15 @@ function readStored(): CacheEntry | null {
 }
 
 function persist(entry: CacheEntry | null) {
-  if (typeof window === "undefined") return;
+  const storage = storageOf();
+  if (!storage) return;
   try {
-    if (!entry) window.sessionStorage.removeItem(STORAGE_KEY);
-    else window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(entry));
+    if (!entry) {
+      storage.removeItem(STORAGE_KEY);
+      try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+    } else {
+      storage.setItem(STORAGE_KEY, JSON.stringify(entry));
+    }
   } catch {
     /* quota / private mode */
   }
@@ -62,6 +78,8 @@ export function clearDashboardCache() {
   inflight = null;
   persist(null);
   clearPageCache();
+  clearOfflineQueue();
+  notifyOfflineCachesCleared();
 }
 
 function loadFailed(status: number) {
@@ -112,6 +130,8 @@ export async function fetchDashboardSession<T>(force = false): Promise<{ status:
       return data;
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) throw caught;
+      hydrateFromStorage();
+      if (cache?.data) return cache.data;
       if (controller.signal.aborted || (caught as { status?: number }).status === 504) throw loadFailed(504);
       throw caught instanceof Error && "status" in caught ? caught : loadFailed(502);
     } finally {

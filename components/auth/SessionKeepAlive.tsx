@@ -11,10 +11,11 @@ export function SessionKeepAlive() {
     let cancelled = false;
 
     const ping = () => {
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
       const now = Date.now();
       if (now - last < IDLE_PING_MS) return;
       last = now;
-      void fetch("/api/auth/me", { cache: "no-store", credentials: "same-origin" });
+      void fetch("/api/auth/me", { cache: "no-store", credentials: "same-origin" }).catch(() => {});
     };
 
     const onUse = () => ping();

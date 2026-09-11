@@ -81,10 +81,10 @@ export function PwaInstallCard({ locale }: { locale: "ar" | "en" }) {
           <h2>{locale === "ar" ? "ثبّت وازن على جهازك" : "Install Wazen on your device"}</h2>
           <p className="modal-note">
             {installed
-              ? (locale === "ar" ? "التطبيق مثبت ويعمل بوضع مستقل." : "App is installed and running standalone.")
+              ? (locale === "ar" ? "التطبيق مثبت: يفتح من الجهاز بدون شبكة، ويحدّث ويرفع في الخلفية عند توفرها." : "Installed: opens from this device offline, then updates and uploads in the background.")
               : (locale === "ar"
-                ? "اختصار على الشاشة الرئيسية لفتح وازن كتطبيق. البيانات الحية تبقى من الخادم."
-                : "Add a home-screen shortcut to open Wazen like an app. Live data still comes from the server.")}
+                ? "ثبّت وازن على الشاشة الرئيسية لفتح الصفحات أوفلاين. عند عودة الشبكة يحدّث نفسه ويرفع البيانات."
+                : "Install Wazen to open pages offline. When the network returns it updates and uploads in the background.")}
           </p>
         </div>
       </div>

@@ -28,7 +28,7 @@ export function notifyLiveRefresh() {
   }
 }
 
-/** Reload once Vercel ships a new git deployment, without a manual refresh. */
+/** Pull a new deployment in the background. Never reload the open page. */
 export function LiveBuildGuard() {
   const pathname = usePathname();
   useEffect(() => {
@@ -39,7 +39,6 @@ export function LiveBuildGuard() {
     const check = async () => {
       if (stopped || inflight) return;
       if (document.visibilityState !== "visible") return;
-      if (document.querySelector("input:focus, textarea:focus, select:focus, [contenteditable='true']:focus")) return;
       inflight = true;
       try {
         const response = await fetch("/api/health", { cache: "no-store" });
@@ -52,10 +51,15 @@ export function LiveBuildGuard() {
           return;
         }
         if (build !== seen && build !== currentBuildHint()) {
-          window.location.reload();
+          seen = build;
+          document.documentElement.dataset.wazenBuild = build;
+          if ("serviceWorker" in navigator) {
+            const registration = await navigator.serviceWorker.getRegistration();
+            await registration?.update();
+          }
         }
       } catch {
-        /* ignore */
+        /* offline — keep the copy already on the device */
       } finally {
         inflight = false;
       }

@@ -578,6 +578,14 @@ html[data-theme="dark"] .action-menu-panel button.is-danger { color: #f97066; }
   gap: 6px;
   flex-shrink: 0;
 }
+.offline-sync-bar {
+  border-color: color-mix(in srgb, #b45309 40%, var(--line));
+  background: color-mix(in srgb, #fffbeb 94%, white);
+  color: #78350f;
+}
+.offline-sync-bar + .pwa-install-banner {
+  bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+}
 .pwa-install-gate {
   display: grid;
   gap: 10px;
