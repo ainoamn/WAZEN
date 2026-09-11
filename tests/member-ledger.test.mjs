@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMemberLedger, buildMemberLedgerHtml, filterMemberLedgerLines } from "../lib/member-ledger.ts";
+import { buildMemberLedger, buildMemberLedgerHtml, filterMemberLedgerLines, memberLedgerAmountClass, memberLedgerTone } from "../lib/member-ledger.ts";
 
 const member = {
   id: "m1",
@@ -229,4 +229,39 @@ test("trip wallet does not treat the savings goal as an expense debt after settl
   assert.ok(ledger.lines.some((line) => line.titleAr.includes("هدف الرحلة")));
   assert.equal(ledger.lines.some((line) => line.titleAr.includes("مستحق شهر")), false);
   assert.equal(ledger.lines.some((line) => line.titleAr.includes("إضافي / حصص")), false);
+});
+
+test("posted settlement payments use the paid tone, not spend red", () => {
+  const ledger = buildMemberLedger({
+    member: { ...member, due_minor: 10_000, paid_minor: 0, addon_minor: 0 },
+    spaceNameAr: "بندر الصقله",
+    spaceNameEn: "Trip",
+    currency: "OMR",
+    spaceType: "trip",
+    plan: { amount_minor: 10_000, duration_months: 1, starts_at: "2026-09-05T00:00:00.000Z" },
+    installments: [],
+    transactions: [],
+    settlements: [{
+      id: "st1",
+      space_id: "s1",
+      from_member_id: "m1",
+      to_member_id: "m2",
+      from_member_name: "عبد الحميد",
+      to_member_name: "حارث خميس",
+      amount_minor: 13_803,
+      status: "settled",
+      settled_at: "2026-09-09T12:00:00.000Z",
+    }],
+    tripExpenses: [],
+    expenseSplits: [],
+  });
+  const payment = ledger.lines.find((line) => line.titleAr === "دفع تسوية مسجّلة");
+  assert.ok(payment);
+  assert.equal(memberLedgerTone(payment), "paid");
+  assert.equal(memberLedgerAmountClass(payment), "amount-positive");
+  const share = ledger.lines.find((line) => line.titleAr.includes("حصته من مصروفات"));
+  if (share) {
+    assert.equal(memberLedgerTone(share), "paid");
+    assert.equal(memberLedgerAmountClass(share), "amount-positive");
+  }
 });

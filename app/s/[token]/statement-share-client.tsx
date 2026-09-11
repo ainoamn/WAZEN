@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import WazenLogo from "../../../components/brand/WazenLogo";
-import { buildCombinedMemberLedgerHtml } from "../../../lib/member-ledger";
+import { buildCombinedMemberLedgerHtml, memberLedgerAmountClass, memberLedgerTone } from "../../../lib/member-ledger";
 import { downloadReportHtml, printWazenHtml } from "../../../lib/print-document";
 
 type MemberLine = {
@@ -371,15 +371,19 @@ export default function StatementShareClient({ token }: { token: string }) {
                             minimumFractionDigits: 3,
                             maximumFractionDigits: 3,
                           }).format((line.amountMinor || 0) / 1000);
+                          const tone = memberLedgerTone(line);
                           return (
-                            <tr key={`${section.walletName}:${line.at}:${index}`}>
+                            <tr key={`${section.walletName}:${line.at}:${index}`} className={`is-${tone}`}>
                               <td>{new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</td>
                               <td>
-                                <strong>{locale === "ar" ? line.titleAr : line.titleEn}</strong>
+                                <strong className="ledger-item-title">
+                                  {locale === "ar" ? line.titleAr : line.titleEn}
+                                  {tone === "paid" ? <em className="ledger-kind-badge">{locale === "ar" ? "دفع" : "Paid"}</em> : null}
+                                </strong>
                                 <small>{locale === "ar" ? line.detailAr : line.detailEn}</small>
                               </td>
                               <td>{typeLabel(line.focus, locale)}</td>
-                              <td className={line.direction === "out" ? "amount-negative" : line.direction === "in" ? "amount-positive" : ""}>{amount}</td>
+                              <td className={memberLedgerAmountClass(line)}>{amount}</td>
                             </tr>
                           );
                         })}

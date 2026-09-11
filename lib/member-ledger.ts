@@ -333,7 +333,7 @@ export function buildMemberLedger(input: {
         lines.push({
           at: settlement.settled_at || settlement.created_at || new Date().toISOString(),
           focus: pending ? "owes" : "paid",
-          direction: "out",
+          direction: pending ? "out" : "in",
           titleAr: pending ? "عليه تحويل معلق" : "دفع تسوية مسجّلة",
           titleEn: pending ? "Pending transfer he owes" : "Posted settlement payment",
           detailAr: pending
@@ -390,7 +390,7 @@ export function buildMemberLedger(input: {
     lines.push({
       at: member.joined_at || new Date().toISOString(),
       focus: "paid",
-      direction: "out",
+      direction: "in",
       titleAr: "حصته من مصروفات الرحلة",
       titleEn: "Share of trip expenses",
       detailAr: "مجموع حصصه من فواتير الرحلة بعد التقسيم — هذا عمود «مدفوع»",
@@ -504,6 +504,34 @@ export function filterMemberLedgerLines(lines: MemberLedgerLine[], focus: Member
   return lines.filter((line) => line.focus === focus);
 }
 
+export type MemberLedgerTone = "paid" | "spend" | "owes" | "credit" | "info";
+
+/** Paid stays green even when cash left the member; spend/owes stay rose. */
+export function memberLedgerTone(line: Pick<MemberLedgerLine, "focus" | "direction">): MemberLedgerTone {
+  if (line.focus === "paid") return "paid";
+  if (line.focus === "spent") return "spend";
+  if (line.focus === "owes") return "owes";
+  if (line.focus === "credit") return "credit";
+  if (line.direction === "in") return "credit";
+  if (line.direction === "out") return "spend";
+  return "info";
+}
+
+export function memberLedgerAmountClass(line: Pick<MemberLedgerLine, "focus" | "direction">) {
+  const tone = memberLedgerTone(line);
+  if (tone === "paid") return "amount-positive";
+  if (tone === "spend" || tone === "owes") return "amount-negative";
+  if (tone === "credit") return "reserve-amount";
+  return "";
+}
+
+export function memberLedgerPrintAmountClass(line: Pick<MemberLedgerLine, "focus" | "direction">) {
+  const tone = memberLedgerTone(line);
+  if (tone === "paid" || tone === "credit") return "in";
+  if (tone === "spend" || tone === "owes") return "out";
+  return "";
+}
+
 function ledgerTypeLabel(locale: MemberLedgerLocale, focus: MemberLedgerLine["focus"]) {
   return ({
     paid: text(locale, "مدفوع", "Paid"),
@@ -552,10 +580,14 @@ function statementMovementsTable(
     const when = new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB");
     const titleText = locale === "ar" ? line.titleAr : line.titleEn;
     const detail = locale === "ar" ? line.detailAr : line.detailEn;
-    const cls = line.direction === "in" ? "in" : line.direction === "out" ? "out" : "";
-    return `<tr>
+    const cls = memberLedgerPrintAmountClass(line);
+    const tone = memberLedgerTone(line);
+    const badge = tone === "paid"
+      ? `<em class="ledger-kind-badge">${escapeHtml(text(locale, "دفع", "Paid"))}</em>`
+      : "";
+    return `<tr class="is-${tone}">
       <td class="col-date">${escapeHtml(when)}</td>
-      <td><strong>${escapeHtml(titleText)}</strong>${detail ? `<small>${escapeHtml(detail)}</small>` : ""}</td>
+      <td><strong>${escapeHtml(titleText)}${badge}</strong>${detail ? `<small>${escapeHtml(detail)}</small>` : ""}</td>
       <td>${escapeHtml(ledgerTypeLabel(locale, line.focus))}</td>
       <td class="num ${cls}">${escapeHtml(money(line.amountMinor))}</td>
     </tr>`;

@@ -6,7 +6,7 @@ import OmrSymbol from "../brand/OmrSymbol";
 import { apiFetch } from "../../lib/client-api";
 import { toWhatsAppNumber, digitsOnly } from "../../lib/phone";
 import { isMemberContactTakenError, memberContactConflictMessage, memberContactTakenField } from "../../lib/member-contact-unique";
-import { buildMemberLedger, buildCombinedMemberLedgerHtml, filterMemberLedgerLines, type MemberLedgerFocus } from "../../lib/member-ledger";
+import { buildMemberLedger, buildCombinedMemberLedgerHtml, filterMemberLedgerLines, memberLedgerAmountClass, memberLedgerTone, type MemberLedgerFocus } from "../../lib/member-ledger";
 import { printWazenHtml } from "../../lib/print-document";
 import { consumePlanQuota } from "../../lib/plan-quota-client";
 import {
@@ -545,14 +545,20 @@ function MemberLedgerBody({
           <span>{locale === "ar" ? "التفصيل" : "Detail"}</span>
           <span>{locale === "ar" ? "المبلغ" : "Amount"}</span>
         </div>
-        {rows.map((line, index) => (
-          <div className="member-row member-ledger-row" key={`${line.at}:${line.titleAr}:${index}`}>
+        {rows.map((line, index) => {
+          const tone = memberLedgerTone(line);
+          return (
+          <div className={`member-row member-ledger-row is-${tone}`} key={`${line.at}:${line.titleAr}:${index}`}>
             <span>{new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</span>
-            <strong>{locale === "ar" ? line.titleAr : line.titleEn}</strong>
+            <strong className="ledger-item-title">
+              {locale === "ar" ? line.titleAr : line.titleEn}
+              {tone === "paid" ? <em className="ledger-kind-badge">{locale === "ar" ? "دفع" : "Paid"}</em> : null}
+            </strong>
             <span className="muted-amount">{locale === "ar" ? line.detailAr : line.detailEn}</span>
-            <strong className={line.direction === "out" ? "amount-negative" : line.direction === "in" ? "reserve-amount" : ""}>{money(line.amountMinor, space.currency, locale)}</strong>
+            <strong className={memberLedgerAmountClass(line)}>{money(line.amountMinor, space.currency, locale)}</strong>
           </div>
-        ))}
+          );
+        })}
         {!rows.length && <p className="modal-note">{locale === "ar" ? "لا توجد تفاصيل في هذا القسم." : "No detail in this section."}</p>}
       </div>
       <div className="modal-actions">

@@ -394,6 +394,27 @@ body.is-statement .kpi strong { font-size: 16px; }
 }
 .statement-movements td strong { display: block; font-size: 14px; font-weight: 800; }
 .statement-movements td small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.statement-movements tr.is-paid td {
+  background: #d7eee6;
+}
+.statement-movements tr.is-paid td:first-child {
+  box-shadow: inset 5px 0 0 #0a5346;
+}
+html[dir="rtl"] .statement-movements tr.is-paid td:first-child {
+  box-shadow: inset -5px 0 0 #0a5346;
+}
+.ledger-kind-badge {
+  display: inline-block;
+  margin-inline-start: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #0a5346;
+  color: #f3fbf8;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  vertical-align: middle;
+}
 .statement-cards { display: grid; gap: 10px; }
 .statement-card {
   border: 1px solid var(--line);

@@ -413,6 +413,43 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .member-ledger-tabs button small { color: #66766f; font-weight: 600; }
 .member-ledger-tabs button.active { border-color: #0d7a65; background: #eef7f4; color: #0d7a65; }
 .member-ledger-table .person-head, .member-ledger-table .member-ledger-row { min-width: 720px; grid-template-columns: .9fr 1fr 1.6fr .7fr; }
+.member-ledger-row.is-payment,
+.member-ledger-row.is-paid {
+  background: #d7eee6;
+  border-radius: 12px;
+  border-bottom: 0;
+  border-inline-start: 5px solid #0a5346;
+  box-shadow: inset 0 0 0 1px #b7d8cd;
+  margin: 6px 0;
+}
+.member-ledger-row.is-spend {
+  background: transparent;
+}
+.ledger-item-title {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  direction: inherit;
+}
+.ledger-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #0a5346;
+  color: #f3fbf8;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+.member-ledger-row.is-paid .amount-positive,
+.member-ledger-row.is-payment .amount-positive {
+  color: #047857 !important;
+  font-weight: 800;
+}
 .section-title-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .action-menu { position: relative; }
 .action-menu-panel { position: absolute; top: calc(100% + 6px); inset-inline-start: 0; z-index: 20; min-width: 180px; max-width: min(240px, calc(100vw - 24px)); padding: 6px; border-radius: 14px; background: white; border: 1px solid #e7eee9; box-shadow: 0 14px 32px rgba(17,31,27,.16); }
@@ -1292,6 +1329,20 @@ html[data-theme="dark"] .member-ledger-tabs button.active {
 html[data-theme="dark"] .member-row {
   border-bottom-color: var(--line);
 }
+html[data-theme="dark"] .member-ledger-row.is-paid,
+html[data-theme="dark"] .member-ledger-row.is-payment {
+  background: #14352e;
+  border-inline-start-color: #34d399;
+  box-shadow: inset 0 0 0 1px #1f5a4c;
+}
+html[data-theme="dark"] .ledger-kind-badge {
+  background: #047857;
+  color: #ecfdf5;
+}
+html[data-theme="dark"] .member-ledger-row.is-paid .amount-positive,
+html[data-theme="dark"] .member-ledger-row.is-payment .amount-positive {
+  color: #6ee7b7 !important;
+}
 html[data-theme="dark"] .member-row-button:hover {
   background: #1a2622;
 }
@@ -2019,6 +2070,16 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
+}
+.statement-share-movements tr.is-paid td {
+  background: #d7eee6;
+}
+.statement-share-movements tr.is-paid td:first-child {
+  box-shadow: inset 5px 0 0 #0a5346;
+}
+html[dir="rtl"] .statement-share-movements tr.is-paid td:first-child,
+.statement-share-page[dir="rtl"] .statement-share-movements tr.is-paid td:first-child {
+  box-shadow: inset -5px 0 0 #0a5346;
 }
 .statement-share-line {
   border: 1px solid var(--line);
