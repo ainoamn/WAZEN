@@ -93,8 +93,8 @@ test("fund-paid expense share nets against paid → leftover under credit", () =
   });
   assert.equal(ledger.owesMinor, 0);
   assert.equal(ledger.creditMinor, 34_500);
-  assert.equal(ledger.lines.some((row) => row.titleAr.includes("حصة")), true);
-  assert.equal(filterMemberLedgerLines(ledger.lines, "spent").some((row) => row.titleAr.includes("حصة")), false);
+  const spent = filterMemberLedgerLines(ledger.lines, "spent");
+  assert.equal(spent.some((row) => row.titleAr.includes("حصة")), true);
   const credit = filterMemberLedgerLines(ledger.lines, "credit");
   assert.equal(credit.some((row) => row.titleAr.includes("متبقي")), true);
 });
@@ -322,7 +322,7 @@ test("Azerbaijan trip file matches the members table: paid 200, pocket 0, owes 1
     ],
   });
   assert.equal(ledger.paidMinor, 200_000);
-  assert.equal(ledger.spentMinor, 0);
+  assert.equal(ledger.spentMinor, 218_422);
   assert.equal(ledger.owesMinor, 18_422);
   assert.equal(ledger.creditMinor, 0);
   assert.equal(ledger.lines.filter((line) => line.titleAr.includes("حصته من مصروفات الرحلة")).length, 0);
@@ -331,4 +331,6 @@ test("Azerbaijan trip file matches the members table: paid 200, pocket 0, owes 1
   assert.ok(ledger.lines.some((line) => line.titleAr.includes("مساهمة ABDUL HAMID") && line.amountMinor === 200_000));
   const paidLines = filterMemberLedgerLines(ledger.lines, "paid");
   assert.equal(paidLines.reduce((sum, line) => sum + line.amountMinor, 0), 200_000);
+  const spentLines = filterMemberLedgerLines(ledger.lines, "spent");
+  assert.equal(spentLines.reduce((sum, line) => sum + line.amountMinor, 0), 218_422);
 });

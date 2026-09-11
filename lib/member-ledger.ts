@@ -266,8 +266,8 @@ export function buildMemberLedger(input: {
           direction: "out",
           titleAr: `حصة من: ${expense.description || "مصروف"}`,
           titleEn: `Share of: ${expense.description || "expense"}`,
-          detailAr: "استهلاك من مساهمته في الصندوق — ليست دفعة ثانية ولا صرفاً من الجيب",
-          detailEn: "Consumed from his fund contribution — not a second payment and not pocket spend",
+          detailAr: "حصته من فاتورة الصندوق — هذا عمود «صرف». عمود «مدفوع» يبقى مساهمة الصندوق",
+          detailEn: "His share of a fund bill — this is Spent. Paid stays the fund contribution",
           amountMinor: shareMinor,
         });
       }
@@ -463,7 +463,7 @@ export function buildMemberLedger(input: {
     extraMinor: Number(member.extra_minor) || 0,
     addonMinor: Number(member.addon_minor ?? 0),
     spentMinor: input.spaceType === "trip"
-      ? tripPocket
+      ? fundSharesTotal + tripPocket
       : Number(member.addon_minor ?? 0) + lines.filter((line) => line.focus === "spent" && line.direction === "out").reduce((sum, line) => sum + (line.titleAr.startsWith("حصة") || line.titleEn.startsWith("Share") ? line.amountMinor : 0), 0),
     accruedDueMinor: accrued,
     remainingDueMinor: remainingDue,
@@ -478,11 +478,7 @@ export function buildMemberLedger(input: {
 
 export function filterMemberLedgerLines(lines: MemberLedgerLine[], focus: MemberLedgerFocus) {
   if (focus === "all") return lines;
-  return lines.filter((line) => {
-    if (line.focus !== focus) return false;
-    if (focus === "spent" && line.detailAr.includes("استهلاك من مساهمته")) return false;
-    return true;
-  });
+  return lines.filter((line) => line.focus === focus);
 }
 
 export type MemberLedgerTone = "paid" | "spend" | "owes" | "credit" | "info";
