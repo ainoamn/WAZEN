@@ -1095,6 +1095,18 @@ html[data-theme="dark"] .space-picker-field select { background: var(--surface);
   padding-inline-start: 32px;
   font-size: 14px;
 }
+.split-remainder-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #eef6f2;
+  color: #0d7a65;
+  font-size: 14px;
+  font-weight: 700;
+}
 .expense-split-mode { display: flex; flex-wrap: wrap; gap: 6px; }
 .extra-share-list { display: flex; flex-direction: column; gap: 8px; }
 .extra-share-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(110px, 140px) auto; gap: 8px; align-items: center; }
@@ -1414,7 +1426,7 @@ html[data-theme="dark"] .split-dropdown-option:hover,
 html[data-theme="dark"] .split-dropdown-option.is-checked {
   background: var(--green-soft);
 }
-html[data-theme="dark"] .split-dropdown-toolbar-actions button {
+html[data-theme="dark"] .split-remainder-banner {
   background: var(--green-soft);
   color: var(--ink);
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, composeExpenseShares, extraAddonMinorFromTransactions, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPaidMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
+import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, composeExpenseShares, composeSharedRemainder, extraAddonMinorFromTransactions, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPaidMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
 import { planExpenseSplits } from "../lib/expense-split.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 import { bankCustodySplit } from "../lib/wallet-links.ts";
@@ -102,6 +102,17 @@ test("one bill can share an amount among some people and add extras for others",
     sharedMemberIds: ["abdul", "dawood"],
     extraShares: [{ memberId: "fourth", amount: "197.450" }],
   }), /AMOUNT_SPLIT_MISMATCH/);
+
+  const remainderBill = composeSharedRemainder({
+    totalMinor: 150_000,
+    sharedMinor: 100_000,
+    remainderMemberIds: ["c"],
+    allowedIds: ["a", "b", "c"],
+  });
+  assert.equal(remainderBill.totalMinor, 150_000);
+  assert.equal(remainderBill.splits.find((row) => row.memberId === "a")?.shareMinor, 33_334);
+  assert.equal(remainderBill.splits.find((row) => row.memberId === "b")?.shareMinor, 33_333);
+  assert.equal(remainderBill.splits.find((row) => row.memberId === "c")?.shareMinor, 83_333);
 });
 
 test("contribution payment applies against full outstanding dues then advance", () => {

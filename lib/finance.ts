@@ -96,6 +96,30 @@ export function composeExpenseShares(input: {
   return { totalMinor, splits };
 }
 
+/** Total bill: a shared slice on everyone, remainder split among chosen people. */
+export function composeSharedRemainder(input: {
+  totalMinor: number;
+  sharedMinor: number;
+  remainderMemberIds: string[];
+  allowedIds: string[];
+}) {
+  if (!Number.isSafeInteger(input.totalMinor) || input.totalMinor <= 0) throw new Error("INVALID_AMOUNT");
+  if (!Number.isSafeInteger(input.sharedMinor) || input.sharedMinor < 0 || input.sharedMinor > input.totalMinor) {
+    throw new Error("INVALID_SPLIT");
+  }
+  const remainderMinor = input.totalMinor - input.sharedMinor;
+  const remainderIds = input.allowedIds.filter((id) => input.remainderMemberIds.includes(id));
+  if (remainderMinor > 0 && remainderIds.length === 0) throw new Error("INVALID_SPLIT");
+  return composeExpenseShares({
+    sharedMinor: input.sharedMinor,
+    sharedMemberIds: input.allowedIds,
+    extras: remainderMinor > 0
+      ? splitEvenly(remainderMinor, remainderIds).map((row) => ({ memberId: row.memberId, amountMinor: row.shareMinor }))
+      : [],
+    allowedIds: input.allowedIds,
+  });
+}
+
 export type Balance = { memberId: string; balanceMinor: number };
 
 function byLargestThenId<T extends { memberId: string; balanceMinor: number }>(left: T, right: T) {
