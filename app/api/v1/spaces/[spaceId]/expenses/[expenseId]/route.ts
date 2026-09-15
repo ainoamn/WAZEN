@@ -34,12 +34,14 @@ export async function PATCH(
           amount: z.union([z.string(), z.number()]).optional(),
           description: z.string().trim().min(2).max(300).optional(),
           paidByMemberId: z.string().min(1).max(120).optional(),
+          splitMemberIds: z.array(z.string().min(1).max(120)).min(1).max(200).optional(),
         }).safeParse(payload);
         if (!parsed.success) throw new ApiError(400, "INVALID_TRIP_EXPENSE");
         if (
           parsed.data.amount === undefined
           && parsed.data.description === undefined
           && parsed.data.paidByMemberId === undefined
+          && parsed.data.splitMemberIds === undefined
         ) {
           throw new ApiError(400, "INVALID_TRIP_EXPENSE");
         }

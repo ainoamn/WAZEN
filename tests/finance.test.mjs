@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, extraAddonMinorFromTransactions, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPaidMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, splitContributionPayment, splitEvenly, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
+import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, extraAddonMinorFromTransactions, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPaidMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 import { bankCustodySplit } from "../lib/wallet-links.ts";
 
@@ -10,6 +10,36 @@ test("equal expense splits preserve every minor unit", () => {
   assert.equal(splits.reduce((sum, item) => sum + item.shareMinor, 0), 100);
   const three = splitEvenly(60_000, ["abdul", "mohamed", "majed"]);
   assert.deepEqual(three.map((item) => item.shareMinor), [20_000, 20_000, 20_000]);
+});
+
+test("late joiner keeps old tickets on the original two; new ticket can be personal", () => {
+  const original = ["abdul", "dawood"];
+  const afterJoin = ["abdul", "dawood", "third", "fourth"];
+  const keepOld = resolveExpenseSplitMembers({ existingIds: original, fallbackIds: afterJoin });
+  assert.deepEqual(keepOld, original);
+  const oldTickets = splitEvenly(331_000, keepOld);
+  assert.deepEqual(oldTickets.map((row) => row.shareMinor), [165_500, 165_500]);
+
+  const personalIds = resolveExpenseSplitMembers({ requestedIds: ["fourth"], fallbackIds: afterJoin });
+  assert.deepEqual(splitEvenly(197_450, personalIds), [{ memberId: "fourth", shareMinor: 197_450 }]);
+
+  const paidForOther = netTripMemberBalances({
+    memberIds: afterJoin,
+    expenses: [{ id: "t4", paid_by_member_id: "abdul", amount_minor: 197_450 }],
+    splits: [{ expense_id: "t4", member_id: "fourth", share_minor: 197_450 }],
+  });
+  assert.equal(paidForOther.find((row) => row.memberId === "abdul")?.balanceMinor, 197_450);
+  assert.equal(paidForOther.find((row) => row.memberId === "fourth")?.balanceMinor, -197_450);
+  assert.equal(paidForOther.find((row) => row.memberId === "dawood")?.balanceMinor, 0);
+});
+
+test("expense split members prefer the requested set, then existing, then everyone", () => {
+  const all = ["a", "b", "c"];
+  assert.deepEqual(resolveExpenseSplitMembers({ fallbackIds: all }), all);
+  assert.deepEqual(resolveExpenseSplitMembers({ requestedIds: ["c", "a", "ghost"], fallbackIds: all }), ["a", "c"]);
+  assert.deepEqual(resolveExpenseSplitMembers({ existingIds: ["b"], fallbackIds: all }), ["b"]);
+  assert.throws(() => resolveExpenseSplitMembers({ requestedIds: [], fallbackIds: all }), /INVALID_SPLIT/);
+  assert.throws(() => resolveExpenseSplitMembers({ requestedIds: ["ghost"], fallbackIds: all }), /INVALID_SPLIT/);
 });
 
 test("contribution payment applies against full outstanding dues then advance", () => {

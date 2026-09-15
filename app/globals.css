@@ -1003,6 +1003,10 @@ html[data-theme="dark"] .space-picker-field select { background: var(--surface);
 .split-chips span { padding: 5px 8px; border-radius: 99px; background: #eef6f2; color: #4f655e; font-size: 9px; }
 .split-chips span.payer-share { background: #e7f4ee; color: #0d7a65; font-weight: 700; }
 .expense-split-note { margin: 0 18px 12px; color: #5d6f69; font-size: 12px; line-height: 1.55; }
+.expense-split-picker { display: flex; flex-direction: column; gap: 8px; }
+.expense-split-picker > span { color: #596b64; font-size: 13px; font-weight: 700; }
+.split-picker-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.split-picker-actions .secondary-button { height: 34px; padding: 0 10px; font-size: 12px; }
 .settlement-alert { min-height: 48px; padding: 10px 13px; border-radius: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 9px; background: #fff4df; color: #805b1e; font-size: 12px; }
 .settlement-alert b { margin-inline-start: auto; }
 .settlement-alert button { height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: #805b1e; color: white; font-size: 10px; font-weight: 800; cursor: pointer; }
@@ -1321,6 +1325,7 @@ html[data-theme="dark"] .member-ledger-tabs button {
 html[data-theme="dark"] .statement-scope-picker p,
 html[data-theme="dark"] .member-contact-edit label > span,
 html[data-theme="dark"] .modal-form label > span,
+html[data-theme="dark"] .expense-split-picker > span,
 html[data-theme="dark"] .profile-card label > span,
 html[data-theme="dark"] .assoc-chip span,
 html[data-theme="dark"] .assoc-chip em,

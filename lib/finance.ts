@@ -35,6 +35,34 @@ export function splitEvenly(amountMinor: number, memberIds: string[]) {
   return memberIds.map((memberId) => ({ memberId, shareMinor: base + (remainder-- > 0 ? 1 : 0) }));
 }
 
+/**
+ * Who bears an expense. New bills default to current members; edits keep the
+ * people already on the split so a late joiner does not inherit old tickets.
+ */
+export function resolveExpenseSplitMembers(input: {
+  requestedIds?: string[] | null;
+  existingIds?: string[] | null;
+  fallbackIds: string[];
+}): string[] {
+  const fallbackIds = [...input.fallbackIds];
+  const allowed = new Set(fallbackIds);
+  const inJoinOrder = (ids: string[] | null | undefined) => {
+    if (ids == null) return null;
+    const wanted = new Set(ids.filter((id) => allowed.has(id)));
+    return fallbackIds.filter((id) => wanted.has(id));
+  };
+
+  if (input.requestedIds !== undefined && input.requestedIds !== null) {
+    const requested = inJoinOrder(input.requestedIds) ?? [];
+    if (!requested.length) throw new Error("INVALID_SPLIT");
+    return requested;
+  }
+  const existing = inJoinOrder(input.existingIds);
+  if (existing?.length) return existing;
+  if (!fallbackIds.length) throw new Error("INVALID_SPLIT");
+  return fallbackIds;
+}
+
 export type Balance = { memberId: string; balanceMinor: number };
 
 function byLargestThenId<T extends { memberId: string; balanceMinor: number }>(left: T, right: T) {

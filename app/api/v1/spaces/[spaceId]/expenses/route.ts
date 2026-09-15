@@ -64,6 +64,7 @@ export async function POST(
           description: z.string().trim().min(2).max(300),
           paidFrom: z.enum(["common_fund", "member"]).optional(),
           paidByMemberId: z.string().min(1).max(120).optional(),
+          splitMemberIds: z.array(z.string().min(1).max(120)).min(1).max(200).optional(),
           occurredAt: z.string().min(8).max(40).optional(),
         }).safeParse(payload);
         if (!parsed.success) throw new ApiError(400, "INVALID_TRIP_EXPENSE");
