@@ -341,6 +341,20 @@ export function isFundPaidExpense(expense: { paid_from?: string | null; paid_by_
     || expense.paid_by_name === "Association fund";
 }
 
+/** Trip uses the association fund when anyone contributed cash or a bill was paid from it. */
+export function tripWalletUsesFundCash(input: {
+  spaceId: string;
+  expenses?: Array<{ space_id?: string; paid_from?: string | null; paid_by_name?: string | null; status?: string | null }>;
+  membersPaidMinor?: Array<unknown>;
+}) {
+  if ((input.membersPaidMinor ?? []).some((paid) => asMinor(paid) > 0)) return true;
+  return (input.expenses ?? []).some((expense) =>
+    String(expense.space_id ?? "") === String(input.spaceId)
+    && (expense.status ?? "posted") !== "voided"
+    && isFundPaidExpense(expense),
+  );
+}
+
 /** Peer settlement journal rows must not look like salary, spend, or extra dues. */
 export function isPeerSettlementTransfer(txn: { description_ar?: string | null; description_en?: string | null }) {
   const text = `${txn.description_ar ?? ""} ${txn.description_en ?? ""}`;
@@ -423,7 +437,7 @@ export function memberTripShareMinor(
   }, 0);
 }
 
-/** Trip «مدفوع»: cash put in the fund. If nobody contributed, show bill shares (pocket trips like Bandar). */
+/** Trip «مدفوع»: cash put in the fund. Pocket-only trips (Bandar) fall back to bill shares. */
 export function memberTripPaidMinor(
   memberId: string,
   spaceId: string,
@@ -437,12 +451,20 @@ export function memberTripPaidMinor(
     settled_at?: string | null;
   }> = [],
   extras?: {
-    expenses?: Array<{ id?: string; space_id?: string; status?: string | null }>;
+    expenses?: Array<{ id?: string; space_id?: string; status?: string | null; paid_from?: string | null; paid_by_name?: string | null }>;
     splits?: Array<{ expense_id?: string; member_id?: string; share_minor?: unknown }>;
+    membersPaidMinor?: Array<unknown>;
   },
 ) {
   const contributed = asMinor(paidMinor);
   if (contributed > 0) return contributed;
+  if (tripWalletUsesFundCash({
+    spaceId,
+    expenses: extras?.expenses,
+    membersPaidMinor: extras?.membersPaidMinor,
+  })) {
+    return 0;
+  }
   const splits = extras?.splits;
   if (Array.isArray(splits) && splits.length > 0) {
     return memberTripShareMinor(memberId, spaceId, extras?.expenses ?? [], splits);

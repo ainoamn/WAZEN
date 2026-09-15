@@ -88,9 +88,9 @@ export async function loadMemberStatementSection(
       WHERE te.space_id=? AND COALESCE(te.status,'posted')<>'voided'`)
       .bind(member.space_id)
       .all(),
-    db.prepare("SELECT id, display_name FROM members WHERE space_id=?")
+    db.prepare("SELECT id, display_name, paid_minor FROM members WHERE space_id=?")
       .bind(member.space_id)
-      .all<{ id: string; display_name: string }>(),
+      .all<{ id: string; display_name: string; paid_minor: number }>(),
   ]);
 
   const ledger = buildMemberLedger({
@@ -117,6 +117,7 @@ export async function loadMemberStatementSection(
     tripExpenses: (tripExpenses.results ?? []) as never[],
     expenseSplits: (expenseSplits.results ?? []) as never[],
     spaceType: space.type,
+    membersPaidMinor: (spaceMembers.results ?? []).map((row) => row.paid_minor),
   });
   const currency = space.currency || "OMR";
   const money = (minor: number) => formatMoneyMinor(minor, currency, locale);

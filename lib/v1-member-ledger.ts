@@ -24,7 +24,7 @@ export async function getV1MemberLedger(
   }>();
   if (!member) throw new ApiError(404, "MEMBER_NOT_FOUND");
 
-  const [plan, installments, transactions, settlements, tripExpenses, expenseSplits] = await Promise.all([
+  const [plan, installments, transactions, settlements, tripExpenses, expenseSplits, spaceMembers] = await Promise.all([
     db.prepare("SELECT space_id, amount_minor, duration_months, starts_at FROM contribution_plans WHERE space_id=? LIMIT 1")
       .bind(space.id)
       .first<{ space_id: string; amount_minor: number; duration_months: number; starts_at: string }>(),
@@ -34,7 +34,7 @@ export async function getV1MemberLedger(
       .bind(space.id).all(),
     db.prepare("SELECT * FROM settlements WHERE space_id=?").bind(space.id).all(),
     db.prepare(`SELECT te.id, te.space_id, te.paid_by_member_id, te.amount_minor, te.description, te.occurred_at,
-        COALESCE(m.display_name, '') AS paid_by_name
+        COALESCE(m.display_name, '') AS paid_by_name, te.paid_from
       FROM trip_expenses te
       LEFT JOIN members m ON m.id=te.paid_by_member_id
       WHERE te.space_id=? AND COALESCE(te.status,'posted')<>'voided'`)
@@ -44,6 +44,8 @@ export async function getV1MemberLedger(
       JOIN trip_expenses te ON te.id=es.expense_id
       WHERE te.space_id=? AND COALESCE(te.status,'posted')<>'voided'`)
       .bind(space.id).all(),
+    db.prepare("SELECT paid_minor FROM members WHERE space_id=?")
+      .bind(space.id).all<{ paid_minor: number }>(),
   ]);
 
   const ledger = buildMemberLedger({
@@ -70,6 +72,7 @@ export async function getV1MemberLedger(
     tripExpenses: (tripExpenses.results ?? []) as never[],
     expenseSplits: (expenseSplits.results ?? []) as never[],
     spaceType: space.type,
+    membersPaidMinor: (spaceMembers.results ?? []).map((row) => row.paid_minor),
   });
 
   return {

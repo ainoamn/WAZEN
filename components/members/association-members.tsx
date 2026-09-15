@@ -182,6 +182,7 @@ type LedgerInputs = {
     occurred_at: string;
   }>;
   expenseSplits?: Array<{ expense_id: string; member_id: string; share_minor: number }>;
+  membersPaidMinor?: Array<unknown>;
   personRecords?: AssociationMember[];
   spaces?: AssociationSpace[];
   plans?: AssociationPlan[];
@@ -215,6 +216,7 @@ function MemberLedgerBody({
   settlements = [],
   tripExpenses = [],
   expenseSplits = [],
+  membersPaidMinor,
   personRecords,
   spaces,
   plans,
@@ -258,7 +260,8 @@ function MemberLedgerBody({
     tripExpenses,
     expenseSplits,
     spaceType: space.type,
-  }), [member, space, plan, installments, transactions, settlements, tripExpenses, expenseSplits]);
+    membersPaidMinor,
+  }), [member, space, plan, installments, transactions, settlements, tripExpenses, expenseSplits, membersPaidMinor]);
   const months = ledger.months;
   const rows = filterMemberLedgerLines(ledger.lines, tab);
   const payItems = pendingPayInstructions(member.id, settlements, { locale });
@@ -331,6 +334,7 @@ function MemberLedgerBody({
         tripExpenses,
         expenseSplits,
         spaceType: linked.type,
+        membersPaidMinor,
       });
     return {
       spaceName: locale === "ar" ? linked.name_ar : linked.name_en,
@@ -669,6 +673,7 @@ export function MemberDetailModal({
   settlements = [],
   tripExpenses = [],
   expenseSplits = [],
+  membersPaidMinor,
   onClose,
   onSmartPay,
   onStatementSent,
@@ -696,6 +701,7 @@ export function MemberDetailModal({
           settlements={settlements}
           tripExpenses={tripExpenses}
           expenseSplits={expenseSplits}
+          membersPaidMinor={membersPaidMinor}
           onSmartPay={onSmartPay}
           onStatementSent={onStatementSent}
           onInviteResent={onInviteResent}

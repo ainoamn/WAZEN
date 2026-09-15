@@ -348,3 +348,49 @@ test("Azerbaijan trip file matches the members table: paid 200, pocket 0, owes 1
   assert.match(html, /\(/);
   assert.doesNotMatch(html, /عليه[\s\S]*?؜-/);
 });
+
+test("fund-trip joiner who paid nothing shows 0 paid and owes contribution plus ticket shares", () => {
+  const ledger = buildMemberLedger({
+    member: { ...member, id: "majed", due_minor: 200_000, paid_minor: 0, addon_minor: 0 },
+    spaceNameAr: "اذربيجان و جورجيا",
+    spaceNameEn: "Azerbaijan",
+    currency: "OMR",
+    spaceType: "trip",
+    plan: { amount_minor: 200_000, duration_months: 1, starts_at: "2026-08-30T00:00:00.000Z" },
+    installments: [],
+    transactions: [],
+    settlements: [],
+    membersPaidMinor: [200_000, 200_000, 0],
+    tripExpenses: [
+      {
+        id: "e-extra1",
+        space_id: "s1",
+        paid_by_member_id: "",
+        paid_by_name: "صندوق الجمعية",
+        amount_minor: 197_450,
+        description: "تذكره السفر",
+        occurred_at: "2026-09-14T16:00:00.000Z",
+        paid_from: "common_fund",
+      },
+      {
+        id: "e-extra2",
+        space_id: "s1",
+        paid_by_member_id: "",
+        paid_by_name: "صندوق الجمعية",
+        amount_minor: 57_516,
+        description: "تذكره اذربيجان جورجيا",
+        occurred_at: "2026-09-15T16:00:00.000Z",
+        paid_from: "common_fund",
+      },
+    ],
+    expenseSplits: [
+      { expense_id: "e-extra1", member_id: "majed", share_minor: 87_116 },
+      { expense_id: "e-extra2", member_id: "majed", share_minor: 22_235 },
+    ],
+  });
+  assert.equal(ledger.paidMinor, 0);
+  assert.equal(ledger.owesMinor, 309_351);
+  assert.ok(ledger.lines.some((line) => line.titleAr.includes("مساهمة الرحلة غير المسددة") && line.amountMinor === 200_000));
+  assert.ok(ledger.lines.some((line) => line.titleAr.includes("عجز مساهمته") && line.amountMinor === 109_351));
+  assert.equal(ledger.lines.filter((line) => line.titleAr.includes("حصته من مصروفات الرحلة")).length, 0);
+});

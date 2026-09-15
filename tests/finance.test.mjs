@@ -360,3 +360,23 @@ test("trip paid stays fund cash when the member already contributed", () => {
   assert.equal(memberTripPaidMinor("abdul", "az", 200_000, [], extras), 200_000);
   assert.equal(memberTripPaidMinor("dawood", "az", 200_000, [], extras), 200_000);
 });
+
+test("fund-trip member who paid nothing is not credited bill shares as paid", () => {
+  const extras = {
+    expenses: [
+      { id: "t3", space_id: "az", paid_from: "common_fund", status: "posted" },
+      { id: "t4", space_id: "az", paid_from: "common_fund", status: "posted" },
+    ],
+    splits: [
+      { expense_id: "t3", member_id: "majed", share_minor: 87_116 },
+      { expense_id: "t4", member_id: "majed", share_minor: 22_235 },
+    ],
+    membersPaidMinor: [200_000, 200_000, 0],
+  };
+  assert.equal(memberTripPaidMinor("majed", "az", 0, [], extras), 0);
+  assert.equal(memberTripPaidMinor("majed", "az", 0, [], {
+    expenses: [{ id: "t1", space_id: "az", status: "posted" }],
+    splits: [{ expense_id: "t1", member_id: "majed", share_minor: 109_351 }],
+    membersPaidMinor: [200_000, 0],
+  }), 0);
+});

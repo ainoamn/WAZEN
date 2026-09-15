@@ -25,6 +25,7 @@ type SpaceLedgerBundle = {
   settlements: Array<Record<string, unknown>>;
   tripExpenses: Array<Record<string, unknown>>;
   expenseSplits: Array<{ expense_id: string; member_id: string; share_minor: number }>;
+  membersPaidMinor?: number[];
 };
 
 async function loadSpaceLedgerBundle(db: D1Database, spaceId: string): Promise<SpaceLedgerBundle | null> {
@@ -33,7 +34,7 @@ async function loadSpaceLedgerBundle(db: D1Database, spaceId: string): Promise<S
   ).bind(spaceId).first<{ id: string; name_ar: string; name_en: string; type: string; currency: string; owner_user_id: string }>();
   if (!space || !isGroupSpaceType(space.type)) return null;
 
-  const [plan, installments, transactions, settlements, tripExpenses, expenseSplits] = await Promise.all([
+  const [plan, installments, transactions, settlements, tripExpenses, expenseSplits, spaceMembers] = await Promise.all([
     db.prepare("SELECT space_id,amount_minor,duration_months,starts_at FROM contribution_plans WHERE space_id=? LIMIT 1")
       .bind(spaceId)
       .first<{ space_id: string; amount_minor: number; duration_months: number; starts_at: string }>(),
@@ -53,6 +54,9 @@ async function loadSpaceLedgerBundle(db: D1Database, spaceId: string): Promise<S
       WHERE te.space_id=? AND COALESCE(te.status,'posted')<>'voided'`)
       .bind(spaceId)
       .all(),
+    db.prepare("SELECT paid_minor FROM members WHERE space_id=?")
+      .bind(spaceId)
+      .all<{ paid_minor: number }>(),
   ]);
 
   return {
@@ -63,6 +67,7 @@ async function loadSpaceLedgerBundle(db: D1Database, spaceId: string): Promise<S
     settlements: (settlements.results ?? []) as Array<Record<string, unknown>>,
     tripExpenses: (tripExpenses.results ?? []) as Array<Record<string, unknown>>,
     expenseSplits: (expenseSplits.results ?? []) as Array<{ expense_id: string; member_id: string; share_minor: number }>,
+    membersPaidMinor: (spaceMembers.results ?? []).map((row) => Number(row.paid_minor) || 0),
   };
 }
 
@@ -134,6 +139,7 @@ export async function queueMemberStatementEmail(input: {
     tripExpenses: input.bundle.tripExpenses as never[],
     expenseSplits: input.bundle.expenseSplits,
     spaceType: input.bundle.space.type,
+    membersPaidMinor: input.bundle.membersPaidMinor,
   });
 
   const money = (minor: number) => formatMoneyMinor(minor, currency, locale);

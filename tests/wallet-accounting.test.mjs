@@ -177,6 +177,14 @@ test("trip: Azerbaijan fund contributions are paid; fund ticket shares are not a
   assert.equal(pool.shortfallMinor, 18_422);
 });
 
+test("fund-trip unpaid joiner shows 0 paid even when ticket shares exist", () => {
+  assert.equal(memberTripPaidMinor("majed", "az", 0, [], {
+    expenses: [{ id: "t3", space_id: "az", paid_from: "common_fund", status: "posted" }],
+    splits: [{ expense_id: "t3", member_id: "majed", share_minor: 109_351 }],
+    membersPaidMinor: [200_000, 200_000, 0],
+  }), 0);
+});
+
 test("peer settlement journals never count as society salary or trip income", () => {
   assert.equal(isPeerSettlementTransfer({ description_ar: "مبلغ إضافي · تسوية حصة «مصروف جماعي» إلى علي" }), true);
   assert.equal(isPeerSettlementTransfer({ description_ar: "راتب سبتمبر" }), false);

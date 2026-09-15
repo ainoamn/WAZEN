@@ -32,7 +32,7 @@ import { PwaInstallCard } from "../components/pwa/PwaInstallCard";
 import { PushNotifyCard } from "../components/pwa/PushNotifyCard";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor, currencyScale, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../lib/money";
-import { composeSharedRemainder, isFundPaidExpense, isPeerSettlementTransfer, memberDisplayCreditMinor, memberExtraCreditMinor, memberFundPoolNet, memberTripPaidMinor, memberTripPocketMinor, netMemberClaim, pendingSettlementsWithCredit, splitEvenly, tripPostedSpendMinor } from "../lib/finance";
+import { composeSharedRemainder, isFundPaidExpense, isPeerSettlementTransfer, memberDisplayCreditMinor, memberExtraCreditMinor, memberFundPoolNet, memberTripPaidMinor, memberTripPocketMinor, netMemberClaim, pendingSettlementsWithCredit, splitEvenly, tripPostedSpendMinor, tripWalletUsesFundCash } from "../lib/finance";
 import { memberRemainingSettlementOwe } from "../lib/settlement-posting";
 import { canConfirmSettlement, settlementConfirmLabel } from "../lib/settlement-pay-instructions";
 import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, quotaRemaining, quotaWarningCopy, upgradeNoticeFor, canPrintSpaceArtifacts } from "../lib/plan-features";
@@ -640,12 +640,16 @@ function memberPosition(member: Member, data?: DashboardData, spaceId?: string) 
     const pool = memberFundPoolNet(paid, fundShares);
     const settleNet = memberSettlementNet(member.id, data, expenseSpaceId);
     const spaceType = data.spaces.find((item) => item.id === expenseSpaceId)?.type;
-    const tripGoalIsNotDebt = spaceType === "trip";
+    const usesFundCash = spaceType === "trip" && tripWalletUsesFundCash({
+      spaceId: expenseSpaceId,
+      expenses: data.tripExpenses,
+      membersPaidMinor: data.members.filter((item) => item.space_id === expenseSpaceId).map((item) => item.paid_minor),
+    });
     // Fund shares already net against paid — avoid double-counting paid−accrued advance.
     credit = fundShares > 0
       ? memberExtraCreditMinor(member, data.transactions) + pool.leftoverMinor
       : cashCredit;
-    debit = (tripGoalIsNotDebt ? 0 : remainingDue) + pool.shortfallMinor;
+    debit = (spaceType === "trip" && !usesFundCash ? 0 : remainingDue) + pool.shortfallMinor;
     debit += Math.max(0, -settleNet);
     credit += Math.max(0, settleNet);
   }
@@ -1954,6 +1958,7 @@ export function WazenDashboard() {
             settlements={data.settlements}
             tripExpenses={data.tripExpenses}
             expenseSplits={data.expenseSplits}
+            membersPaidMinor={data.members.filter((item) => item.space_id === member.space_id).map((item) => item.paid_minor)}
             onClose={() => setModal(null)}
             onSmartPay={() => {
               if (!planHasFeature(planFeaturesOf(data), "smart_accountant")) { goToPricing(); return; }
@@ -2462,6 +2467,7 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
       ? memberTripPaidMinor(member.id, space.id, member.paid_minor, data.settlements, {
         expenses: data.tripExpenses,
         splits: data.expenseSplits,
+        membersPaidMinor: members.map((item) => item.paid_minor),
       })
       : member.paid_minor
   ), 0);
@@ -2831,7 +2837,15 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
         <div className="table-head">
           <span>{locale === "ar" ? "العضو" : "Member"}</span>
           <span>{t.goal}</span>
-          <span title={data?.spaces.find((item) => item.id === spaceId)?.type === "trip" ? (locale === "ar" ? "حصته من فواتير الرحلة" : "Share of trip bills") : undefined}>{t.paid}</span>
+          <span title={data?.spaces.find((item) => item.id === spaceId)?.type === "trip"
+            ? (tripWalletUsesFundCash({
+              spaceId: spaceId ?? "",
+              expenses: data?.tripExpenses,
+              membersPaidMinor: members.map((item) => item.paid_minor),
+            })
+              ? (locale === "ar" ? "مساهمة الصندوق" : "Fund contribution")
+              : (locale === "ar" ? "حصته من فواتير الرحلة" : "Share of trip bills"))
+            : undefined}>{t.paid}</span>
           <span>{data?.spaces.find((item) => item.id === spaceId)?.type === "trip" ? (locale === "ar" ? "من الجيب" : "Pocket") : (locale === "ar" ? "إضافي" : "Extra")}</span>
           <span>{locale === "ar" ? "عليه" : "Owes"}</span>
           <span>{locale === "ar" ? "له" : "Owed"}</span>
@@ -2850,6 +2864,7 @@ function MembersTable({ members, locale, currency, data, spaceId, onWithdraw, on
             ? memberTripPaidMinor(member.id, spaceId, member.paid_minor, data.settlements, {
               expenses: data.tripExpenses,
               splits: data.expenseSplits,
+              membersPaidMinor: members.map((item) => item.paid_minor),
             })
             : Number(member.paid_minor) || 0;
           const open = (focus: MemberLedgerFocus) => onOpenMember?.(member.id, focus);
