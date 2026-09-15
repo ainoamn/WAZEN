@@ -4,8 +4,9 @@ import type { RequestUser } from "../db/runtime";
 import { prepareAudit } from "./audit";
 import { coveringPeriod } from "./accounting-periods";
 import { ApiError } from "./security";
-import { formatMoneyMinor, parseMoneyToMinor } from "./money";
+import { currencyScale, formatMoneyMinor } from "./money";
 import { resolveExpenseSplitMembers, splitEvenly } from "./finance";
+import { hasComposeParts, planExpenseSplitsForApi } from "./expense-split";
 import { rebuildSpaceTripSettlements } from "./trip-settlements";
 import { voidApprovedTransaction, writeApprovedCashBalance } from "./ledger-void";
 
@@ -51,11 +52,14 @@ export async function listV1Expenses(
 }
 
 export type V1CreateExpenseInput = {
-  amount: string | number;
+  amount?: string | number;
   description: string;
   paidFrom?: "common_fund" | "member";
   paidByMemberId?: string;
   splitMemberIds?: string[];
+  sharedAmount?: string | number;
+  sharedMemberIds?: string[];
+  extraShares?: Array<{ memberId: string; amount: string | number }>;
   occurredAt?: string;
 };
 
@@ -75,13 +79,17 @@ export async function createV1Expense(
     .bind(space.id).all<{ id: string }>();
   if (!members.results?.length) throw new ApiError(400, "NO_ACTIVE_MEMBERS");
 
-  let amountMinor: number;
-  try {
-    amountMinor = parseMoneyToMinor(input.amount, space.currency);
-  } catch {
-    throw new ApiError(400, "INVALID_AMOUNT");
-  }
-  if (amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
+  const planned = planExpenseSplitsForApi({
+    currency: space.currency,
+    allowedIds: members.results.map((m) => m.id),
+    amount: input.amount,
+    sharedAmount: input.sharedAmount,
+    sharedMemberIds: input.sharedMemberIds,
+    extraShares: input.extraShares,
+    splitMemberIds: input.splitMemberIds,
+  });
+  const amountMinor = planned.amountMinor;
+  const splits = planned.splits;
 
   const description = input.description.trim();
   if (description.length < 2 || description.length > 300) throw new ApiError(400, "INVALID_TRIP_EXPENSE");
@@ -105,16 +113,6 @@ export async function createV1Expense(
     throw new ApiError(409, "PERIOD_CLOSED");
   }
 
-  let splitMemberIds: string[];
-  try {
-    splitMemberIds = resolveExpenseSplitMembers({
-      requestedIds: input.splitMemberIds,
-      fallbackIds: members.results.map((m) => m.id),
-    });
-  } catch {
-    throw new ApiError(400, "INVALID_SPLIT");
-  }
-  const splits = splitEvenly(amountMinor, splitMemberIds);
   const expenseId = crypto.randomUUID();
   const transactionId = crypto.randomUUID();
   const entryId = crypto.randomUUID();
@@ -160,7 +158,7 @@ export async function createV1Expense(
     action: "trip.expense_created",
     entityType: "trip_expense",
     entityId: expenseId,
-    metadata: { spaceId: space.id, amountMinor, paidFrom, paidByMemberId: paidFrom === "member" ? paidByMemberId : null, splitMemberIds, via: "api.v1" },
+    metadata: { spaceId: space.id, amountMinor, paidFrom, paidByMemberId: paidFrom === "member" ? paidByMemberId : null, splits, via: "api.v1" },
     createdAt,
   }));
 
@@ -257,7 +255,7 @@ async function rebuildV1ExpenseShares(
   userId: string,
   expense: TripExpenseRecord,
   next: { amountMinor: number; description: string; paidByMemberId: string },
-  options?: { skipNet?: boolean; splitMemberIds?: string[]; forceAllMembers?: boolean },
+  options?: { skipNet?: boolean; splitMemberIds?: string[]; forceAllMembers?: boolean; splits?: Array<{ memberId: string; shareMinor: number }> },
 ) {
   if ((expense.status ?? "posted") === "voided") throw new ApiError(409, "EXPENSE_VOIDED");
   const settled = await db.prepare("SELECT COUNT(*) AS count FROM settlements WHERE expense_id=? AND status='settled'")
@@ -278,36 +276,49 @@ async function rebuildV1ExpenseShares(
     throw new ApiError(400, "INVALID_PAYER");
   }
 
-  const existingSplits = options?.forceAllMembers || options?.splitMemberIds
-    ? []
-    : (await db.prepare("SELECT member_id FROM expense_splits WHERE expense_id=?").bind(expense.id).all<{ member_id: string }>()).results?.map((row) => row.member_id) ?? [];
-  let splitMemberIds: string[];
-  try {
-    splitMemberIds = options?.forceAllMembers
-      ? members.results.map((member) => member.id)
-      : resolveExpenseSplitMembers({
-          requestedIds: options?.splitMemberIds,
-          existingIds: existingSplits,
-          fallbackIds: members.results.map((member) => member.id),
-        });
-  } catch {
-    throw new ApiError(400, "INVALID_SPLIT");
+  const allowedIds = members.results.map((member) => member.id);
+  let amountMinor = next.amountMinor;
+  let splits: Array<{ memberId: string; shareMinor: number }>;
+  if (options?.splits?.length) {
+    const allowed = new Set(allowedIds);
+    if (options.splits.some((row) => !allowed.has(row.memberId) || !Number.isSafeInteger(row.shareMinor) || row.shareMinor <= 0)) {
+      throw new ApiError(400, "INVALID_SPLIT");
+    }
+    splits = options.splits;
+    amountMinor = splits.reduce((sum, row) => sum + row.shareMinor, 0);
+  } else {
+    const existingSplits = options?.forceAllMembers || options?.splitMemberIds
+      ? []
+      : (await db.prepare("SELECT member_id FROM expense_splits WHERE expense_id=?").bind(expense.id).all<{ member_id: string }>()).results?.map((row) => row.member_id) ?? [];
+    const splitMemberIds = options?.forceAllMembers
+      ? allowedIds
+      : (() => {
+        try {
+          return resolveExpenseSplitMembers({
+            requestedIds: options?.splitMemberIds,
+            existingIds: existingSplits,
+            fallbackIds: allowedIds,
+          });
+        } catch {
+          throw new ApiError(400, "INVALID_SPLIT");
+        }
+      })();
+    splits = splitEvenly(amountMinor, splitMemberIds);
   }
-  const splits = splitEvenly(next.amountMinor, splitMemberIds);
   const createdAt = new Date().toISOString();
   const statements: D1PreparedStatement[] = [
     db.prepare("UPDATE trip_expenses SET paid_by_member_id=?, amount_minor=?, description=? WHERE id=?")
-      .bind(paidFromFund ? expense.paid_by_member_id : next.paidByMemberId, next.amountMinor, next.description, expense.id),
+      .bind(paidFromFund ? expense.paid_by_member_id : next.paidByMemberId, amountMinor, next.description, expense.id),
     db.prepare("DELETE FROM expense_splits WHERE expense_id=?").bind(expense.id),
     db.prepare("UPDATE settlements SET status='voided' WHERE expense_id=? AND status='pending'").bind(expense.id),
   ];
   if (linked && linked.status === "approved") {
     statements.push(
       db.prepare("UPDATE transactions SET amount_minor=?, description_ar=?, description_en=?, member_id=? WHERE id=?")
-        .bind(next.amountMinor, next.description, next.description, paidFromFund ? null : next.paidByMemberId, linked.id),
+        .bind(amountMinor, next.description, next.description, paidFromFund ? null : next.paidByMemberId, linked.id),
     );
     if (paidFromFund) {
-      const delta = next.amountMinor - Number(expense.amount_minor);
+      const delta = amountMinor - Number(expense.amount_minor);
       if (delta !== 0) {
         statements.push(db.prepare("UPDATE spaces SET balance_minor = balance_minor - ? WHERE id=?")
           .bind(delta, expense.space_id));
@@ -326,10 +337,10 @@ async function rebuildV1ExpenseShares(
     entityType: "trip_expense",
     entityId: expense.id,
     metadata: {
-      amountMinor: next.amountMinor,
+      amountMinor,
       paidByMemberId: next.paidByMemberId,
-      memberCount: splitMemberIds.length,
-      splitMemberIds,
+      memberCount: splits.length,
+      splitMemberIds: splits.map((row) => row.memberId),
       via: "api.v1",
     },
     createdAt,
@@ -349,6 +360,9 @@ export async function updateV1Expense(
     description?: string;
     paidByMemberId?: string;
     splitMemberIds?: string[];
+    sharedAmount?: string | number;
+    sharedMemberIds?: string[];
+    extraShares?: Array<{ memberId: string; amount: string | number }>;
   },
 ) {
   const expense = await db.prepare("SELECT * FROM trip_expenses WHERE id=? AND space_id=?")
@@ -362,23 +376,29 @@ export async function updateV1Expense(
     throw new ApiError(409, "PERIOD_CLOSED");
   }
 
-  let amountMinor = Number(expense.amount_minor);
-  if (input.amount !== undefined) {
-    try {
-      amountMinor = parseMoneyToMinor(input.amount, space.currency);
-    } catch {
-      throw new ApiError(400, "INVALID_AMOUNT");
-    }
-    if (amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
-  }
+  const members = await db.prepare("SELECT id FROM members WHERE space_id=? AND status='active' ORDER BY joined_at")
+    .bind(expense.space_id).all<{ id: string }>();
+  const existingSplitIds = (await db.prepare("SELECT member_id FROM expense_splits WHERE expense_id=?").bind(expense.id).all<{ member_id: string }>()).results?.map((row) => row.member_id) ?? [];
+  const planned = planExpenseSplitsForApi({
+    currency: space.currency,
+    allowedIds: (members.results ?? []).map((row) => row.id),
+    amount: hasComposeParts(input)
+      ? input.amount
+      : (input.amount ?? Number(expense.amount_minor) / (10 ** currencyScale(space.currency))),
+    sharedAmount: input.sharedAmount,
+    sharedMemberIds: input.sharedMemberIds,
+    extraShares: input.extraShares,
+    splitMemberIds: input.splitMemberIds,
+    existingIds: existingSplitIds,
+  });
   const description = (input.description ?? expense.description).trim();
   if (description.length < 2) throw new ApiError(400, "INVALID_TRIP_EXPENSE");
 
   await rebuildV1ExpenseShares(db, user.id, expense, {
-    amountMinor,
+    amountMinor: planned.amountMinor,
     description,
     paidByMemberId: input.paidByMemberId ?? expense.paid_by_member_id,
-  }, { splitMemberIds: input.splitMemberIds });
+  }, { splits: planned.splits });
 
   const expenses = await listV1Expenses(db, space, { limit: 200 });
   return expenses.find((row) => row.id === expenseId) ?? { id: expenseId, spaceId: space.id };

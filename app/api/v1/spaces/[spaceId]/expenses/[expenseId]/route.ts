@@ -35,6 +35,12 @@ export async function PATCH(
           description: z.string().trim().min(2).max(300).optional(),
           paidByMemberId: z.string().min(1).max(120).optional(),
           splitMemberIds: z.array(z.string().min(1).max(120)).min(1).max(200).optional(),
+          sharedAmount: z.union([z.string(), z.number()]).optional(),
+          sharedMemberIds: z.array(z.string().min(1).max(120)).max(200).optional(),
+          extraShares: z.array(z.object({
+            memberId: z.string().min(1).max(120),
+            amount: z.union([z.string(), z.number()]),
+          })).max(200).optional(),
         }).safeParse(payload);
         if (!parsed.success) throw new ApiError(400, "INVALID_TRIP_EXPENSE");
         if (
@@ -42,6 +48,8 @@ export async function PATCH(
           && parsed.data.description === undefined
           && parsed.data.paidByMemberId === undefined
           && parsed.data.splitMemberIds === undefined
+          && parsed.data.sharedAmount === undefined
+          && parsed.data.extraShares === undefined
         ) {
           throw new ApiError(400, "INVALID_TRIP_EXPENSE");
         }

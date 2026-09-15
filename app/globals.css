@@ -1007,6 +1007,14 @@ html[data-theme="dark"] .space-picker-field select { background: var(--surface);
 .expense-split-picker > span { color: #596b64; font-size: 13px; font-weight: 700; }
 .split-picker-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .split-picker-actions .secondary-button { height: 34px; padding: 0 10px; font-size: 12px; }
+.expense-split-mode { display: flex; flex-wrap: wrap; gap: 6px; }
+.expense-split-mode .secondary-button.is-active { background: var(--green); color: white; border-color: var(--green); }
+.extra-share-list { display: flex; flex-direction: column; gap: 8px; }
+.extra-share-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(110px, 140px) auto; gap: 8px; align-items: center; }
+@media (max-width: 520px) {
+  .extra-share-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .extra-share-row .money-input { grid-column: 1 / -1; }
+}
 .settlement-alert { min-height: 48px; padding: 10px 13px; border-radius: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 9px; background: #fff4df; color: #805b1e; font-size: 12px; }
 .settlement-alert b { margin-inline-start: auto; }
 .settlement-alert button { height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: #805b1e; color: white; font-size: 10px; font-weight: 800; cursor: pointer; }

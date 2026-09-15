@@ -2,12 +2,13 @@ import { z } from "zod";
 import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
 import { authenticateRequest, clearCsrfCookie, clearSessionCookie, csrfCookie, issueCsrfToken } from "../../../lib/auth";
 import { buildCircleOrder, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
+import { hasComposeParts, planExpenseSplitsForApi } from "../../../lib/expense-split";
 import { migratePerExpenseTripSettlements, rebuildSpaceTripSettlements } from "../../../lib/trip-settlements";
 import { postPeerMemberSettlement } from "../../../lib/settlement-posting";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
 import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf, actorCanIssueSpaceDocuments } from "../../../lib/authorization";
 import { prepareAudit, writeAudit } from "../../../lib/audit";
-import { formatMoneyMinor, multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
+import { currencyScale, formatMoneyMinor, multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
 import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, periodKeyFromDate, type InstallmentLike } from "../../../lib/installments";
 import { coveringPeriod } from "../../../lib/accounting-periods";
 import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
@@ -608,7 +609,7 @@ async function rebuildTripExpenseShares(
   userId: string,
   expense: TripExpenseRecord,
   next: { amountMinor: number; description: string; paidByMemberId: string },
-  options?: { skipNet?: boolean; splitMemberIds?: string[]; forceAllMembers?: boolean },
+  options?: { skipNet?: boolean; splitMemberIds?: string[]; forceAllMembers?: boolean; splits?: Array<{ memberId: string; shareMinor: number }> },
 ) {
   if ((expense.status ?? "posted") === "voided") throw new ApiError(409, "EXPENSE_VOIDED");
   const settled = await db.prepare("SELECT COUNT(*) AS count FROM settlements WHERE expense_id=? AND status='settled'").bind(expense.id).first<{ count: number }>();
@@ -620,26 +621,38 @@ async function rebuildTripExpenseShares(
     : null;
   const paidFromFund = linked?.kind === "expense" || expense.paid_from === "common_fund";
   if (!paidFromFund && !members.results.some((member) => member.id === next.paidByMemberId)) throw new ApiError(400, "INVALID_PAYER");
-  const existingSplits = options?.forceAllMembers || options?.splitMemberIds
-    ? []
-    : (await db.prepare("SELECT member_id FROM expense_splits WHERE expense_id=?").bind(expense.id).all<{ member_id: string }>()).results?.map((row) => row.member_id) ?? [];
-  const splitMemberIds = splitIdsForExpense({
-    requestedIds: options?.splitMemberIds,
-    existingIds: existingSplits,
-    fallbackIds: members.results.map((member) => member.id),
-    forceAllMembers: options?.forceAllMembers,
-  });
-  const splits = splitEvenly(next.amountMinor, splitMemberIds);
+  const allowedIds = members.results.map((member) => member.id);
+  let amountMinor = next.amountMinor;
+  let splits: Array<{ memberId: string; shareMinor: number }>;
+  if (options?.splits?.length) {
+    const allowed = new Set(allowedIds);
+    if (options.splits.some((row) => !allowed.has(row.memberId) || !Number.isSafeInteger(row.shareMinor) || row.shareMinor <= 0)) {
+      throw new ApiError(400, "INVALID_SPLIT");
+    }
+    splits = options.splits;
+    amountMinor = splits.reduce((sum, row) => sum + row.shareMinor, 0);
+  } else {
+    const existingSplits = options?.forceAllMembers || options?.splitMemberIds
+      ? []
+      : (await db.prepare("SELECT member_id FROM expense_splits WHERE expense_id=?").bind(expense.id).all<{ member_id: string }>()).results?.map((row) => row.member_id) ?? [];
+    const splitMemberIds = splitIdsForExpense({
+      requestedIds: options?.splitMemberIds,
+      existingIds: existingSplits,
+      fallbackIds: allowedIds,
+      forceAllMembers: options?.forceAllMembers,
+    });
+    splits = splitEvenly(amountMinor, splitMemberIds);
+  }
   const createdAt = now();
   const statements: D1PreparedStatement[] = [
-    db.prepare("UPDATE trip_expenses SET paid_by_member_id=?, amount_minor=?, description=? WHERE id=?").bind(paidFromFund ? expense.paid_by_member_id : next.paidByMemberId, next.amountMinor, next.description, expense.id),
+    db.prepare("UPDATE trip_expenses SET paid_by_member_id=?, amount_minor=?, description=? WHERE id=?").bind(paidFromFund ? expense.paid_by_member_id : next.paidByMemberId, amountMinor, next.description, expense.id),
     db.prepare("DELETE FROM expense_splits WHERE expense_id=?").bind(expense.id),
     db.prepare("UPDATE settlements SET status='voided' WHERE expense_id=? AND status='pending'").bind(expense.id),
   ];
   if (linked && linked.status === "approved") {
-    statements.push(db.prepare("UPDATE transactions SET amount_minor=?, description_ar=?, description_en=?, member_id=? WHERE id=?").bind(next.amountMinor, next.description, next.description, paidFromFund ? null : next.paidByMemberId, linked.id));
+    statements.push(db.prepare("UPDATE transactions SET amount_minor=?, description_ar=?, description_en=?, member_id=? WHERE id=?").bind(amountMinor, next.description, next.description, paidFromFund ? null : next.paidByMemberId, linked.id));
     if (paidFromFund) {
-      const delta = next.amountMinor - Number(expense.amount_minor);
+      const delta = amountMinor - Number(expense.amount_minor);
       if (delta !== 0) statements.push(db.prepare("UPDATE spaces SET balance_minor = balance_minor - ? WHERE id=?").bind(delta, expense.space_id));
     }
   }
@@ -651,7 +664,7 @@ async function rebuildTripExpenseShares(
     action: "trip.expense_resplit",
     entityType: "trip_expense",
     entityId: expense.id,
-    metadata: { amountMinor: next.amountMinor, paidByMemberId: next.paidByMemberId, memberCount: splitMemberIds.length, splitMemberIds },
+    metadata: { amountMinor, paidByMemberId: next.paidByMemberId, memberCount: splits.length, splitMemberIds: splits.map((row) => row.memberId) },
     createdAt,
   }));
   await db.batch(statements);
@@ -2728,7 +2741,13 @@ export async function POST(request: Request) {
         paidFrom: z.enum(["common_fund", "member"]).default("member"),
         paidByMemberId: z.string().min(1).max(120).optional(),
         splitMemberIds: z.array(z.string().min(1).max(120)).min(1).max(200).optional(),
-        amount: z.union([z.string(), z.number()]),
+        sharedAmount: z.union([z.string(), z.number()]).optional(),
+        sharedMemberIds: z.array(z.string().min(1).max(120)).max(200).optional(),
+        extraShares: z.array(z.object({
+          memberId: z.string().min(1).max(120),
+          amount: z.union([z.string(), z.number()]),
+        })).max(200).optional(),
+        amount: z.union([z.string(), z.number()]).optional(),
         description: z.string().trim().min(2).max(300),
         occurredAt: z.iso.datetime().optional(),
       }).safeParse(payload);
@@ -2737,8 +2756,17 @@ export async function POST(request: Request) {
       await guardOwnerTransactionQuota(db, space.owner_user_id, 1);
       const members = await db.prepare("SELECT id FROM members WHERE space_id=? AND status='active' ORDER BY joined_at").bind(parsed.data.spaceId).all<{ id: string }>();
       if (!members.results.length) throw new ApiError(400, "NO_ACTIVE_MEMBERS");
-      let amountMinor: number;
-      try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      const planned = planExpenseSplitsForApi({
+        currency: space.currency,
+        allowedIds: members.results.map((member) => member.id),
+        amount: parsed.data.amount,
+        sharedAmount: parsed.data.sharedAmount,
+        sharedMemberIds: parsed.data.sharedMemberIds,
+        extraShares: parsed.data.extraShares,
+        splitMemberIds: parsed.data.splitMemberIds,
+      });
+      const amountMinor = planned.amountMinor;
+      const splits = planned.splits;
       const paidFrom = parsed.data.paidFrom;
       const paidByMemberId = paidFrom === "member"
         ? parsed.data.paidByMemberId
@@ -2748,11 +2776,6 @@ export async function POST(request: Request) {
       }
       if (paidFrom === "common_fund" && !members.results[0]?.id) throw new ApiError(400, "NO_ACTIVE_MEMBERS");
       const fundPayerId = paidFrom === "common_fund" ? members.results[0]!.id : paidByMemberId!;
-      const splitMemberIds = splitIdsForExpense({
-        requestedIds: parsed.data.splitMemberIds,
-        fallbackIds: members.results.map((member) => member.id),
-      });
-      const splits = splitEvenly(amountMinor, splitMemberIds);
       const expenseId = crypto.randomUUID();
       const transactionId = crypto.randomUUID();
       const entryId = crypto.randomUUID();
@@ -2794,7 +2817,7 @@ export async function POST(request: Request) {
         action: "trip.expense_split",
         entityType: "trip_expense",
         entityId: expenseId,
-        metadata: { amountMinor, paidFrom, paidByMemberId: paidFrom === "member" ? paidByMemberId : null, splits, splitMemberIds },
+        metadata: { amountMinor, paidFrom, paidByMemberId: paidFrom === "member" ? paidByMemberId : null, splits },
         createdAt,
       }));
       statements.push(await periodWriteEvent(db, user, parsed.data.spaceId, occurredAt, {
@@ -2853,21 +2876,37 @@ export async function POST(request: Request) {
         paidByMemberId: z.string().min(1).max(120).optional(),
         paidFrom: z.enum(["common_fund", "member"]).optional(),
         splitMemberIds: z.array(z.string().min(1).max(120)).min(1).max(200).optional(),
+        sharedAmount: z.union([z.string(), z.number()]).optional(),
+        sharedMemberIds: z.array(z.string().min(1).max(120)).max(200).optional(),
+        extraShares: z.array(z.object({
+          memberId: z.string().min(1).max(120),
+          amount: z.union([z.string(), z.number()]),
+        })).max(200).optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_TRIP_EXPENSE");
       const expense = await db.prepare("SELECT * FROM trip_expenses WHERE id=?").bind(parsed.data.expenseId).first<TripExpenseRecord>();
       if (!expense) throw new ApiError(404, "EXPENSE_NOT_FOUND");
       const space = await authorizeSpace(db, user, expense.space_id, "transact", ["household", "trip", "society", "group"]);
       await assertPeriodWritable(db, expense.space_id, expense.occurred_at || expense.created_at || now());
-      let amountMinor = Number(expense.amount_minor);
-      if (parsed.data.amount !== undefined) {
-        try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
-      }
+      const members = await db.prepare("SELECT id FROM members WHERE space_id=? AND status='active' ORDER BY joined_at").bind(expense.space_id).all<{ id: string }>();
+      const existingSplitIds = (await db.prepare("SELECT member_id FROM expense_splits WHERE expense_id=?").bind(expense.id).all<{ member_id: string }>()).results?.map((row) => row.member_id) ?? [];
+      const planned = planExpenseSplitsForApi({
+        currency: space.currency,
+        allowedIds: members.results.map((member) => member.id),
+        amount: hasComposeParts(parsed.data)
+          ? parsed.data.amount
+          : (parsed.data.amount ?? Number(expense.amount_minor) / (10 ** currencyScale(space.currency))),
+        sharedAmount: parsed.data.sharedAmount,
+        sharedMemberIds: parsed.data.sharedMemberIds,
+        extraShares: parsed.data.extraShares,
+        splitMemberIds: parsed.data.splitMemberIds,
+        existingIds: existingSplitIds,
+      });
       await rebuildTripExpenseShares(db, user.id, expense, {
-        amountMinor,
+        amountMinor: planned.amountMinor,
         description: parsed.data.description ?? expense.description,
         paidByMemberId: parsed.data.paidByMemberId ?? expense.paid_by_member_id,
-      }, { splitMemberIds: parsed.data.splitMemberIds });
+      }, { splits: planned.splits });
     } else if (action === "resplitTripExpenses") {
       const parsed = z.object({
         spaceId: z.string().min(1).max(120),

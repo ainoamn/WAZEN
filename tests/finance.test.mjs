@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, extraAddonMinorFromTransactions, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPaidMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
+import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, composeExpenseShares, extraAddonMinorFromTransactions, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPaidMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
+import { planExpenseSplits } from "../lib/expense-split.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 import { bankCustodySplit } from "../lib/wallet-links.ts";
 
@@ -40,6 +41,67 @@ test("expense split members prefer the requested set, then existing, then everyo
   assert.deepEqual(resolveExpenseSplitMembers({ existingIds: ["b"], fallbackIds: all }), ["b"]);
   assert.throws(() => resolveExpenseSplitMembers({ requestedIds: [], fallbackIds: all }), /INVALID_SPLIT/);
   assert.throws(() => resolveExpenseSplitMembers({ requestedIds: ["ghost"], fallbackIds: all }), /INVALID_SPLIT/);
+});
+
+test("one bill can share an amount among some people and add extras for others", () => {
+  const allowed = ["abdul", "dawood", "third", "fourth"];
+  const mixed = composeExpenseShares({
+    sharedMinor: 331_000,
+    sharedMemberIds: ["abdul", "dawood"],
+    extras: [{ memberId: "fourth", amountMinor: 197_450 }],
+    allowedIds: allowed,
+  });
+  assert.equal(mixed.totalMinor, 528_450);
+  assert.deepEqual(mixed.splits, [
+    { memberId: "abdul", shareMinor: 165_500 },
+    { memberId: "dawood", shareMinor: 165_500 },
+    { memberId: "fourth", shareMinor: 197_450 },
+  ]);
+
+  const sharedPlusExtra = composeExpenseShares({
+    sharedMinor: 90_000,
+    sharedMemberIds: ["a", "b", "c"],
+    extras: [{ memberId: "a", amountMinor: 30_000 }],
+    allowedIds: ["a", "b", "c"],
+  });
+  assert.equal(sharedPlusExtra.totalMinor, 120_000);
+  assert.equal(sharedPlusExtra.splits.find((row) => row.memberId === "a")?.shareMinor, 60_000);
+  assert.equal(sharedPlusExtra.splits.find((row) => row.memberId === "b")?.shareMinor, 30_000);
+
+  const planned = planExpenseSplits({
+    currency: "OMR",
+    allowedIds: allowed,
+    sharedAmount: "331.000",
+    sharedMemberIds: ["abdul", "dawood"],
+    extraShares: [{ memberId: "fourth", amount: "197.450" }],
+  });
+  assert.equal(planned.amountMinor, 528_450);
+  assert.deepEqual(planned.splits, mixed.splits);
+
+  const extrasOnly = planExpenseSplits({
+    currency: "OMR",
+    allowedIds: allowed,
+    sharedAmount: "0",
+    sharedMemberIds: [],
+    extraShares: [
+      { memberId: "abdul", amount: "165.500" },
+      { memberId: "fourth", amount: "197.450" },
+    ],
+  });
+  assert.equal(extrasOnly.amountMinor, 362_950);
+  assert.deepEqual(extrasOnly.splits, [
+    { memberId: "abdul", shareMinor: 165_500 },
+    { memberId: "fourth", shareMinor: 197_450 },
+  ]);
+
+  assert.throws(() => planExpenseSplits({
+    currency: "OMR",
+    allowedIds: allowed,
+    amount: "500.000",
+    sharedAmount: "331.000",
+    sharedMemberIds: ["abdul", "dawood"],
+    extraShares: [{ memberId: "fourth", amount: "197.450" }],
+  }), /AMOUNT_SPLIT_MISMATCH/);
 });
 
 test("contribution payment applies against full outstanding dues then advance", () => {

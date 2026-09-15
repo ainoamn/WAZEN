@@ -63,6 +63,39 @@ export function resolveExpenseSplitMembers(input: {
   return fallbackIds;
 }
 
+/** Shared amount split evenly, then extra amounts stacked on chosen people. */
+export function composeExpenseShares(input: {
+  sharedMinor?: number;
+  sharedMemberIds?: string[];
+  extras?: Array<{ memberId: string; amountMinor: number }>;
+  allowedIds: string[];
+}): { totalMinor: number; splits: Array<{ memberId: string; shareMinor: number }> } {
+  const allowed = new Set(input.allowedIds);
+  const shares = new Map<string, number>();
+  const add = (memberId: string, amountMinor: number) => {
+    if (!allowed.has(memberId) || !Number.isSafeInteger(amountMinor) || amountMinor < 0) throw new Error("INVALID_SPLIT");
+    if (amountMinor === 0) return;
+    shares.set(memberId, (shares.get(memberId) ?? 0) + amountMinor);
+  };
+
+  const sharedMinor = input.sharedMinor ?? 0;
+  if (!Number.isSafeInteger(sharedMinor) || sharedMinor < 0) throw new Error("INVALID_SPLIT");
+  const sharedIds = (input.sharedMemberIds ?? []).filter((id) => allowed.has(id));
+  if (sharedMinor > 0) {
+    if (!sharedIds.length) throw new Error("INVALID_SPLIT");
+    for (const row of splitEvenly(sharedMinor, sharedIds)) add(row.memberId, row.shareMinor);
+  }
+
+  for (const extra of input.extras ?? []) add(extra.memberId, extra.amountMinor);
+
+  const splits = input.allowedIds
+    .filter((id) => (shares.get(id) ?? 0) > 0)
+    .map((memberId) => ({ memberId, shareMinor: shares.get(memberId)! }));
+  const totalMinor = splits.reduce((sum, row) => sum + row.shareMinor, 0);
+  if (!splits.length || totalMinor <= 0) throw new Error("INVALID_SPLIT");
+  return { totalMinor, splits };
+}
+
 export type Balance = { memberId: string; balanceMinor: number };
 
 function byLargestThenId<T extends { memberId: string; balanceMinor: number }>(left: T, right: T) {

@@ -31,8 +31,8 @@ import { mapBankCsvRow, parseBankCsv } from "../lib/ledger-csv";
 import { PwaInstallCard } from "../components/pwa/PwaInstallCard";
 import { PushNotifyCard } from "../components/pwa/PushNotifyCard";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
-import { formatMoneyMinor, currencyScale, parseMoneyToMinor } from "../lib/money";
-import { isFundPaidExpense, isPeerSettlementTransfer, memberDisplayCreditMinor, memberExtraCreditMinor, memberFundPoolNet, memberTripPaidMinor, memberTripPocketMinor, netMemberClaim, pendingSettlementsWithCredit, splitEvenly, tripPostedSpendMinor } from "../lib/finance";
+import { formatMoneyMinor, currencyScale, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../lib/money";
+import { composeExpenseShares, isFundPaidExpense, isPeerSettlementTransfer, memberDisplayCreditMinor, memberExtraCreditMinor, memberFundPoolNet, memberTripPaidMinor, memberTripPocketMinor, netMemberClaim, pendingSettlementsWithCredit, splitEvenly, tripPostedSpendMinor } from "../lib/finance";
 import { memberRemainingSettlementOwe } from "../lib/settlement-posting";
 import { canConfirmSettlement, settlementConfirmLabel } from "../lib/settlement-pay-instructions";
 import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, quotaRemaining, quotaWarningCopy, upgradeNoticeFor, canPrintSpaceArtifacts } from "../lib/plan-features";
@@ -987,6 +987,7 @@ function dashboardError(code: string, locale: Locale) {
       PERIOD_UNSETTLED: "لا يمكن إغلاق الفترة قبل أن يسدّد كل الأعضاء ما عليهم (الاشتراك والتسويات المعلقة).",
       INVALID_PAYER: "اختر حساب الدفع.",
       INVALID_SPLIT: "اختر شخصاً واحداً على الأقل يتحمل المصروف.",
+      AMOUNT_SPLIT_MISMATCH: "مجموع الحصص لا يطابق مبلغ المصروف.",
       PERIOD_NOT_CLOSED: "هذه الفترة ليست مغلقة.",
       FORBIDDEN: "لا تملك صلاحية تعديل هذه الجمعية. المالك فقط يمكنه الأرشفة أو الحذف.",
       WALLET_NOT_FOUND: "الجمعية غير موجودة.",
@@ -1023,6 +1024,7 @@ function dashboardError(code: string, locale: Locale) {
       PERIOD_UNSETTLED: "Close the period only after every member settles dues and pending shares.",
       INVALID_PAYER: "Choose who paid.",
       INVALID_SPLIT: "Choose at least one person this expense is for.",
+      AMOUNT_SPLIT_MISMATCH: "The shares do not add up to the expense total.",
       PERIOD_NOT_CLOSED: "This period is not closed.",
       FORBIDDEN: "Only the owner can archive or delete this association.",
       WALLET_NOT_FOUND: "Association not found.",
@@ -4169,6 +4171,7 @@ function ExpenseSplitPicker({
   currency,
   paidFrom,
   paidByMemberId,
+  heading,
 }: {
   members: Member[];
   selectedIds: string[];
@@ -4178,6 +4181,7 @@ function ExpenseSplitPicker({
   currency: string;
   paidFrom: "common_fund" | "member";
   paidByMemberId?: string;
+  heading?: string;
 }) {
   const toggle = (id: string) => {
     onChange(selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id]);
@@ -4212,7 +4216,7 @@ function ExpenseSplitPicker({
   })();
   return (
     <div className="expense-split-picker">
-      <span>{locale === "ar" ? "لمن هذا المصروف؟" : "Who is this expense for?"}</span>
+      <span>{heading ?? (locale === "ar" ? "لمن هذا المصروف؟" : "Who is this expense for?")}</span>
       <div className="split-picker-actions">
         <button type="button" className="secondary-button" onClick={() => onChange(members.map((member) => member.id))}>{locale === "ar" ? "الكل" : "Everyone"}</button>
         {paidFrom === "member" && paidByMemberId ? <button type="button" className="secondary-button" onClick={() => onChange([paidByMemberId])}>{locale === "ar" ? "شخصي للدافع" : "Payer only"}</button> : null}
@@ -4245,28 +4249,68 @@ function TripExpenseModal({ data, locale, preferredSpaceId, expenseId, onClose, 
   const members = data.members.filter((member) => member.space_id === spaceId && (member.status ?? "active") === "active");
   const space = data.spaces.find((item) => item.id === spaceId);
   const currency = space?.currency ?? "OMR";
-  const existingSplitIds = existing
-    ? data.expenseSplits.filter((split) => split.expense_id === existing.id).map((split) => split.member_id).filter((id) => members.some((member) => member.id === id))
+  const existingSplitRows = existing
+    ? data.expenseSplits.filter((split) => split.expense_id === existing.id && members.some((member) => member.id === split.member_id))
     : [];
+  const existingSplitIds = existingSplitRows.map((split) => split.member_id);
+  const existingShares = existingSplitRows.map((split) => split.share_minor);
+  const existingUnequal = existingShares.length > 0 && (Math.max(...existingShares) - Math.min(...existingShares) > 1);
   const [paidFrom, setPaidFrom] = useState<"common_fund" | "member">(existing?.paid_from === "common_fund" ? "common_fund" : existing ? "member" : "common_fund");
   const [paidByMemberId, setPayer] = useState(existing?.paid_by_member_id ?? members[0]?.id ?? "");
+  const [splitMode, setSplitMode] = useState<"equal" | "mixed">(existingUnequal ? "mixed" : "equal");
   const [splitMemberIds, setSplitMemberIds] = useState<string[]>(existingSplitIds.length ? existingSplitIds : members.map((member) => member.id));
+  const [sharedAmount, setSharedAmount] = useState(existingUnequal ? "" : (existing ? currencyMajor(existing.amount_minor, currency).toFixed(3) : ""));
+  const [sharedMemberIds, setSharedMemberIds] = useState<string[]>(existingUnequal ? [] : (existingSplitIds.length ? existingSplitIds : members.map((member) => member.id)));
+  const [extraShares, setExtraShares] = useState<Array<{ key: string; memberId: string; amount: string }>>(
+    existingUnequal
+      ? existingSplitRows.map((split) => ({ key: split.id, memberId: split.member_id, amount: currencyMajor(split.share_minor, currency).toFixed(3) }))
+      : [],
+  );
   const [amount, setAmount] = useState(existing ? currencyMajor(existing.amount_minor, data.spaces.find((item) => item.id === existing.space_id)?.currency ?? "OMR").toFixed(3) : "");
   const [description, setDescription] = useState(existing?.description ?? "");
   const [occurredOn, setOccurredOn] = useState(occurredAtToDateInput(existing?.occurred_at));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const mixedPreview = (() => {
+    if (splitMode !== "mixed") return null;
+    try {
+      const sharedMinor = sharedAmount.trim() === "" ? 0 : parseNonNegativeMoneyToMinor(sharedAmount, currency);
+      const extras = extraShares
+        .filter((row) => row.amount.trim() !== "")
+        .map((row) => ({ memberId: row.memberId, amountMinor: parseMoneyToMinor(row.amount, currency) }));
+      return composeExpenseShares({
+        sharedMinor,
+        sharedMemberIds,
+        extras,
+        allowedIds: members.map((member) => member.id),
+      });
+    } catch {
+      return null;
+    }
+  })();
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!spaceId) return;
-    if (!splitMemberIds.length) {
+    if (splitMode === "equal" && !splitMemberIds.length) {
       setError(locale === "ar" ? "اختر من يتحمل هذا المصروف." : "Choose who this expense is for.");
+      return;
+    }
+    if (splitMode === "mixed" && !mixedPreview) {
+      setError(locale === "ar" ? "أدخل حصة للجميع أو مبلغاً إضافياً لعضو واحد على الأقل." : "Enter a shared amount or at least one extra share.");
       return;
     }
     setSaving(true);
     setError("");
     try {
       const occurredAt = dateInputToOccurredAt(occurredOn);
+      const mixedPayload = splitMode === "mixed"
+        ? {
+            sharedAmount: sharedAmount.trim() === "" ? "0" : sharedAmount,
+            sharedMemberIds,
+            extraShares: extraShares.filter((row) => row.amount.trim() !== "").map((row) => ({ memberId: row.memberId, amount: row.amount })),
+            amount: mixedPreview ? currencyMajor(mixedPreview.totalMinor, currency).toFixed(3) : undefined,
+          }
+        : { splitMemberIds, amount };
       const response = await apiFetch("/api/dashboard", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -4277,9 +4321,8 @@ function TripExpenseModal({ data, locale, preferredSpaceId, expenseId, onClose, 
               expenseId: existing.id,
               paidFrom,
               paidByMemberId: paidFrom === "member" ? paidByMemberId : undefined,
-              splitMemberIds,
-              amount,
               description,
+              ...mixedPayload,
             }
           : {
               action: "addTripExpense",
@@ -4287,10 +4330,9 @@ function TripExpenseModal({ data, locale, preferredSpaceId, expenseId, onClose, 
               spaceId,
               paidFrom,
               paidByMemberId: paidFrom === "member" ? paidByMemberId : undefined,
-              splitMemberIds,
-              amount,
               description,
               occurredAt,
+              ...mixedPayload,
             }),
       });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
@@ -4299,25 +4341,53 @@ function TripExpenseModal({ data, locale, preferredSpaceId, expenseId, onClose, 
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : "SAVE_FAILED";
       const messages: Record<string, string> = locale === "ar"
-        ? { EXPENSE_ALREADY_SETTLED: "لا يمكن تعديل مصروف سُوّيت حصصه. احذف التسوية أولاً أو سجّل مصروفاً جديداً.", INSUFFICIENT_FUNDS: "رصيد الصندوق لا يكفي.", INVALID_AMOUNT: "المبلغ غير صالح.", INVALID_SPLIT: "اختر شخصاً واحداً على الأقل يتحمل المصروف." }
-        : { EXPENSE_ALREADY_SETTLED: "This expense already has settled shares.", INSUFFICIENT_FUNDS: "Insufficient fund balance.", INVALID_AMOUNT: "Invalid amount.", INVALID_SPLIT: "Choose at least one person this expense is for." };
+        ? { EXPENSE_ALREADY_SETTLED: "لا يمكن تعديل مصروف سُوّيت حصصه. احذف التسوية أولاً أو سجّل مصروفاً جديداً.", INSUFFICIENT_FUNDS: "رصيد الصندوق لا يكفي.", INVALID_AMOUNT: "المبلغ غير صالح.", INVALID_SPLIT: "اختر من يتحمل المصروف أو أضف حصة إضافية.", AMOUNT_SPLIT_MISMATCH: "مجموع الحصص لا يطابق المبلغ." }
+        : { EXPENSE_ALREADY_SETTLED: "This expense already has settled shares.", INSUFFICIENT_FUNDS: "Insufficient fund balance.", INVALID_AMOUNT: "Invalid amount.", INVALID_SPLIT: "Choose who this expense is for, or add an extra share.", AMOUNT_SPLIT_MISMATCH: "The shares do not add up to the total." };
       setError(messages[code] ?? dashboardError(code, locale));
     } finally {
       setSaving(false);
     }
   };
   return (
-    <Modal title={existing ? (locale === "ar" ? "تعديل مصروف جماعي" : "Edit group expense") : (locale === "ar" ? "إضافة مصروف جماعي" : "Add group expense")} onClose={onClose}>
+    <Modal title={existing ? (locale === "ar" ? "تعديل مصروف جماعي" : "Edit group expense") : (locale === "ar" ? "إضافة مصروف جماعي" : "Add group expense")} wide={splitMode === "mixed"} onClose={onClose}>
       <form className="modal-form" onSubmit={submit}>
-        <label><span>{locale === "ar" ? "المحفظة" : "Wallet"}</span><select required disabled={Boolean(existing)} value={spaceId} onChange={(event) => { const next = event.target.value; setSpaceId(next); const nextMembers = data.members.filter((member) => member.space_id === next && (member.status ?? "active") === "active"); setPayer(nextMembers[0]?.id ?? ""); setSplitMemberIds(nextMembers.map((member) => member.id)); }}>{groupSpaces.map((item) => <option key={item.id} value={item.id}>{nameOf(item, locale)}</option>)}</select></label>
+        <label><span>{locale === "ar" ? "المحفظة" : "Wallet"}</span><select required disabled={Boolean(existing)} value={spaceId} onChange={(event) => { const next = event.target.value; setSpaceId(next); const nextMembers = data.members.filter((member) => member.space_id === next && (member.status ?? "active") === "active"); setPayer(nextMembers[0]?.id ?? ""); const ids = nextMembers.map((member) => member.id); setSplitMemberIds(ids); setSharedMemberIds(ids); setExtraShares([]); }}>{groupSpaces.map((item) => <option key={item.id} value={item.id}>{nameOf(item, locale)}</option>)}</select></label>
         {!existing && <label><span>{locale === "ar" ? "دُفع من" : "Paid from"}</span><select value={paidFrom} onChange={(event) => setPaidFrom(event.target.value as "common_fund" | "member")}><option value="common_fund">{locale === "ar" ? "صندوق الجمعية" : "Association fund"}</option><option value="member">{locale === "ar" ? "حساب عضو" : "Member account"}</option></select></label>}
         {paidFrom === "member" && <label><span>{locale === "ar" ? "العضو الذي دفع" : "Member who paid"}</span><select required value={paidByMemberId} onChange={(event) => setPayer(event.target.value)}>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}</option>)}</select></label>}
-        <label><span>{locale === "ar" ? "المبلغ" : "Amount"}</span><div className="money-input"><input required type="number" min="0.01" step="0.001" value={amount} onChange={(event) => setAmount(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>
+        <div className="expense-split-mode">{(["equal", "mixed"] as const).map((mode) => <button type="button" key={mode} className={`secondary-button ${splitMode === mode ? "is-active" : ""}`} onClick={() => { if (mode === "mixed" && splitMode === "equal") { setSharedAmount(amount); setSharedMemberIds(splitMemberIds); } if (mode === "equal" && splitMode === "mixed" && mixedPreview) { setAmount(currencyMajor(mixedPreview.totalMinor, currency).toFixed(3)); setSplitMemberIds(Array.from(new Set([...sharedMemberIds, ...extraShares.map((row) => row.memberId)]))); } setSplitMode(mode); }}>{mode === "equal" ? (locale === "ar" ? "بالتساوي" : "Equal split") : (locale === "ar" ? "مشترك + إضافي" : "Shared + extra")}</button>)}</div>
+        {splitMode === "equal" && <label><span>{locale === "ar" ? "المبلغ" : "Amount"}</span><div className="money-input"><input required type="number" min="0.01" step="0.001" value={amount} onChange={(event) => setAmount(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>}
         {!existing && <label><span>{locale === "ar" ? "تاريخ المصروف" : "Expense date"}</span><DateField required value={occurredOn} onChange={setOccurredOn} /></label>}
         <label><span>{locale === "ar" ? "الوصف" : "Description"}</span><input required minLength={2} maxLength={300} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
-        <ExpenseSplitPicker members={members} selectedIds={splitMemberIds} onChange={setSplitMemberIds} locale={locale} amount={amount} currency={currency} paidFrom={paidFrom} paidByMemberId={paidByMemberId} />
+        {splitMode === "equal" && <ExpenseSplitPicker members={members} selectedIds={splitMemberIds} onChange={setSplitMemberIds} locale={locale} amount={amount} currency={currency} paidFrom={paidFrom} paidByMemberId={paidByMemberId} />}
+        {splitMode === "mixed" && <>
+          <label><span>{locale === "ar" ? "مبلغ مشترك للكل / للمحددين" : "Shared amount"}</span><div className="money-input"><input type="number" min="0" step="0.001" value={sharedAmount} onChange={(event) => setSharedAmount(event.target.value)} placeholder="0.000" /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>
+          <ExpenseSplitPicker members={members} selectedIds={sharedMemberIds} onChange={setSharedMemberIds} locale={locale} amount={sharedAmount} currency={currency} paidFrom={paidFrom} paidByMemberId={paidByMemberId} heading={locale === "ar" ? "من يقتسم المبلغ المشترك؟" : "Who shares the common amount?"} />
+          <div className="expense-split-picker">
+            <span>{locale === "ar" ? "مبالغ إضافية لعضو أو أكثر" : "Extra amounts for specific people"}</span>
+            <div className="extra-share-list">
+              {extraShares.map((row) => (
+                <div className="extra-share-row" key={row.key}>
+                  <select value={row.memberId} onChange={(event) => setExtraShares((current) => current.map((item) => item.key === row.key ? { ...item, memberId: event.target.value } : item))}>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}</option>)}</select>
+                  <div className="money-input"><input type="number" min="0.01" step="0.001" value={row.amount} onChange={(event) => setExtraShares((current) => current.map((item) => item.key === row.key ? { ...item, amount: event.target.value } : item))} /><b className="money-currency"><OmrSymbol size={14} /></b></div>
+                  <button type="button" className="secondary-button" onClick={() => setExtraShares((current) => current.filter((item) => item.key !== row.key))} aria-label={locale === "ar" ? "حذف" : "Remove"}><Trash2 size={15} /></button>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="secondary-button" onClick={() => setExtraShares((current) => {
+              const used = new Set(current.map((row) => row.memberId));
+              const nextMember = members.find((member) => !sharedMemberIds.includes(member.id) && !used.has(member.id))
+                ?? members.find((member) => !used.has(member.id))
+                ?? members[0];
+              return [...current, { key: crypto.randomUUID(), memberId: nextMember?.id ?? "", amount: "" }];
+            })}><Plus size={15} />{locale === "ar" ? "إضافة حصة لشخص" : "Add a personal share"}</button>
+          </div>
+          <p className="modal-note">{mixedPreview
+            ? (locale === "ar" ? `إجمالي المعاملة ${formatMoney(mixedPreview.totalMinor, currency, locale)}. ${mixedPreview.splits.map((row) => `${members.find((member) => member.id === row.memberId)?.display_name ?? row.memberId}: ${formatMoney(row.shareMinor, currency, locale)}`).join(" · ")}`
+              : `Bill total ${formatMoney(mixedPreview.totalMinor, currency, locale)}. ${mixedPreview.splits.map((row) => `${members.find((member) => member.id === row.memberId)?.display_name ?? row.memberId}: ${formatMoney(row.shareMinor, currency, locale)}`).join(" · ")}`)
+            : (locale === "ar" ? "مثال: 331 ر.ع. مشتركة على الاثنين الأصليين، و197.450 إضافية على الرابع." : "Example: 331 shared by the original two, plus 197.450 extra on the fourth person.")}</p>
+        </>}
         {error && <p className="modal-error">{error}</p>}
-        <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{copy[locale].cancel}</button><button className="primary-button" disabled={saving || !spaceId || !members.length || !splitMemberIds.length}>{saving ? copy[locale].saving : copy[locale].save}</button></div>
+        <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{copy[locale].cancel}</button><button className="primary-button" disabled={saving || !spaceId || !members.length || (splitMode === "equal" ? !splitMemberIds.length : !mixedPreview)}>{saving ? copy[locale].saving : copy[locale].save}</button></div>
       </form>
     </Modal>
   );

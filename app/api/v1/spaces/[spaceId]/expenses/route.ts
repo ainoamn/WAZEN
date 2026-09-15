@@ -60,11 +60,17 @@ export async function POST(
         assertApiScope(user, "wallets:write");
         const space = await authorizeSpace(db, user, spaceId, "transact", ["household", "trip", "society", "group"]);
         const parsed = z.object({
-          amount: z.union([z.string(), z.number()]),
+          amount: z.union([z.string(), z.number()]).optional(),
           description: z.string().trim().min(2).max(300),
           paidFrom: z.enum(["common_fund", "member"]).optional(),
           paidByMemberId: z.string().min(1).max(120).optional(),
           splitMemberIds: z.array(z.string().min(1).max(120)).min(1).max(200).optional(),
+          sharedAmount: z.union([z.string(), z.number()]).optional(),
+          sharedMemberIds: z.array(z.string().min(1).max(120)).max(200).optional(),
+          extraShares: z.array(z.object({
+            memberId: z.string().min(1).max(120),
+            amount: z.union([z.string(), z.number()]),
+          })).max(200).optional(),
           occurredAt: z.string().min(8).max(40).optional(),
         }).safeParse(payload);
         if (!parsed.success) throw new ApiError(400, "INVALID_TRIP_EXPENSE");
