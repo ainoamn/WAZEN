@@ -4183,9 +4183,42 @@ function ExpenseSplitPicker({
   paidByMemberId?: string;
   heading?: string;
 }) {
+  const allIds = members.map((member) => member.id);
+  const isEveryone = allIds.length > 0 && selectedIds.length === allIds.length && allIds.every((id) => selectedIds.includes(id));
+  const [mode, setMode] = useState<"everyone" | "pick">(isEveryone ? "everyone" : "pick");
+  const [open, setOpen] = useState(!isEveryone);
+  const [query, setQuery] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const chooseEveryone = () => {
+    setMode("everyone");
+    setOpen(false);
+    setQuery("");
+    onChange(allIds);
+  };
+  const chooseFromList = () => {
+    setMode("pick");
+    setOpen(true);
+    setQuery("");
+    if (isEveryone) onChange([]);
+  };
   const toggle = (id: string) => {
     onChange(selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id]);
   };
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
   const orderedSelected = members.filter((member) => selectedIds.includes(member.id)).map((member) => member.id);
   let shares: Array<{ memberId: string; shareMinor: number }> = [];
   try {
@@ -4195,8 +4228,20 @@ function ExpenseSplitPicker({
   const shareById = new Map(shares.map((row) => [row.memberId, row.shareMinor]));
   const payerName = members.find((member) => member.id === paidByMemberId)?.display_name;
   const beneficiary = members.find((member) => member.id === orderedSelected[0]);
+  const visibleMembers = members.filter((member) => member.display_name.toLowerCase().includes(query.trim().toLowerCase()));
+  const triggerLabel = (() => {
+    if (!orderedSelected.length) return locale === "ar" ? "اختر الأعضاء" : "Choose members";
+    const names = members.filter((member) => selectedIds.includes(member.id)).map((member) => member.display_name);
+    if (names.length <= 2) return names.join(locale === "ar" ? " و" : " & ");
+    return locale === "ar" ? `${names.length} أعضاء محددون` : `${names.length} members selected`;
+  })();
   const note = (() => {
-    if (!orderedSelected.length) return locale === "ar" ? "اختر من يتحمل هذا المصروف." : "Choose who this expense is for.";
+    if (mode === "everyone") {
+      return locale === "ar"
+        ? `يُقسَّم على كل الأعضاء (${members.length}).`
+        : `Split equally among everyone (${members.length}).`;
+    }
+    if (!orderedSelected.length) return locale === "ar" ? "افتح القائمة وضع علامة صح على من يتحمل المصروف." : "Open the list and tick who this expense is for.";
     if (orderedSelected.length === 1 && paidFrom === "member" && orderedSelected[0] === paidByMemberId) {
       return locale === "ar" ? "مصروف شخصي على الدافع — لا تسوية مع الباقين." : "Personal expense on the payer — no settlement with the others.";
     }
@@ -4207,34 +4252,63 @@ function ExpenseSplitPicker({
     }
     if (paidFrom === "common_fund") {
       return locale === "ar"
-        ? "يُخصم من الصندوق ويُقسَّم فقط على المحددين. من لم يُحدد لا يتحمل شيئاً من هذه الفاتورة."
-        : "Taken from the fund and split only among the selected people. Anyone left out does not share this bill.";
+        ? "يُخصم من الصندوق ويُقسَّم فقط على المحددين. من لم تُعلَّم صح بجانب اسمه لا يتحمل شيئاً."
+        : "Taken from the fund and split only among ticked people. Anyone left unticked does not share this bill.";
     }
     return locale === "ar"
       ? "الدافع له ما دفعه عن الآخرين، والمحددون عليهم حصصهم فقط."
-      : "The payer is owed what they covered for others; only the selected people share the bill.";
+      : "The payer is owed what they covered for others; only the ticked people share the bill.";
   })();
   return (
-    <div className="expense-split-picker">
+    <div className="expense-split-picker" ref={rootRef}>
       <span>{heading ?? (locale === "ar" ? "لمن هذا المصروف؟" : "Who is this expense for?")}</span>
       <div className="split-picker-actions">
-        <button type="button" className="secondary-button" onClick={() => onChange(members.map((member) => member.id))}>{locale === "ar" ? "الكل" : "Everyone"}</button>
-        {paidFrom === "member" && paidByMemberId ? <button type="button" className="secondary-button" onClick={() => onChange([paidByMemberId])}>{locale === "ar" ? "شخصي للدافع" : "Payer only"}</button> : null}
+        <button type="button" className={`secondary-button ${mode === "everyone" ? "is-active" : ""}`} onClick={chooseEveryone}>{locale === "ar" ? "الكل" : "Everyone"}</button>
+        <button type="button" className={`secondary-button ${mode === "pick" ? "is-active" : ""}`} onClick={chooseFromList}>{locale === "ar" ? "اختيار من القائمة" : "Choose from list"}</button>
+        {paidFrom === "member" && paidByMemberId ? <button type="button" className="secondary-button" onClick={() => { setMode("pick"); setOpen(true); onChange([paidByMemberId]); }}>{locale === "ar" ? "شخصي للدافع" : "Payer only"}</button> : null}
       </div>
-      <div className="month-grid selectable">
-        {members.map((member) => {
-          const selected = selectedIds.includes(member.id);
-          const share = shareById.get(member.id);
-          return (
-            <button type="button" key={member.id} className={`month-chip ${selected ? "selected" : ""}`} onClick={() => toggle(member.id)}>
-              <strong>{member.display_name}</strong>
-              <span>{selected
-                ? (share != null ? formatMoney(share, currency, locale) : (locale === "ar" ? "مشمول" : "Included"))
-                : (locale === "ar" ? "غير مشمول" : "Excluded")}</span>
-            </button>
-          );
-        })}
-      </div>
+      {mode === "pick" && (
+        <div className="split-dropdown">
+          <button type="button" className="split-dropdown-trigger" aria-expanded={open} aria-haspopup="listbox" onClick={() => setOpen((current) => !current)}>
+            <span>{triggerLabel}</span>
+            <ChevronDown size={16} />
+          </button>
+          {open && (
+            <div className="split-dropdown-panel" role="listbox" aria-multiselectable="true">
+              <div className="split-dropdown-toolbar">
+                <div className="split-dropdown-search">
+                  <Search size={15} />
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }}
+                    placeholder={locale === "ar" ? "ابحث عن عضو" : "Search a member"}
+                  />
+                </div>
+                <div className="split-dropdown-toolbar-actions">
+                  <button type="button" onClick={() => onChange(allIds)}>{locale === "ar" ? "تحديد الكل" : "Tick all"}</button>
+                  <button type="button" onClick={() => onChange([])}>{locale === "ar" ? "مسح" : "Clear"}</button>
+                </div>
+              </div>
+              {visibleMembers.map((member) => {
+                const selected = selectedIds.includes(member.id);
+                const share = shareById.get(member.id);
+                return (
+                  <label key={member.id} className={`split-dropdown-option ${selected ? "is-checked" : ""}`}>
+                    <input type="checkbox" checked={selected} onChange={() => toggle(member.id)} />
+                    <span>{member.display_name}</span>
+                    <em>{selected
+                      ? (share != null ? formatMoney(share, currency, locale) : (locale === "ar" ? "محدد" : "Ticked"))
+                      : (locale === "ar" ? "—" : "—")}</em>
+                  </label>
+                );
+              })}
+              {!visibleMembers.length && <p className="split-dropdown-empty">{locale === "ar" ? "لا يوجد اسم مطابق." : "No matching name."}</p>}
+            </div>
+          )}
+        </div>
+      )}
       <p className="modal-note">{note}</p>
     </div>
   );
