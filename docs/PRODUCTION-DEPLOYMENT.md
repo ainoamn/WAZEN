@@ -136,7 +136,7 @@ RESEND_API_KEY=re_...
 RESEND_FROM_EMAIL="Wazen <noreply@your-domain.com>"
 ```
 
-مهمة `/api/jobs/tick` كل 5 دقائق تصرف الطابور عبر `https://api.resend.com/emails`.
+مهمة `/api/jobs/tick` مرة في اليوم (Hobby) تصرف الطابور عبر `https://api.resend.com/emails`. على Pro يمكن إرجاع الجدولة إلى كل 5 دقائق.
 
 ### Webhook قديم (اختياري)
 
@@ -148,7 +148,7 @@ WAZEN_EMAIL_PROVIDER_HOSTS=provider.example
 
 يُتجاهل إن وُجد `RESEND_API_KEY` + `RESEND_FROM_EMAIL`.
 
-شغّل المهام عبر Vercel Cron على `/api/jobs/tick` كل 5 دقائق (انظر `vercel.json`)، أو يدوياً:
+شغّل المهام عبر Vercel Cron على `/api/jobs/tick` مرة يومياً في 02:00 و03:00 و06:00 و14:00 UTC (Hobby لا يسمح بأكثر من مرة في اليوم لكل مهمة؛ انظر `vercel.json`)، أو يدوياً:
 
 ```text
 POST /api/jobs/tick

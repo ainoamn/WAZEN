@@ -5,9 +5,9 @@
   "regions": ["iad1"],
   "ignoreCommand": "git log -1 --pretty=%s | grep -q '^docs:'",
   "crons": [
-    {
-      "path": "/api/jobs/tick",
-      "schedule": "*/5 * * * *"
-    }
+    { "path": "/api/jobs/tick", "schedule": "0 2 * * *" },
+    { "path": "/api/jobs/tick", "schedule": "0 3 * * *" },
+    { "path": "/api/jobs/tick", "schedule": "0 6 * * *" },
+    { "path": "/api/jobs/tick", "schedule": "0 14 * * *" }
   ]
 }
