@@ -379,4 +379,8 @@ test("fund-trip member who paid nothing is not credited bill shares as paid", ()
     splits: [{ expense_id: "t1", member_id: "majed", share_minor: 109_351 }],
     membersPaidMinor: [200_000, 0],
   }), 0);
+  assert.equal(memberTripPaidMinor("majed", "az", 0, [], {
+    expenses: [{ id: "t3", paid_from: "common_fund", status: "posted" }],
+    splits: [{ expense_id: "t3", member_id: "majed", share_minor: 254_966 }],
+  }), 0);
 });

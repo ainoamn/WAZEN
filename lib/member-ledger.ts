@@ -374,11 +374,14 @@ export function buildMemberLedger(input: {
   const tripShare = input.spaceType === "trip"
     ? memberTripShareMinor(member.id, member.space_id, input.tripExpenses, input.expenseSplits)
     : 0;
-  const usesFundCash = input.spaceType === "trip" && tripWalletUsesFundCash({
-    spaceId: member.space_id,
-    expenses: input.tripExpenses,
-    membersPaidMinor: input.membersPaidMinor ?? [member.paid_minor],
-  });
+  const usesFundCash = input.spaceType === "trip" && (
+    fundSharesTotal > 0
+    || tripWalletUsesFundCash({
+      spaceId: member.space_id,
+      expenses: input.tripExpenses,
+      membersPaidMinor: input.membersPaidMinor ?? [member.paid_minor],
+    })
+  );
   if (input.spaceType === "trip" && tripShare > 0 && Number(member.paid_minor) <= 0 && !usesFundCash) {
     lines.push({
       at: member.joined_at || new Date().toISOString(),
@@ -475,11 +478,13 @@ export function buildMemberLedger(input: {
     joinedAt: member.joined_at || "",
     goalMinor: Number(member.due_minor) || 0,
     paidMinor: input.spaceType === "trip"
-      ? memberTripPaidMinor(member.id, member.space_id, member.paid_minor, input.settlements, {
-        expenses: input.tripExpenses,
-        splits: input.expenseSplits,
-        membersPaidMinor: input.membersPaidMinor ?? [member.paid_minor],
-      })
+      ? (usesFundCash
+        ? Number(member.paid_minor) || 0
+        : memberTripPaidMinor(member.id, member.space_id, member.paid_minor, input.settlements, {
+          expenses: input.tripExpenses,
+          splits: input.expenseSplits,
+          membersPaidMinor: input.membersPaidMinor ?? [member.paid_minor],
+        }))
       : Number(member.paid_minor) || 0,
     extraMinor: Number(member.extra_minor) || 0,
     addonMinor: Number(member.addon_minor ?? 0),

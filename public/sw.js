@@ -1,6 +1,6 @@
 /* WAZEN PWA — app shell + last pages stay on device; API reads fall back offline. */
-const SHELL = "wazen-shell-v2";
-const DATA = "wazen-data-v2";
+const SHELL = "wazen-shell-v3";
+const DATA = "wazen-data-v3";
 const PRECACHE = [
   "/",
   "/home",
@@ -114,16 +114,17 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate" || isAppPage(url.pathname)) {
     event.respondWith(
-      caches.open(SHELL).then(async (cache) => {
-        const cached = await cache.match(request) || await cache.match(url.pathname);
-        const network = fetch(request).then((response) => {
-          if (response && response.ok) {
+      fetch(request).then((response) => {
+        if (response && response.ok) {
+          void caches.open(SHELL).then((cache) => {
             void cache.put(request, response.clone());
             void cache.put(url.pathname, response.clone());
-          }
-          return response;
-        }).catch(async () => cached || await cache.match("/home") || await cache.match("/dashboard") || await cache.match("/"));
-        return cached || network;
+          });
+        }
+        return response;
+      }).catch(async () => {
+        const cached = await caches.match(request) || await caches.match(url.pathname);
+        return cached || await caches.match("/home") || await caches.match("/dashboard") || await caches.match("/");
       }),
     );
     return;

@@ -394,3 +394,30 @@ test("fund-trip joiner who paid nothing shows 0 paid and owes contribution plus 
   assert.ok(ledger.lines.some((line) => line.titleAr.includes("عجز مساهمته") && line.amountMinor === 109_351));
   assert.equal(ledger.lines.filter((line) => line.titleAr.includes("حصته من مصروفات الرحلة")).length, 0);
 });
+
+test("fund-trip paid stays 0 from fund bills even when other members’ cash is omitted", () => {
+  const ledger = buildMemberLedger({
+    member: { ...member, id: "majed", due_minor: 200_000, paid_minor: 0, addon_minor: 0 },
+    spaceNameAr: "اذربيجان و جورجيا",
+    spaceNameEn: "Azerbaijan",
+    currency: "OMR",
+    spaceType: "trip",
+    plan: { amount_minor: 200_000, duration_months: 1, starts_at: "2026-08-30T00:00:00.000Z" },
+    installments: [],
+    transactions: [],
+    settlements: [],
+    tripExpenses: [{
+      id: "e-majed",
+      space_id: "s1",
+      paid_by_member_id: "",
+      paid_by_name: "صندوق الجمعية",
+      amount_minor: 254_966,
+      description: "تذاكر ماجد",
+      occurred_at: "2026-09-15T16:00:00.000Z",
+      paid_from: "common_fund",
+    }],
+    expenseSplits: [{ expense_id: "e-majed", member_id: "majed", share_minor: 254_966 }],
+  });
+  assert.equal(ledger.paidMinor, 0);
+  assert.equal(ledger.owesMinor, 454_966);
+});

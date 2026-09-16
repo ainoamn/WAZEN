@@ -336,9 +336,18 @@ export function memberDisplayCreditMinor(
 
 /** True when a trip/group expense was paid from the association common fund. */
 export function isFundPaidExpense(expense: { paid_from?: string | null; paid_by_name?: string | null }) {
-  return String(expense.paid_from ?? "") === "common_fund"
-    || expense.paid_by_name === "صندوق الجمعية"
-    || expense.paid_by_name === "Association fund";
+  const from = String(expense.paid_from ?? "").trim().toLowerCase();
+  const name = String(expense.paid_by_name ?? "");
+  return from === "common_fund"
+    || from === "fund"
+    || name.includes("صندوق")
+    || /association fund/i.test(name);
+}
+
+function expenseInTripSpace(expense: { space_id?: string | null }, spaceId: string) {
+  const raw = expense.space_id;
+  if (raw == null || raw === "") return true;
+  return String(raw) === String(spaceId);
 }
 
 /** Trip uses the association fund when anyone contributed cash or a bill was paid from it. */
@@ -349,7 +358,7 @@ export function tripWalletUsesFundCash(input: {
 }) {
   if ((input.membersPaidMinor ?? []).some((paid) => asMinor(paid) > 0)) return true;
   return (input.expenses ?? []).some((expense) =>
-    String(expense.space_id ?? "") === String(input.spaceId)
+    expenseInTripSpace(expense, input.spaceId)
     && (expense.status ?? "posted") !== "voided"
     && isFundPaidExpense(expense),
   );
@@ -465,9 +474,11 @@ export function memberTripPaidMinor(
   })) {
     return 0;
   }
+  const expenses = extras?.expenses ?? [];
   const splits = extras?.splits;
-  if (Array.isArray(splits) && splits.length > 0) {
-    return memberTripShareMinor(memberId, spaceId, extras?.expenses ?? [], splits);
+  // Shares are «مدفوع» only on pocket trips with live bills. Missing expenses + splits can be fund tickets.
+  if (Array.isArray(splits) && splits.length > 0 && expenses.length > 0) {
+    return memberTripShareMinor(memberId, spaceId, expenses, splits);
   }
   return memberTripSettlementPaidMinor(memberId, spaceId, settlements);
 }

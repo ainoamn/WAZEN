@@ -180,6 +180,7 @@ type LedgerInputs = {
     amount_minor: number;
     description: string;
     occurred_at: string;
+    paid_from?: string | null;
   }>;
   expenseSplits?: Array<{ expense_id: string; member_id: string; share_minor: number }>;
   membersPaidMinor?: Array<unknown>;
