@@ -349,7 +349,7 @@ test("Azerbaijan trip file matches the members table: paid 200, pocket 0, owes 1
   assert.doesNotMatch(html, /عليه[\s\S]*?؜-/);
 });
 
-test("fund-trip joiner who paid nothing shows 0 paid and owes contribution plus ticket shares", () => {
+test("fund-trip joiner who paid nothing shows 0 paid and owes only ticket shares", () => {
   const ledger = buildMemberLedger({
     member: { ...member, id: "majed", due_minor: 200_000, paid_minor: 0, addon_minor: 0 },
     spaceNameAr: "اذربيجان و جورجيا",
@@ -389,8 +389,9 @@ test("fund-trip joiner who paid nothing shows 0 paid and owes contribution plus 
     ],
   });
   assert.equal(ledger.paidMinor, 0);
-  assert.equal(ledger.owesMinor, 309_351);
-  assert.ok(ledger.lines.some((line) => line.titleAr.includes("مساهمة الرحلة غير المسددة") && line.amountMinor === 200_000));
+  assert.equal(ledger.owesMinor, 109_351);
+  assert.equal(ledger.remainingDueMinor, 200_000);
+  assert.equal(ledger.lines.some((line) => line.titleAr.includes("مساهمة الرحلة غير المسددة")), false);
   assert.ok(ledger.lines.some((line) => line.titleAr.includes("عجز مساهمته") && line.amountMinor === 109_351));
   assert.equal(ledger.lines.filter((line) => line.titleAr.includes("حصته من مصروفات الرحلة")).length, 0);
 });
@@ -419,5 +420,44 @@ test("fund-trip paid stays 0 from fund bills even when other members’ cash is 
     expenseSplits: [{ expense_id: "e-majed", member_id: "majed", share_minor: 254_966 }],
   });
   assert.equal(ledger.paidMinor, 0);
-  assert.equal(ledger.owesMinor, 454_966);
+  assert.equal(ledger.owesMinor, 254_966);
+  assert.equal(ledger.remainingDueMinor, 200_000);
+});
+
+test("paying the trip contribution reduces ticket shortfall, it is not a second debt", () => {
+  const ledger = buildMemberLedger({
+    member: { ...member, id: "majed", due_minor: 200_000, paid_minor: 200_000, addon_minor: 0 },
+    spaceNameAr: "اذربيجان و جورجيا",
+    spaceNameEn: "Azerbaijan",
+    currency: "OMR",
+    spaceType: "trip",
+    plan: { amount_minor: 200_000, duration_months: 1, starts_at: "2026-08-30T00:00:00.000Z" },
+    installments: [],
+    transactions: [{
+      id: "t-pay",
+      space_id: "s1",
+      member_id: "majed",
+      kind: "contribution",
+      amount_minor: 200_000,
+      description_ar: "مساهمة ماجد",
+      description_en: "Majed contribution",
+      status: "posted",
+      occurred_at: "2026-09-16T08:00:00.000Z",
+    }],
+    settlements: [],
+    tripExpenses: [{
+      id: "e-majed",
+      space_id: "s1",
+      paid_by_member_id: "",
+      paid_by_name: "صندوق الجمعية",
+      amount_minor: 254_966,
+      description: "تذاكر ماجد",
+      occurred_at: "2026-09-15T16:00:00.000Z",
+      paid_from: "common_fund",
+    }],
+    expenseSplits: [{ expense_id: "e-majed", member_id: "majed", share_minor: 254_966 }],
+  });
+  assert.equal(ledger.paidMinor, 200_000);
+  assert.equal(ledger.owesMinor, 54_966);
+  assert.equal(ledger.remainingDueMinor, 0);
 });

@@ -640,19 +640,11 @@ function memberPosition(member: Member, data?: DashboardData, spaceId?: string) 
     const pool = memberFundPoolNet(paid, fundShares);
     const settleNet = memberSettlementNet(member.id, data, expenseSpaceId);
     const spaceType = data.spaces.find((item) => item.id === expenseSpaceId)?.type;
-    const usesFundCash = spaceType === "trip" && (
-      fundShares > 0
-      || tripWalletUsesFundCash({
-        spaceId: expenseSpaceId,
-        expenses: data.tripExpenses,
-        membersPaidMinor: data.members.filter((item) => item.space_id === expenseSpaceId).map((item) => item.paid_minor),
-      })
-    );
     // Fund shares already net against paid — avoid double-counting paid−accrued advance.
     credit = fundShares > 0
       ? memberExtraCreditMinor(member, data.transactions) + pool.leftoverMinor
       : cashCredit;
-    debit = (spaceType === "trip" && !usesFundCash ? 0 : remainingDue) + pool.shortfallMinor;
+    debit = (spaceType === "trip" ? 0 : remainingDue) + pool.shortfallMinor;
     debit += Math.max(0, -settleNet);
     credit += Math.max(0, settleNet);
   }

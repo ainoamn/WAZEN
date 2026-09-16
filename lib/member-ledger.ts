@@ -421,19 +421,6 @@ export function buildMemberLedger(input: {
     });
   }
 
-  if (usesFundCash && remainingDue > 0) {
-    lines.push({
-      at: member.joined_at || new Date().toISOString(),
-      focus: "owes",
-      direction: "out",
-      titleAr: "مساهمة الرحلة غير المسددة",
-      titleEn: "Unpaid trip contribution",
-      detailAr: "حصته من هدف الصندوق لم تُحصَّل بعد، وهي منفصلة عن حصص التذاكر",
-      detailEn: "His share of the fund goal has not been collected yet, separate from ticket shares",
-      amountMinor: remainingDue,
-    });
-  }
-
   const pool = memberFundPoolNet(member.paid_minor, fundSharesTotal);
   if (fundSharesTotal > 0 && pool.leftoverMinor > 0) {
     expenseCredit += pool.leftoverMinor;
@@ -466,8 +453,8 @@ export function buildMemberLedger(input: {
   const baseCredit = fundSharesTotal > 0
     ? memberExtraCreditMinor(member, input.transactions)
     : cashCredit;
-  // Pocket-only trips keep the savings goal off عليه. Fund trips add unpaid contribution + share shortfall.
-  const debit = (input.spaceType === "trip" && !usesFundCash ? 0 : remainingDue) + Math.max(0, expenseDebit);
+  // Trip: عليه is fund-share shortfall (and pending peer settlements), not the savings goal. Paying the goal reduces that shortfall.
+  const debit = (input.spaceType === "trip" ? 0 : remainingDue) + Math.max(0, expenseDebit);
   const credit = baseCredit + Math.max(0, expenseCredit);
   const net = netMemberClaim(debit, credit);
   lines.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
