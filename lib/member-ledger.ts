@@ -430,8 +430,8 @@ export function buildMemberLedger(input: {
       direction: "in",
       titleAr: "متبقي له من مساهمته بعد حصص الصندوق",
       titleEn: "Leftover after fund shares",
-      detailAr: `مدفوع ${pool.paidMinor} − حصص الصندوق ${pool.fundShareMinor} = متبقي له`,
-      detailEn: `Paid ${pool.paidMinor} − fund shares ${pool.fundShareMinor} = leftover credit`,
+          detailAr: `مدفوع ${formatMoneyMinor(pool.paidMinor, input.currency, "ar")} − حصص الصندوق ${formatMoneyMinor(pool.fundShareMinor, input.currency, "ar")} = متبقي له`,
+          detailEn: `Paid ${formatMoneyMinor(pool.paidMinor, input.currency, "en")} − fund shares ${formatMoneyMinor(pool.fundShareMinor, input.currency, "en")} = leftover credit`,
       amountMinor: pool.leftoverMinor,
     });
   }
@@ -443,8 +443,8 @@ export function buildMemberLedger(input: {
       direction: "out",
       titleAr: "عجز مساهمته عن حصص الصندوق",
       titleEn: "Shortfall vs fund shares",
-      detailAr: `حصص الصندوق ${pool.fundShareMinor} تجاوزت المدفوع ${pool.paidMinor}`,
-      detailEn: `Fund shares ${pool.fundShareMinor} exceeded paid ${pool.paidMinor}`,
+      detailAr: `حصص الصندوق ${formatMoneyMinor(pool.fundShareMinor, input.currency, "ar")} تجاوزت المدفوع ${formatMoneyMinor(pool.paidMinor, input.currency, "ar")}`,
+      detailEn: `Fund shares ${formatMoneyMinor(pool.fundShareMinor, input.currency, "en")} exceeded paid ${formatMoneyMinor(pool.paidMinor, input.currency, "en")}`,
       amountMinor: pool.shortfallMinor,
     });
   }

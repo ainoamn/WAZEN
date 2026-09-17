@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, composeExpenseShares, composeSharedRemainder, extraAddonMinorFromTransactions, inferSharedRemainder, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPaidMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
-import { planExpenseSplits } from "../lib/expense-split.ts";
+import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, composeExpenseShares, composeSharedRemainder, extraAddonMinorFromTransactions, inferSharedRemainder, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPaidMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, takeShareSlice, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
+import { planExpenseSplits, planPayerSplit } from "../lib/expense-split.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 import { bankCustodySplit } from "../lib/wallet-links.ts";
 
@@ -151,6 +151,25 @@ test("inferSharedRemainder reconstructs shared-plus-remainder", () => {
   assert.equal(inferred.mode, "mixed");
   assert.equal(inferred.sharedMinor, 100_000);
   assert.deepEqual(inferred.remainderIds, ["c"]);
+});
+
+test("takeShareSlice splits a 331 ticket into 300 fund and 31 pocket", () => {
+  const splits = [
+    { memberId: "abdul", shareMinor: 165_500 },
+    { memberId: "dawood", shareMinor: 165_500 },
+  ];
+  const sliced = takeShareSlice(splits, 300_000);
+  assert.equal(sliced.taken.reduce((sum, row) => sum + row.shareMinor, 0), 300_000);
+  assert.equal(sliced.rest.reduce((sum, row) => sum + row.shareMinor, 0), 31_000);
+  assert.equal(sliced.taken.find((row) => row.memberId === "abdul")?.shareMinor, 150_000);
+  assert.equal(sliced.rest.find((row) => row.memberId === "abdul")?.shareMinor, 15_500);
+});
+
+test("planPayerSplit requires fund plus member to equal the bill", () => {
+  const ok = planPayerSplit({ currency: "OMR", totalMinor: 331_000, fundAmount: "300.000", memberAmount: "31.000" });
+  assert.equal(ok.fundMinor, 300_000);
+  assert.equal(ok.memberMinor, 31_000);
+  assert.throws(() => planPayerSplit({ currency: "OMR", totalMinor: 331_000, fundAmount: "300.000", memberAmount: "30.000" }), /AMOUNT_SPLIT_MISMATCH/);
 });
 
 test("contribution payment applies against full outstanding dues then advance", () => {

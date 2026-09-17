@@ -77,3 +77,31 @@ export function planExpenseSplitsForApi(input: Parameters<typeof planExpenseSpli
     throw new ApiError(400, "INVALID_SPLIT");
   }
 }
+
+/** One bill paid from the fund and a member pocket: both parts must be > 0 and sum to the total. */
+export function planPayerSplit(input: {
+  currency: string;
+  totalMinor: number;
+  fundAmount?: string | number;
+  memberAmount?: string | number;
+}): { fundMinor: number; memberMinor: number } {
+  if (input.fundAmount === undefined || input.fundAmount === "" || input.memberAmount === undefined || input.memberAmount === "") {
+    throw new Error("INVALID_SPLIT");
+  }
+  const fundMinor = parseMoneyToMinor(input.fundAmount, input.currency);
+  const memberMinor = parseMoneyToMinor(input.memberAmount, input.currency);
+  if (fundMinor <= 0 || memberMinor <= 0) throw new Error("INVALID_AMOUNT");
+  if (fundMinor + memberMinor !== input.totalMinor) throw new Error("AMOUNT_SPLIT_MISMATCH");
+  return { fundMinor, memberMinor };
+}
+
+export function planPayerSplitForApi(input: Parameters<typeof planPayerSplit>[0]) {
+  try {
+    return planPayerSplit(input);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "INVALID_SPLIT";
+    if (code === "INVALID_AMOUNT" || code === "TOO_MANY_DECIMALS") throw new ApiError(400, "INVALID_AMOUNT");
+    if (code === "AMOUNT_SPLIT_MISMATCH") throw new ApiError(400, "AMOUNT_SPLIT_MISMATCH");
+    throw new ApiError(400, "INVALID_SPLIT");
+  }
+}

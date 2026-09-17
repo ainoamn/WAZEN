@@ -5,8 +5,8 @@ import { prepareAudit } from "./audit";
 import { coveringPeriod } from "./accounting-periods";
 import { ApiError } from "./security";
 import { currencyScale, formatMoneyMinor } from "./money";
-import { resolveExpenseSplitMembers, splitEvenly } from "./finance";
-import { hasComposeParts, planExpenseSplitsForApi } from "./expense-split";
+import { resolveExpenseSplitMembers, splitEvenly, takeShareSlice } from "./finance";
+import { hasComposeParts, planExpenseSplitsForApi, planPayerSplitForApi } from "./expense-split";
 import { rebuildSpaceTripSettlements } from "./trip-settlements";
 import { voidApprovedTransaction, writeApprovedCashBalance } from "./ledger-void";
 
@@ -54,8 +54,10 @@ export async function listV1Expenses(
 export type V1CreateExpenseInput = {
   amount?: string | number;
   description: string;
-  paidFrom?: "common_fund" | "member";
+  paidFrom?: "common_fund" | "member" | "split";
   paidByMemberId?: string;
+  fundAmount?: string | number;
+  memberAmount?: string | number;
   splitMemberIds?: string[];
   sharedAmount?: string | number;
   sharedMemberIds?: string[];
@@ -68,7 +70,19 @@ export async function createV1Expense(
   user: RequestUser,
   space: { id: string; currency: string; owner_user_id: string; type: string },
   input: V1CreateExpenseInput,
-) {
+): Promise<{
+  id: string;
+  spaceId: string;
+  transactionId: string;
+  amountMinor: number;
+  amountLabel: string;
+  description: string;
+  paidFrom: string;
+  paidByMemberId: string;
+  occurredAt: string;
+  status: "posted";
+  splits: Array<{ memberId: string; shareMinor: number }>;
+}> {
   if (!["household", "trip", "society", "group"].includes(space.type)) {
     throw new ApiError(400, "INVALID_WALLET_TYPE");
   }
@@ -90,6 +104,41 @@ export async function createV1Expense(
   });
   const amountMinor = planned.amountMinor;
   const splits = planned.splits;
+
+  if (input.paidFrom === "split") {
+    const payerSplit = planPayerSplitForApi({
+      currency: space.currency,
+      totalMinor: amountMinor,
+      fundAmount: input.fundAmount,
+      memberAmount: input.memberAmount,
+    });
+    if (!input.paidByMemberId || !members.results.some((row) => row.id === input.paidByMemberId)) {
+      throw new ApiError(400, "INVALID_PAYER");
+    }
+    const sliced = takeShareSlice(splits, payerSplit.fundMinor);
+    const scale = 10 ** currencyScale(space.currency);
+    const asAmount = (minor: number) => (minor / scale).toFixed(3);
+    const toExtras = (rows: Array<{ memberId: string; shareMinor: number }>) =>
+      rows.map((row) => ({ memberId: row.memberId, amount: asAmount(row.shareMinor) }));
+    const shared = {
+      description: input.description,
+      occurredAt: input.occurredAt,
+    };
+    const fundExpense = await createV1Expense(db, user, space, {
+      ...shared,
+      paidFrom: "common_fund",
+      amount: asAmount(payerSplit.fundMinor),
+      extraShares: toExtras(sliced.taken),
+    });
+    await createV1Expense(db, user, space, {
+      ...shared,
+      paidFrom: "member",
+      paidByMemberId: input.paidByMemberId,
+      amount: asAmount(payerSplit.memberMinor),
+      extraShares: toExtras(sliced.rest),
+    });
+    return fundExpense;
+  }
 
   const description = input.description.trim();
   if (description.length < 2 || description.length > 300) throw new ApiError(400, "INVALID_TRIP_EXPENSE");

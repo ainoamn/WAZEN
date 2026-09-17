@@ -141,6 +141,44 @@ export function inferSharedRemainder(
   return { mode: "mixed", sharedMinor: Math.max(0, totalMinor - extraMinor), remainderIds };
 }
 
+/** Take a slice of a bill (e.g. 300 from a 331 ticket) in proportion to each member’s share. */
+export function takeShareSlice(
+  splits: Array<{ memberId: string; shareMinor: number }>,
+  takeMinor: number,
+): {
+  taken: Array<{ memberId: string; shareMinor: number }>;
+  rest: Array<{ memberId: string; shareMinor: number }>;
+} {
+  const total = splits.reduce((sum, row) => sum + row.shareMinor, 0);
+  if (!Number.isSafeInteger(takeMinor) || takeMinor <= 0 || takeMinor > total || total <= 0) {
+    throw new Error("INVALID_SPLIT");
+  }
+  if (takeMinor === total) {
+    return { taken: splits.map((row) => ({ ...row })), rest: [] };
+  }
+  const ranked = splits.map((row) => {
+    const exact = (row.shareMinor * takeMinor) / total;
+    const floor = Math.floor(exact);
+    return { memberId: row.memberId, original: row.shareMinor, shareMinor: floor, remainder: exact - floor };
+  });
+  let leftover = takeMinor - ranked.reduce((sum, row) => sum + row.shareMinor, 0);
+  const byRemainder = [...ranked].sort((left, right) => right.remainder - left.remainder || left.memberId.localeCompare(right.memberId));
+  for (const row of byRemainder) {
+    if (leftover <= 0) break;
+    row.shareMinor += 1;
+    leftover -= 1;
+  }
+  const takenById = new Map(ranked.map((row) => [row.memberId, row.shareMinor]));
+  const taken = splits
+    .map((row) => ({ memberId: row.memberId, shareMinor: takenById.get(row.memberId) ?? 0 }))
+    .filter((row) => row.shareMinor > 0);
+  const rest = splits
+    .map((row) => ({ memberId: row.memberId, shareMinor: row.shareMinor - (takenById.get(row.memberId) ?? 0) }))
+    .filter((row) => row.shareMinor > 0);
+  if (!taken.length || !rest.length) throw new Error("INVALID_SPLIT");
+  return { taken, rest };
+}
+
 export type Balance = { memberId: string; balanceMinor: number };
 
 function byLargestThenId<T extends { memberId: string; balanceMinor: number }>(left: T, right: T) {

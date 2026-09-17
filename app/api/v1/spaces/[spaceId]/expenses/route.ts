@@ -62,8 +62,10 @@ export async function POST(
         const parsed = z.object({
           amount: z.union([z.string(), z.number()]).optional(),
           description: z.string().trim().min(2).max(300),
-          paidFrom: z.enum(["common_fund", "member"]).optional(),
+          paidFrom: z.enum(["common_fund", "member", "split"]).optional(),
           paidByMemberId: z.string().min(1).max(120).optional(),
+          fundAmount: z.union([z.string(), z.number()]).optional(),
+          memberAmount: z.union([z.string(), z.number()]).optional(),
           splitMemberIds: z.array(z.string().min(1).max(120)).min(1).max(200).optional(),
           sharedAmount: z.union([z.string(), z.number()]).optional(),
           sharedMemberIds: z.array(z.string().min(1).max(120)).max(200).optional(),

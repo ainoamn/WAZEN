@@ -629,6 +629,10 @@ function memberPosition(member: Member, data?: DashboardData, spaceId?: string) 
   const cashCredit = memberDisplayCreditMinor(member, { accruedDueMinor: accruedDue, transactions: data?.transactions });
   let debit = remainingDue;
   let credit = cashCredit;
+  let fundLeftoverMinor = 0;
+  let fundShortfallMinor = 0;
+  let settlementCreditMinor = 0;
+  let settlementDebitMinor = 0;
   const expenseSpaceId = spaceId ?? member.space_id;
   if (data && expenseSpaceId) {
     let fundShares = 0;
@@ -640,16 +644,36 @@ function memberPosition(member: Member, data?: DashboardData, spaceId?: string) 
     const pool = memberFundPoolNet(paid, fundShares);
     const settleNet = memberSettlementNet(member.id, data, expenseSpaceId);
     const spaceType = data.spaces.find((item) => item.id === expenseSpaceId)?.type;
+    fundLeftoverMinor = pool.leftoverMinor;
+    fundShortfallMinor = pool.shortfallMinor;
+    settlementCreditMinor = Math.max(0, settleNet);
+    settlementDebitMinor = Math.max(0, -settleNet);
     // Fund shares already net against paid — avoid double-counting paid−accrued advance.
     credit = fundShares > 0
       ? memberExtraCreditMinor(member, data.transactions) + pool.leftoverMinor
       : cashCredit;
     debit = (spaceType === "trip" ? 0 : remainingDue) + pool.shortfallMinor;
-    debit += Math.max(0, -settleNet);
-    credit += Math.max(0, settleNet);
+    debit += settlementDebitMinor;
+    credit += settlementCreditMinor;
   }
+  const goalMinor = Number(member.due_minor) || 0;
+  const paidTowardGoalMinor = goalMinor > 0 ? Math.min(paid, goalMinor) : paid;
+  const paidAdvanceMinor = Math.max(0, paid - paidTowardGoalMinor);
   const net = netMemberClaim(debit, credit);
-  return { remainingDue, advance, cashCredit, ...net, debit: net.debitMinor, credit: net.creditMinor };
+  return {
+    remainingDue,
+    advance,
+    cashCredit,
+    fundLeftoverMinor,
+    fundShortfallMinor,
+    settlementCreditMinor,
+    settlementDebitMinor,
+    paidTowardGoalMinor,
+    paidAdvanceMinor,
+    ...net,
+    debit: net.debitMinor,
+    credit: net.creditMinor,
+  };
 }
 
 function printSpaceStatement(
@@ -2865,12 +2889,13 @@ function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCa
           const extraMinor = spaceType === "trip" && data && spaceId
             ? memberTripPocketMinor(member.id, spaceId, data.tripExpenses)
             : Number(member.addon_minor ?? 0);
+          const usesFundCash = Boolean(tripUsesFundCash || (data && spaceId && tripWalletUsesFundCash({
+            spaceId,
+            expenses: data.tripExpenses,
+            membersPaidMinor: members.map((item) => item.paid_minor),
+          })));
           const paidMinor = spaceType === "trip" && data && spaceId
-            ? ((tripUsesFundCash || tripWalletUsesFundCash({
-              spaceId,
-              expenses: data.tripExpenses,
-              membersPaidMinor: members.map((item) => item.paid_minor),
-            }))
+            ? (usesFundCash
               ? Number(member.paid_minor) || 0
               : memberTripPaidMinor(member.id, spaceId, member.paid_minor, data.settlements, {
                 expenses: data.tripExpenses,
@@ -2900,17 +2925,38 @@ function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCa
                 </div>
               </button>
               <strong>{formatMoney(personGoalMinor(member), currency, locale)}</strong>
-              <button type="button" className="amount-hit" onClick={() => open("paid")}><strong>{formatMoney(paidMinor, currency, locale)}</strong></button>
+              <button type="button" className="amount-hit" onClick={() => open("paid")}>
+                <span className="claim-stack">
+                  <strong>{formatMoney(paidMinor, currency, locale)}</strong>
+                  {spaceType === "trip" && usesFundCash && pos.paidAdvanceMinor > 0 && (
+                    <small>{locale === "ar"
+                      ? `مساهمة ${formatMoney(pos.paidTowardGoalMinor, currency, locale)} · مقدّم ${formatMoney(pos.paidAdvanceMinor, currency, locale)}`
+                      : `dues ${formatMoney(pos.paidTowardGoalMinor, currency, locale)} · advance ${formatMoney(pos.paidAdvanceMinor, currency, locale)}`}</small>
+                  )}
+                </span>
+              </button>
               <button type="button" className="amount-hit" onClick={() => open("spent")}><strong>{formatMoney(extraMinor, currency, locale)}</strong></button>
               <button type="button" className={`amount-hit ${debit ? "amount-negative" : "muted-amount"}`} onClick={() => open("owes")}>
                 <span className="claim-stack">
                   <span>{formatMoney(debit ? -Math.abs(debit) : 0, currency, locale)}</span>
+                  {spaceType === "trip" && debit > 0 && (pos.fundShortfallMinor > 0 || pos.settlementDebitMinor > 0) && (
+                    <small>{[
+                      pos.fundShortfallMinor > 0 ? (locale === "ar" ? `عجز الصندوق ${formatMoney(pos.fundShortfallMinor, currency, locale)}` : `fund shortfall ${formatMoney(pos.fundShortfallMinor, currency, locale)}`) : null,
+                      pos.settlementDebitMinor > 0 ? (locale === "ar" ? `تسوية ${formatMoney(pos.settlementDebitMinor, currency, locale)}` : `settlement ${formatMoney(pos.settlementDebitMinor, currency, locale)}`) : null,
+                    ].filter(Boolean).join(" · ")}</small>
+                  )}
                   {pos.reservedMinor > 0 && <small>{locale === "ar" ? `بعد حجز ${formatMoney(pos.reservedMinor, currency, locale)}` : `after ${formatMoney(pos.reservedMinor, currency, locale)} reserved`}</small>}
                 </span>
               </button>
               <button type="button" className={`amount-hit ${credit ? "reserve-amount" : "muted-amount"}`} onClick={() => open("credit")}>
                 <span className="claim-stack">
                   <span>{formatMoney(credit, currency, locale)}</span>
+                  {spaceType === "trip" && credit > 0 && (pos.fundLeftoverMinor > 0 || pos.settlementCreditMinor > 0) && (
+                    <small>{[
+                      pos.fundLeftoverMinor > 0 ? (locale === "ar" ? `فائض الصندوق ${formatMoney(pos.fundLeftoverMinor, currency, locale)}` : `fund leftover ${formatMoney(pos.fundLeftoverMinor, currency, locale)}`) : null,
+                      pos.settlementCreditMinor > 0 ? (locale === "ar" ? `على الأعضاء ${formatMoney(pos.settlementCreditMinor, currency, locale)}` : `from members ${formatMoney(pos.settlementCreditMinor, currency, locale)}`) : null,
+                    ].filter(Boolean).join(" · ")}</small>
+                  )}
                   {pos.reservedMinor > 0 && <small>{locale === "ar" ? "رصيده محجوز" : "Credit reserved"}</small>}
                 </span>
               </button>
@@ -3800,7 +3846,9 @@ function TransactionModal({ data, locale, preferredSpaceId, onClose, onSaved }: 
   const [allocation, setAllocation] = useState("mandatory");
   const [memberId, setMemberId] = useState("");
   const [extraPolicy, setExtraPolicy] = useState("advance_credit");
-  const [paidFrom, setPaidFrom] = useState<"common_fund" | "member">("common_fund");
+  const [paidFrom, setPaidFrom] = useState<"common_fund" | "member" | "split">("common_fund");
+  const [fundAmount, setFundAmount] = useState("");
+  const [memberPocketAmount, setMemberPocketAmount] = useState("");
   const [splitMemberIds, setSplitMemberIds] = useState<string[]>(() =>
     data.members.filter((member) => member.space_id === initialSpace && (member.status ?? "active") === "active").map((member) => member.id)
   );
@@ -3863,7 +3911,7 @@ function TransactionModal({ data, locale, preferredSpaceId, onClose, onSaved }: 
     event.preventDefault(); setSaving(true); setError("");
     try {
       if (kind === "contribution" && !memberId) throw new Error(locale === "ar" ? "اختر العضو المساهم" : "Choose the contributing member");
-      if (kind === "expense" && space && space.type !== "personal" && paidFrom === "member" && !memberId) {
+      if (kind === "expense" && space && space.type !== "personal" && (paidFrom === "member" || paidFrom === "split") && !memberId) {
         throw new Error(locale === "ar" ? "اختر الحساب/العضو الذي دفع المصروف" : "Choose which member paid the expense");
       }
       if (kind === "expense" && space && space.type !== "personal" && expenseSplitMode === "mixed") {
@@ -3898,7 +3946,8 @@ function TransactionModal({ data, locale, preferredSpaceId, onClose, onSaved }: 
               idempotencyKey: crypto.randomUUID(),
               spaceId,
               paidFrom,
-              paidByMemberId: paidFrom === "member" ? memberId : undefined,
+              paidByMemberId: paidFrom === "member" || paidFrom === "split" ? memberId : undefined,
+              ...(paidFrom === "split" ? { fundAmount, memberAmount: memberPocketAmount } : {}),
               ...(mixedExpense ?? { splitMemberIds: allIds }),
               amount,
               description: description || (locale === "ar" ? "مصروف جماعي" : "Group expense"),
@@ -3936,7 +3985,7 @@ function TransactionModal({ data, locale, preferredSpaceId, onClose, onSaved }: 
       setError(caught instanceof Error ? caught.message : "SAVE_FAILED");
     } finally { setSaving(false); }
   };
-  return <Modal title={t.add} wide={Boolean(isGroupMemberPayment) || expenseSplitMode === "mixed"} className="add-txn-modal" onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="segmented-control">{["expense", "income", "contribution", "reimbursement"].map((item) => <button type="button" key={item} className={kind === item ? "active" : ""} onClick={() => setKind(item)}>{t[item as keyof typeof t] as string}</button>)}</div><label><span>{t.wallet}</span><select value={spaceId} onChange={(event) => { const next = event.target.value; setSpaceId(next); setMemberId(""); const meta = data.spaces.find((item) => item.id === next); if (meta && meta.type !== "personal") setKind("contribution"); }}>{data.spaces.map((item) => <option key={item.id} value={item.id}>{nameOf(item, locale)}</option>)}</select></label><div className="form-row"><label><span>{t.amount}</span><div className="money-input"><input required min="0.01" step="0.001" type="number" value={amount} onChange={(event) => onAmountChange(event.target.value)} placeholder="0.000" /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>{kind !== "contribution" && kind !== "expense" && <label><span>{t.allocation}</span><select value={allocation} onChange={(event) => setAllocation(event.target.value)}><option value="general">{t.general}</option><option value="mandatory">{t.mandatory}</option><option value="personal_reserve">{t.personalReserve}</option></select></label>}{kind === "contribution" && <label><span>{locale === "ar" ? "سياسة الزيادة" : "Surplus policy"}</span><select value={extraPolicy} onChange={(event) => setExtraPolicy(event.target.value)}><option value="advance_credit">{locale === "ar" ? "مقدّم (افتراضي)" : "Advance (default)"}</option><option value="personal_reserve">{locale === "ar" ? "فائض شخصي محمي" : "Protected personal reserve"}</option><option value="voluntary_to_fund">{locale === "ar" ? "تطوع للصندوق" : "Voluntary to common fund"}</option></select></label>}{kind === "expense" && space && space.type !== "personal" && <label><span>{locale === "ar" ? "دُفع من" : "Paid from"}</span><select value={paidFrom} onChange={(event) => { setPaidFrom(event.target.value as "common_fund" | "member"); if (event.target.value === "common_fund") setMemberId(""); }}><option value="common_fund">{locale === "ar" ? "صندوق الجمعية" : "Association fund"}</option><option value="member">{locale === "ar" ? "حساب عضو" : "Member account"}</option></select></label>}</div>{members.length > 0 && !(kind === "expense" && paidFrom === "common_fund") && <label><span>{kind === "contribution" || (kind === "expense" && paidFrom === "member") ? (locale === "ar" ? "العضو (مطلوب)" : "Member (required)") : (locale === "ar" ? "العضو (اختياري — للدخل يخصم من المستحق)" : "Member (optional — income applies to dues)")}</span><select required={kind === "contribution" || (kind === "expense" && paidFrom === "member")} value={memberId} onChange={(event) => setMemberId(event.target.value)}><option value="">—</option>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}{member.due_minor > member.paid_minor ? (locale === "ar" ? ` · عليه ${currencyMajor(member.due_minor - member.paid_minor, space?.currency ?? "OMR").toFixed(3)}` : ` · owes ${currencyMajor(member.due_minor - member.paid_minor, space?.currency ?? "OMR").toFixed(3)}`) : (member.paid_minor > member.due_minor ? (locale === "ar" ? ` · له مقدّم` : ` · advance`) : "")}</option>)}</select></label>}{kind === "expense" && space && space.type !== "personal" && <GroupExpenseSplitFields includeAmount={false} amount={amount} onAmountChange={onAmountChange} splitMode={expenseSplitMode} onSplitMode={(mode) => { setExpenseSplitMode(mode); if (mode === "equal") { setSharedOnEveryone(""); setRemainderMemberIds([]); } }} sharedOnEveryone={sharedOnEveryone} onSharedOnEveryone={setSharedOnEveryone} remainderMemberIds={remainderMemberIds} onRemainderMemberIds={setRemainderMemberIds} members={members} locale={locale} currency={space.currency} paidFrom={paidFrom} paidByMemberId={memberId} />}{isGroupMemberPayment && selectedMember && <RemainingInvoiceGrid months={invoiceMonths} selected={selectedInvoiceIds} locale={locale} currency={space?.currency ?? "OMR"} onSelectPeriod={onSelectInvoice} />}{isGroupMemberPayment && amountNumber > 0 && <div className="modal-note split-preview"><span>{locale === "ar" ? "القاعدة: خصم الفواتير الأقدم أولاً ثم أي زيادة كمقدّم" : "Rule: clear oldest invoices first; surplus becomes advance"}</span>{allocationPreview?.allocations.map((item) => <strong key={item.installmentId}>{item.periodKey}: {(item.amountMinor / 1000).toFixed(3)}</strong>)}<strong>{locale === "ar" ? `سداد مطالبة: ${previewMandatory.toFixed(3)}` : `Toward dues: ${previewMandatory.toFixed(3)}`}</strong><strong>{locale === "ar" ? `مقدّم: ${previewSurplus.toFixed(3)}` : `Advance: ${previewSurplus.toFixed(3)}`}</strong>{remainingMajor > 0 && <span>{locale === "ar" ? `المتبقي عليه قبل العملية: ${remainingMajor.toFixed(3)}` : `Outstanding before: ${remainingMajor.toFixed(3)}`}</span>}</div>}<label><span>{locale === "ar" ? "تاريخ العملية" : "Transaction date"}</span><DateField required value={occurredOn} onChange={setOccurredOn} /></label><label><span>{t.description}</span><input required={kind !== "contribution"} value={description} onChange={(event) => setDescription(event.target.value)} placeholder={locale === "ar" ? "مثال: مساهمة أغسطس" : "e.g. August contribution"} /></label>{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : t.save}</button></div></form></Modal>;
+  return <Modal title={t.add} wide={Boolean(isGroupMemberPayment) || expenseSplitMode === "mixed"} className="add-txn-modal" onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="segmented-control">{["expense", "income", "contribution", "reimbursement"].map((item) => <button type="button" key={item} className={kind === item ? "active" : ""} onClick={() => setKind(item)}>{t[item as keyof typeof t] as string}</button>)}</div><label><span>{t.wallet}</span><select value={spaceId} onChange={(event) => { const next = event.target.value; setSpaceId(next); setMemberId(""); const meta = data.spaces.find((item) => item.id === next); if (meta && meta.type !== "personal") setKind("contribution"); }}>{data.spaces.map((item) => <option key={item.id} value={item.id}>{nameOf(item, locale)}</option>)}</select></label><div className="form-row"><label><span>{t.amount}</span><div className="money-input"><input required min="0.01" step="0.001" type="number" value={amount} onChange={(event) => onAmountChange(event.target.value)} placeholder="0.000" /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>{kind !== "contribution" && kind !== "expense" && <label><span>{t.allocation}</span><select value={allocation} onChange={(event) => setAllocation(event.target.value)}><option value="general">{t.general}</option><option value="mandatory">{t.mandatory}</option><option value="personal_reserve">{t.personalReserve}</option></select></label>}{kind === "contribution" && <label><span>{locale === "ar" ? "سياسة الزيادة" : "Surplus policy"}</span><select value={extraPolicy} onChange={(event) => setExtraPolicy(event.target.value)}><option value="advance_credit">{locale === "ar" ? "مقدّم (افتراضي)" : "Advance (default)"}</option><option value="personal_reserve">{locale === "ar" ? "فائض شخصي محمي" : "Protected personal reserve"}</option><option value="voluntary_to_fund">{locale === "ar" ? "تطوع للصندوق" : "Voluntary to common fund"}</option></select></label>}{kind === "expense" && space && space.type !== "personal" && <label><span>{locale === "ar" ? "دُفع من" : "Paid from"}</span><select value={paidFrom} onChange={(event) => { setPaidFrom(event.target.value as "common_fund" | "member" | "split"); if (event.target.value === "common_fund") setMemberId(""); }}><option value="common_fund">{locale === "ar" ? "صندوق الجمعية" : "Association fund"}</option><option value="member">{locale === "ar" ? "حساب عضو" : "Member account"}</option><option value="split">{locale === "ar" ? "صندوق وعضو" : "Fund and member"}</option></select></label>}{kind === "expense" && paidFrom === "split" && space && space.type !== "personal" && <div className="form-row"><label><span>{locale === "ar" ? "مبلغ الصندوق" : "Fund amount"}</span><div className="money-input"><input required type="number" min="0.001" step="0.001" value={fundAmount} onChange={(event) => { const next = event.target.value; setFundAmount(next); try { const totalMinor = parseMoneyToMinor(amount, space.currency); const nextFund = parseNonNegativeMoneyToMinor(next, space.currency); if (nextFund > 0 && nextFund < totalMinor) setMemberPocketAmount(currencyMajor(totalMinor - nextFund, space.currency).toFixed(3)); } catch { /* ignore */ } }} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label><label><span>{locale === "ar" ? "مبلغ حساب العضو" : "Member amount"}</span><div className="money-input"><input required type="number" min="0.001" step="0.001" value={memberPocketAmount} onChange={(event) => setMemberPocketAmount(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label></div>}</div>{members.length > 0 && !(kind === "expense" && paidFrom === "common_fund") && <label><span>{kind === "contribution" || (kind === "expense" && paidFrom === "member") ? (locale === "ar" ? "العضو (مطلوب)" : "Member (required)") : (locale === "ar" ? "العضو (اختياري — للدخل يخصم من المستحق)" : "Member (optional — income applies to dues)")}</span><select required={kind === "contribution" || (kind === "expense" && (paidFrom === "member" || paidFrom === "split"))} value={memberId} onChange={(event) => setMemberId(event.target.value)}><option value="">—</option>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}{member.due_minor > member.paid_minor ? (locale === "ar" ? ` · عليه ${currencyMajor(member.due_minor - member.paid_minor, space?.currency ?? "OMR").toFixed(3)}` : ` · owes ${currencyMajor(member.due_minor - member.paid_minor, space?.currency ?? "OMR").toFixed(3)}`) : (member.paid_minor > member.due_minor ? (locale === "ar" ? ` · له مقدّم` : ` · advance`) : "")}</option>)}</select></label>}{kind === "expense" && space && space.type !== "personal" && <GroupExpenseSplitFields includeAmount={false} amount={amount} onAmountChange={onAmountChange} splitMode={expenseSplitMode} onSplitMode={(mode) => { setExpenseSplitMode(mode); if (mode === "equal") { setSharedOnEveryone(""); setRemainderMemberIds([]); } }} sharedOnEveryone={sharedOnEveryone} onSharedOnEveryone={setSharedOnEveryone} remainderMemberIds={remainderMemberIds} onRemainderMemberIds={setRemainderMemberIds} members={members} locale={locale} currency={space.currency} paidFrom={paidFrom === "common_fund" ? "common_fund" : "member"} paidByMemberId={memberId} />}{isGroupMemberPayment && selectedMember && <RemainingInvoiceGrid months={invoiceMonths} selected={selectedInvoiceIds} locale={locale} currency={space?.currency ?? "OMR"} onSelectPeriod={onSelectInvoice} />}{isGroupMemberPayment && amountNumber > 0 && <div className="modal-note split-preview"><span>{locale === "ar" ? "القاعدة: خصم الفواتير الأقدم أولاً ثم أي زيادة كمقدّم" : "Rule: clear oldest invoices first; surplus becomes advance"}</span>{allocationPreview?.allocations.map((item) => <strong key={item.installmentId}>{item.periodKey}: {(item.amountMinor / 1000).toFixed(3)}</strong>)}<strong>{locale === "ar" ? `سداد مطالبة: ${previewMandatory.toFixed(3)}` : `Toward dues: ${previewMandatory.toFixed(3)}`}</strong><strong>{locale === "ar" ? `مقدّم: ${previewSurplus.toFixed(3)}` : `Advance: ${previewSurplus.toFixed(3)}`}</strong>{remainingMajor > 0 && <span>{locale === "ar" ? `المتبقي عليه قبل العملية: ${remainingMajor.toFixed(3)}` : `Outstanding before: ${remainingMajor.toFixed(3)}`}</span>}</div>}<label><span>{locale === "ar" ? "تاريخ العملية" : "Transaction date"}</span><DateField required value={occurredOn} onChange={setOccurredOn} /></label><label><span>{t.description}</span><input required={kind !== "contribution"} value={description} onChange={(event) => setDescription(event.target.value)} placeholder={locale === "ar" ? "مثال: مساهمة أغسطس" : "e.g. August contribution"} /></label>{error && <p className="modal-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{t.cancel}</button><button className="primary-button" disabled={saving}>{saving ? t.saving : t.save}</button></div></form></Modal>;
 }
 
 function WalletModal({ data, locale, existing, defaultType = "trip", lockType = false, onClose, onSaved, onLiveData, onDeleted }: { data: DashboardData; locale: Locale; existing?: Space; defaultType?: string; lockType?: boolean; onClose: () => void; onSaved: (next: Partial<DashboardData>) => void; onLiveData?: (next: Partial<DashboardData>) => void; onDeleted?: (next: Partial<DashboardData>) => void }) {
@@ -4502,8 +4551,11 @@ function TripExpenseModal({ data, locale, preferredSpaceId, expenseId, onClose, 
     ? data.expenseSplits.filter((split) => split.expense_id === existing.id && members.some((member) => member.id === split.member_id))
     : [];
   const inferred = inferSharedRemainder(existingSplitRows, members.map((member) => member.id));
-  const [paidFrom, setPaidFrom] = useState<"common_fund" | "member">(existing?.paid_from === "common_fund" ? "common_fund" : existing ? "member" : "common_fund");
+  const [paidFrom, setPaidFrom] = useState<"common_fund" | "member" | "split">(existing?.paid_from === "common_fund" ? "common_fund" : existing ? "member" : "common_fund");
   const [paidByMemberId, setPayer] = useState(existing?.paid_by_member_id ?? members[0]?.id ?? "");
+  const existingAmountLabel = existing ? currencyMajor(existing.amount_minor, data.spaces.find((item) => item.id === existing.space_id)?.currency ?? "OMR").toFixed(3) : "";
+  const [fundAmount, setFundAmount] = useState(existing?.paid_from === "common_fund" ? existingAmountLabel : "");
+  const [memberAmount, setMemberAmount] = useState(existing && existing.paid_from !== "common_fund" ? existingAmountLabel : "");
   const [splitMode, setSplitMode] = useState<"equal" | "mixed">(inferred.mode);
   const [sharedOnEveryone, setSharedOnEveryone] = useState(inferred.mode === "mixed" ? currencyMajor(inferred.sharedMinor, currency).toFixed(3) : "");
   const [remainderMemberIds, setRemainderMemberIds] = useState<string[]>(inferred.remainderIds);
@@ -4541,6 +4593,11 @@ function TripExpenseModal({ data, locale, preferredSpaceId, expenseId, onClose, 
       } else {
         payload = { splitMemberIds: allIds, amount };
       }
+      if (paidFrom === "split") {
+        payload.fundAmount = fundAmount;
+        payload.memberAmount = memberAmount;
+      }
+      const pocketPayer = paidFrom === "member" || paidFrom === "split" ? paidByMemberId : undefined;
       const response = await apiFetch("/api/dashboard", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -4550,7 +4607,7 @@ function TripExpenseModal({ data, locale, preferredSpaceId, expenseId, onClose, 
               idempotencyKey: crypto.randomUUID(),
               expenseId: existing.id,
               paidFrom,
-              paidByMemberId: paidFrom === "member" ? paidByMemberId : undefined,
+              paidByMemberId: pocketPayer,
               description,
               ...payload,
             }
@@ -4559,7 +4616,7 @@ function TripExpenseModal({ data, locale, preferredSpaceId, expenseId, onClose, 
               idempotencyKey: crypto.randomUUID(),
               spaceId,
               paidFrom,
-              paidByMemberId: paidFrom === "member" ? paidByMemberId : undefined,
+              paidByMemberId: pocketPayer,
               description,
               occurredAt,
               ...payload,
@@ -4582,8 +4639,25 @@ function TripExpenseModal({ data, locale, preferredSpaceId, expenseId, onClose, 
     <Modal title={existing ? (locale === "ar" ? "تعديل مصروف جماعي" : "Edit group expense") : (locale === "ar" ? "إضافة مصروف جماعي" : "Add group expense")} wide={splitMode === "mixed"} onClose={onClose}>
       <form className="modal-form" onSubmit={submit}>
         <label><span>{locale === "ar" ? "المحفظة" : "Wallet"}</span><select required disabled={Boolean(existing)} value={spaceId} onChange={(event) => { const next = event.target.value; setSpaceId(next); const nextMembers = data.members.filter((member) => member.space_id === next && (member.status ?? "active") === "active"); setPayer(nextMembers[0]?.id ?? ""); setSplitMode("equal"); setSharedOnEveryone(""); setRemainderMemberIds([]); }}>{groupSpaces.map((item) => <option key={item.id} value={item.id}>{nameOf(item, locale)}</option>)}</select></label>
-        <label><span>{locale === "ar" ? "دُفع من" : "Paid from"}</span><select value={paidFrom} onChange={(event) => setPaidFrom(event.target.value as "common_fund" | "member")}><option value="common_fund">{locale === "ar" ? "صندوق الجمعية" : "Association fund"}</option><option value="member">{locale === "ar" ? "حساب عضو" : "Member account"}</option></select></label>
-        {paidFrom === "member" && <label><span>{locale === "ar" ? "العضو الذي دفع" : "Member who paid"}</span><select required value={paidByMemberId} onChange={(event) => setPayer(event.target.value)}>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}</option>)}</select></label>}
+        <label><span>{locale === "ar" ? "دُفع من" : "Paid from"}</span><select value={paidFrom} onChange={(event) => setPaidFrom(event.target.value as "common_fund" | "member" | "split")}><option value="common_fund">{locale === "ar" ? "صندوق الجمعية" : "Association fund"}</option><option value="member">{locale === "ar" ? "حساب عضو" : "Member account"}</option><option value="split">{locale === "ar" ? "صندوق وعضو" : "Fund and member"}</option></select></label>
+        {paidFrom === "split" && (
+          <>
+            <div className="form-row">
+              <label><span>{locale === "ar" ? "مبلغ الصندوق" : "Fund amount"}</span><div className="money-input"><input required type="number" min="0.001" step="0.001" value={fundAmount} onChange={(event) => {
+                const next = event.target.value;
+                setFundAmount(next);
+                try {
+                  const totalMinor = parseMoneyToMinor(amount, currency);
+                  const fundMinor = parseNonNegativeMoneyToMinor(next, currency);
+                  if (fundMinor > 0 && fundMinor < totalMinor) setMemberAmount(currencyMajor(totalMinor - fundMinor, currency).toFixed(3));
+                } catch { /* ignore */ }
+              }} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>
+              <label><span>{locale === "ar" ? "مبلغ حساب العضو" : "Member amount"}</span><div className="money-input"><input required type="number" min="0.001" step="0.001" value={memberAmount} onChange={(event) => setMemberAmount(event.target.value)} /><b className="money-currency"><OmrSymbol size={14} /></b></div></label>
+            </div>
+            <p className="modal-note">{locale === "ar" ? "يُحفظ كمصروفين بنفس التقسيمة: جزء الصندوق يُخصم من الصندوق، وجزء العضو يظهر في «من الجيب» وله على الآخرين." : "Saved as two expenses with the same split: the fund part leaves cash, the member part is pocket (he is owed)."}</p>
+          </>
+        )}
+        {(paidFrom === "member" || paidFrom === "split") && <label><span>{locale === "ar" ? "العضو الذي دفع" : "Member who paid"}</span><select required value={paidByMemberId} onChange={(event) => setPayer(event.target.value)}>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}</option>)}</select></label>}
         <GroupExpenseSplitFields
           includeAmount
           amount={amount}
@@ -4601,7 +4675,7 @@ function TripExpenseModal({ data, locale, preferredSpaceId, expenseId, onClose, 
           members={members}
           locale={locale}
           currency={currency}
-          paidFrom={paidFrom}
+          paidFrom={paidFrom === "common_fund" ? "common_fund" : "member"}
           paidByMemberId={paidByMemberId}
         />
         {!existing && <label><span>{locale === "ar" ? "تاريخ المصروف" : "Expense date"}</span><DateField required value={occurredOn} onChange={setOccurredOn} /></label>}
