@@ -120,6 +120,27 @@ export function composeSharedRemainder(input: {
   });
 }
 
+/** Reconstruct الكل vs اختيار من القائمة from saved shares. Equal among a subset is mixed, not everyone. */
+export function inferSharedRemainder(
+  splits: Array<{ member_id: string; share_minor: number }>,
+  memberIds: string[],
+): { mode: "equal" | "mixed"; sharedMinor: number; remainderIds: string[] } {
+  if (!splits.length || !memberIds.length) return { mode: "equal", sharedMinor: 0, remainderIds: [] };
+  const byId = new Map(splits.map((row) => [row.member_id, row.share_minor]));
+  const present = memberIds.filter((id) => (byId.get(id) ?? 0) > 0);
+  if (!present.length) return { mode: "equal", sharedMinor: 0, remainderIds: [] };
+  const values = present.map((id) => byId.get(id)!);
+  const equalAmongPresent = Math.max(...values) - Math.min(...values) <= 1;
+  const everyone = present.length === memberIds.length;
+  if (equalAmongPresent && everyone) return { mode: "equal", sharedMinor: 0, remainderIds: present };
+  if (!everyone) return { mode: "mixed", sharedMinor: 0, remainderIds: present };
+  const minShare = Math.min(...values);
+  const remainderIds = present.filter((id) => byId.get(id)! - minShare > 1);
+  const extraMinor = remainderIds.reduce((sum, id) => sum + (byId.get(id)! - minShare), 0);
+  const totalMinor = values.reduce((sum, value) => sum + value, 0);
+  return { mode: "mixed", sharedMinor: Math.max(0, totalMinor - extraMinor), remainderIds };
+}
+
 export type Balance = { memberId: string; balanceMinor: number };
 
 function byLargestThenId<T extends { memberId: string; balanceMinor: number }>(left: T, right: T) {

@@ -32,7 +32,7 @@ import { PwaInstallCard } from "../components/pwa/PwaInstallCard";
 import { PushNotifyCard } from "../components/pwa/PushNotifyCard";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor, currencyScale, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../lib/money";
-import { composeSharedRemainder, isFundPaidExpense, isPeerSettlementTransfer, memberDisplayCreditMinor, memberExtraCreditMinor, memberFundPoolNet, memberTripPaidMinor, memberTripPocketMinor, netMemberClaim, pendingSettlementsWithCredit, splitEvenly, tripPostedSpendMinor, tripWalletUsesFundCash } from "../lib/finance";
+import { composeSharedRemainder, inferSharedRemainder, isFundPaidExpense, isPeerSettlementTransfer, memberDisplayCreditMinor, memberExtraCreditMinor, memberFundPoolNet, memberTripPaidMinor, memberTripPocketMinor, netMemberClaim, pendingSettlementsWithCredit, splitEvenly, tripPostedSpendMinor, tripWalletUsesFundCash } from "../lib/finance";
 import { memberRemainingSettlementOwe } from "../lib/settlement-posting";
 import { canConfirmSettlement, settlementConfirmLabel } from "../lib/settlement-pay-instructions";
 import { dashboardNavLocked, formatQuota, planAllowsSpaceType, planHasFeature, PLAN_FEATURE_CATALOG, quotaRemaining, quotaWarningCopy, upgradeNoticeFor, canPrintSpaceArtifacts } from "../lib/plan-features";
@@ -4370,22 +4370,6 @@ function ExpenseSplitPicker({
   );
 }
 
-function inferSharedRemainder(splits: Array<{ member_id: string; share_minor: number }>, memberIds: string[]) {
-  if (!splits.length || !memberIds.length) return { mode: "equal" as const, sharedMinor: 0, remainderIds: [] as string[] };
-  const byId = new Map(splits.map((row) => [row.member_id, row.share_minor]));
-  const present = memberIds.filter((id) => (byId.get(id) ?? 0) > 0);
-  const values = present.map((id) => byId.get(id)!);
-  const equal = values.length > 0 && Math.max(...values) - Math.min(...values) <= 1;
-  if (equal) return { mode: "equal" as const, sharedMinor: 0, remainderIds: present };
-  const everyone = memberIds.every((id) => (byId.get(id) ?? 0) > 0);
-  if (!everyone) return { mode: "mixed" as const, sharedMinor: 0, remainderIds: present };
-  const minShare = Math.min(...values);
-  const remainderIds = present.filter((id) => byId.get(id)! - minShare > 1);
-  const extraMinor = remainderIds.reduce((sum, id) => sum + (byId.get(id)! - minShare), 0);
-  const totalMinor = values.reduce((sum, value) => sum + value, 0);
-  return { mode: "mixed" as const, sharedMinor: Math.max(0, totalMinor - extraMinor), remainderIds };
-}
-
 function trySharedRemainderPreview(input: {
   amount: string;
   sharedOnEveryone: string;
@@ -4598,14 +4582,18 @@ function TripExpenseModal({ data, locale, preferredSpaceId, expenseId, onClose, 
     <Modal title={existing ? (locale === "ar" ? "تعديل مصروف جماعي" : "Edit group expense") : (locale === "ar" ? "إضافة مصروف جماعي" : "Add group expense")} wide={splitMode === "mixed"} onClose={onClose}>
       <form className="modal-form" onSubmit={submit}>
         <label><span>{locale === "ar" ? "المحفظة" : "Wallet"}</span><select required disabled={Boolean(existing)} value={spaceId} onChange={(event) => { const next = event.target.value; setSpaceId(next); const nextMembers = data.members.filter((member) => member.space_id === next && (member.status ?? "active") === "active"); setPayer(nextMembers[0]?.id ?? ""); setSplitMode("equal"); setSharedOnEveryone(""); setRemainderMemberIds([]); }}>{groupSpaces.map((item) => <option key={item.id} value={item.id}>{nameOf(item, locale)}</option>)}</select></label>
-        {!existing && <label><span>{locale === "ar" ? "دُفع من" : "Paid from"}</span><select value={paidFrom} onChange={(event) => setPaidFrom(event.target.value as "common_fund" | "member")}><option value="common_fund">{locale === "ar" ? "صندوق الجمعية" : "Association fund"}</option><option value="member">{locale === "ar" ? "حساب عضو" : "Member account"}</option></select></label>}
+        <label><span>{locale === "ar" ? "دُفع من" : "Paid from"}</span><select value={paidFrom} onChange={(event) => setPaidFrom(event.target.value as "common_fund" | "member")}><option value="common_fund">{locale === "ar" ? "صندوق الجمعية" : "Association fund"}</option><option value="member">{locale === "ar" ? "حساب عضو" : "Member account"}</option></select></label>
         {paidFrom === "member" && <label><span>{locale === "ar" ? "العضو الذي دفع" : "Member who paid"}</span><select required value={paidByMemberId} onChange={(event) => setPayer(event.target.value)}>{members.map((member) => <option key={member.id} value={member.id}>{member.display_name}</option>)}</select></label>}
         <GroupExpenseSplitFields
           includeAmount
           amount={amount}
           onAmountChange={setAmount}
           splitMode={splitMode}
-          onSplitMode={(mode) => { setSplitMode(mode); if (mode === "equal") { setSharedOnEveryone(""); setRemainderMemberIds([]); } }}
+          onSplitMode={(mode) => {
+            setSplitMode(mode);
+            if (mode === "equal") { setSharedOnEveryone(""); setRemainderMemberIds([]); }
+            if (mode === "mixed" && !sharedOnEveryone.trim()) setSharedOnEveryone("0");
+          }}
           sharedOnEveryone={sharedOnEveryone}
           onSharedOnEveryone={setSharedOnEveryone}
           remainderMemberIds={remainderMemberIds}

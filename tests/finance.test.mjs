@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, composeExpenseShares, composeSharedRemainder, extraAddonMinorFromTransactions, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPaidMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
+import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, composeExpenseShares, composeSharedRemainder, extraAddonMinorFromTransactions, inferSharedRemainder, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPaidMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
 import { planExpenseSplits } from "../lib/expense-split.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 import { bankCustodySplit } from "../lib/wallet-links.ts";
@@ -113,6 +113,44 @@ test("one bill can share an amount among some people and add extras for others",
   assert.equal(remainderBill.splits.find((row) => row.memberId === "a")?.shareMinor, 33_334);
   assert.equal(remainderBill.splits.find((row) => row.memberId === "b")?.shareMinor, 33_333);
   assert.equal(remainderBill.splits.find((row) => row.memberId === "c")?.shareMinor, 83_333);
+});
+
+test("inferSharedRemainder keeps a one-person ticket on that person, not everyone", () => {
+  const inferred = inferSharedRemainder(
+    [{ member_id: "majed", share_minor: 57_516 }],
+    ["abdul", "dawood", "majed"],
+  );
+  assert.equal(inferred.mode, "mixed");
+  assert.equal(inferred.sharedMinor, 0);
+  assert.deepEqual(inferred.remainderIds, ["majed"]);
+});
+
+test("inferSharedRemainder treats an equal split on everyone as الكل", () => {
+  const inferred = inferSharedRemainder(
+    [
+      { member_id: "abdul", share_minor: 19_172 },
+      { member_id: "dawood", share_minor: 19_172 },
+      { member_id: "majed", share_minor: 19_172 },
+    ],
+    ["abdul", "dawood", "majed"],
+  );
+  assert.equal(inferred.mode, "equal");
+});
+
+test("inferSharedRemainder reconstructs shared-plus-remainder", () => {
+  const remainderBill = composeSharedRemainder({
+    totalMinor: 150_000,
+    sharedMinor: 100_000,
+    remainderMemberIds: ["c"],
+    allowedIds: ["a", "b", "c"],
+  });
+  const inferred = inferSharedRemainder(
+    remainderBill.splits.map((row) => ({ member_id: row.memberId, share_minor: row.shareMinor })),
+    ["a", "b", "c"],
+  );
+  assert.equal(inferred.mode, "mixed");
+  assert.equal(inferred.sharedMinor, 100_000);
+  assert.deepEqual(inferred.remainderIds, ["c"]);
 });
 
 test("contribution payment applies against full outstanding dues then advance", () => {

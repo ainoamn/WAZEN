@@ -34,6 +34,7 @@ export async function PATCH(
           amount: z.union([z.string(), z.number()]).optional(),
           description: z.string().trim().min(2).max(300).optional(),
           paidByMemberId: z.string().min(1).max(120).optional(),
+          paidFrom: z.enum(["common_fund", "member"]).optional(),
           splitMemberIds: z.array(z.string().min(1).max(120)).min(1).max(200).optional(),
           sharedAmount: z.union([z.string(), z.number()]).optional(),
           sharedMemberIds: z.array(z.string().min(1).max(120)).max(200).optional(),
@@ -47,6 +48,7 @@ export async function PATCH(
           parsed.data.amount === undefined
           && parsed.data.description === undefined
           && parsed.data.paidByMemberId === undefined
+          && parsed.data.paidFrom === undefined
           && parsed.data.splitMemberIds === undefined
           && parsed.data.sharedAmount === undefined
           && parsed.data.extraShares === undefined

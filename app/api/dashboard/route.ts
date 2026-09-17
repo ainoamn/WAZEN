@@ -608,7 +608,7 @@ async function rebuildTripExpenseShares(
   db: D1Database,
   userId: string,
   expense: TripExpenseRecord,
-  next: { amountMinor: number; description: string; paidByMemberId: string },
+  next: { amountMinor: number; description: string; paidByMemberId: string; paidFrom?: "common_fund" | "member" },
   options?: { skipNet?: boolean; splitMemberIds?: string[]; forceAllMembers?: boolean; splits?: Array<{ memberId: string; shareMinor: number }> },
 ) {
   if ((expense.status ?? "posted") === "voided") throw new ApiError(409, "EXPENSE_VOIDED");
@@ -619,8 +619,14 @@ async function rebuildTripExpenseShares(
   const linked = expense.transaction_id
     ? await db.prepare("SELECT * FROM transactions WHERE id=?").bind(expense.transaction_id).first<TransactionRow>()
     : null;
-  const paidFromFund = linked?.kind === "expense" || expense.paid_from === "common_fund";
+  const paidFromFund = next.paidFrom
+    ? next.paidFrom === "common_fund"
+    : (linked?.kind === "expense" || expense.paid_from === "common_fund");
+  const nextPaidFrom = paidFromFund ? "common_fund" : "member";
   if (!paidFromFund && !members.results.some((member) => member.id === next.paidByMemberId)) throw new ApiError(400, "INVALID_PAYER");
+  const payerId = paidFromFund
+    ? (members.results.some((member) => member.id === expense.paid_by_member_id) ? expense.paid_by_member_id : members.results[0].id)
+    : next.paidByMemberId;
   const allowedIds = members.results.map((member) => member.id);
   let amountMinor = next.amountMinor;
   let splits: Array<{ memberId: string; shareMinor: number }>;
@@ -643,17 +649,35 @@ async function rebuildTripExpenseShares(
     });
     splits = splitEvenly(amountMinor, splitMemberIds);
   }
+  const journalEntry = linked
+    ? await db.prepare("SELECT id FROM journal_entries WHERE transaction_id=?").bind(linked.id).first<{ id: string }>()
+    : null;
   const createdAt = now();
   const statements: D1PreparedStatement[] = [
-    db.prepare("UPDATE trip_expenses SET paid_by_member_id=?, amount_minor=?, description=? WHERE id=?").bind(paidFromFund ? expense.paid_by_member_id : next.paidByMemberId, amountMinor, next.description, expense.id),
+    db.prepare("UPDATE trip_expenses SET paid_by_member_id=?, amount_minor=?, description=?, paid_from=? WHERE id=?").bind(payerId, amountMinor, next.description, nextPaidFrom, expense.id),
     db.prepare("DELETE FROM expense_splits WHERE expense_id=?").bind(expense.id),
     db.prepare("UPDATE settlements SET status='voided' WHERE expense_id=? AND status='pending'").bind(expense.id),
   ];
   if (linked && linked.status === "approved") {
-    statements.push(db.prepare("UPDATE transactions SET amount_minor=?, description_ar=?, description_en=?, member_id=? WHERE id=?").bind(amountMinor, next.description, next.description, paidFromFund ? null : next.paidByMemberId, linked.id));
+    statements.push(db.prepare("UPDATE transactions SET amount_minor=?, description_ar=?, description_en=?, member_id=?, kind=? WHERE id=?").bind(amountMinor, next.description, next.description, paidFromFund ? null : payerId, paidFromFund ? "expense" : "reimbursement", linked.id));
+  }
+  if (journalEntry) {
+    statements.push(db.prepare("DELETE FROM journal_lines WHERE entry_id=?").bind(journalEntry.id));
+    statements.push(db.prepare("UPDATE journal_entries SET description=? WHERE id=?").bind(next.description, journalEntry.id));
     if (paidFromFund) {
-      const delta = amountMinor - Number(expense.amount_minor);
-      if (delta !== 0) statements.push(db.prepare("UPDATE spaces SET balance_minor = balance_minor - ? WHERE id=?").bind(delta, expense.space_id));
+      statements.push(
+        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(crypto.randomUUID(), journalEntry.id, "expense:group", null, amountMinor, 0, createdAt),
+        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(crypto.randomUUID(), journalEntry.id, "asset:cash", null, 0, amountMinor, createdAt),
+      );
+    } else {
+      statements.push(
+        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(crypto.randomUUID(), journalEntry.id, "expense:trip", payerId, amountMinor, 0, createdAt),
+        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(crypto.randomUUID(), journalEntry.id, "liability:member_payable", payerId, 0, amountMinor, createdAt),
+      );
     }
   }
   for (const split of splits) {
@@ -664,7 +688,7 @@ async function rebuildTripExpenseShares(
     action: "trip.expense_resplit",
     entityType: "trip_expense",
     entityId: expense.id,
-    metadata: { amountMinor, paidByMemberId: next.paidByMemberId, memberCount: splits.length, splitMemberIds: splits.map((row) => row.memberId) },
+    metadata: { amountMinor, paidFrom: nextPaidFrom, paidByMemberId: paidFromFund ? null : payerId, memberCount: splits.length, splitMemberIds: splits.map((row) => row.memberId) },
     createdAt,
   }));
   await db.batch(statements);
@@ -2906,6 +2930,7 @@ export async function POST(request: Request) {
         amountMinor: planned.amountMinor,
         description: parsed.data.description ?? expense.description,
         paidByMemberId: parsed.data.paidByMemberId ?? expense.paid_by_member_id,
+        paidFrom: parsed.data.paidFrom,
       }, { splits: planned.splits });
     } else if (action === "resplitTripExpenses") {
       const parsed = z.object({
