@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, composeExpenseShares, composeSharedRemainder, extraAddonMinorFromTransactions, inferSharedRemainder, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPaidMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, takeShareSlice, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
+import { applyCreditToDebits, applySettledTransfers, buildCircleOrder, composeExpenseShares, composeSharedRemainder, coverBillFromFundCash, extraAddonMinorFromTransactions, fundChargeFits, inferSharedRemainder, isPeerSettlementTransfer, memberCashCreditMinor, memberDisplayCreditMinor, memberTripPaidMinor, memberTripPocketMinor, minimizeSettlements, netTripMemberBalances, pendingSettlementsWithCredit, netMemberClaim, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, takeShareSlice, tripPostedSpendMinor, validateJournal } from "../lib/finance.ts";
 import { planExpenseSplits, planPayerSplit } from "../lib/expense-split.ts";
 import { coveringPeriod, isPeriodLocked } from "../lib/accounting-periods.ts";
 import { bankCustodySplit } from "../lib/wallet-links.ts";
@@ -170,6 +170,20 @@ test("planPayerSplit requires fund plus member to equal the bill", () => {
   assert.equal(ok.fundMinor, 300_000);
   assert.equal(ok.memberMinor, 31_000);
   assert.throws(() => planPayerSplit({ currency: "OMR", totalMinor: 331_000, fundAmount: "300.000", memberAmount: "30.000" }), /AMOUNT_SPLIT_MISMATCH/);
+});
+
+test("coverBillFromFundCash forces the shortfall onto a member so the fund never goes negative", () => {
+  assert.deepEqual(coverBillFromFundCash({ billMinor: 300_000, fundCashMinor: 400_000 }), {
+    mode: "fund", fundMinor: 300_000, memberMinor: 0,
+  });
+  assert.deepEqual(coverBillFromFundCash({ billMinor: 150_000, fundCashMinor: 100_000 }), {
+    mode: "split", fundMinor: 100_000, memberMinor: 50_000,
+  });
+  assert.deepEqual(coverBillFromFundCash({ billMinor: 150_000, fundCashMinor: 0 }), {
+    mode: "member", fundMinor: 0, memberMinor: 150_000,
+  });
+  assert.equal(fundChargeFits(100_000, 100_000), true);
+  assert.equal(fundChargeFits(100_001, 100_000), false);
 });
 
 test("contribution payment applies against full outstanding dues then advance", () => {

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
 import { authenticateRequest, clearCsrfCookie, clearSessionCookie, csrfCookie, issueCsrfToken } from "../../../lib/auth";
-import { buildCircleOrder, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, takeShareSlice, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
+import { buildCircleOrder, fundChargeFits, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, takeShareSlice, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
 import { hasComposeParts, planExpenseSplitsForApi, planPayerSplitForApi } from "../../../lib/expense-split";
 import { migratePerExpenseTripSettlements, rebuildSpaceTripSettlements } from "../../../lib/trip-settlements";
 import { postPeerMemberSettlement } from "../../../lib/settlement-posting";
@@ -2853,6 +2853,10 @@ export async function POST(request: Request) {
       const splits = planned.splits;
       const paidFrom = parsed.data.paidFrom;
       const pocketPayerId = parsed.data.paidByMemberId;
+      const fundCashMinor = Math.max(0, Number(space.balance_minor) || 0);
+      if (paidFrom === "common_fund" && !fundChargeFits(amountMinor, fundCashMinor)) {
+        throw new ApiError(409, "FUND_SHORTFALL_REQUIRES_MEMBER");
+      }
       if ((paidFrom === "member" || paidFrom === "split") && (!pocketPayerId || !members.results.some((member) => member.id === pocketPayerId))) {
         throw new ApiError(400, "INVALID_PAYER");
       }
@@ -2868,6 +2872,7 @@ export async function POST(request: Request) {
           fundAmount: parsed.data.fundAmount,
           memberAmount: parsed.data.memberAmount,
         });
+        if (!fundChargeFits(payerSplit.fundMinor, fundCashMinor)) throw new ApiError(409, "FUND_SHORTFALL_REQUIRES_MEMBER");
         const sliced = takeShareSlice(splits, payerSplit.fundMinor);
         legs.push(
           { paidFrom: "common_fund", payerId: members.results[0]!.id, amountMinor: payerSplit.fundMinor, splits: sliced.taken },
@@ -2982,6 +2987,8 @@ export async function POST(request: Request) {
         existingIds: existingSplitIds,
       });
       const description = parsed.data.description ?? expense.description;
+      const existingFundMinor = expense.paid_from === "common_fund" ? Number(expense.amount_minor) || 0 : 0;
+      const fundCashMinor = Math.max(0, (Number(space.balance_minor) || 0) + existingFundMinor);
       if (parsed.data.paidFrom === "split") {
         const payerSplit = planPayerSplitForApi({
           currency: space.currency,
@@ -2989,6 +2996,7 @@ export async function POST(request: Request) {
           fundAmount: parsed.data.fundAmount,
           memberAmount: parsed.data.memberAmount,
         });
+        if (!fundChargeFits(payerSplit.fundMinor, fundCashMinor)) throw new ApiError(409, "FUND_SHORTFALL_REQUIRES_MEMBER");
         const pocketPayerId = parsed.data.paidByMemberId ?? expense.paid_by_member_id;
         if (!members.results.some((member) => member.id === pocketPayerId)) throw new ApiError(400, "INVALID_PAYER");
         const sliced = takeShareSlice(planned.splits, payerSplit.fundMinor);
@@ -3023,6 +3031,11 @@ export async function POST(request: Request) {
         await rebuildSpaceTripSettlements(db, expense.space_id, user.id);
         await rebuildSpaceBalance(db, [expense.space_id]);
       } else {
+        const nextPaidFrom = parsed.data.paidFrom
+          ?? (expense.paid_from === "common_fund" ? "common_fund" : "member");
+        if (nextPaidFrom === "common_fund" && !fundChargeFits(planned.amountMinor, fundCashMinor)) {
+          throw new ApiError(409, "FUND_SHORTFALL_REQUIRES_MEMBER");
+        }
         await rebuildTripExpenseShares(db, user.id, expense, {
           amountMinor: planned.amountMinor,
           description,

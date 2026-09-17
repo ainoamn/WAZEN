@@ -179,6 +179,28 @@ export function takeShareSlice(
   return { taken, rest };
 }
 
+/**
+ * How much of a bill the common fund can cover without going negative.
+ * 400 cash + 300 bill → all fund. 100 cash + 150 bill → 100 fund + 50 member.
+ */
+export function coverBillFromFundCash(input: { billMinor: number; fundCashMinor: number }): {
+  mode: "fund" | "member" | "split";
+  fundMinor: number;
+  memberMinor: number;
+} {
+  if (!Number.isSafeInteger(input.billMinor) || input.billMinor <= 0) throw new Error("INVALID_AMOUNT");
+  const cash = Math.max(0, Number.isFinite(Number(input.fundCashMinor)) ? Math.trunc(Number(input.fundCashMinor)) : 0);
+  if (cash <= 0) return { mode: "member", fundMinor: 0, memberMinor: input.billMinor };
+  if (input.billMinor <= cash) return { mode: "fund", fundMinor: input.billMinor, memberMinor: 0 };
+  return { mode: "split", fundMinor: cash, memberMinor: input.billMinor - cash };
+}
+
+export function fundChargeFits(fundMinor: number, availableMinor: number) {
+  if (!Number.isSafeInteger(fundMinor) || fundMinor < 0) return false;
+  const available = Math.max(0, Number.isFinite(Number(availableMinor)) ? Math.trunc(Number(availableMinor)) : 0);
+  return fundMinor <= available;
+}
+
 export type Balance = { memberId: string; balanceMinor: number };
 
 function byLargestThenId<T extends { memberId: string; balanceMinor: number }>(left: T, right: T) {

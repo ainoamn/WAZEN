@@ -5,7 +5,7 @@ import { prepareAudit } from "./audit";
 import { coveringPeriod } from "./accounting-periods";
 import { ApiError } from "./security";
 import { currencyScale, formatMoneyMinor } from "./money";
-import { resolveExpenseSplitMembers, splitEvenly, takeShareSlice } from "./finance";
+import { resolveExpenseSplitMembers, splitEvenly, takeShareSlice, fundChargeFits } from "./finance";
 import { hasComposeParts, planExpenseSplitsForApi, planPayerSplitForApi } from "./expense-split";
 import { rebuildSpaceTripSettlements } from "./trip-settlements";
 import { voidApprovedTransaction, writeApprovedCashBalance } from "./ledger-void";
@@ -68,7 +68,7 @@ export type V1CreateExpenseInput = {
 export async function createV1Expense(
   db: D1Database,
   user: RequestUser,
-  space: { id: string; currency: string; owner_user_id: string; type: string },
+  space: { id: string; currency: string; owner_user_id: string; type: string; balance_minor?: number },
   input: V1CreateExpenseInput,
 ): Promise<{
   id: string;
@@ -104,6 +104,10 @@ export async function createV1Expense(
   });
   const amountMinor = planned.amountMinor;
   const splits = planned.splits;
+  const fundCashMinor = Math.max(0, Number(space.balance_minor) || 0);
+  if ((input.paidFrom ?? "member") === "common_fund" && !fundChargeFits(amountMinor, fundCashMinor)) {
+    throw new ApiError(409, "FUND_SHORTFALL_REQUIRES_MEMBER");
+  }
 
   if (input.paidFrom === "split") {
     const payerSplit = planPayerSplitForApi({
@@ -112,6 +116,9 @@ export async function createV1Expense(
       fundAmount: input.fundAmount,
       memberAmount: input.memberAmount,
     });
+    if (!fundChargeFits(payerSplit.fundMinor, fundCashMinor)) {
+      throw new ApiError(409, "FUND_SHORTFALL_REQUIRES_MEMBER");
+    }
     if (!input.paidByMemberId || !members.results.some((row) => row.id === input.paidByMemberId)) {
       throw new ApiError(400, "INVALID_PAYER");
     }
@@ -465,6 +472,13 @@ export async function updateV1Expense(
   });
   const description = (input.description ?? expense.description).trim();
   if (description.length < 2) throw new ApiError(400, "INVALID_TRIP_EXPENSE");
+  const cashRow = await db.prepare("SELECT balance_minor FROM spaces WHERE id=?").bind(space.id).first<{ balance_minor: number }>();
+  const existingFundMinor = expense.paid_from === "common_fund" ? Number(expense.amount_minor) || 0 : 0;
+  const fundCashMinor = Math.max(0, (Number(cashRow?.balance_minor) || 0) + existingFundMinor);
+  const nextPaidFrom = input.paidFrom ?? (expense.paid_from === "common_fund" ? "common_fund" : "member");
+  if (nextPaidFrom === "common_fund" && !fundChargeFits(planned.amountMinor, fundCashMinor)) {
+    throw new ApiError(409, "FUND_SHORTFALL_REQUIRES_MEMBER");
+  }
 
   await rebuildV1ExpenseShares(db, user.id, expense, {
     amountMinor: planned.amountMinor,
