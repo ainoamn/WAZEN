@@ -1,6 +1,6 @@
 /* WAZEN PWA — app shell + last pages stay on device; API reads fall back offline. */
-const SHELL = "wazen-shell-v6";
-const DATA = "wazen-data-v6";
+const SHELL = "wazen-shell-v7";
+const DATA = "wazen-data-v7";
 const PRECACHE = [
   "/",
   "/home",

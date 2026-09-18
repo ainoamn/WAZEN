@@ -19,6 +19,59 @@ function parse(value: string | number, currency: string, allowZero: boolean) {
 export function parseMoneyToMinor(value: string | number, currency = "OMR") { return parse(value, currency, false); }
 export function parseNonNegativeMoneyToMinor(value: string | number, currency = "OMR") { return parse(value, currency, true); }
 
+function majorLabel(minor: number, currency: string) {
+  return (minor / 10 ** currencyScale(currency)).toFixed(currencyScale(currency));
+}
+
+/** Keep the typed string while entering 7.500; only rewrite when over cash/total. */
+export function applyTypedFundShare(input: {
+  typed: string;
+  totalMinor: number;
+  fundCashMinor: number;
+  currency?: string;
+}): { fundAmount: string; memberAmount?: string; fundMinor?: number } | null {
+  const currency = input.currency ?? "OMR";
+  const typed = input.typed.trim() === "" ? input.typed : input.typed.replace(/[^\d.]/g, "");
+  if (typed !== "" && !/^\d*(?:\.\d{0,3})?$/.test(typed)) return null;
+  if (!typed.trim() || /\.$/.test(typed)) return { fundAmount: typed };
+  try {
+    let fundMinor = parseNonNegativeMoneyToMinor(typed, currency);
+    let fundAmount = typed;
+    const cash = Math.max(0, Number.isFinite(Number(input.fundCashMinor)) ? Math.trunc(Number(input.fundCashMinor)) : 0);
+    const total = Math.max(0, Number.isFinite(Number(input.totalMinor)) ? Math.trunc(Number(input.totalMinor)) : 0);
+    if (fundMinor > cash) {
+      fundMinor = cash;
+      fundAmount = majorLabel(fundMinor, currency);
+    }
+    if (total > 0 && fundMinor >= total) {
+      fundMinor = Math.max(0, total - 1);
+      fundAmount = majorLabel(fundMinor, currency);
+    }
+    if (total > 0 && fundMinor > 0 && fundMinor < total) {
+      return { fundAmount, fundMinor, memberAmount: majorLabel(total - fundMinor, currency) };
+    }
+    return { fundAmount, fundMinor };
+  } catch {
+    return { fundAmount: typed };
+  }
+}
+
+export function finalizeTypedFundShare(input: {
+  typed: string;
+  totalMinor: number;
+  fundCashMinor: number;
+  currency?: string;
+}) {
+  const applied = applyTypedFundShare({ ...input, typed: input.typed.replace(/\.$/, "") });
+  if (!applied || applied.fundMinor == null) return applied ?? { fundAmount: input.typed };
+  const currency = input.currency ?? "OMR";
+  return {
+    fundAmount: majorLabel(applied.fundMinor, currency),
+    memberAmount: applied.memberAmount,
+    fundMinor: applied.fundMinor,
+  };
+}
+
 export function formatMoneyMinor(
   minor: number,
   currency = "OMR",
