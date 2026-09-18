@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { GoogleSignInButton } from "./google-sign-in";
 import { WazenIcon } from "../components/brand/WazenLogo";
@@ -40,16 +40,17 @@ function authRedirectTarget(role?: string) {
 
 export function AuthForm({ mode, next = "/home", googleClientId = "", identityEnabled = false, ssoReady = false, identityOnly = false }: { mode: "login" | "register"; next?: string; googleClientId?: string; identityEnabled?: boolean; ssoReady?: boolean; identityOnly?: boolean }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { locale, setLocale, l } = useCommerceLocale();
   const [displayName, setDisplayName] = useState(""); const [email, setEmail] = useState("");
   const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [saving, setSaving] = useState(false);
   const [totpCode, setTotpCode] = useState(""); const [totpRequired, setTotpRequired] = useState(false);
   const [activeSession, setActiveSession] = useState<{ dest: string } | null>(null);
   const showLocalForm = !identityOnly;
+  const urlError = searchParams.get("error");
+  const displayedError = error || (urlError ? googleErrorMessage(urlError, l) : "");
 
   useEffect(() => {
-    const oauthError = new URLSearchParams(window.location.search).get("error");
-    if (oauthError) setError(googleErrorMessage(oauthError, l));
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 8_000);
     void (async () => {
@@ -146,7 +147,7 @@ export function AuthForm({ mode, next = "/home", googleClientId = "", identityEn
         {showLocalForm ? <div className="auth-divider"><span>{l("أو الدخول المحلي", "Or local sign-in")}</span></div> : null}
       </>
     )}
-    {error && identityOnly && <p className="auth-error" role="alert">{error}</p>}
+    {displayedError && identityOnly && <p className="auth-error" role="alert">{displayedError}</p>}
     {identityOnly ? (
       <p className="auth-copy" style={{ marginTop: 12 }}>
         <a href="https://id.bhd-om.com/login">{l("فتح بوابة الهوية مباشرة", "Open the identity portal")}</a>
@@ -163,7 +164,7 @@ export function AuthForm({ mode, next = "/home", googleClientId = "", identityEn
       <label><span>{l("كلمة المرور", "Password")}</span><input name="password" type="password" autoComplete={mode === "register" ? "new-password" : "current-password"} minLength={12} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} /><small>{l("12 حرفاً على الأقل", "At least 12 characters")}</small></label>
       {mode === "login" && totpRequired && <label><span>{l("رمز المصادقة", "Authenticator code")}</span><input name="totpCode" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" minLength={6} maxLength={6} required value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ""))} /></label>}
       {mode === "login" && <Link href="/forgot-password">{l("نسيت كلمة المرور؟", "Forgot password?")}</Link>}
-      {error && <p className="auth-error" role="alert">{error}</p>}<button className="auth-submit" type="submit" disabled={saving}>{saving ? l("جارٍ التحقق…", "Checking…") : mode === "login" ? l("تسجيل الدخول", "Sign in") : l("إنشاء الحساب", "Create account")}</button>
+      {displayedError && <p className="auth-error" role="alert">{displayedError}</p>}<button className="auth-submit" type="submit" disabled={saving}>{saving ? l("جارٍ التحقق…", "Checking…") : mode === "login" ? l("تسجيل الدخول", "Sign in") : l("إنشاء الحساب", "Create account")}</button>
     </form>
     ) : null}
     {!identityEnabled && <div className="auth-divider"><span>{l("أو المتابعة عبر", "Or continue with")}</span></div>}
