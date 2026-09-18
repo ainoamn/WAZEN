@@ -558,21 +558,34 @@ export async function exchangeBhdCode(request: Request, code: string, verifier: 
   if (!isBhdIdentityConfigured()) throw new ApiError(503, "BHD_NOT_CONFIGURED");
   if (!code || !verifier) throw new ApiError(401, "BHD_AUTH_FAILED");
   const tokenUrl = validateOutboundHttpsUrl(`${identityApiBase()}/oauth/token`, identityAllowedHosts());
-  const body = new URLSearchParams({
+  const baseBody = {
     grant_type: "authorization_code",
     code,
     redirect_uri: bhdRedirectUri(request),
     client_id: bhdClientId(),
     code_verifier: verifier,
-  });
+  };
   const secret = bhdClientSecret();
-  if (secret) body.set("client_secret", secret);
-  const response = await fetch(tokenUrl, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body,
-    redirect: "follow",
-  });
+  const postToken = (clientSecret = "") => {
+    const body = new URLSearchParams(baseBody);
+    if (clientSecret) body.set("client_secret", clientSecret);
+    return fetch(tokenUrl, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body,
+      redirect: "follow",
+    });
+  };
+  let response = await postToken(secret);
+  if (secret && response.status === 401) {
+    const detail = (await response.clone().text().catch(() => "")).slice(0, 400);
+    if (detail.includes("invalid_client")) {
+      // BHD first-party clients are PKCE public clients. A stale optional
+      // Vercel secret must not prevent an otherwise valid authorization code.
+      logBhdTokenIssue("BHD_CLIENT_SECRET_STALE", { retryingWithoutSecret: true, host: tokenUrl.hostname });
+      response = await postToken();
+    }
+  }
   if (!response.ok) {
     const detail = (await response.text().catch(() => "")).slice(0, 400);
     logBhdTokenIssue("BHD_TOKEN_FAILED", { status: response.status, detail, host: tokenUrl.hostname });

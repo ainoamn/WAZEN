@@ -9,6 +9,7 @@ import {
   DEFAULT_BHD_IDENTITY_ISSUER,
   decodeBhdOauthState,
   encodeBhdOauthState,
+  exchangeBhdCode,
   readSignedBhdOauthState,
   resolveBhdOauthState,
   signBhdOauthState,
@@ -120,6 +121,72 @@ test("BHD identity is on with frozen client id; secret is optional for first-par
   if (!previous.apiEndpoint) delete process.env.BHD_IDENTITY_API_ENDPOINT;
   if (!previous.id) delete process.env.BHD_OAUTH_CLIENT_ID;
   if (!previous.disabled) delete process.env.BHD_OAUTH_DISABLED;
+});
+
+test("token exchange retries PKCE without a stale optional client secret", async () => {
+  const previous = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  const tokenSecret = "identity-token-secret";
+  const nonce = "nonce-for-token-exchange";
+  const verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV";
+  process.env.BHD_IDENTITY_ISSUER = DEFAULT_BHD_IDENTITY_ISSUER;
+  process.env.BHD_OAUTH_CLIENT_ID = BHD_OAUTH_CLIENT_ID;
+  process.env.BHD_OAUTH_CLIENT_SECRET = "stale-client-secret";
+  process.env.BHD_IDENTITY_TOKEN_SECRET = tokenSecret;
+  delete process.env.BHD_IDENTITY_API_ENDPOINT;
+  delete process.env.BHD_OAUTH_REDIRECT_URI;
+
+  const idToken = signHs256({
+    iss: DEFAULT_BHD_IDENTITY_ISSUER,
+    aud: BHD_OAUTH_CLIENT_ID,
+    sub: "33333333-3333-4333-8333-333333333333",
+    exp: Math.floor(Date.now() / 1000) + 600,
+    iat: Math.floor(Date.now() / 1000),
+    nonce,
+    email: "wazen@example.com",
+    email_verified: true,
+    name: "Wazen User",
+  }, tokenSecret);
+  const requests = [];
+
+  globalThis.fetch = async (input, init) => {
+    assert.equal(String(input), `${DEFAULT_BHD_IDENTITY_ISSUER}/oauth/token`);
+    const body = new URLSearchParams(String(init?.body ?? ""));
+    requests.push(body);
+    if (requests.length === 1) {
+      return new Response(JSON.stringify({ error: "invalid_client" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ id_token: idToken, access_token: "access-token-value" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  try {
+    const request = new Request("https://wazen.bhd-om.com/api/auth/bhd/callback");
+    const claims = await exchangeBhdCode(request, "authorization-code", verifier, nonce);
+    assert.equal(claims.email, "wazen@example.com");
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].get("client_secret"), "stale-client-secret");
+    assert.equal(requests[1].has("client_secret"), false);
+    assert.equal(requests[1].get("code_verifier"), verifier);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const key of [
+      "BHD_IDENTITY_ISSUER",
+      "BHD_OAUTH_CLIENT_ID",
+      "BHD_OAUTH_CLIENT_SECRET",
+      "BHD_IDENTITY_TOKEN_SECRET",
+      "BHD_IDENTITY_API_ENDPOINT",
+      "BHD_OAUTH_REDIRECT_URI",
+    ]) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
 });
 
 test("BHD SSO readiness follows allowlisted production origins", () => {
