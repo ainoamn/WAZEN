@@ -753,6 +753,11 @@ label.secondary-button { display: inline-flex; align-items: center; gap: 7px; mi
   font-size: 13px;
   font-weight: 700;
 }
+.space-overflow-panel {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  min-width: 240px;
+}
 .space-switcher button.active { border-color: var(--green); color: var(--green); background: var(--green-soft); }
 html[data-theme="dark"] .space-picker-field select { background: var(--surface); border-color: var(--line); color: var(--ink); }
 .loading-screen, .error-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #f4f6f2; }.loading-brand { display: flex; align-items: center; gap: 10px; font-size: 22px; }.loading-pulse { display: flex; gap: 5px; margin-top: 22px; }.loading-pulse i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 1s ease infinite; }.loading-pulse i:nth-child(2) { animation-delay: .15s; }.loading-pulse i:nth-child(3) { animation-delay: .3s; }.error-screen p { color: var(--muted); font-size: 12px; }.error-screen svg { color: var(--green); }
@@ -954,6 +959,10 @@ html[data-theme="dark"] .space-picker-field select { background: var(--surface);
   .wallet-setup-form { grid-template-columns: 1fr; }
   .space-toolbar { display: grid; grid-template-columns: 1fr 1fr; }
   .space-toolbar button { width: 100%; }
+  .space-toolbar .statement-print-menu,
+  .space-toolbar .space-overflow-menu { width: 100%; }
+  .space-toolbar .statement-print-menu > button,
+  .space-toolbar .space-overflow-menu > button { width: 100%; }
   .space-toolbar .danger-button { grid-column: 1 / -1; width: 100%; justify-content: center; }
   .personal-reset-box { flex-direction: column; align-items: stretch; }
   .personal-reset-box .danger-button { width: 100%; justify-content: center; }
@@ -1506,6 +1515,21 @@ html[data-theme="dark"] .info-panel button {
   color: var(--icon);
   background: #1a2622;
   border-color: var(--line);
+}
+html[data-theme="dark"] .statement-print-panel {
+  background: #1a2622;
+  border-color: var(--line);
+}
+html[data-theme="dark"] .statement-print-panel p { color: #9aa8a2; }
+html[data-theme="dark"] .statement-print-panel button {
+  background: #15201d;
+  color: var(--ink);
+  border-color: transparent;
+}
+html[data-theme="dark"] .statement-print-panel button:hover {
+  border-color: var(--green);
+  background: #1e2e29;
+  color: var(--green);
 }
 html[data-theme="dark"] .sidebar-nav button,
 html[data-theme="dark"] .sidebar-setting,

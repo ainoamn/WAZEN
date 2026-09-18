@@ -134,7 +134,7 @@ test("service worker lets the browser follow login redirects instead of capturin
   assert.match(sw, /pathname.startsWith\("\/api\/auth"\)/);
   assert.doesNotMatch(precache, /\/home/);
   assert.doesNotMatch(precache, /\/dashboard/);
-  assert.match(sw, /wazen-shell-v8/);
+  assert.match(sw, /wazen-shell-v9/);
 });
 
 test("proxy redirects anonymous app routes through sign-in entry", () => {
@@ -266,7 +266,14 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   assert.match(dashboard, /ضبط المحفظة/);
   const toolbar = dashboard.slice(dashboard.indexOf('<div className="space-toolbar">'), dashboard.indexOf("FoldWrap id={`${space.id}:hero`}"));
   assert.doesNotMatch(toolbar, /تصفية وتصفير|Wipe & reset|onDeleteWallet|حذف المحفظة|Delete wallet/);
+  assert.match(toolbar, /SpaceOverflowMenu/);
+  assert.match(dashboard, /المزيد/);
   assert.match(toolbar, /ضبط المحفظة|Wallet setup/);
+  const addAt = toolbar.indexOf("{t.add}");
+  const inviteAt = toolbar.indexOf("{t.invite}");
+  const statementAt = toolbar.indexOf("StatementPrintMenu");
+  const moreAt = toolbar.indexOf("SpaceOverflowMenu");
+  assert.equal(addAt > -1 && addAt < inviteAt && inviteAt < statementAt && statementAt < moreAt, true);
   assert.match(dashboardRoute, /action === "resetWalletData"/);
   assert.match(dashboardRoute, /DELETE FROM member_installments WHERE space_id=\?/);
   assert.match(dashboardRoute, /DELETE FROM circle_turns WHERE space_id=\?/);

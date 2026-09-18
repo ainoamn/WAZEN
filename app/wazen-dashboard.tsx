@@ -792,6 +792,55 @@ function StatementPrintMenu({
   );
 }
 
+function SpaceOverflowMenu({
+  locale,
+  items,
+}: {
+  locale: Locale;
+  items: Array<{ id: string; label: string; icon: ReactNode; onClick: () => void; locked?: boolean }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (event: MouseEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  if (!items.length) return null;
+  return (
+    <div className="space-overflow-menu statement-print-menu" ref={wrapRef}>
+      <button type="button" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((current) => !current)}>
+        <MoreVertical size={16} />
+        {locale === "ar" ? "المزيد" : "More"}
+        <ChevronDown size={15} />
+      </button>
+      {open ? (
+        <div className="statement-print-panel space-overflow-panel" role="menu">
+          {items.map((item) => (
+            <button
+              type="button"
+              key={item.id}
+              role="menuitem"
+              className={item.locked ? "is-plan-locked" : ""}
+              onClick={() => {
+                setOpen(false);
+                item.onClick();
+              }}
+            >
+              {item.icon}
+              {item.label}
+              {item.locked ? <PlanLockBadge locale={locale} /> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 async function shareSpaceStatement(space: Space, locale: Locale, filter: StatementTxnFilter, canShare: boolean) {
   if (!canShare) {
     goToPricing();
@@ -1879,16 +1928,18 @@ export function WazenDashboard() {
                     </select>
                   </label>
                 ) : null}
-                <div className="space-switcher-actions">
-                  <button type="button" className="secondary-button" onClick={() => setShowArchived((current) => !current)}>
-                    {showArchived ? (locale === "ar" ? "إخفاء المؤرشف" : "Hide archived") : (locale === "ar" ? "عرض المؤرشف" : "Show archived")}
-                  </button>
-                  <button type="button" className={!canCreateCurrentType ? "is-plan-locked primary-button" : "primary-button"} onClick={openNewWallet}>
-                    {canCreateCurrentType ? <Plus size={16} /> : <Lock size={16} />}
-                    {canCreateCurrentType ? addWalletLabel : (locale === "ar" ? "ترقية لإضافة محفظة" : "Upgrade to add")}
-                    {!canCreateCurrentType && <PlanLockBadge locale={locale} />}
-                  </button>
-                </div>
+                {!activeSpace ? (
+                  <div className="space-switcher-actions">
+                    <button type="button" className="secondary-button" onClick={() => setShowArchived((current) => !current)}>
+                      {showArchived ? (locale === "ar" ? "إخفاء المؤرشف" : "Hide archived") : (locale === "ar" ? "عرض المؤرشف" : "Show archived")}
+                    </button>
+                    <button type="button" className={!canCreateCurrentType ? "is-plan-locked primary-button" : "primary-button"} onClick={openNewWallet}>
+                      {canCreateCurrentType ? <Plus size={16} /> : <Lock size={16} />}
+                      {canCreateCurrentType ? addWalletLabel : (locale === "ar" ? "ترقية لإضافة محفظة" : "Upgrade to add")}
+                      {!canCreateCurrentType && <PlanLockBadge locale={locale} />}
+                    </button>
+                  </div>
+                ) : null}
               </div>
               {!activeSpace && (
                 <article className="panel"><div className="empty-state"><WalletCards size={28} /><strong>{addWalletLabel}</strong><p>{activeView === "society" ? (locale === "ar" ? "لا توجد جمعية بعد. أنشئ جمعية جديدة لإدارة الأقساط والأدوار والأعضاء." : "No savings circle yet. Create one to manage dues, turns, and members.") : (locale === "ar" ? "لا توجد محفظة في هذا القسم بعد." : "No wallet in this section yet.")}</p><button className="primary-button" onClick={openNewWallet}>{canCreateCurrentType ? <Plus size={16} /> : <Lock size={16} />}{canCreateCurrentType ? addWalletLabel : (locale === "ar" ? "ترقية الباقة" : "Upgrade plan")}</button></div></article>
@@ -1896,7 +1947,7 @@ export function WazenDashboard() {
             </>
           )}
           {activeSpace && !viewLocked && (
-            <SpaceDetail space={activeSpace} data={data} locale={locale} onAdd={() => setModal("transaction")} onInvite={() => setModal("invite")} onEditWallet={() => setModal("editWallet")} onArchiveWallet={() => {
+            <SpaceDetail space={activeSpace} data={data} locale={locale} onAdd={() => setModal("transaction")} onInvite={() => setModal("invite")} onEditWallet={() => setModal("editWallet")} onToggleArchived={() => setShowArchived((current) => !current)} showArchived={showArchived} onAddWallet={openNewWallet} addWalletLabel={addWalletLabel} canCreateWallet={canCreateCurrentType} onArchiveWallet={() => {
               const archived = (activeSpace.status ?? "active") === "archived";
               if (!window.confirm(archived ? (locale === "ar" ? "إلغاء أرشفة هذه الجمعية وإعادتها للقائمة؟" : "Unarchive this association?") : (locale === "ar" ? "أرشفة هذه الجمعية؟ تختفي من القائمة ويمكن استعادتها من «عرض المؤرشف»." : "Archive this association? It leaves the list until you show archived wallets."))) return;
               void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "archiveWallet", idempotencyKey: crypto.randomUUID(), spaceId: activeSpace.id, archived: !archived }) }).then(async (response) => {
@@ -2477,7 +2528,7 @@ function Obligations({ data, locale, onView }: { data: DashboardData; locale: Lo
   );
 }
 
-function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArchiveWallet, onTripExpense, onEditExpense, onCircleOrder, onClonePeriod, onClosePeriod, onReopenPeriod, onSettle, onCompleteTurn, onTxnChanged, onOpenMember }: { space: Space; data: DashboardData; locale: Locale; onAdd: () => void; onInvite: () => void; onEditWallet: () => void; onArchiveWallet: () => void; onTripExpense: () => void; onEditExpense: (expenseId: string) => void; onCircleOrder: () => void; onClonePeriod: () => void; onClosePeriod: () => void; onReopenPeriod: (periodId: string) => void; onSettle: (settlementId: string) => void; onCompleteTurn: (turnId: string) => void; onTxnChanged: (next: Partial<DashboardData>) => void; onOpenMember: (memberId: string, focus?: MemberLedgerFocus) => void }) {
+function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArchiveWallet, onToggleArchived, showArchived, onAddWallet, addWalletLabel, canCreateWallet, onTripExpense, onEditExpense, onCircleOrder, onClonePeriod, onClosePeriod, onReopenPeriod, onSettle, onCompleteTurn, onTxnChanged, onOpenMember }: { space: Space; data: DashboardData; locale: Locale; onAdd: () => void; onInvite: () => void; onEditWallet: () => void; onArchiveWallet: () => void; onToggleArchived?: () => void; showArchived?: boolean; onAddWallet?: () => void; addWalletLabel?: string; canCreateWallet?: boolean; onTripExpense: () => void; onEditExpense: (expenseId: string) => void; onCircleOrder: () => void; onClonePeriod: () => void; onClosePeriod: () => void; onReopenPeriod: (periodId: string) => void; onSettle: (settlementId: string) => void; onCompleteTurn: (turnId: string) => void; onTxnChanged: (next: Partial<DashboardData>) => void; onOpenMember: (memberId: string, focus?: MemberLedgerFocus) => void }) {
   const t = copy[locale];
   const members = data.members.filter((member) => member.space_id === space.id);
   const tripUsesFundCash = space.type === "trip" && (
@@ -2535,6 +2586,8 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
   const canManageRoles = ["owner", "manager"].includes(myRole);
   return <div className="dashboard-stack">
     <div className="space-toolbar">
+      {canAddTxn ? <button type="button" onClick={onAdd}><Plus size={16} />{t.add}</button> : null}
+      {["trip", "society", "group"].includes(space.type) && canManageRoles ? <button type="button" onClick={onInvite}><UserPlus size={16} />{t.invite}</button> : null}
       <StatementPrintMenu
         locale={locale}
         locked={!canPrintForSpace(data, space)}
@@ -2542,10 +2595,36 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
         onPick={(filter) => printSpaceStatement(space, data, locale, null, filter)}
         onShare={(filter) => void shareSpaceStatement(space, locale, filter, planHasFeature(planFeaturesOf(data), "whatsapp"))}
       />
-      {canAddTxn ? <button type="button" onClick={onAdd}><Plus size={16} />{t.add}</button> : null}
-      {["trip", "society", "group"].includes(space.type) && canManageRoles ? <button type="button" onClick={onInvite}><UserPlus size={16} />{t.invite}</button> : null}
-      <button type="button" onClick={onEditWallet}><Pencil size={16} />{locale === "ar" ? "ضبط المحفظة" : "Wallet setup"}</button>
-      <button type="button" onClick={onArchiveWallet}><Archive size={16} />{(space.status ?? "active") === "archived" ? (locale === "ar" ? "استعادة" : "Restore") : (locale === "ar" ? "أرشفة" : "Archive")}</button>
+      <SpaceOverflowMenu
+        locale={locale}
+        items={[
+          ...(onToggleArchived ? [{
+            id: "archived",
+            label: showArchived ? (locale === "ar" ? "إخفاء المؤرشف" : "Hide archived") : (locale === "ar" ? "عرض المؤرشف" : "Show archived"),
+            icon: <Archive size={16} />,
+            onClick: onToggleArchived,
+          }] : []),
+          ...(onAddWallet ? [{
+            id: "add-wallet",
+            label: addWalletLabel ?? (locale === "ar" ? "إضافة محفظة" : "Add wallet"),
+            icon: canCreateWallet === false ? <Lock size={16} /> : <Plus size={16} />,
+            onClick: onAddWallet,
+            locked: canCreateWallet === false,
+          }] : []),
+          {
+            id: "setup",
+            label: locale === "ar" ? "ضبط المحفظة" : "Wallet setup",
+            icon: <Pencil size={16} />,
+            onClick: onEditWallet,
+          },
+          {
+            id: "archive",
+            label: (space.status ?? "active") === "archived" ? (locale === "ar" ? "استعادة" : "Restore") : (locale === "ar" ? "أرشفة" : "Archive"),
+            icon: <Archive size={16} />,
+            onClick: onArchiveWallet,
+          },
+        ]}
+      />
     </div>
     <FoldWrap id={`${space.id}:hero`} label={locale === "ar" ? "طي رأس المحفظة" : "Fold wallet header"}>
     <section className={`space-hero accent-${space.accent}`}>
