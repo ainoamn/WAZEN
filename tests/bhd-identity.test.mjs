@@ -21,7 +21,6 @@ import {
   isBhdSsoReadyForOrigin,
   pkceChallenge,
   signInEntryPathForOrigin,
-  signInEntryPath,
   safeReturnTo,
   verifyBhdIdToken,
   verifyHs256Jwt,
