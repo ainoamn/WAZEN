@@ -126,6 +126,17 @@ test("proxy CSP allows Next.js scripts without a nonce-only script policy", () =
   assert.doesNotMatch(source, /x-nonce/);
 });
 
+test("service worker lets the browser follow login redirects instead of capturing identity HTML", () => {
+  const sw = fs.readFileSync(path.join(root, "public/sw.js"), "utf8");
+  const precache = sw.slice(sw.indexOf("const PRECACHE"), sw.indexOf("];") + 2);
+  assert.match(sw, /request\.mode === "navigate"\) return/);
+  assert.match(sw, /pathname === "\/login"/);
+  assert.match(sw, /pathname.startsWith\("\/api\/auth"\)/);
+  assert.doesNotMatch(precache, /\/home/);
+  assert.doesNotMatch(precache, /\/dashboard/);
+  assert.match(sw, /wazen-shell-v8/);
+});
+
 test("proxy redirects anonymous app routes through sign-in entry", () => {
   const source = fs.readFileSync(path.join(root, "proxy.ts"), "utf8");
   assert.match(source, /sessionToken/);

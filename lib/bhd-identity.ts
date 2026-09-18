@@ -281,7 +281,7 @@ export async function pkceChallenge(verifier: string) {
   return bytesToBase64Url(digest);
 }
 
-export function bhdOauthStateCookie(value: string, maxAge = 300) {
+export function bhdOauthStateCookie(value: string, maxAge = 600) {
   return `${BHD_OAUTH_STATE_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secureAttribute()}`;
 }
 
@@ -309,8 +309,52 @@ export function decodeBhdOauthState(raw: string | null): BhdOauthState | null {
   }
 }
 
+function bhdStateSecret() {
+  return process.env.WAZEN_JOB_SECRET?.trim()
+    || process.env.WAZEN_OAUTH_STATE_SECRET?.trim()
+    || process.env.WAZEN_ENCRYPTION_KEYRING?.trim()
+    || process.env.AUTH_SECRET?.trim()
+    || "";
+}
+
+async function hmacBhdState(payload: string) {
+  const secret = bhdStateSecret();
+  if (!secret) throw new ApiError(503, "BHD_NOT_CONFIGURED");
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload)));
+  return bytesToBase64Url(signature);
+}
+
+/** PKCE lives in the OAuth `state` query so Safari/PWA can finish login even if the bounce cookie is dropped. */
+export async function signBhdOauthState(state: BhdOauthState) {
+  const packed = encodeBhdOauthState(state);
+  return `${packed}.${await hmacBhdState(packed)}`;
+}
+
+export async function readSignedBhdOauthState(signed: string | null) {
+  if (!signed || signed.length < 20) return null;
+  const dot = signed.lastIndexOf(".");
+  if (dot < 8) return null;
+  const payload = signed.slice(0, dot);
+  const signature = signed.slice(dot + 1);
+  try {
+    if (await hmacBhdState(payload) !== signature) return null;
+  } catch {
+    return null;
+  }
+  return decodeBhdOauthState(payload);
+}
+
 export function readBhdOauthStateCookie(request: Request) {
   return decodeBhdOauthState(cookieValue(request, BHD_OAUTH_STATE_COOKIE));
+}
+
+export async function resolveBhdOauthState(request: Request, stateParam: string | null) {
+  const signed = await readSignedBhdOauthState(stateParam);
+  if (signed) return signed;
+  const cookie = readBhdOauthStateCookie(request);
+  if (cookie && stateParam && cookie.state === stateParam) return cookie;
+  return null;
 }
 
 export async function createBhdAuthRequest(request: Request, returnTo: string) {
@@ -327,7 +371,7 @@ export async function createBhdAuthRequest(request: Request, returnTo: string) {
   url.searchParams.set("redirect_uri", bhdRedirectUri(request));
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "openid profile email");
-  url.searchParams.set("state", state);
+  url.searchParams.set("state", bhdStateSecret() ? await signBhdOauthState(payload) : state);
   url.searchParams.set("nonce", nonce);
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");

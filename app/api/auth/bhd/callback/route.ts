@@ -7,7 +7,7 @@ import {
   bhdAuthFailurePath,
   mapBhdCallbackError,
   publicRequestOrigin,
-  readBhdOauthStateCookie,
+  resolveBhdOauthState,
   safeReturnTo,
 } from "../../../../../lib/bhd-identity";
 import { clientCountry, clientIp, recordSecurityEvent } from "../../../../../lib/ip-security";
@@ -29,12 +29,10 @@ export async function GET(request: Request) {
     await rateLimit(db, request, "auth-bhd", 10, 60);
     const url = new URL(request.url);
     const oauthError = mapBhdCallbackError(url.searchParams.get("error"));
-    const stored = readBhdOauthStateCookie(request);
+    const stored = await resolveBhdOauthState(request, url.searchParams.get("state"));
     if (oauthError) return loginError(origin, oauthError, stored?.returnTo);
     if (!stored) return loginError(origin, "BHD_STATE_MISSING");
-    const state = url.searchParams.get("state") ?? "";
     const code = url.searchParams.get("code") ?? "";
-    if (!state || state !== stored.state) return loginError(origin, "BHD_STATE_MISMATCH", stored.returnTo);
     if (!code) return loginError(origin, "BHD_AUTH_FAILED", stored.returnTo);
     const claims = await exchangeBhdCode(request, code, stored.verifier, stored.nonce);
     const user = await upsertBhdUser(db, claims);

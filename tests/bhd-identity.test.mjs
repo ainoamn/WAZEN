@@ -9,6 +9,9 @@ import {
   DEFAULT_BHD_IDENTITY_ISSUER,
   decodeBhdOauthState,
   encodeBhdOauthState,
+  readSignedBhdOauthState,
+  resolveBhdOauthState,
+  signBhdOauthState,
   identityApiBase,
   identityAuthorizeProbeAllows,
   identityEndpointBase,
@@ -51,6 +54,24 @@ test("BHD identity helpers keep the frozen Wazen client and reject unsafe return
   assert.doesNotMatch(challenge, /[+/=]/);
   const packed = encodeBhdOauthState({ state: "s", nonce: "n", verifier, returnTo: "/billing" });
   assert.deepEqual(decodeBhdOauthState(packed), { state: "s", nonce: "n", verifier, returnTo: "/billing" });
+});
+
+test("signed BHD oauth state completes login without the bounce cookie", async () => {
+  const previous = process.env.WAZEN_OAUTH_STATE_SECRET;
+  process.env.WAZEN_OAUTH_STATE_SECRET = "test-bhd-oauth-state-secret";
+  const payload = { state: "s1", nonce: "n1", verifier: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV", returnTo: "/home" };
+  const signed = await signBhdOauthState(payload);
+  assert.deepEqual(await readSignedBhdOauthState(signed), payload);
+  const empty = new Request("https://wazen.bhd-om.com/api/auth/bhd/callback");
+  assert.deepEqual(await resolveBhdOauthState(empty, signed), payload);
+  const packed = encodeBhdOauthState(payload);
+  const withCookie = new Request("https://wazen.bhd-om.com/api/auth/bhd/callback", {
+    headers: { cookie: `bhd_oauth_state=${encodeURIComponent(packed)}` },
+  });
+  assert.deepEqual(await resolveBhdOauthState(withCookie, payload.state), payload);
+  assert.equal(await resolveBhdOauthState(empty, payload.state), null);
+  if (previous === undefined) delete process.env.WAZEN_OAUTH_STATE_SECRET;
+  else process.env.WAZEN_OAUTH_STATE_SECRET = previous;
 });
 
 test("BHD identity is on with frozen client id; secret is optional for first-party PKCE", () => {

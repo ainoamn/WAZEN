@@ -1,13 +1,8 @@
 /* WAZEN PWA — app shell + last pages stay on device; API reads fall back offline. */
-const SHELL = "wazen-shell-v7";
-const DATA = "wazen-data-v7";
+const SHELL = "wazen-shell-v8";
+const DATA = "wazen-data-v8";
 const PRECACHE = [
   "/",
-  "/home",
-  "/dashboard",
-  "/billing",
-  "/documents",
-  "/pricing",
   "/manifest.webmanifest",
   "/brand/favicon-192.png",
   "/brand/favicon-512.png",
@@ -21,6 +16,12 @@ function sameOrigin(url) {
 
 function isAuthPath(pathname) {
   return pathname.startsWith("/api/auth")
+    || pathname === "/login"
+    || pathname.startsWith("/login/")
+    || pathname === "/register"
+    || pathname === "/forgot-password"
+    || pathname === "/reset-password"
+    || pathname === "/verify-email"
     || pathname.startsWith("/r/")
     || pathname.startsWith("/s/")
     || pathname.startsWith("/api/jobs");
@@ -53,8 +54,8 @@ function isCachedApiGet(pathname) {
 }
 
 async function precache(cache, urls) {
-  await Promise.all(urls.map((url) => fetch(url, { credentials: "same-origin" }).then((response) => {
-    if (response.ok) return cache.put(url, response);
+  await Promise.all(urls.map((url) => fetch(url, { credentials: "same-origin", redirect: "manual" }).then((response) => {
+    if (response.ok && response.type === "basic") return cache.put(url, response);
     return undefined;
   }).catch(() => undefined)));
 }
@@ -63,7 +64,7 @@ async function staleWhileRevalidate(cacheName, request) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
   const network = fetch(request).then((response) => {
-    if (response && response.ok) void cache.put(request, response.clone());
+    if (response && response.ok && response.type === "basic") void cache.put(request, response.clone());
     return response;
   }).catch(() => cached);
   return cached || network;
@@ -94,6 +95,9 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (!sameOrigin(url) || isAuthPath(url.pathname)) return;
+  // Let the browser follow 302s to BHD identity. Intercepting navigations
+  // used to display the identity form on wazen.bhd-om.com, so Sign in reloaded itself.
+  if (request.mode === "navigate") return;
 
   if (isCachedApiGet(url.pathname)) {
     event.respondWith(
@@ -112,10 +116,10 @@ self.addEventListener("fetch", (event) => {
 
   if (url.pathname.startsWith("/api/")) return;
 
-  if (request.mode === "navigate" || isAppPage(url.pathname)) {
+  if (isAppPage(url.pathname)) {
     event.respondWith(
       fetch(request).then((response) => {
-        if (response && response.ok) {
+        if (response && response.ok && response.type === "basic") {
           void caches.open(SHELL).then((cache) => {
             void cache.put(request, response.clone());
             void cache.put(url.pathname, response.clone());
@@ -124,7 +128,7 @@ self.addEventListener("fetch", (event) => {
         return response;
       }).catch(async () => {
         const cached = await caches.match(request) || await caches.match(url.pathname);
-        return cached || await caches.match("/home") || await caches.match("/dashboard") || await caches.match("/");
+        return cached || await caches.match("/") || Response.error();
       }),
     );
     return;
