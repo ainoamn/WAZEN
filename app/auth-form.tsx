@@ -26,6 +26,8 @@ function googleErrorMessage(code: string, l: (ar: string, en: string) => string)
   if (code === "BHD_EMAIL_IN_USE") return l("هذا البريد مرتبط بحساب وازن غير مؤكد. أكّد البريد من رسالة التحقق ثم ادخل عبر BHD.", "This email belongs to an unverified Wazen account. Verify it from the email link, then sign in with BHD.");
   if (code === "BHD_STATE_MISMATCH" || code === "BHD_NONCE_MISMATCH" || code === "BHD_STATE_MISSING") return l("انتهت صلاحية جلسة الدخول. حاول مرة أخرى.", "The sign-in session expired. Try again.");
   if (code.startsWith("BHD_")) return l("تعذر الدخول بحساب BHD. حاول مرة أخرى.", "Could not sign in with BHD. Try again.");
+  if (code === "RATE_LIMITED") return l("محاولات دخول كثيرة. انتظر قليلاً ثم حاول مرة أخرى.", "Too many sign-in attempts. Wait briefly, then try again.");
+  if (code === "IP_BLOCKED") return l("أوقف وازن هذا الاتصال مؤقتاً بعد محاولات كثيرة.", "Wazen temporarily blocked this connection after too many attempts.");
   return l("تعذر الدخول عبر جوجل. حاول مرة أخرى.", "Google sign-in failed. Try again.");
 }
 

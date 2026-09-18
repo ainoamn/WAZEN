@@ -6,7 +6,13 @@ export async function GET(request: Request) {
   try {
     const db = getRawDb();
     await ensureSchema(db);
-    await rateLimit(db, request, "auth-bhd", 10, 60);
+    // BHD verifies the user and PKCE protects the code. Keep a local traffic
+    // limit, but do not let repeated SSO bounces create or inherit a 2-hour IP
+    // block that prevents an otherwise valid unified-identity session.
+    await rateLimit(db, request, "auth-bhd-start", 20, 300, {
+      enforceIpBlock: false,
+      autoBlock: false,
+    });
     const origin = publicRequestOrigin(request);
     const params = new URL(request.url).searchParams;
     const next = safeReturnTo(params.get("next") ?? params.get("returnTo"));

@@ -26,7 +26,13 @@ export async function GET(request: Request) {
   try {
     const db = getRawDb();
     await ensureSchema(db);
-    await rateLimit(db, request, "auth-bhd", 10, 60);
+    // Count callbacks separately from starts and never turn OAuth retries into
+    // a global IP block. Identity verification, one-time codes, and PKCE still
+    // gate session creation.
+    await rateLimit(db, request, "auth-bhd-callback", 20, 300, {
+      enforceIpBlock: false,
+      autoBlock: false,
+    });
     const url = new URL(request.url);
     const oauthError = mapBhdCallbackError(url.searchParams.get("error"));
     const stored = await resolveBhdOauthState(request, url.searchParams.get("state"));

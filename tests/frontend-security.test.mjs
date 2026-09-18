@@ -221,6 +221,20 @@ test("BHD SSO start/callback exist and login can wrap identity", () => {
   assert.match(fs.readFileSync(path.join(root, "docs/BHD-UNIFIED-LOGIN-AND-APPS.md"), "utf8"), /12\.2 وازن/);
 });
 
+test("BHD SSO retries cannot create or inherit a global IP block", () => {
+  const start = fs.readFileSync(path.join(root, "app/api/auth/bhd/start/route.ts"), "utf8");
+  const callback = fs.readFileSync(path.join(root, "app/api/auth/bhd/callback/route.ts"), "utf8");
+  const form = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
+  assert.match(start, /"auth-bhd-start"/);
+  assert.match(callback, /"auth-bhd-callback"/);
+  for (const route of [start, callback]) {
+    assert.match(route, /enforceIpBlock:\s*false/);
+    assert.match(route, /autoBlock:\s*false/);
+  }
+  assert.match(form, /code === "RATE_LIMITED"/);
+  assert.match(form, /code === "IP_BLOCKED"/);
+});
+
 test("logged-out sign-in does not paint the home load-error screen", () => {
   const kit = fs.readFileSync(path.join(root, "app/commercial-kit.tsx"), "utf8");
   const landing = fs.readFileSync(path.join(root, "app/page.tsx"), "utf8");
