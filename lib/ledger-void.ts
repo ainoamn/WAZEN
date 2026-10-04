@@ -3,6 +3,10 @@
 import { prepareAudit } from "./audit";
 import { ApiError } from "./security";
 
+/** Member-to-member settlement rows (`postPeerMemberSettlement`) move cash outside the fund: never fund income or «مدفوع». */
+const NOT_PEER_TRANSFER_SQL = (alias: string) =>
+  `COALESCE(${alias}description_ar,'') NOT LIKE 'تحويل مسجّل:%' AND COALESCE(${alias}description_ar,'') NOT LIKE 'استلام تحويل:%'`;
+
 export async function reconcileMemberLedgers(db: D1Database, spaceIds: string[]) {
   if (!spaceIds.length) return;
   const placeholders = spaceIds.map(() => "?").join(",");
@@ -12,6 +16,7 @@ export async function reconcileMemberLedgers(db: D1Database, spaceIds: string[])
         paid_minor = COALESCE((
           SELECT SUM(t.amount_minor) FROM transactions t
           WHERE t.member_id = members.id AND t.space_id = members.space_id AND t.status = 'approved'
+            AND ${NOT_PEER_TRANSFER_SQL("t.")}
             AND (
               (t.kind = 'contribution' AND t.allocation IN ('mandatory', 'general', 'advance'))
               OR (t.kind = 'income' AND t.allocation IN ('mandatory', 'general', 'advance'))
@@ -48,7 +53,7 @@ export async function writeApprovedCashBalance(db: D1Database, spaceId: string) 
     WHEN kind IN ('income','contribution') THEN amount_minor
     WHEN kind = 'expense' THEN -amount_minor
     ELSE 0
-  END), 0) AS balance FROM transactions WHERE space_id=? AND status='approved'`).bind(spaceId).first<{ balance: number }>();
+  END), 0) AS balance FROM transactions WHERE space_id=? AND status='approved' AND ${NOT_PEER_TRANSFER_SQL("")}`).bind(spaceId).first<{ balance: number }>();
   await db.prepare("UPDATE spaces SET balance_minor=? WHERE id=?").bind(Number(row?.balance ?? 0), spaceId).run();
 }
 
