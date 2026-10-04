@@ -510,7 +510,12 @@ export function buildMemberLedger(input: {
   };
 }
 
-export type TripBreakdownRow = { ar: string; en: string; signedMinor: number };
+export type TripBreakdownRow = {
+  key: "paid" | "pocketPaid" | "fundShare" | "pocketShare" | "sent" | "received" | "net";
+  ar: string;
+  en: string;
+  signedMinor: number;
+};
 
 /** Plain «how his balance was reached» rows for a trip member; zero rows are dropped, the total is last. */
 export function memberTripBreakdown(position: {
@@ -523,16 +528,16 @@ export function memberTripBreakdown(position: {
   netMinor: number;
 }): TripBreakdownRow[] {
   const rows: TripBreakdownRow[] = [
-    { ar: "دفع للصندوق", en: "Paid into the fund", signedMinor: position.paidMinor },
-    { ar: "دفع فواتير من جيبه", en: "Bills paid from his pocket", signedMinor: position.pocketPaidMinor },
-    { ar: "حصته من فواتير الصندوق", en: "His share of fund bills", signedMinor: -position.fundShareMinor },
-    { ar: "حصته من فواتير دفعها الأعضاء", en: "His share of bills members paid", signedMinor: -position.pocketShareMinor },
-    { ar: "تحويلات دفعها", en: "Transfers he paid", signedMinor: position.sentMinor },
-    { ar: "تحويلات استلمها", en: "Transfers he received", signedMinor: -position.receivedMinor },
-  ].filter((row) => row.signedMinor !== 0);
+    { key: "paid", ar: "دفع للصندوق", en: "Paid into the fund", signedMinor: position.paidMinor },
+    { key: "pocketPaid", ar: "دفع فواتير من جيبه", en: "Bills paid from his pocket", signedMinor: position.pocketPaidMinor },
+    { key: "fundShare", ar: "حصته من فواتير الصندوق", en: "His share of fund bills", signedMinor: -position.fundShareMinor },
+    { key: "pocketShare", ar: "حصته من فواتير دفعها الأعضاء", en: "His share of bills members paid", signedMinor: -position.pocketShareMinor },
+    { key: "sent", ar: "تحويلات دفعها", en: "Transfers he paid", signedMinor: position.sentMinor },
+    { key: "received", ar: "تحويلات استلمها", en: "Transfers he received", signedMinor: -position.receivedMinor },
+  ].filter((row) => row.signedMinor !== 0) as TripBreakdownRow[];
   rows.push(position.netMinor >= 0
-    ? { ar: position.netMinor ? "الصافي: له" : "الصافي: مسوّى", en: position.netMinor ? "Net: owed to him" : "Net: settled", signedMinor: position.netMinor }
-    : { ar: "الصافي: عليه", en: "Net: he owes", signedMinor: position.netMinor });
+    ? { key: "net", ar: position.netMinor ? "الصافي: له" : "الصافي: مسوّى", en: position.netMinor ? "Net: owed to him" : "Net: settled", signedMinor: position.netMinor }
+    : { key: "net", ar: "الصافي: عليه", en: "Net: he owes", signedMinor: position.netMinor });
   return rows;
 }
 

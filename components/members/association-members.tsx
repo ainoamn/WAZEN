@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckCircle2, Clock3, Mail, MessageCircle, Pencil, Printer, Sparkles, X } from "lucide-react";
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, Fragment, ReactNode, useEffect, useMemo, useState } from "react";
 import OmrSymbol from "../brand/OmrSymbol";
 import { apiFetch } from "../../lib/client-api";
 import { toWhatsAppNumber, digitsOnly } from "../../lib/phone";
@@ -21,6 +21,7 @@ import {
   type InstallmentLike,
 } from "../../lib/installments";
 import { formatMoneyMinor } from "../../lib/money";
+import { isFundPaidExpense } from "../../lib/finance";
 import { openWhatsAppUrl } from "../../lib/receipt-share";
 import { spaceRoleLabel } from "../../lib/space-role-permissions";
 
@@ -234,6 +235,7 @@ function MemberLedgerBody({
 }: LedgerInputs) {
   const [tab, setTab] = useState<MemberLedgerFocus>(focus);
   const [showDetails, setShowDetails] = useState(focus !== "all");
+  const [expenseView, setExpenseView] = useState<"summary" | "fund" | "pocket" | null>(null);
   const [sending, setSending] = useState(false);
   const [statementAction, setStatementAction] = useState<"print" | "send" | null>(null);
   const [pickingSpace, setPickingSpace] = useState(false);
@@ -244,7 +246,7 @@ function MemberLedgerBody({
   const [editingRole, setEditingRole] = useState(false);
   const [roleSaving, setRoleSaving] = useState(false);
   const [roleError, setRoleError] = useState("");
-  useEffect(() => { setTab(focus); setShowDetails(focus !== "all"); }, [focus, member.id, space.id]);
+  useEffect(() => { setTab(focus); setShowDetails(focus !== "all"); setExpenseView(null); }, [focus, member.id, space.id]);
   useEffect(() => {
     setRoleDraft(ASSIGNABLE_MEMBER_ROLES.includes(member.role as typeof ASSIGNABLE_MEMBER_ROLES[number]) ? member.role : "member");
     setEditingRole(false);
@@ -271,6 +273,36 @@ function MemberLedgerBody({
   const creditMinor = Math.max(0, ledger.creditMinor);
   const resultTone = owesMinor > 0 ? "owes" : creditMinor > 0 ? "credit" : "settled";
   const breakdown = isTrip && ledger.tripPosition ? memberTripBreakdown(ledger.tripPosition) : [];
+  const fundShareMinor = ledger.tripPosition?.fundShareMinor ?? 0;
+  const pocketShareMinor = ledger.tripPosition?.pocketShareMinor ?? 0;
+  const expenseTotalMinor = fundShareMinor + pocketShareMinor;
+  const calcRows = [
+    ...breakdown.filter((row) => row.key === "paid" || row.key === "pocketPaid"),
+    ...(expenseTotalMinor > 0 ? [{ key: "expenses" as const, ar: "إجمالي مصاريفه", en: "His total expenses", signedMinor: -expenseTotalMinor }] : []),
+    ...breakdown.filter((row) => row.key === "sent" || row.key === "received" || row.key === "net"),
+  ];
+  const myExpenses = isTrip
+    ? expenseSplits
+      .filter((split) => split.member_id === member.id && Number(split.share_minor) > 0)
+      .flatMap((split) => {
+        const expense = tripExpenses.find((row) => row.id === split.expense_id);
+        if (!expense || (expense.space_id && expense.space_id !== space.id)) return [];
+        if (((expense as { status?: string | null }).status ?? "posted") === "voided") return [];
+        return [{
+          id: expense.id,
+          at: expense.occurred_at,
+          description: expense.description,
+          fund: isFundPaidExpense(expense),
+          payerName: expense.paid_by_member_id === member.id ? (locale === "ar" ? "هو" : "him") : expense.paid_by_name,
+          totalMinor: Number(expense.amount_minor) || 0,
+          shareMinor: Number(split.share_minor) || 0,
+        }];
+      })
+      .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+    : [];
+  const expenseList = expenseView === "fund" || expenseView === "pocket"
+    ? myExpenses.filter((row) => row.fund === (expenseView === "fund"))
+    : [];
   const assocRows = isTrip ? [] : [
     { ar: "الهدف المالي", en: "Financial goal", minor: member.due_minor },
     { ar: "المستحق حتى اليوم", en: "Due so far", minor: ledger.accruedDueMinor },
@@ -554,11 +586,58 @@ function MemberLedgerBody({
         <div className="member-calc">
           <strong>{locale === "ar" ? "كيف حُسب" : "How it was calculated"}</strong>
           {isTrip
-            ? breakdown.map((row, index) => (
-              <div key={row.ar} className={index === breakdown.length - 1 ? "is-total" : ""}>
-                <span>{locale === "ar" ? row.ar : row.en}</span>
-                <b className={row.signedMinor < 0 ? "amount-negative" : "amount-positive"}>{money(row.signedMinor, space.currency, locale)}</b>
-              </div>
+            ? calcRows.map((row) => (
+              <Fragment key={row.key}>
+                <div className={row.key === "net" ? "is-total" : ""}>
+                  <span>{locale === "ar" ? row.ar : row.en}</span>
+                  <span className="member-calc-value">
+                    <b className={row.signedMinor < 0 ? "amount-negative" : "amount-positive"}>{money(row.signedMinor, space.currency, locale)}</b>
+                    {row.key === "expenses" ? (
+                      <button type="button" className="member-calc-more" aria-expanded={expenseView !== null} onClick={() => setExpenseView((view) => (view ? null : "summary"))}>
+                        {expenseView ? (locale === "ar" ? "إخفاء" : "Hide") : (locale === "ar" ? "التفاصيل" : "Details")}
+                      </button>
+                    ) : null}
+                  </span>
+                </div>
+                {row.key === "expenses" && expenseView ? (
+                  <div className="member-calc-detail">
+                    <div className="member-calc-sources">
+                      {([
+                        { id: "fund", ar: "من الصندوق", en: "From the fund", minor: fundShareMinor },
+                        { id: "pocket", ar: "من حساب عضو", en: "From a member's account", minor: pocketShareMinor },
+                      ] as const).map((source) => (
+                        <button
+                          type="button"
+                          key={source.id}
+                          className={expenseView === source.id ? "active" : ""}
+                          disabled={source.minor <= 0}
+                          onClick={() => setExpenseView((view) => (view === source.id ? "summary" : source.id))}
+                        >
+                          <span>{locale === "ar" ? source.ar : source.en}</span>
+                          <b>{money(source.minor, space.currency, locale)}</b>
+                        </button>
+                      ))}
+                    </div>
+                    {expenseList.length ? (
+                      <ul className="member-calc-list">
+                        {expenseList.map((item) => (
+                          <li key={item.id}>
+                            <div>
+                              <strong>{item.description || (locale === "ar" ? "مصروف" : "Expense")}</strong>
+                              <small>
+                                {new Date(item.at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB")}
+                                {item.fund ? "" : ` · ${locale === "ar" ? `دفعها ${item.payerName}` : `paid by ${item.payerName}`}`}
+                                {item.shareMinor !== item.totalMinor ? ` · ${locale === "ar" ? "من فاتورة" : "of"} ${money(item.totalMinor, space.currency, locale)}` : ""}
+                              </small>
+                            </div>
+                            <b>{money(item.shareMinor, space.currency, locale)}</b>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                ) : null}
+              </Fragment>
             ))
             : assocRows.map((row) => (
               <div key={row.ar}>
