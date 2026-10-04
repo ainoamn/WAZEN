@@ -34,7 +34,7 @@ export async function POST(
       return await runWithDbUser(user.id, async () => {
         await enforceV1RateLimit(db, request, user, "write");
         assertApiScope(user, "members:write");
-        const space = await authorizeSpace(db, user, spaceId, "members:write");
+        const space = await authorizeSpace(db, user, spaceId, "members:write", undefined, { allowArchived: true });
         const parsed = z.object({
           archived: z.boolean().default(true),
         }).safeParse(payload);

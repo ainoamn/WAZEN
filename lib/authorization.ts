@@ -59,7 +59,14 @@ export function assertApiScope(user: RequestUser, required: string) {
   if (!user.scopes?.includes(required)) throw new ApiError(403, "API_SCOPE_REQUIRED");
 }
 
-export async function authorizeSpace(db: D1Database, user: RequestUser, spaceId: string, capability: SpaceCapability, allowedTypes?: string[]) {
+export async function authorizeSpace(
+  db: D1Database,
+  user: RequestUser,
+  spaceId: string,
+  capability: SpaceCapability,
+  allowedTypes?: string[],
+  options?: { allowArchived?: boolean },
+) {
   assertApiScope(user, apiScopes[capability]);
   const row = await db.prepare(`SELECT s.id,s.owner_user_id,s.type,s.currency,s.balance_minor,s.grace_until,s.status,
       CASE WHEN s.owner_user_id=? THEN 'owner' ELSE m.role END AS effective_role
@@ -70,6 +77,10 @@ export async function authorizeSpace(db: D1Database, user: RequestUser, spaceId:
   if (!row) throw new ApiError(404, "WALLET_NOT_FOUND");
   if (!spaceRoles[capability].has(row.effective_role)) throw new ApiError(403, "FORBIDDEN");
   if (allowedTypes && !allowedTypes.includes(row.type)) throw new ApiError(400, "INVALID_WALLET_TYPE");
+  // Archived wallets are sealed: readable and printable, but no writes until restored.
+  if (row.status === "archived" && capability !== "read" && capability !== "documents:issue" && !options?.allowArchived) {
+    throw new ApiError(409, "WALLET_ARCHIVED");
+  }
 
   const isOwner = row.owner_user_id === user.id;
   // Owners: plan must include the wallet type (or grace). Guests: membership grants access to that space.

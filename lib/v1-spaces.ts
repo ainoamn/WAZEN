@@ -2,6 +2,7 @@
 
 import type { RequestUser } from "../db/runtime";
 import { prepareAudit } from "./audit";
+import { assertSpaceSettledForArchive } from "./archive-gate";
 import { ensureDefaultTenant } from "./authorization";
 import { ApiError } from "./security";
 import { formatMoneyMinor, multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "./money";
@@ -226,6 +227,7 @@ export async function archiveV1Space(
   archived = true,
 ) {
   if (space.owner_user_id !== user.id) throw new ApiError(403, "FORBIDDEN");
+  if (archived) await assertSpaceSettledForArchive(db, space.id);
   const status = archived ? "archived" : "active";
   const createdAt = new Date().toISOString();
   await db.batch([

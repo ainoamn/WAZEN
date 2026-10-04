@@ -80,14 +80,17 @@ export type SettlementConfirmAs = "manager" | "treasurer" | "payee";
 export function canConfirmSettlement(input: {
   actorRole?: string | null;
   actorUserId: string;
+  fromMemberId?: string | null;
   toMemberId: string;
   toMemberUserId?: string | null;
 }): { ok: boolean; as: SettlementConfirmAs | null } {
   const role = String(input.actorRole ?? "");
   if (role === "owner" || role === "manager" || role === "supervisor") return { ok: true, as: "manager" };
   if (role === "treasurer") return { ok: true, as: "treasurer" };
+  // A member may confirm money he received from another member, never a fund payout to himself.
   if (
     !String(input.toMemberId).startsWith("space:")
+    && !String(input.fromMemberId ?? "").startsWith("space:")
     && input.toMemberUserId
     && input.toMemberUserId === input.actorUserId
   ) {

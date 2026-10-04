@@ -2,6 +2,7 @@
 
 import { applySettledTransfers, minimizeSettlements, netTripMemberBalances } from "./finance.ts";
 import { prepareAudit } from "./audit.ts";
+import { planTripSettlements, sameTransferSet, tripMemberPosition } from "./trip-net.ts";
 
 /** One-shot: old rows were one transfer per bill (`expense_id` set). Collapse those spaces to net transfers. */
 export async function migratePerExpenseTripSettlements(db: D1Database, spaceIds: string[]) {
@@ -18,7 +19,81 @@ export async function migratePerExpenseTripSettlements(db: D1Database, spaceIds:
   }
 }
 
+/**
+ * Trip wallets: one plan over each member's full position (fund + pocket bills + posted transfers).
+ * Debtors pay creditors directly; the fund pays what creditors are still owed. Unchanged plans are left alone.
+ */
+async function rebuildTripWalletSettlements(db: D1Database, spaceId: string, userId?: string) {
+  const [members, expenses, splits, settled, pending] = await Promise.all([
+    db.prepare("SELECT id, paid_minor FROM members WHERE space_id=? AND status='active' ORDER BY joined_at")
+      .bind(spaceId)
+      .all<{ id: string; paid_minor: number }>(),
+    db.prepare(`SELECT te.id, te.paid_by_member_id, te.amount_minor,
+        COALESCE(te.paid_from, CASE WHEN t.kind='expense' THEN 'common_fund' ELSE 'member' END) AS paid_from
+      FROM trip_expenses te
+      LEFT JOIN transactions t ON t.id=te.transaction_id
+      WHERE te.space_id=? AND COALESCE(te.status,'posted')<>'voided'`)
+      .bind(spaceId)
+      .all<{ id: string; paid_by_member_id: string; amount_minor: number; paid_from: string | null }>(),
+    db.prepare(`SELECT es.expense_id, es.member_id, es.share_minor
+      FROM expense_splits es
+      JOIN trip_expenses te ON te.id=es.expense_id
+      WHERE te.space_id=? AND COALESCE(te.status,'posted')<>'voided'`)
+      .bind(spaceId)
+      .all<{ expense_id: string; member_id: string; share_minor: number }>(),
+    db.prepare("SELECT from_member_id, to_member_id, amount_minor, status FROM settlements WHERE space_id=? AND status='settled'")
+      .bind(spaceId)
+      .all<{ from_member_id: string; to_member_id: string; amount_minor: number; status: string }>(),
+    db.prepare("SELECT from_member_id, to_member_id, amount_minor FROM settlements WHERE space_id=? AND status='pending'")
+      .bind(spaceId)
+      .all<{ from_member_id: string; to_member_id: string; amount_minor: number }>(),
+  ]);
+  const nets = (members.results ?? []).map((member) => tripMemberPosition({
+    spaceId,
+    memberId: member.id,
+    paidMinor: member.paid_minor,
+    expenses: expenses.results ?? [],
+    splits: splits.results ?? [],
+    settlements: settled.results ?? [],
+  }));
+  const plan = planTripSettlements(nets, `space:${spaceId}`);
+  if (sameTransferSet(plan, pending.results ?? [])) return { settlementCount: plan.length, changed: false };
+  const createdAt = new Date().toISOString();
+  const statements: ReturnType<D1Database["prepare"]>[] = [
+    db.prepare("UPDATE settlements SET status='voided' WHERE space_id=? AND status='pending'").bind(spaceId),
+  ];
+  for (const row of plan) {
+    statements.push(
+      db.prepare("INSERT INTO settlements (id,space_id,from_member_id,to_member_id,amount_minor,status,created_at,expense_id) VALUES (?,?,?,?,?,'pending',?,NULL)")
+        .bind(crypto.randomUUID(), spaceId, row.fromMemberId, row.toMemberId, row.amountMinor, createdAt),
+    );
+  }
+  if (userId) {
+    statements.push(prepareAudit(db, {
+      userId,
+      action: "trip.settlements_netted",
+      entityType: "space",
+      entityId: spaceId,
+      metadata: { settlementCount: plan.length },
+      createdAt,
+    }));
+  }
+  await db.batch(statements);
+  return { settlementCount: plan.length, changed: true };
+}
+
+/** Keep every trip wallet's pending plan in step with its ledger (cheap no-op when nothing changed). */
+export async function refreshTripWalletSettlements(db: D1Database, spaceIds: string[]) {
+  for (const spaceId of spaceIds) {
+    try {
+      await rebuildTripWalletSettlements(db, spaceId);
+    } catch { /* one wallet must not block the dashboard */ }
+  }
+}
+
 export async function rebuildSpaceTripSettlements(db: D1Database, spaceId: string, userId?: string) {
+  const space = await db.prepare("SELECT type FROM spaces WHERE id=?").bind(spaceId).first<{ type: string }>();
+  if (space?.type === "trip") return rebuildTripWalletSettlements(db, spaceId, userId);
   const [members, expenses, splits, settled] = await Promise.all([
     db.prepare("SELECT id FROM members WHERE space_id=? AND status='active' ORDER BY joined_at")
       .bind(spaceId)

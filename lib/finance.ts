@@ -448,7 +448,7 @@ export function tripWalletUsesFundCash(input: {
 /** Peer settlement journal rows must not look like salary, spend, or extra dues. */
 export function isPeerSettlementTransfer(txn: { description_ar?: string | null; description_en?: string | null }) {
   const text = `${txn.description_ar ?? ""} ${txn.description_en ?? ""}`;
-  return /تحويل مسجّل|استلام تحويل|تسوية حصة|مبلغ إضافي · تسوية|استرداد مبلغ إضافي|Posted transfer|Transfer received|netted trip expenses|direct member/i.test(text);
+  return /تحويل مسجّل|استلام تحويل|تسوية حصة|مبلغ إضافي · تسوية|استرداد مبلغ إضافي|صرف من الصندوق:|Posted transfer|Transfer received|Fund payout:|netted trip expenses|direct member/i.test(text);
 }
 
 export function memberTripPocketMinor(

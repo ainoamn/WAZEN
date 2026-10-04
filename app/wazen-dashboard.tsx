@@ -32,6 +32,7 @@ import { PwaInstallCard } from "../components/pwa/PwaInstallCard";
 import { PushNotifyCard } from "../components/pwa/PushNotifyCard";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor, currencyScale, parseMoneyToMinor, parseNonNegativeMoneyToMinor, applyTypedFundShare, finalizeTypedFundShare } from "../lib/money";
+import { isFundId, tripMemberPosition } from "../lib/trip-net";
 import { composeSharedRemainder, coverBillFromFundCash, inferSharedRemainder, isFundPaidExpense, isPeerSettlementTransfer, memberDisplayCreditMinor, memberExtraCreditMinor, memberFundPoolNet, memberTripPaidMinor, memberTripPocketMinor, netMemberClaim, pendingSettlementsWithCredit, splitEvenly, tripPostedSpendMinor, tripWalletUsesFundCash } from "../lib/finance";
 import { memberRemainingSettlementOwe } from "../lib/settlement-posting";
 import { canConfirmSettlement, settlementConfirmLabel } from "../lib/settlement-pay-instructions";
@@ -633,8 +634,38 @@ function memberPosition(member: Member, data?: DashboardData, spaceId?: string) 
   let fundShortfallMinor = 0;
   let settlementCreditMinor = 0;
   let settlementDebitMinor = 0;
+  const settlePlan = { fromFundMinor: 0, fromMembersMinor: 0, toMembersMinor: 0, toFundMinor: 0 };
   const expenseSpaceId = spaceId ?? member.space_id;
-  if (data && expenseSpaceId) {
+  const tripSpace = Boolean(data && expenseSpaceId && data.spaces.find((item) => item.id === expenseSpaceId)?.type === "trip");
+  if (data && expenseSpaceId && tripSpace) {
+    const position = tripMemberPosition({
+      spaceId: expenseSpaceId,
+      memberId: member.id,
+      paidMinor: paid,
+      expenses: data.tripExpenses,
+      splits: data.expenseSplits,
+      settlements: data.settlements,
+    });
+    const fundNet = position.paidMinor - position.fundShareMinor;
+    fundLeftoverMinor = Math.max(0, fundNet);
+    fundShortfallMinor = Math.max(0, -fundNet);
+    settlementCreditMinor = Math.max(0, position.netMinor - fundNet);
+    settlementDebitMinor = Math.max(0, fundNet - position.netMinor);
+    for (const row of data.settlements) {
+      if (row.space_id !== expenseSpaceId || row.status !== "pending") continue;
+      const amount = Number(row.amount_minor) || 0;
+      if (row.to_member_id === member.id) {
+        if (isFundId(row.from_member_id)) settlePlan.fromFundMinor += amount;
+        else settlePlan.fromMembersMinor += amount;
+      }
+      if (row.from_member_id === member.id) {
+        if (isFundId(row.to_member_id)) settlePlan.toFundMinor += amount;
+        else settlePlan.toMembersMinor += amount;
+      }
+    }
+    credit = memberExtraCreditMinor(member, data.transactions) + Math.max(0, position.netMinor);
+    debit = Math.max(0, -position.netMinor);
+  } else if (data && expenseSpaceId) {
     let fundShares = 0;
     for (const expense of data.tripExpenses.filter((item) => item.space_id === expenseSpaceId)) {
       if (!isFundPaidExpense(expense)) continue;
@@ -668,6 +699,7 @@ function memberPosition(member: Member, data?: DashboardData, spaceId?: string) 
     fundShortfallMinor,
     settlementCreditMinor,
     settlementDebitMinor,
+    settlePlan,
     paidTowardGoalMinor,
     paidAdvanceMinor,
     ...net,
@@ -934,9 +966,11 @@ function TripSettlementLedger({
   onChanged: (next: Partial<DashboardData>) => void;
 }) {
   const rows = data.settlements.filter((item) => item.space_id === space.id && item.status !== "voided");
+  // Trip plans already net each member's credit (fund included), so nothing is reserved twice.
+  const tripPlan = space.type === "trip";
   const pending = pendingSettlementsWithCredit(
-    rows.filter((item) => item.status === "pending" && !String(item.to_member_id).startsWith("space:")),
-    new Map(members.map((member) => [member.id, memberPosition(member, data, space.id).cashCredit])),
+    rows.filter((item) => item.status === "pending" && (tripPlan || !String(item.to_member_id).startsWith("space:"))),
+    tripPlan ? new Map<string, number>() : new Map(members.map((member) => [member.id, memberPosition(member, data, space.id).cashCredit])),
   );
   const posted = rows
     .filter((item) => item.status === "settled")
@@ -976,10 +1010,16 @@ function TripSettlementLedger({
         const label = toFund
           ? (locale === "ar" ? `على ${fromName} دفع إلى صندوق الجمعية` : `${fromName} owes the association fund`)
           : fromFund
-            ? (locale === "ar" ? `على الصندوق رد مبلغ إلى ${toName}` : `The fund owes ${toName}`)
+            ? (locale === "ar" ? `يُصرف من الصندوق إلى ${toName}` : `The fund pays ${toName}`)
             : (locale === "ar" ? `على ${fromName} دفع إلى ${toName}` : `${fromName} owes ${toName}`);
-        const why = locale === "ar" ? "صافي مصروفات الرحلة بين الأعضاء" : "netted trip expenses among members";
-        const how = locale === "ar" ? "بانتظار تحويل مباشر بين الأعضاء" : "awaiting a direct member-to-member transfer";
+        const why = fromFund
+          ? (locale === "ar" ? "رصيده المتبقي في الصندوق بعد خصم حصصه" : "his remaining fund balance after his shares")
+          : (locale === "ar" ? "صافي حساب الرحلة" : "net trip balance");
+        const how = fromFund
+          ? (locale === "ar" ? "يسلّمه أمين الصندوق ثم يعتمد" : "treasurer hands it over, then approves")
+          : toFund
+            ? (locale === "ar" ? "يدفع للصندوق ثم يعتمد أمين الصندوق" : "pays the fund, treasurer approves")
+            : (locale === "ar" ? "تحويل مباشر بين الأعضاء" : "direct member-to-member transfer");
         return (
           <div className="settlement-alert" key={settlement.id}>
             <ShieldCheck size={17} />
@@ -997,10 +1037,12 @@ function TripSettlementLedger({
               const decision = canConfirmSettlement({
                 actorRole: myRoleInSpace(data, space),
                 actorUserId: data.user.id,
+                fromMemberId: settlement.from_member_id,
                 toMemberId: settlement.to_member_id,
                 toMemberUserId: toMember?.user_id ?? null,
               });
-              const canManage = ["owner", "manager", "supervisor", "treasurer"].includes(myRoleInSpace(data, space));
+              // Trip transfers are recomputed from the ledger, so deleting one would only bring it back.
+              const canManage = !tripPlan && ["owner", "manager", "supervisor", "treasurer"].includes(myRoleInSpace(data, space));
               return (
                 <>
                   {decision.ok ? <button type="button" onClick={() => onSettle(settlement.id)}>{settlementConfirmLabel(decision.as, locale)}</button> : null}
@@ -1015,8 +1057,16 @@ function TripSettlementLedger({
         const fromName = settlement.from_member_name ?? (locale === "ar" ? "العضو" : "Member");
         const toName = settlement.to_member_name ?? (locale === "ar" ? "العضو" : "member");
         const remaining = remainingOf(settlement.from_member_id);
-        const why = locale === "ar" ? "صافي مصروفات الرحلة بين الأعضاء" : "netted trip expenses among members";
-        const how = locale === "ar" ? "تحويل مباشر بين الأعضاء بعد اعتماد التسوية" : "direct member transfer after settlement was posted";
+        const fromFundPosted = isFundId(settlement.from_member_id);
+        const toFundPosted = isFundId(settlement.to_member_id);
+        const why = fromFundPosted
+          ? (locale === "ar" ? "رصيده المتبقي في الصندوق" : "his remaining fund balance")
+          : (locale === "ar" ? "صافي حساب الرحلة" : "net trip balance");
+        const how = fromFundPosted
+          ? (locale === "ar" ? "صُرف من الصندوق" : "paid out from the fund")
+          : toFundPosted
+            ? (locale === "ar" ? "دُفع للصندوق" : "paid into the fund")
+            : (locale === "ar" ? "تحويل مباشر بين الأعضاء" : "direct member transfer");
         return (
           <div className="settlement-alert is-posted" key={settlement.id}>
             <ArrowLeftRight size={17} />
@@ -1032,19 +1082,6 @@ function TripSettlementLedger({
       {!rows.length && <p className="modal-note">{locale === "ar" ? "لا تحويلات بعد. بعد «تم التسوية» يُحفظ القيد: من دفع، إلى من، ولماذا، وكيف." : "No transfers yet. After Mark settled, the journal stores who paid whom, why, and how."}</p>}
     </div>
   );
-}
-
-function memberExpenseNet(memberId: string, data: DashboardData, spaceId: string) {
-  let fundShares = 0;
-  for (const expense of data.tripExpenses.filter((item) => item.space_id === spaceId)) {
-    if (!isFundPaidExpense(expense)) continue;
-    const share = data.expenseSplits.find((row) => row.expense_id === expense.id && row.member_id === memberId);
-    fundShares += share ? Number(share.share_minor) || 0 : 0;
-  }
-  const member = data.members.find((row) => row.id === memberId && row.space_id === spaceId);
-  const paid = Number(member?.paid_minor) || 0;
-  const pool = memberFundPoolNet(paid, fundShares);
-  return memberSettlementNet(memberId, data, spaceId) + pool.leftoverMinor - pool.shortfallMinor;
 }
 
 function dashboardError(code: string, locale: Locale) {
@@ -1064,6 +1101,8 @@ function dashboardError(code: string, locale: Locale) {
       PERIOD_NOT_CLOSED: "هذه الفترة ليست مغلقة.",
       FORBIDDEN: "لا تملك صلاحية تعديل هذه الجمعية. المالك فقط يمكنه الأرشفة أو الحذف.",
       WALLET_NOT_FOUND: "الجمعية غير موجودة.",
+      ARCHIVE_NOT_SETTLED: "لا يمكن الأرشفة قبل تصفية الحساب: ما زالت هناك تحويلات أو أقساط غير مسدّدة. اعتمد كل التسويات حتى يصير كل عضو «مسوّى» ثم أرشف.",
+      WALLET_ARCHIVED: "هذه المحفظة مؤرشفة ومختومة للقراءة فقط. استعدها من الأرشيف أولاً للتعديل.",
       INVALID_PROFILE: "تحقق من الاسم (حرفان على الأقل).",
       INVALID_PHOTO: "الصورة غير مدعومة. استخدم JPEG أو PNG أو WebP.",
       PHOTO_TOO_LARGE: "الصورة كبيرة. اختر صورة أوضح وأصغر.",
@@ -1102,6 +1141,8 @@ function dashboardError(code: string, locale: Locale) {
       PERIOD_NOT_CLOSED: "This period is not closed.",
       FORBIDDEN: "Only the owner can archive or delete this association.",
       WALLET_NOT_FOUND: "Association not found.",
+      ARCHIVE_NOT_SETTLED: "Settle the account before archiving: transfers or dues are still unpaid. Approve every settlement until each member is settled, then archive.",
+      WALLET_ARCHIVED: "This wallet is archived and sealed read-only. Restore it first to make changes.",
       INVALID_PROFILE: "Check the name (at least 2 characters).",
       INVALID_PHOTO: "Unsupported photo. Use JPEG, PNG, or WebP.",
       PHOTO_TOO_LARGE: "Photo is too large. Choose a smaller image.",
@@ -1672,8 +1713,30 @@ export function WazenDashboard() {
   });
   const walletDefaultType = viewSpaceType[activeView] ?? "personal";
 
+  // Archived wallets are sealed: their data leaves the overview, members, transactions and reports.
+  const mainData = useMemo(() => {
+    if (!data || showArchived) return data;
+    const archived = new Set((data.spaces ?? []).filter((space) => (space.status ?? "active") === "archived").map((space) => space.id));
+    if (!archived.size) return data;
+    const live = <T extends { space_id?: string | null }>(rows: T[] | undefined) => (rows ?? []).filter((row) => !archived.has(String(row.space_id ?? "")));
+    const tripExpenses = live(data.tripExpenses);
+    const expenseIds = new Set(tripExpenses.map((row) => row.id));
+    return {
+      ...data,
+      spaces: (data.spaces ?? []).filter((space) => !archived.has(space.id)),
+      members: live(data.members),
+      transactions: live(data.transactions),
+      plans: (data.plans ?? []).filter((row) => !archived.has(String((row as { space_id?: unknown }).space_id ?? ""))),
+      circleTurns: live(data.circleTurns),
+      tripExpenses,
+      expenseSplits: (data.expenseSplits ?? []).filter((row) => expenseIds.has(row.expense_id)),
+      settlements: live(data.settlements),
+    };
+  }, [data, showArchived]);
+
   const totals = useMemo(() => {
-    if (!data) return { net: 0, groups: 0, personal: 0, reserves: 0, spend: 0, income: 0, remaining: 0 };
+    if (!mainData) return { net: 0, groups: 0, personal: 0, reserves: 0, spend: 0, income: 0, remaining: 0 };
+    const data = mainData;
     const spaces = data.spaces ?? [];
     const members = data.members ?? [];
     const transactions = data.transactions ?? [];
@@ -1686,7 +1749,7 @@ export function WazenDashboard() {
       + spaces.filter((space) => space.type === "trip").reduce((sum, space) => sum + tripPostedSpendMinor(space.id, data.tripExpenses ?? []), 0);
     const income = liveRows.filter((item) => ["income", "contribution"].includes(item.kind)).reduce((sum, item) => sum + item.amount_minor, 0);
     return { net, groups, personal, reserves, spend, income, remaining: income - spend };
-  }, [data]);
+  }, [mainData]);
 
   const flash = (message: string) => {
     setToast(message);
@@ -1893,7 +1956,7 @@ export function WazenDashboard() {
 
         <div className="page-content">
           {activeView === "overview" && (
-            <Overview data={data} locale={locale} totals={totals} onView={changeView} onAddWallet={openNewWallet} onTxnChanged={(next) => { acceptWrite(next); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />
+            <Overview data={mainData ?? data} locale={locale} totals={totals} onView={changeView} onAddWallet={openNewWallet} onTxnChanged={(next) => { acceptWrite(next); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />
           )}
           {viewSpaceType[activeView] && viewLocked && (
             <UpgradeGate
@@ -1949,7 +2012,7 @@ export function WazenDashboard() {
           {activeSpace && !viewLocked && (
             <SpaceDetail space={activeSpace} data={data} locale={locale} onAdd={() => setModal("transaction")} onInvite={() => setModal("invite")} onEditWallet={() => setModal("editWallet")} onToggleArchived={() => setShowArchived((current) => !current)} showArchived={showArchived} onAddWallet={openNewWallet} addWalletLabel={addWalletLabel} canCreateWallet={canCreateCurrentType} onArchiveWallet={() => {
               const archived = (activeSpace.status ?? "active") === "archived";
-              if (!window.confirm(archived ? (locale === "ar" ? "إلغاء أرشفة هذه الجمعية وإعادتها للقائمة؟" : "Unarchive this association?") : (locale === "ar" ? "أرشفة هذه الجمعية؟ تختفي من القائمة ويمكن استعادتها من «عرض المؤرشف»." : "Archive this association? It leaves the list until you show archived wallets."))) return;
+              if (!window.confirm(archived ? (locale === "ar" ? "إلغاء أرشفة هذه الجمعية وإعادتها للقائمة؟" : "Unarchive this association?") : (locale === "ar" ? "أرشفة هذه المحفظة؟ يتحقق النظام أولاً أن كل الحسابات مسوّاة وكل المبالغ مدفوعة، ثم يختمها للقراءة فقط وتختفي بياناتها من الشاشة الرئيسية. يمكن استعادتها من «عرض المؤرشف»." : "Archive this wallet? The system first checks every balance is settled and paid, then seals it read-only and hides its data from the main screens. Restore it from “show archived”."))) return;
               void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "archiveWallet", idempotencyKey: crypto.randomUUID(), spaceId: activeSpace.id, archived: !archived }) }).then(async (response) => {
                 const result = await response.json() as Partial<DashboardData> & { error?: string };
                 if (!response.ok) throw new Error(dashboardError(result.error ?? "ARCHIVE_FAILED", locale));
@@ -1960,11 +2023,11 @@ export function WazenDashboard() {
           )}
           {activeView === "groups" && (viewLocked
             ? <UpgradeGate locale={locale} title={locale === "ar" ? "الأعضاء يستدعون ترقية الباقة" : "Members need a plan upgrade"} text={locale === "ar" ? "إدارة الأعضاء للجمعيات والمجموعات غير مضمّنة في باقتك الحالية." : "Member management for circles and groups is not included in your current plan."} />
-            : <MembersView data={data} locale={locale} onInvite={() => setModal("invite")} onOpenPerson={(memberId, focus, editContact) => { setActiveMemberId(memberId); setMemberLedgerFocus(focus ?? "all"); setEditMemberOnOpen(Boolean(editContact)); setModal("memberProfile"); }} onSmartPay={(memberId) => { if (!planHasFeature(planFeatures, "smart_accountant")) { showUpgradeNotice("smart_accountant", locale === "ar" ? "المحاسب الذكي" : "Smart accountant"); return; } setActiveMemberId(memberId); setModal("smartPay"); }} onMerged={(message) => { flash(message); void load(true); }} />)}
-          {activeView === "transactions" && <TransactionsView data={data} locale={locale} onChanged={(next) => { acceptWrite(next); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />}
+            : <MembersView data={mainData ?? data} locale={locale} onInvite={() => setModal("invite")} onOpenPerson={(memberId, focus, editContact) => { setActiveMemberId(memberId); setMemberLedgerFocus(focus ?? "all"); setEditMemberOnOpen(Boolean(editContact)); setModal("memberProfile"); }} onSmartPay={(memberId) => { if (!planHasFeature(planFeatures, "smart_accountant")) { showUpgradeNotice("smart_accountant", locale === "ar" ? "المحاسب الذكي" : "Smart accountant"); return; } setActiveMemberId(memberId); setModal("smartPay"); }} onMerged={(message) => { flash(message); void load(true); }} />)}
+          {activeView === "transactions" && <TransactionsView data={mainData ?? data} locale={locale} onChanged={(next) => { acceptWrite(next); flash(locale === "ar" ? "تم تحديث العملية" : "Transaction updated"); }} />}
           {activeView === "reports" && (viewLocked
             ? <UpgradeGate locale={locale} title={locale === "ar" ? "التقارير تستدعي ترقية الباقة" : "Reports need a plan upgrade"} text={locale === "ar" ? "التقارير التفصيلية والتصدير غير مضمّنة في باقتك. رقِّ الباقة لتفعيلها." : "Advanced reports and exports are not on your plan. Upgrade to unlock them."} />
-            : <ReportsPanel data={data} locale={locale} totals={totals} />)}
+            : <ReportsPanel data={mainData ?? data} locale={locale} totals={totals} />)}
           {activeView === "settings" && <SettingsView user={data.user} locale={locale} entitlements={data.entitlements} spaces={data.spaces} onLogout={() => void logout()} onSaved={(next) => { acceptWrite(next); flash(locale === "ar" ? "تم حفظ بيانات الحساب" : "Profile saved"); }} />}
         </div>
       </main>
@@ -2562,11 +2625,7 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
   const incomeTotal = liveTransactions.filter((txn) => ["income", "contribution"].includes(txn.kind)).reduce((sum, txn) => sum + txn.amount_minor, 0);
   const remainingTotal = space.type === "trip" ? space.balance_minor : incomeTotal - spentTotal;
   const closedBudgets = (data.periods ?? []).filter((period) => period.space_id === space.id && period.status === "closed").length;
-  const pendingSettlements = data.settlements.filter((item) => {
-    if (item.space_id !== space.id || item.status !== "pending") return false;
-    if (space.type === "trip" && (String(item.to_member_id).startsWith("space:") || String(item.from_member_id).startsWith("space:"))) return false;
-    return true;
-  }).length;
+  const pendingSettlements = data.settlements.filter((item) => item.space_id === space.id && item.status === "pending").length;
   const currentPeriod = (data.periods ?? []).filter((period) => period.space_id === space.id).sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())[0];
   const dateLocale = locale === "ar" ? "ar-OM" : "en-GB";
   const formatDay = (value?: string | null) => {
@@ -3020,10 +3079,10 @@ function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCa
               <button type="button" className={`amount-hit ${debit ? "amount-negative" : "muted-amount"}`} onClick={() => open("owes")}>
                 <span className="claim-stack">
                   <span>{formatMoney(debit ? -Math.abs(debit) : 0, currency, locale)}</span>
-                  {spaceType === "trip" && debit > 0 && (pos.fundShortfallMinor > 0 || pos.settlementDebitMinor > 0) && (
+                  {spaceType === "trip" && debit > 0 && (pos.settlePlan.toMembersMinor > 0 || pos.settlePlan.toFundMinor > 0) && (
                     <small>{[
-                      pos.fundShortfallMinor > 0 ? (locale === "ar" ? `عجز الصندوق ${formatMoney(pos.fundShortfallMinor, currency, locale)}` : `fund shortfall ${formatMoney(pos.fundShortfallMinor, currency, locale)}`) : null,
-                      pos.settlementDebitMinor > 0 ? (locale === "ar" ? `تسوية ${formatMoney(pos.settlementDebitMinor, currency, locale)}` : `settlement ${formatMoney(pos.settlementDebitMinor, currency, locale)}`) : null,
+                      pos.settlePlan.toMembersMinor > 0 ? (locale === "ar" ? `يحوّل للأعضاء ${formatMoney(pos.settlePlan.toMembersMinor, currency, locale)}` : `pays members ${formatMoney(pos.settlePlan.toMembersMinor, currency, locale)}`) : null,
+                      pos.settlePlan.toFundMinor > 0 ? (locale === "ar" ? `للصندوق ${formatMoney(pos.settlePlan.toFundMinor, currency, locale)}` : `to fund ${formatMoney(pos.settlePlan.toFundMinor, currency, locale)}`) : null,
                     ].filter(Boolean).join(" · ")}</small>
                   )}
                   {pos.reservedMinor > 0 && <small>{locale === "ar" ? `بعد حجز ${formatMoney(pos.reservedMinor, currency, locale)}` : `after ${formatMoney(pos.reservedMinor, currency, locale)} reserved`}</small>}
@@ -3032,10 +3091,10 @@ function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCa
               <button type="button" className={`amount-hit ${credit ? "reserve-amount" : "muted-amount"}`} onClick={() => open("credit")}>
                 <span className="claim-stack">
                   <span>{formatMoney(credit, currency, locale)}</span>
-                  {spaceType === "trip" && credit > 0 && (pos.fundLeftoverMinor > 0 || pos.settlementCreditMinor > 0) && (
+                  {spaceType === "trip" && credit > 0 && (pos.settlePlan.fromFundMinor > 0 || pos.settlePlan.fromMembersMinor > 0) && (
                     <small>{[
-                      pos.fundLeftoverMinor > 0 ? (locale === "ar" ? `فائض الصندوق ${formatMoney(pos.fundLeftoverMinor, currency, locale)}` : `fund leftover ${formatMoney(pos.fundLeftoverMinor, currency, locale)}`) : null,
-                      pos.settlementCreditMinor > 0 ? (locale === "ar" ? `على الأعضاء ${formatMoney(pos.settlementCreditMinor, currency, locale)}` : `from members ${formatMoney(pos.settlementCreditMinor, currency, locale)}`) : null,
+                      pos.settlePlan.fromFundMinor > 0 ? (locale === "ar" ? `من الصندوق ${formatMoney(pos.settlePlan.fromFundMinor, currency, locale)}` : `from fund ${formatMoney(pos.settlePlan.fromFundMinor, currency, locale)}`) : null,
+                      pos.settlePlan.fromMembersMinor > 0 ? (locale === "ar" ? `من الأعضاء ${formatMoney(pos.settlePlan.fromMembersMinor, currency, locale)}` : `from members ${formatMoney(pos.settlePlan.fromMembersMinor, currency, locale)}`) : null,
                     ].filter(Boolean).join(" · ")}</small>
                   )}
                   {pos.reservedMinor > 0 && <small>{locale === "ar" ? "رصيده محجوز" : "Credit reserved"}</small>}

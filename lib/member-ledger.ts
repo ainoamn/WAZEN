@@ -19,9 +19,21 @@ import {
   tripWalletUsesFundCash,
 } from "./finance.ts";
 import { formatDebitMoneyMinor, formatMoneyMinor } from "./money.ts";
+import { tripMemberPosition, type TripMemberPosition } from "./trip-net.ts";
 import { wrapPrintDocument } from "./print-document.ts";
 
 export type MemberLedgerFocus = "all" | "paid" | "spent" | "owes" | "credit";
+
+/** A pending transfer this member must pay or is waiting to receive (fund = trip/association fund). */
+export type MemberSettleItem = {
+  settlementId: string;
+  direction: "pay" | "receive";
+  fund: boolean;
+  counterpartyId: string;
+  nameAr: string;
+  nameEn: string;
+  amountMinor: number;
+};
 export type MemberLedgerLocale = "ar" | "en";
 
 export type MemberLedgerLine = {
@@ -146,11 +158,25 @@ export function buildMemberLedger(input: {
     const amount = Number(txn.amount_minor) || 0;
     const descAr = txn.description_ar || "دفعة";
     const descEn = txn.description_en || "Payment";
+    if (input.spaceType === "trip") {
+      lines.push({
+        at: txn.occurred_at,
+        focus: "paid",
+        direction: "in",
+        titleAr: descAr,
+        titleEn: descEn,
+        detailAr: "دفعه لصندوق الرحلة",
+        detailEn: "Paid into the trip fund",
+        amountMinor: amount,
+        status: txn.status,
+      });
+      continue;
+    }
     if (working.length && amount > 0) {
       try {
         const split = allocateOldestFirst(working, amount);
-        const partsAr = split.allocations.map((item) => `شهر ${item.periodIndex} (${item.periodKey}) ${item.amountMinor}`);
-        const partsEn = split.allocations.map((item) => `month ${item.periodIndex} (${item.periodKey}) ${item.amountMinor}`);
+        const partsAr = split.allocations.map((item) => `شهر ${item.periodIndex} (${item.periodKey}) ${formatMoneyMinor(item.amountMinor, input.currency, "ar")}`);
+        const partsEn = split.allocations.map((item) => `month ${item.periodIndex} (${item.periodKey}) ${formatMoneyMinor(item.amountMinor, input.currency, "en")}`);
         for (const item of split.allocations) {
           const row = working.find((month) => month.id === item.installmentId);
           if (!row) continue;
@@ -164,30 +190,18 @@ export function buildMemberLedger(input: {
           titleAr: descAr,
           titleEn: descEn,
           detailAr: [
-            split.appliedMinor > 0 ? `وُزّعت على: ${partsAr.join("، ")}` : "لا أشهر مستحقة وقتها",
-            leftover > 0 ? `الفائض ${leftover} صار له / احتياطي` : "",
-            txn.allocation === "personal_reserve" ? "صُنّفت كاحتياطي شخصي" : "",
+            split.appliedMinor > 0 ? `سدّد: ${partsAr.join("، ")}` : "",
+            leftover > 0 ? `${formatMoneyMinor(leftover, input.currency, "ar")} رصيد له (مقدّم)` : "",
+            txn.allocation === "personal_reserve" ? "احتياطي شخصي" : "",
           ].filter(Boolean).join(" · "),
           detailEn: [
-            split.appliedMinor > 0 ? `Applied to: ${partsEn.join(", ")}` : "No dues due at the time",
-            leftover > 0 ? `Surplus ${leftover} became credit / reserve` : "",
-            txn.allocation === "personal_reserve" ? "Booked as personal reserve" : "",
+            split.appliedMinor > 0 ? `Cleared: ${partsEn.join(", ")}` : "",
+            leftover > 0 ? `${formatMoneyMinor(leftover, input.currency, "en")} kept as his credit (advance)` : "",
+            txn.allocation === "personal_reserve" ? "Personal reserve" : "",
           ].filter(Boolean).join(" · "),
           amountMinor: amount,
           status: txn.status,
         });
-        if (leftover > 0) {
-          lines.push({
-            at: txn.occurred_at,
-            focus: "credit",
-            direction: "in",
-            titleAr: "فائض الدفعة",
-            titleEn: "Payment surplus",
-            detailAr: `من ${descAr} — صار رصيداً له`,
-            detailEn: `From ${descEn} — became credit`,
-            amountMinor: leftover,
-          });
-        }
       } catch {
         lines.push({
           at: txn.occurred_at,
@@ -269,24 +283,23 @@ export function buildMemberLedger(input: {
           direction: "out",
           titleAr: `حصة من: ${expense.description || "مصروف"}`,
           titleEn: `Share of: ${expense.description || "expense"}`,
-          detailAr: "حصته من فاتورة الصندوق — هذا عمود «صرف». عمود «مدفوع» يبقى مساهمة الصندوق",
-          detailEn: "His share of a fund bill — this is Spent. Paid stays the fund contribution",
+          detailAr: "دفعها الصندوق",
+          detailEn: "Paid by the fund",
           amountMinor: shareMinor,
         });
       }
       continue;
     }
 
-    // Member paid from pocket: «له/عليه» come from pending settlements, not from raw shares.
     if (expense.paid_by_member_id === member.id) {
       lines.push({
         at: expense.occurred_at,
-        focus: "spent",
-        direction: "out",
+        focus: "paid",
+        direction: "in",
         titleAr: expense.description || "مصروف مشترك",
         titleEn: expense.description || "Shared expense",
-        detailAr: `دفع العضو الفاتورة كاملة (${expense.amount_minor})؛ حصص الآخرين تظهر له عبر التسويات`,
-        detailEn: `Member paid the full bill (${expense.amount_minor}); others’ shares appear as credit via settlements`,
+        detailAr: "دفعها كاملة من جيبه",
+        detailEn: "He paid the whole bill from his pocket",
         amountMinor: Number(expense.amount_minor) || 0,
       });
     }
@@ -299,62 +312,58 @@ export function buildMemberLedger(input: {
         direction: "out",
         titleAr: `حصة من: ${expense.description || "مصروف"}`,
         titleEn: `Share of: ${expense.description || "expense"}`,
-        detailAr: expense.paid_by_member_id === member.id
-          ? "حصته من فاتورة دفعها بنفسه (التسوية الصافية تحت له/عليه)"
-          : `حصته من فاتورة دفعها ${payer} — المبلغ المطلوب يظهر في «عليه» عبر التسوية المعلقة`,
-        detailEn: expense.paid_by_member_id === member.id
-          ? "His share of a bill he paid (net claim is under Owes/Credit via settlements)"
-          : `Share of a bill paid by ${payer} — the amount due appears under Owes via the pending settlement`,
+        detailAr: expense.paid_by_member_id === member.id ? "من فاتورة دفعها هو" : `دفعها ${payer}`,
+        detailEn: expense.paid_by_member_id === member.id ? "From a bill he paid" : `Paid by ${payer}`,
         amountMinor: shareMinor,
       });
     }
   }
 
+  const isTrip = input.spaceType === "trip";
+  const settleItems: MemberSettleItem[] = [];
   for (const settlement of input.settlements.filter((row) => row.space_id === member.space_id)) {
     const amount = Number(settlement.amount_minor) || 0;
     if (amount <= 0) continue;
     const pending = settlement.status === "pending";
+    if (!pending && settlement.status !== "settled") continue;
     const toFund = String(settlement.to_member_id).startsWith("space:");
     const fromFundSettle = String(settlement.from_member_id).startsWith("space:");
-    if (settlement.from_member_id === member.id) {
-      // Fund-deficit settlements are superseded by counting each fund expense share above.
-      if (!toFund) {
-        if (pending) expenseDebit += amount;
-        lines.push({
-          at: settlement.settled_at || settlement.created_at || new Date().toISOString(),
-          focus: pending ? "owes" : "paid",
-          direction: pending ? "out" : "in",
-          titleAr: pending ? "عليه تحويل معلق" : "دفع تسوية مسجّلة",
-          titleEn: pending ? "Pending transfer he owes" : "Posted settlement payment",
-          detailAr: pending
-            ? `يدفع إلى ${settlement.to_member_name || "عضو آخر"} · المتبقي ${amount} · صافي مصروفات الرحلة`
-            : `من ${settlement.from_member_name || "العضو"} إلى ${settlement.to_member_name || "عضو آخر"} · مدفوع بالكامل · تحويل مباشر بين الأعضاء`,
-          detailEn: pending
-            ? `Pays ${settlement.to_member_name || "another member"} · remaining ${amount} · netted trip expenses`
-            : `${settlement.from_member_name || "Member"} → ${settlement.to_member_name || "member"} · paid in full · direct member transfer`,
-          amountMinor: amount,
-          status: settlement.status,
-        });
-      }
+    const at = settlement.settled_at || settlement.created_at || new Date().toISOString();
+    const toNameAr = toFund ? "الصندوق" : settlement.to_member_name || "عضو";
+    const toNameEn = toFund ? "the fund" : settlement.to_member_name || "member";
+    const fromNameAr = fromFundSettle ? "الصندوق" : settlement.from_member_name || "عضو";
+    const fromNameEn = fromFundSettle ? "the fund" : settlement.from_member_name || "member";
+    // Outside trips, fund-deficit rows are superseded by the fund shares counted above.
+    if (settlement.from_member_id === member.id && (isTrip || !toFund)) {
+      if (pending && !isTrip) expenseDebit += amount;
+      if (pending) settleItems.push({ settlementId: settlement.id, direction: "pay", fund: toFund, counterpartyId: settlement.to_member_id, nameAr: toNameAr, nameEn: toNameEn, amountMinor: amount });
+      lines.push({
+        at,
+        focus: pending ? "owes" : "paid",
+        direction: pending ? "out" : "in",
+        titleAr: pending ? `يحوّل إلى ${toNameAr}` : `حوّل إلى ${toNameAr}`,
+        titleEn: pending ? `To pay ${toNameEn}` : `Paid ${toNameEn}`,
+        detailAr: pending ? "مطلوب منه لتصفية الحساب" : "تحويل مسجّل",
+        detailEn: pending ? "Due to settle the account" : "Posted transfer",
+        amountMinor: amount,
+        status: settlement.status,
+      });
     }
     if (settlement.to_member_id === member.id) {
-      if (pending) expenseCredit += amount;
+      if (pending && !isTrip) expenseCredit += amount;
+      if (pending) settleItems.push({ settlementId: settlement.id, direction: "receive", fund: fromFundSettle, counterpartyId: settlement.from_member_id, nameAr: fromNameAr, nameEn: fromNameEn, amountMinor: amount });
       lines.push({
-        at: settlement.settled_at || settlement.created_at || new Date().toISOString(),
+        at,
         focus: pending ? "credit" : "paid",
         direction: "in",
-        titleAr: pending ? "له تحويل منتظر" : "استلم تحويل مسجّل",
-        titleEn: pending ? "Incoming transfer due" : "Posted transfer received",
-        detailAr: fromFundSettle
-          ? "رد من صندوق الجمعية"
-          : pending
-            ? `من ${settlement.from_member_name || "عضو آخر"} · المتبقي ${amount}`
-            : `من ${settlement.from_member_name || "عضو آخر"} إلى ${settlement.to_member_name || "العضو"} · استُلم بالكامل · تحويل مباشر بين الأعضاء`,
-        detailEn: fromFundSettle
-          ? "Refund from the association fund"
-          : pending
-            ? `From ${settlement.from_member_name || "another member"} · remaining ${amount}`
-            : `${settlement.from_member_name || "Member"} → ${settlement.to_member_name || "member"} · received in full · direct member transfer`,
+        titleAr: pending
+          ? (fromFundSettle ? "يُصرف له من الصندوق" : `يستلم من ${fromNameAr}`)
+          : (fromFundSettle ? "استلم من الصندوق" : `استلم من ${fromNameAr}`),
+        titleEn: pending
+          ? (fromFundSettle ? "To receive from the fund" : `To receive from ${fromNameEn}`)
+          : (fromFundSettle ? "Received from the fund" : `Received from ${fromNameEn}`),
+        detailAr: pending ? "رصيده المتبقي" : "تحويل مسجّل",
+        detailEn: pending ? "His remaining balance" : "Posted transfer",
         amountMinor: amount,
         status: settlement.status,
       });
@@ -399,18 +408,7 @@ export function buildMemberLedger(input: {
   const tripPocket = input.spaceType === "trip"
     ? memberTripPocketMinor(member.id, member.space_id, input.tripExpenses)
     : 0;
-  if (input.spaceType === "trip" && tripPocket > 0) {
-    lines.push({
-      at: member.joined_at || new Date().toISOString(),
-      focus: "spent",
-      direction: "out",
-      titleAr: "مدفوع من الجيب",
-      titleEn: "Paid from pocket",
-      detailAr: "فواتير الرحلة التي دفعها نقداً — ليست ديناً بعد التسوية",
-      detailEn: "Trip bills he paid in cash — not a debt after settlement",
-      amountMinor: tripPocket,
-    });
-  } else if (input.spaceType !== "trip" && Number(member.addon_minor ?? 0) > 0) {
+  if (input.spaceType !== "trip" && Number(member.addon_minor ?? 0) > 0) {
     lines.push({
       at: member.joined_at || new Date().toISOString(),
       focus: "spent",
@@ -423,8 +421,9 @@ export function buildMemberLedger(input: {
     });
   }
 
-  const pool = memberFundPoolNet(member.paid_minor, fundSharesTotal);
-  if (fundSharesTotal > 0 && pool.leftoverMinor > 0) {
+  // Trips: the full position below already nets contribution against fund shares.
+  const pool = memberFundPoolNet(member.paid_minor, isTrip ? 0 : fundSharesTotal);
+  if (!isTrip && fundSharesTotal > 0 && pool.leftoverMinor > 0) {
     expenseCredit += pool.leftoverMinor;
     lines.push({
       at: new Date().toISOString(),
@@ -437,7 +436,7 @@ export function buildMemberLedger(input: {
       amountMinor: pool.leftoverMinor,
     });
   }
-  if (pool.shortfallMinor > 0) {
+  if (!isTrip && pool.shortfallMinor > 0) {
     expenseDebit += pool.shortfallMinor;
     lines.push({
       at: new Date().toISOString(),
@@ -455,9 +454,23 @@ export function buildMemberLedger(input: {
   const baseCredit = fundSharesTotal > 0
     ? memberExtraCreditMinor(member, input.transactions)
     : cashCredit;
-  // Trip: عليه is fund-share shortfall (and pending peer settlements), not the savings goal. Paying the goal reduces that shortfall.
-  const debit = (input.spaceType === "trip" ? 0 : remainingDue) + Math.max(0, expenseDebit);
-  const credit = baseCredit + Math.max(0, expenseCredit);
+  // Trip: عليه/له is the full position (fund + bills + posted transfers), never the savings goal.
+  const tripPosition = isTrip
+    ? tripMemberPosition({
+      spaceId: member.space_id,
+      memberId: member.id,
+      paidMinor: member.paid_minor,
+      expenses: input.tripExpenses,
+      splits: input.expenseSplits,
+      settlements: input.settlements,
+    })
+    : null;
+  const debit = tripPosition
+    ? Math.max(0, -tripPosition.netMinor)
+    : remainingDue + Math.max(0, expenseDebit);
+  const credit = tripPosition
+    ? memberExtraCreditMinor(member, input.transactions) + Math.max(0, tripPosition.netMinor)
+    : baseCredit + Math.max(0, expenseCredit);
   const net = netMemberClaim(debit, credit);
   lines.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 
@@ -484,6 +497,8 @@ export function buildMemberLedger(input: {
     fundSpentMinor: fundSharesTotal,
     pocketSpentMinor: pocketSharesTotal,
     pocketPaidMinor: tripPocket,
+    tripPosition,
+    settleItems,
     accruedDueMinor: accrued,
     remainingDueMinor: remainingDue,
     cashCreditMinor: cashCredit,
@@ -493,6 +508,44 @@ export function buildMemberLedger(input: {
     grossOwesMinor: net.grossDebitMinor,
     grossCreditMinor: net.grossCreditMinor,
   };
+}
+
+export type TripBreakdownRow = { ar: string; en: string; signedMinor: number };
+
+/** Plain «how his balance was reached» rows for a trip member; zero rows are dropped, the total is last. */
+export function memberTripBreakdown(position: {
+  paidMinor: number;
+  pocketPaidMinor: number;
+  fundShareMinor: number;
+  pocketShareMinor: number;
+  sentMinor: number;
+  receivedMinor: number;
+  netMinor: number;
+}): TripBreakdownRow[] {
+  const rows: TripBreakdownRow[] = [
+    { ar: "دفع للصندوق", en: "Paid into the fund", signedMinor: position.paidMinor },
+    { ar: "دفع فواتير من جيبه", en: "Bills paid from his pocket", signedMinor: position.pocketPaidMinor },
+    { ar: "حصته من فواتير الصندوق", en: "His share of fund bills", signedMinor: -position.fundShareMinor },
+    { ar: "حصته من فواتير دفعها الأعضاء", en: "His share of bills members paid", signedMinor: -position.pocketShareMinor },
+    { ar: "تحويلات دفعها", en: "Transfers he paid", signedMinor: position.sentMinor },
+    { ar: "تحويلات استلمها", en: "Transfers he received", signedMinor: -position.receivedMinor },
+  ].filter((row) => row.signedMinor !== 0);
+  rows.push(position.netMinor >= 0
+    ? { ar: position.netMinor ? "الصافي: له" : "الصافي: مسوّى", en: position.netMinor ? "Net: owed to him" : "Net: settled", signedMinor: position.netMinor }
+    : { ar: "الصافي: عليه", en: "Net: he owes", signedMinor: position.netMinor });
+  return rows;
+}
+
+/** «يُصرف له من الصندوق ٢٢ · يحوّل إلى عبد الحميد ٣٤٩» — one line, pay and receive together. */
+export function memberSettleSentence(items: MemberSettleItem[], currency: string, locale: MemberLedgerLocale) {
+  return items.map((item) => {
+    const amount = formatMoneyMinor(item.amountMinor, currency, locale);
+    if (item.direction === "pay") {
+      return locale === "ar" ? `يحوّل إلى ${item.nameAr} ${amount}` : `Pays ${item.nameEn} ${amount}`;
+    }
+    if (item.fund) return locale === "ar" ? `يُصرف له من الصندوق ${amount}` : `Receives ${amount} from the fund`;
+    return locale === "ar" ? `يستلم من ${item.nameAr} ${amount}` : `Receives ${amount} from ${item.nameEn}`;
+  }).join(locale === "ar" ? " · " : " · ");
 }
 
 export function filterMemberLedgerLines(lines: MemberLedgerLine[], focus: MemberLedgerFocus) {
@@ -557,13 +610,31 @@ function ledgerTypeLabel(locale: MemberLedgerLocale, focus: MemberLedgerLine["fo
   })[focus];
 }
 
+type StatementLedgerTotals = {
+  paidMinor: number;
+  spentMinor?: number;
+  addonMinor: number;
+  owesMinor: number;
+  creditMinor: number;
+  fundSpentMinor?: number;
+  pocketSpentMinor?: number;
+  pocketPaidMinor?: number;
+  tripPosition?: TripMemberPosition | null;
+  settleItems?: MemberSettleItem[];
+};
+
 function statementTotalsTable(
   locale: MemberLedgerLocale,
   currency: string,
-  ledger: { paidMinor: number; spentMinor?: number; addonMinor: number; owesMinor: number; creditMinor: number; fundSpentMinor?: number; pocketSpentMinor?: number; pocketPaidMinor?: number },
+  ledger: StatementLedgerTotals,
 ) {
   const spentMinor = ledger.spentMinor ?? ledger.addonMinor;
-  const tripBreakdown = (ledger.fundSpentMinor ?? 0) > 0 || (ledger.pocketSpentMinor ?? 0) > 0
+  const tripBreakdown = ledger.tripPosition
+    ? `<table class="statement-totals"><tbody>${memberTripBreakdown(ledger.tripPosition).map((row) => `<tr>
+        <td>${escapeHtml(text(locale, row.ar, row.en))}</td>
+        <td class="num${row.signedMinor < 0 ? " out neg" : " in"}">${escapeHtml(formatMoneyMinor(row.signedMinor, currency, locale))}</td>
+      </tr>`).join("")}</tbody></table>${ledger.settleItems?.length ? `<p class="footer-note">${escapeHtml(memberSettleSentence(ledger.settleItems, currency, locale))}</p>` : ""}`
+    : (ledger.fundSpentMinor ?? 0) > 0 || (ledger.pocketSpentMinor ?? 0) > 0
     ? `<p class="footer-note">${escapeHtml(text(locale,
       `صرف له من الصندوق ${formatMoneyMinor(ledger.fundSpentMinor ?? 0, currency, "ar")} · صرف له شخصياً (فواتير دفعها الأعضاء) ${formatMoneyMinor(ledger.pocketSpentMinor ?? 0, currency, "ar")} · دفع من جيبه ${formatMoneyMinor(ledger.pocketPaidMinor ?? 0, currency, "ar")}`,
       `Spent for him from the fund ${formatMoneyMinor(ledger.fundSpentMinor ?? 0, currency, "en")} · spent for him personally (bills members paid) ${formatMoneyMinor(ledger.pocketSpentMinor ?? 0, currency, "en")} · paid from his pocket ${formatMoneyMinor(ledger.pocketPaidMinor ?? 0, currency, "en")}`,
@@ -647,6 +718,8 @@ function statementAssociationHtml(input: {
     fundSpentMinor?: number;
     pocketSpentMinor?: number;
     pocketPaidMinor?: number;
+    tripPosition?: TripMemberPosition | null;
+    settleItems?: MemberSettleItem[];
     lines: MemberLedgerLine[];
   };
 }) {
@@ -694,6 +767,8 @@ export function buildMemberLedgerHtml(input: {
     fundSpentMinor?: number;
     pocketSpentMinor?: number;
     pocketPaidMinor?: number;
+    tripPosition?: TripMemberPosition | null;
+    settleItems?: MemberSettleItem[];
     lines: MemberLedgerLine[];
   };
 }) {
@@ -765,6 +840,8 @@ export function buildCombinedMemberLedgerHtml(input: {
       fundSpentMinor?: number;
       pocketSpentMinor?: number;
       pocketPaidMinor?: number;
+      tripPosition?: TripMemberPosition | null;
+      settleItems?: MemberSettleItem[];
       lines: MemberLedgerLine[];
     };
   }>;

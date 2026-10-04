@@ -11,9 +11,27 @@ const NOT_PEER_TRANSFER_SQL = (alias: string) =>
 const PEER_TRANSFER_SQL = (alias: string) =>
   `(COALESCE(${alias}description_ar,'') LIKE 'تحويل مسجّل:%' OR COALESCE(${alias}description_ar,'') LIKE 'استلام تحويل:%')`;
 
+/** Trip fund paying a member his remaining balance (`fundPayoutStatements`): cash leaves the fund. */
+const FUND_PAYOUT_SQL = (alias: string) => `COALESCE(${alias}description_ar,'') LIKE 'صرف من الصندوق:%'`;
+
 export function isPeerTransferDescription(descriptionAr?: string | null) {
   const text = String(descriptionAr ?? "");
   return text.startsWith("تحويل مسجّل:") || text.startsWith("استلام تحويل:");
+}
+
+export function isFundPayoutDescription(descriptionAr?: string | null) {
+  return String(descriptionAr ?? "").startsWith("صرف من الصندوق:");
+}
+
+/** Cancelling a fund payout returns its settlement to pending; the trip plan is re-netted on rebuild. */
+async function revertFundPayout(db: D1Database, txn: VoidableTransaction) {
+  if (!txn.occurred_at || !txn.member_id) return;
+  await db.prepare(`UPDATE settlements SET status='pending', settled_at=NULL
+    WHERE space_id=? AND status='settled' AND amount_minor=? AND settled_at=?
+      AND from_member_id LIKE 'space:%' AND to_member_id=?`)
+    .bind(txn.space_id, Number(txn.amount_minor), txn.occurred_at, txn.member_id)
+    .run();
+  await rebuildSpaceTripSettlements(db, txn.space_id);
 }
 
 /**
@@ -114,6 +132,7 @@ export async function writeApprovedCashBalance(db: D1Database, spaceId: string) 
     WHEN COALESCE(allocation,'general') = 'personal_reserve' THEN 0
     WHEN kind IN ('income','contribution') THEN amount_minor
     WHEN kind = 'expense' THEN -amount_minor
+    WHEN kind = 'reimbursement' AND ${FUND_PAYOUT_SQL("")} THEN -amount_minor
     ELSE 0
   END), 0) AS balance FROM transactions WHERE space_id=? AND status='approved' AND ${NOT_PEER_TRANSFER_SQL("")}`).bind(spaceId).first<{ balance: number }>();
   await db.prepare("UPDATE spaces SET balance_minor=? WHERE id=?").bind(Number(row?.balance ?? 0), spaceId).run();
@@ -164,6 +183,10 @@ export async function voidApprovedTransaction(
   if (isPeerTransferDescription(txn.description_ar)) {
     try {
       await revertPeerTransfer(db, txn, recordStatus);
+    } catch { /* best-effort */ }
+  } else if (isFundPayoutDescription(txn.description_ar)) {
+    try {
+      await revertFundPayout(db, txn);
     } catch { /* best-effort */ }
   }
   const statements: D1PreparedStatement[] = [

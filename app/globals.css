@@ -416,6 +416,35 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .statement-pay-box strong { display: block; margin-bottom: 6px; color: #7c4a03; }
 .statement-pay-box p { margin: 0 0 8px; font-weight: 700; color: #5c3d08; }
 .statement-pay-box p:last-child { margin-bottom: 0; }
+.member-file-meta { margin: 0 0 10px; color: #5a6b64; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.member-result-card { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 12px; padding: 16px 18px; border-radius: 16px; border: 1px solid #dce6e1; background: #f3f8f5; }
+.member-result-card span { font-size: 18px; font-weight: 800; }
+.member-result-card strong { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.member-result-card.is-owes { background: #fdf0f1; border-color: #f1c4ca; color: #a8303f; }
+.member-result-card.is-credit { background: #e6f5ef; border-color: #a9dcc9; color: #0a5c4c; }
+.member-result-card.is-settled { color: #0d7a65; }
+.member-result-card.is-settled strong { display: none; }
+.member-calc { display: grid; gap: 0; margin: 0 0 12px; border: 1px solid #e5ebe7; border-radius: 14px; overflow: hidden; }
+.member-calc > strong { padding: 10px 14px; background: #fbfcfb; color: #5a6b64; font-size: 13px; }
+.member-calc > div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 14px; border-top: 1px solid #eef2ef; font-weight: 700; }
+.member-calc > div b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.member-calc > div.is-total { background: #f3f8f5; font-weight: 800; }
+.member-settle-box { display: grid; gap: 8px; margin: 0 0 12px; padding: 12px 14px; border-radius: 14px; background: #fff7ed; border: 1px solid #f5c26b; }
+.member-settle-box > strong { color: #7c4a03; }
+.member-settle-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-weight: 700; color: #5c3d08; }
+.member-settle-row span { flex: 1 1 auto; }
+.member-settle-row b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.member-settle-row.is-receive { color: #0a5c4c; }
+.member-details-toggle { width: 100%; min-height: 42px; margin: 0 0 10px; border: 1px dashed #b9cbc3; border-radius: 12px; background: transparent; color: #0d7a65; font: inherit; font-weight: 800; cursor: pointer; }
+html[data-theme="dark"] .member-file-meta { color: var(--muted); }
+html[data-theme="dark"] .member-result-card,
+html[data-theme="dark"] .member-calc,
+html[data-theme="dark"] .member-calc > strong,
+html[data-theme="dark"] .member-calc > div.is-total { background: var(--field); border-color: var(--line); color: var(--field-ink); }
+html[data-theme="dark"] .member-calc > div { border-color: var(--line); }
+html[data-theme="dark"] .member-result-card.is-owes { color: #f19aa5; }
+html[data-theme="dark"] .member-result-card.is-credit,
+html[data-theme="dark"] .member-result-card.is-settled { color: #6fd3b5; }
 .member-ledger-table .person-head, .member-ledger-table .member-ledger-row { min-width: 720px; grid-template-columns: .9fr 1fr 1.6fr .7fr; }
 .member-ledger-row.is-payment,
 .member-ledger-row.is-paid {

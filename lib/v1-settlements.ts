@@ -4,7 +4,7 @@ import type { RequestUser } from "../db/runtime";
 import { prepareAudit } from "./audit";
 import { ApiError } from "./security";
 import { formatMoneyMinor } from "./money";
-import { postPeerMemberSettlement } from "./settlement-posting";
+import { fundPayoutStatements, postPeerMemberSettlement } from "./settlement-posting";
 
 export async function listV1Settlements(
   db: D1Database,
@@ -97,18 +97,13 @@ export async function settleV1Settlement(
     ]);
   } else if (fromFund) {
     if (Number(settlement.balance_minor) < amountMinor) throw new ApiError(409, "INSUFFICIENT_FUNDS");
-    const entryId = crypto.randomUUID();
+    const payout = await fundPayoutStatements(db, { userId: user.id, settlement: { ...settlement, amount_minor: amountMinor }, createdAt });
     const statements: D1PreparedStatement[] = [
       db.prepare("UPDATE settlements SET status='settled',settled_at=? WHERE id=? AND status='pending'")
         .bind(createdAt, settlement.id),
       db.prepare("UPDATE spaces SET balance_minor=balance_minor-? WHERE id=?")
         .bind(amountMinor, settlement.space_id),
-      db.prepare("INSERT INTO journal_entries (id,space_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,'Member reimbursement settled','posted',?,?)")
-        .bind(entryId, settlement.space_id, user.id, createdAt, createdAt),
-      db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
-        .bind(crypto.randomUUID(), entryId, "liability:member_payable", settlement.to_member_id, amountMinor, 0, createdAt),
-      db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
-        .bind(crypto.randomUUID(), entryId, "asset:cash", settlement.to_member_id, 0, amountMinor, createdAt),
+      ...payout,
       prepareAudit(db, {
         userId: user.id,
         action: "trip.reimbursement_settled",

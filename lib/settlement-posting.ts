@@ -45,6 +45,38 @@ export function memberRemainingSettlementOwe(
   return total;
 }
 
+/** Fund pays a member what is still owed to him (trip wallet). Description prefix drives cash rebuild and void. */
+export const FUND_PAYOUT_PREFIX_AR = "صرف من الصندوق:";
+
+export async function fundPayoutStatements(
+  db: D1Database,
+  input: {
+    userId: string;
+    settlement: { id: string; space_id: string; to_member_id: string; amount_minor: number };
+    createdAt: string;
+  },
+) {
+  const amountMinor = Math.round(Number(input.settlement.amount_minor) || 0);
+  const member = await db.prepare("SELECT display_name FROM members WHERE id=?")
+    .bind(input.settlement.to_member_id)
+    .first<{ display_name: string }>();
+  const name = member?.display_name ?? "عضو";
+  const ar = `${FUND_PAYOUT_PREFIX_AR} إلى ${name} · رصيده المتبقي من الرحلة`;
+  const en = `Fund payout: to ${name} · his remaining trip balance`;
+  const txnId = crypto.randomUUID();
+  const entryId = crypto.randomUUID();
+  return [
+    db.prepare("INSERT INTO transactions VALUES (?,?,?,?,?,'general',?,?,?,'approved',?,?)")
+      .bind(txnId, input.settlement.space_id, input.userId, input.settlement.to_member_id, "reimbursement", amountMinor, ar, en, input.createdAt, input.createdAt),
+    db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+      .bind(entryId, input.settlement.space_id, txnId, input.userId, ar, input.createdAt, input.createdAt),
+    db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+      .bind(crypto.randomUUID(), entryId, "liability:member_payable", input.settlement.to_member_id, amountMinor, 0, input.createdAt),
+    db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+      .bind(crypto.randomUUID(), entryId, "asset:cash", input.settlement.to_member_id, 0, amountMinor, input.createdAt),
+  ];
+}
+
 export async function postPeerMemberSettlement(
   db: D1Database,
   input: {

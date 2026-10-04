@@ -66,7 +66,7 @@ test("pending settlement from member appears under owes with the other party", (
     expenseSplits: [],
   });
   const owes = filterMemberLedgerLines(ledger.lines, "owes");
-  assert.equal(owes.some((row) => row.detailAr.includes("محمد")), true);
+  assert.equal(owes.some((row) => row.titleAr.includes("محمد")), true);
   assert.equal(ledger.owesMinor, 15_000);
 });
 
@@ -220,11 +220,11 @@ test("trip wallet does not treat the savings goal as an expense debt after settl
       occurred_at: "2026-09-05T12:00:00.000Z",
       paid_from: "member",
     }],
-    expenseSplits: [{ expense_id: "e1", member_id: "m1", share_minor: 8_400 }],
+    expenseSplits: [{ expense_id: "e1", member_id: "m1", share_minor: 13_803 }],
   });
   assert.equal(ledger.owesMinor, 0);
   assert.equal(ledger.creditMinor, 0);
-  assert.equal(ledger.paidMinor, 8_400);
+  assert.equal(ledger.paidMinor, 13_803);
   assert.ok(ledger.lines.some((line) => line.titleAr.includes("حصته من مصروفات الرحلة")));
   assert.equal(ledger.lines.some((line) => line.titleAr.includes("هدف الرحلة")), false);
   assert.equal(ledger.lines.some((line) => line.titleAr.includes("مستحق شهر")), false);
@@ -255,7 +255,7 @@ test("posted settlement payments use the paid tone, not spend red", () => {
     tripExpenses: [],
     expenseSplits: [],
   });
-  const payment = ledger.lines.find((line) => line.titleAr === "دفع تسوية مسجّلة");
+  const payment = ledger.lines.find((line) => line.titleAr === "حوّل إلى حارث خميس");
   assert.ok(payment);
   assert.equal(memberLedgerTone(payment), "paid");
   assert.equal(memberLedgerAmountClass(payment), "amount-positive");
@@ -327,7 +327,9 @@ test("Azerbaijan trip file matches the members table: paid 200, pocket 0, owes 1
   assert.equal(ledger.creditMinor, 0);
   assert.equal(ledger.lines.filter((line) => line.titleAr.includes("حصته من مصروفات الرحلة")).length, 0);
   assert.equal(ledger.lines.filter((line) => line.titleAr.includes("عجز الصندوق")).length, 0);
-  assert.equal(ledger.lines.filter((line) => line.titleAr.includes("عجز مساهمته")).length, 1);
+  assert.equal(ledger.lines.filter((line) => line.titleAr.includes("عجز مساهمته")).length, 0);
+  assert.ok(ledger.lines.some((line) => line.titleAr === "يحوّل إلى الصندوق" && line.focus === "owes" && line.amountMinor === 18_422));
+  assert.equal(ledger.tripPosition.netMinor, -18_422);
   assert.ok(ledger.lines.some((line) => line.titleAr.includes("مساهمة ABDUL HAMID") && line.amountMinor === 200_000));
   const paidLines = filterMemberLedgerLines(ledger.lines, "paid");
   assert.equal(paidLines.reduce((sum, line) => sum + line.amountMinor, 0), 200_000);
@@ -392,7 +394,8 @@ test("fund-trip joiner who paid nothing shows 0 paid and owes only ticket shares
   assert.equal(ledger.owesMinor, 109_351);
   assert.equal(ledger.remainingDueMinor, 200_000);
   assert.equal(ledger.lines.some((line) => line.titleAr.includes("مساهمة الرحلة غير المسددة")), false);
-  assert.ok(ledger.lines.some((line) => line.titleAr.includes("عجز مساهمته") && line.amountMinor === 109_351));
+  assert.equal(ledger.tripPosition.fundShareMinor, 109_351);
+  assert.equal(ledger.tripPosition.netMinor, -109_351);
   assert.equal(ledger.lines.filter((line) => line.titleAr.includes("حصته من مصروفات الرحلة")).length, 0);
 });
 
@@ -498,7 +501,7 @@ test("trip ledger separates what was spent for him from the fund, from member bi
     focus: "all",
     ledger,
   });
-  assert.match(html, /صرف له من الصندوق/);
-  assert.match(html, /صرف له شخصياً/);
-  assert.match(html, /دفع من جيبه/);
+  assert.match(html, /حصته من فواتير الصندوق/);
+  assert.match(html, /حصته من فواتير دفعها الأعضاء/);
+  assert.match(html, /دفع فواتير من جيبه/);
 });

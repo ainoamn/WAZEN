@@ -313,8 +313,9 @@ export function HomeClient() {
       return { available: 0, spend: 0, income: 0, wallets: 0, associations: 0, currency: "OMR", pending: 0 };
     }
     const spaces = data.spaces ?? [];
-    const transactions = data.transactions ?? [];
     const active = spaces.filter((space) => (space.status ?? "active") !== "archived");
+    const activeIds = new Set(active.map((space) => space.id));
+    const transactions = (data.transactions ?? []).filter((row) => !row.space_id || activeIds.has(row.space_id));
     const monthKey = new Date().toISOString().slice(0, 7);
     const posted = transactions.filter((row) => (row.status ?? "approved") !== "voided" && String(row.occurred_at ?? "").slice(0, 7) === monthKey);
     const spend = posted.filter((row) => ["expense", "reimbursement"].includes(row.kind)).reduce((sum, row) => sum + row.amount_minor, 0);
@@ -323,7 +324,7 @@ export function HomeClient() {
     const wallets = active.length;
     const associations = active.filter((space) => space.type === "society" || space.type === "group").length;
     const pending =
-      (data.settlements ?? []).filter((item) => item.status === "pending").length
+      (data.settlements ?? []).filter((item) => item.status === "pending" && activeIds.has(item.space_id)).length
       + (data.personalOccurrences ?? []).filter((item) => item.status === "pending").length;
     return { available, spend, income, wallets, associations, currency: active[0]?.currency ?? "OMR", pending };
   }, [data]);
@@ -631,9 +632,9 @@ function PendingInbox({
                 const toFund = String(item.to_member_id).startsWith("space:");
                 const fromFund = String(item.from_member_id).startsWith("space:");
                 const title = toFund
-                  ? (locale === "ar" ? `${item.from_member_name ?? "عضو"} عليه للصندوق` : `${item.from_member_name ?? "Member"} owes the fund`)
+                  ? (locale === "ar" ? `${item.from_member_name ?? "عضو"} يحوّل إلى الصندوق` : `${item.from_member_name ?? "Member"} pays the fund`)
                   : fromFund
-                    ? (locale === "ar" ? `الصندوق مدين لـ ${item.to_member_name ?? "عضو"}` : `Fund owes ${item.to_member_name ?? "a member"}`)
+                    ? (locale === "ar" ? `يُصرف من الصندوق إلى ${item.to_member_name ?? "عضو"}` : `Fund pays ${item.to_member_name ?? "a member"}`)
                     : (locale === "ar" ? `${item.from_member_name ?? "عضو"} → ${item.to_member_name ?? "عضو"}` : `${item.from_member_name ?? "Member"} → ${item.to_member_name ?? "member"}`);
                 return (
                   <article className="home-pending-row" key={item.id}>

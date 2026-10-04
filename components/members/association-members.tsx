@@ -6,7 +6,7 @@ import OmrSymbol from "../brand/OmrSymbol";
 import { apiFetch } from "../../lib/client-api";
 import { toWhatsAppNumber, digitsOnly } from "../../lib/phone";
 import { isMemberContactTakenError, memberContactConflictMessage, memberContactTakenField } from "../../lib/member-contact-unique";
-import { buildMemberLedger, buildCombinedMemberLedgerHtml, filterMemberLedgerLines, formatMemberLedgerLineMoney, formatMemberLedgerMoney, memberLedgerAmountClass, memberLedgerTone, type MemberLedgerFocus } from "../../lib/member-ledger";
+import { buildMemberLedger, buildCombinedMemberLedgerHtml, filterMemberLedgerLines, formatMemberLedgerLineMoney, formatMemberLedgerMoney, memberLedgerAmountClass, memberLedgerTone, memberTripBreakdown, type MemberLedgerFocus } from "../../lib/member-ledger";
 import { canConfirmSettlement, formatPayInstructionSentence, pendingPayInstructions, settlementConfirmLabel } from "../../lib/settlement-pay-instructions";
 import { printWazenHtml } from "../../lib/print-document";
 import { consumePlanQuota } from "../../lib/plan-quota-client";
@@ -233,6 +233,7 @@ function MemberLedgerBody({
   onConfirmSettlement,
 }: LedgerInputs) {
   const [tab, setTab] = useState<MemberLedgerFocus>(focus);
+  const [showDetails, setShowDetails] = useState(focus !== "all");
   const [sending, setSending] = useState(false);
   const [statementAction, setStatementAction] = useState<"print" | "send" | null>(null);
   const [pickingSpace, setPickingSpace] = useState(false);
@@ -243,7 +244,7 @@ function MemberLedgerBody({
   const [editingRole, setEditingRole] = useState(false);
   const [roleSaving, setRoleSaving] = useState(false);
   const [roleError, setRoleError] = useState("");
-  useEffect(() => { setTab(focus); }, [focus, member.id, space.id]);
+  useEffect(() => { setTab(focus); setShowDetails(focus !== "all"); }, [focus, member.id, space.id]);
   useEffect(() => {
     setRoleDraft(ASSIGNABLE_MEMBER_ROLES.includes(member.role as typeof ASSIGNABLE_MEMBER_ROLES[number]) ? member.role : "member");
     setEditingRole(false);
@@ -265,9 +266,25 @@ function MemberLedgerBody({
   }), [member, space, plan, installments, transactions, settlements, tripExpenses, expenseSplits, membersPaidMinor]);
   const months = ledger.months;
   const rows = filterMemberLedgerLines(ledger.lines, tab);
-  const payItems = pendingPayInstructions(member.id, settlements, { locale });
-  const payInstruction = formatPayInstructionSentence(payItems, space.currency, locale);
-  const incomingPending = settlements.filter((row) => row.status === "pending" && row.to_member_id === member.id && !String(row.to_member_id).startsWith("space:"));
+  const isTrip = space.type === "trip";
+  const owesMinor = Math.max(0, ledger.owesMinor);
+  const creditMinor = Math.max(0, ledger.creditMinor);
+  const resultTone = owesMinor > 0 ? "owes" : creditMinor > 0 ? "credit" : "settled";
+  const breakdown = isTrip && ledger.tripPosition ? memberTripBreakdown(ledger.tripPosition) : [];
+  const assocRows = isTrip ? [] : [
+    { ar: "الهدف المالي", en: "Financial goal", minor: member.due_minor },
+    { ar: "المستحق حتى اليوم", en: "Due so far", minor: ledger.accruedDueMinor },
+    { ar: "دفع", en: "Paid", minor: ledger.paidMinor },
+    { ar: "صُرف له", en: "Spent for him", minor: ledger.spentMinor || ledger.addonMinor },
+  ].filter((row) => row.minor > 0);
+  const settleItems = ledger.settleItems ?? [];
+  const metaParts = [
+    spaceRoleLabel(member.role, locale),
+    member.phone || "",
+    member.email || "",
+    member.joined_at ? `${locale === "ar" ? "انضم" : "Joined"} ${new Date(member.joined_at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB")}` : "",
+    showInviteActions && !member.user_id ? (locale === "ar" ? "بانتظار الانضمام" : "Pending join") : "",
+  ].filter(Boolean);
   const tabs: Array<{ id: MemberLedgerFocus; ar: string; en: string; amount: number }> = [
     { id: "all", ar: "الكل", en: "All", amount: 0 },
     { id: "paid", ar: "المدفوع", en: "Paid", amount: ledger.paidMinor },
@@ -472,27 +489,7 @@ function MemberLedgerBody({
   };
   return (
     <>
-      <div className="member-detail-meta">
-        <div><span>{locale === "ar" ? "تاريخ الانضمام" : "Joined"}</span><b>{member.joined_at ? new Date(member.joined_at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB") : "—"}</b></div>
-        <div><span>{locale === "ar" ? "الهاتف" : "Phone"}</span><b>{member.phone || "—"}</b></div>
-        <div><span>{locale === "ar" ? "البريد" : "Email"}</span><b>{member.email || "—"}</b></div>
-        {showInviteActions ? (
-          <div><span>{locale === "ar" ? "حساب الدخول" : "Login link"}</span><b>{member.user_id ? (locale === "ar" ? "مرتبط" : "Linked") : (locale === "ar" ? "بانتظار الانضمام" : "Pending join")}</b></div>
-        ) : null}
-        <div><span>{locale === "ar" ? "الدور" : "Role"}</span><b>{spaceRoleLabel(member.role, locale)}</b></div>
-        <div><span>{locale === "ar" ? "الهدف المالي" : "Financial goal"}</span><b>{money(member.due_minor, space.currency, locale)}</b></div>
-        <div><span>{locale === "ar" ? "كم دفع" : "Paid"}</span><b>{money(ledger.paidMinor, space.currency, locale)}</b></div>
-        <div><span>{locale === "ar" ? "كم صرف" : "Spent"}</span><b>{money(ledger.spentMinor || ledger.addonMinor, space.currency, locale)}</b></div>
-        {space.type === "trip" ? (
-          <>
-            <div><span>{locale === "ar" ? "صُرف له من الصندوق" : "Spent for him from fund"}</span><b>{money(ledger.fundSpentMinor, space.currency, locale)}</b></div>
-            <div><span>{locale === "ar" ? "صُرف له شخصياً (فواتير الأعضاء)" : "Spent for him personally (member bills)"}</span><b>{money(ledger.pocketSpentMinor, space.currency, locale)}</b></div>
-            <div><span>{locale === "ar" ? "دفع من جيبه" : "Paid from pocket"}</span><b>{money(ledger.pocketPaidMinor, space.currency, locale)}</b></div>
-          </>
-        ) : null}
-        <div><span>{locale === "ar" ? "كم عليه" : "Owes"}</span><b>{money(Math.max(0, ledger.owesMinor), space.currency, locale)}</b></div>
-        <div><span>{locale === "ar" ? "كم له" : "Credit"}</span><b>{money(Math.max(0, ledger.creditMinor), space.currency, locale)}</b></div>
-      </div>
+      <p className="member-file-meta">{metaParts.join(" · ")}</p>
       <div className="member-contact-actions" style={{ marginBottom: "0.75rem" }}>
         {canEditThisRole ? (
           editingRole ? (
@@ -543,6 +540,86 @@ function MemberLedgerBody({
         {inviteError ? <p className="modal-error">{inviteError}</p> : null}
         {roleError ? <p className="modal-error">{roleError}</p> : null}
       </div>
+      <div className={`member-result-card is-${resultTone}`}>
+        <span>
+          {resultTone === "owes"
+            ? (locale === "ar" ? "عليه" : "He owes")
+            : resultTone === "credit"
+              ? (locale === "ar" ? "له" : "Owed to him")
+              : (locale === "ar" ? "الحساب مسوّى" : "Account settled")}
+        </span>
+        <strong>{money(resultTone === "owes" ? owesMinor : creditMinor, space.currency, locale)}</strong>
+      </div>
+      {breakdown.length || assocRows.length ? (
+        <div className="member-calc">
+          <strong>{locale === "ar" ? "كيف حُسب" : "How it was calculated"}</strong>
+          {isTrip
+            ? breakdown.map((row, index) => (
+              <div key={row.ar} className={index === breakdown.length - 1 ? "is-total" : ""}>
+                <span>{locale === "ar" ? row.ar : row.en}</span>
+                <b className={row.signedMinor < 0 ? "amount-negative" : "amount-positive"}>{money(row.signedMinor, space.currency, locale)}</b>
+              </div>
+            ))
+            : assocRows.map((row) => (
+              <div key={row.ar}>
+                <span>{locale === "ar" ? row.ar : row.en}</span>
+                <b>{money(row.minor, space.currency, locale)}</b>
+              </div>
+            ))}
+        </div>
+      ) : null}
+      {!isTrip && months.length ? (
+        <div className="month-grid">
+          {months.map((row: AssociationInstallment) => (
+            <article key={row.id} className={`month-chip ${row.status}`}>
+              <small>{locale === "ar" ? `شهر ${row.period_index}` : `Month ${row.period_index}`}</small>
+              <strong>{row.period_key}</strong>
+              <em>{row.status === "paid" ? (locale === "ar" ? "مدفوع" : "Paid") : row.status === "partial" ? (locale === "ar" ? "جزئي" : "Partial") : (locale === "ar" ? "غير مدفوع" : "Unpaid")}</em>
+              <span>{money(remainingInstallmentMinor(row), space.currency, locale)}</span>
+            </article>
+          ))}
+        </div>
+      ) : null}
+      {settleItems.length ? (
+        <div className="member-settle-box">
+          <strong>{locale === "ar" ? "التسوية" : "Settlement"}</strong>
+          {settleItems.map((item) => {
+            const pay = item.direction === "pay";
+            const label = pay
+              ? (locale === "ar" ? `يحوّل إلى ${item.nameAr}` : `Pays ${item.nameEn}`)
+              : item.fund
+                ? (locale === "ar" ? "يُصرف له من الصندوق" : "Paid to him from the fund")
+                : (locale === "ar" ? `يستلم من ${item.nameAr}` : `Receives from ${item.nameEn}`);
+            const decision = onConfirmSettlement
+              ? canConfirmSettlement({
+                actorRole,
+                actorUserId: actorUserId ?? "",
+                fromMemberId: pay ? member.id : item.counterpartyId,
+                toMemberId: pay ? item.counterpartyId : member.id,
+                toMemberUserId: pay ? null : member.user_id ?? null,
+              })
+              : { ok: false, as: null };
+            return (
+              <div key={item.settlementId} className={`member-settle-row is-${item.direction}`}>
+                <span>{label}</span>
+                <b>{money(item.amountMinor, space.currency, locale)}</b>
+                {decision.ok && onConfirmSettlement ? (
+                  <button type="button" className="secondary-button compact" onClick={() => onConfirmSettlement(item.settlementId)}>
+                    {settlementConfirmLabel(decision.as, locale)}
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+      <button type="button" className="member-details-toggle" aria-expanded={showDetails} onClick={() => setShowDetails((open) => !open)}>
+        {showDetails
+          ? (locale === "ar" ? "إخفاء تفاصيل الحركات" : "Hide movement details")
+          : (locale === "ar" ? `تفاصيل الحركات (${ledger.lines.length})` : `Movement details (${ledger.lines.length})`)}
+      </button>
+      {showDetails ? (
+      <>
       <div className="member-ledger-tabs">
         {tabs.map((item) => (
           <button type="button" key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>
@@ -551,63 +628,6 @@ function MemberLedgerBody({
           </button>
         ))}
       </div>
-      <div className="month-grid">
-        {space.type !== "trip" && months.map((row: AssociationInstallment) => (
-          <article key={row.id} className={`month-chip ${row.status}`}>
-            <small>{locale === "ar" ? `شهر ${row.period_index}` : `Month ${row.period_index}`}</small>
-            <strong>{row.period_key}</strong>
-            <em>{row.status === "paid" ? (locale === "ar" ? "مدفوع" : "Paid") : row.status === "partial" ? (locale === "ar" ? "جزئي" : "Partial") : (locale === "ar" ? "غير مدفوع" : "Unpaid")}</em>
-            <span>{money(remainingInstallmentMinor(row), space.currency, locale)}</span>
-          </article>
-        ))}
-      </div>
-      {payInstruction ? (
-        <div className="statement-pay-box">
-          <strong>{locale === "ar" ? "كيف تسدّد" : "How to pay"}</strong>
-          <p>{payInstruction}</p>
-          {onConfirmSettlement ? payItems.map((item) => {
-            const decision = canConfirmSettlement({
-              actorRole,
-              actorUserId: actorUserId ?? "",
-              toMemberId: item.toMemberId,
-              toMemberUserId: null,
-            });
-            if (!decision.ok) return null;
-            return (
-              <p key={item.settlementId}>
-                <button type="button" className="secondary-button compact" onClick={() => onConfirmSettlement(item.settlementId)}>
-                  {settlementConfirmLabel(decision.as, locale)} · {item.toName}
-                </button>
-              </p>
-            );
-          }) : null}
-        </div>
-      ) : null}
-      {incomingPending.length && onConfirmSettlement ? (
-        <div className="statement-pay-box">
-          <strong>{locale === "ar" ? "تحويلات بانتظار التأكيد" : "Transfers awaiting confirmation"}</strong>
-          {incomingPending.map((row) => {
-            const decision = canConfirmSettlement({
-              actorRole,
-              actorUserId: actorUserId ?? "",
-              toMemberId: row.to_member_id,
-              toMemberUserId: member.user_id ?? null,
-            });
-            if (!decision.ok) return null;
-            return (
-              <p key={row.id}>
-                {locale === "ar"
-                  ? `من ${row.from_member_name || "عضو"} ${money(row.amount_minor, space.currency, locale)}`
-                  : `From ${row.from_member_name || "member"} ${money(row.amount_minor, space.currency, locale)}`}
-                {" "}
-                <button type="button" className="secondary-button compact" onClick={() => onConfirmSettlement(row.id)}>
-                  {settlementConfirmLabel(decision.as, locale)}
-                </button>
-              </p>
-            );
-          })}
-        </div>
-      ) : null}
       <div className="members-table member-ledger-table">
         <div className="table-head person-head">
           <span>{locale === "ar" ? "التاريخ" : "Date"}</span>
@@ -631,6 +651,8 @@ function MemberLedgerBody({
         })}
         {!rows.length && <p className="modal-note">{locale === "ar" ? "لا توجد تفاصيل في هذا القسم." : "No detail in this section."}</p>}
       </div>
+      </>
+      ) : null}
       <div className="modal-actions">
         <button type="button" className="secondary-button" onClick={() => startStatement("print")}><Printer size={16} />{locale === "ar" ? "طباعة الكشف" : "Print statement"}</button>
         <button type="button" className={`secondary-button${canWhatsapp ? "" : " is-plan-locked"}`} disabled={sending} onClick={() => startStatement("send")}>

@@ -3,8 +3,9 @@ import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
 import { authenticateRequest, csrfCookie, issueCsrfToken } from "../../../lib/auth";
 import { buildCircleOrder, fundChargeFits, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, takeShareSlice, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
 import { hasComposeParts, planExpenseSplitsForApi, planPayerSplitForApi } from "../../../lib/expense-split";
-import { migratePerExpenseTripSettlements, rebuildSpaceTripSettlements } from "../../../lib/trip-settlements";
-import { postPeerMemberSettlement } from "../../../lib/settlement-posting";
+import { migratePerExpenseTripSettlements, rebuildSpaceTripSettlements, refreshTripWalletSettlements } from "../../../lib/trip-settlements";
+import { fundPayoutStatements, postPeerMemberSettlement } from "../../../lib/settlement-posting";
+import { assertSpaceSettledForArchive } from "../../../lib/archive-gate";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
 import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf, actorCanIssueSpaceDocuments } from "../../../lib/authorization";
 import { prepareAudit, writeAudit } from "../../../lib/audit";
@@ -380,7 +381,8 @@ async function syncFundDeficitShares(db: D1Database, spaceIds: string[]) {
   const createdAt = now();
   for (const spaceId of spaceIds) {
     const space = await db.prepare("SELECT type, balance_minor FROM spaces WHERE id=?").bind(spaceId).first<{ type: string; balance_minor: number }>();
-    if (!space || space.type === "personal") continue;
+    // Trips plan fund rows from each member's full position (`refreshTripWalletSettlements`).
+    if (!space || space.type === "personal" || space.type === "trip") continue;
     const fundId = `space:${spaceId}`;
     await db.prepare("UPDATE settlements SET status='voided' WHERE space_id=? AND status='pending' AND to_member_id=? AND expense_id IS NULL").bind(spaceId, fundId).run();
     const deficit = Math.max(0, -Number(space.balance_minor));
@@ -811,6 +813,9 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
   try {
     await repairVoidedPeerSettlements(db, ids);
   } catch { /* keep serving dashboard if repair fails */ }
+  await refreshTripWalletSettlements(db, allowed
+    .filter((space) => space.type === "trip" && (space.status ?? "active") !== "archived")
+    .map((space) => space.id));
 
   if (options?.refreshDerived !== false) {
     try {
@@ -1521,8 +1526,9 @@ export async function POST(request: Request) {
     } else if (action === "archiveWallet") {
       const parsed = z.object({ spaceId: z.string().min(1).max(120), archived: z.boolean().default(true) }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_WALLET");
-      const space = await authorizeSpace(db, user, parsed.data.spaceId, "members:write");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "members:write", undefined, { allowArchived: true });
       if (space.owner_user_id !== user.id) throw new ApiError(403, "FORBIDDEN");
+      if (parsed.data.archived) await assertSpaceSettledForArchive(db, parsed.data.spaceId);
       const status = parsed.data.archived ? "archived" : "active";
       const createdAt = now();
       await db.batch([
@@ -1532,7 +1538,7 @@ export async function POST(request: Request) {
     } else if (action === "deleteWallet") {
       const parsed = z.object({ spaceId: z.string().min(1).max(120) }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_WALLET");
-      const space = await authorizeSpace(db, user, parsed.data.spaceId, "members:write");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "members:write", undefined, { allowArchived: true });
       if (space.owner_user_id !== user.id) throw new ApiError(403, "FORBIDDEN");
       await deleteSpaceCascade(db, parsed.data.spaceId, user.id);
     } else if (action === "resetWalletData") {
@@ -2732,6 +2738,7 @@ export async function POST(request: Request) {
       const confirm = canConfirmSettlement({
         actorRole: settlementSpace.effective_role,
         actorUserId: user.id,
+        fromMemberId: settlement.from_member_id,
         toMemberId: settlement.to_member_id,
         toMemberUserId: payee?.user_id ?? null,
       });
@@ -2739,7 +2746,7 @@ export async function POST(request: Request) {
       await guardOwnerTransactionQuota(db, settlementSpace.owner_user_id, 2);
       const fromFund = String(settlement.from_member_id).startsWith("space:");
       const toFund = String(settlement.to_member_id).startsWith("space:");
-      const entryId = crypto.randomUUID(); const createdAt = now();
+      const createdAt = now();
       if (toFund) {
         const payTxn = crypto.randomUUID();
         const payEntry = crypto.randomUUID();
@@ -2760,13 +2767,12 @@ export async function POST(request: Request) {
         ]);
       } else if (fromFund) {
         if (Number(settlement.balance_minor) < Number(settlement.amount_minor)) throw new ApiError(409, "INSUFFICIENT_FUNDS");
+        const payout = await fundPayoutStatements(db, { userId: user.id, settlement, createdAt });
         await db.batch([
           db.prepare("INSERT INTO financial_operation_claims (operation_type,resource_id,idempotency_key,created_at) VALUES ('trip_settlement',?,?,?)").bind(settlement.id, idempotencyKey, createdAt),
           db.prepare("UPDATE settlements SET status='settled',settled_at=? WHERE id=? AND status='pending'").bind(createdAt, settlement.id),
           db.prepare("UPDATE spaces SET balance_minor=balance_minor-? WHERE id=?").bind(settlement.amount_minor, settlement.space_id),
-          db.prepare("INSERT INTO journal_entries (id,space_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,'Member reimbursement settled','posted',?,?)").bind(entryId, settlement.space_id, user.id, createdAt, createdAt),
-          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)").bind(crypto.randomUUID(), entryId, "liability:member_payable", settlement.to_member_id, settlement.amount_minor, 0, createdAt),
-          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)").bind(crypto.randomUUID(), entryId, "asset:cash", settlement.to_member_id, 0, settlement.amount_minor, createdAt),
+          ...payout,
           prepareAudit(db, { userId: user.id, action: "trip.reimbursement_settled", entityType: "settlement", entityId: settlement.id, metadata: { amountMinor: settlement.amount_minor }, createdAt }),
         ]);
       } else {
