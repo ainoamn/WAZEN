@@ -35,6 +35,18 @@ export function buildStatementSummaryHtml(input: {
       ? `<p style="margin:0 0 10px;font-size:14px;line-height:1.7;color:#7c4a03;"><strong>كيف تسدّد:</strong> ${escapeHtml(input.payInstruction)}</p>`
       : `<p style="margin:0 0 10px;font-size:14px;line-height:1.7;color:#7c4a03;"><strong>How to pay:</strong> ${escapeHtml(input.payInstruction)}</p>`)
     : "";
+  const hasTripBreakdown = input.ledger.fundSpentMinor > 0 || input.ledger.pocketSpentMinor > 0;
+  const tripBreakdown = !hasTripBreakdown ? "" : locale === "ar"
+    ? `<p style="margin:0 0 10px;font-size:13px;line-height:1.7;color:#24443c;">
+        <strong>صُرف له من الصندوق:</strong> ${money(input.ledger.fundSpentMinor)} ·
+        <strong>صُرف له شخصياً (فواتير الأعضاء):</strong> ${money(input.ledger.pocketSpentMinor)} ·
+        <strong>دفع من جيبه:</strong> ${money(input.ledger.pocketPaidMinor)}
+      </p>`
+    : `<p style="margin:0 0 10px;font-size:13px;line-height:1.7;color:#24443c;">
+        <strong>Spent for him from fund:</strong> ${money(input.ledger.fundSpentMinor)} ·
+        <strong>Spent for him personally (member bills):</strong> ${money(input.ledger.pocketSpentMinor)} ·
+        <strong>Paid from pocket:</strong> ${money(input.ledger.pocketPaidMinor)}
+      </p>`;
   const totals = (locale === "ar"
     ? `<p style="margin:0 0 10px;font-size:14px;line-height:1.7;color:#24443c;">
         <strong>المدفوع:</strong> ${money(input.ledger.paidMinor)} ·
@@ -45,7 +57,7 @@ export function buildStatementSummaryHtml(input: {
         <strong>Paid:</strong> ${money(input.ledger.paidMinor)} ·
         <strong>Owes:</strong> <span style="color:#b42318">${debit(input.ledger.owesMinor)}</span> ·
         <strong>Credit:</strong> ${money(input.ledger.creditMinor)}
-      </p>`) + how;
+      </p>`) + tripBreakdown + how;
 
   if (!recent.length) {
     return totals + (locale === "ar"

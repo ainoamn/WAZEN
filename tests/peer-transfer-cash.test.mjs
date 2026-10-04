@@ -18,3 +18,27 @@ test("approved peer transfers never inflate member paid or fund cash in SQL rebu
   const cash = ledger.slice(ledger.indexOf("export async function writeApprovedCashBalance"), ledger.indexOf("export type VoidableTransaction"));
   assert.match(cash, /NOT_PEER_TRANSFER_SQL\(""\)/);
 });
+
+test("voiding either half of a peer transfer cancels the sibling and returns the settlement to pending", () => {
+  const ledger = read("lib/ledger-void.ts");
+  const revert = ledger.slice(ledger.indexOf("async function revertPeerTransfer"), ledger.indexOf("export async function repairVoidedPeerSettlements"));
+  assert.match(revert, /UPDATE transactions SET status=\?/);
+  assert.match(revert, /PEER_TRANSFER_SQL\(""\)/);
+  assert.match(revert, /UPDATE settlements SET status='pending', settled_at=NULL/);
+  assert.match(revert, /settled_at=\?/);
+  assert.match(revert, /rebuildSpaceTripSettlements\(db, txn\.space_id\)/);
+  const voidFn = ledger.slice(ledger.indexOf("export async function voidApprovedTransaction"));
+  assert.match(voidFn, /isPeerTransferDescription\(txn\.description_ar\)/);
+  assert.match(voidFn, /revertPeerTransfer\(db, txn, recordStatus\)/);
+});
+
+test("dashboard load heals settlements stuck settled after their transfer was voided", () => {
+  const ledger = read("lib/ledger-void.ts");
+  const repair = ledger.slice(ledger.indexOf("export async function repairVoidedPeerSettlements"));
+  assert.match(repair, /s\.status='settled'/);
+  assert.match(repair, /t\.status IN \('voided','superseded'\)/);
+  assert.match(repair, /t\.occurred_at=s\.settled_at/);
+  assert.match(repair, /rebuildSpaceTripSettlements\(db, spaceId\)/);
+  const dashboard = read("app/api/dashboard/route.ts");
+  assert.match(dashboard, /await repairVoidedPeerSettlements\(db, ids\)/);
+});

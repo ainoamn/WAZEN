@@ -33,6 +33,9 @@ export type MemberStatementSection = {
   creditLabel: string;
   paidMinor: number;
   spentMinor: number;
+  fundSpentMinor: number;
+  pocketSpentMinor: number;
+  pocketPaidMinor: number;
   owesMinor: number;
   creditMinor: number;
   payInstruction: string;
@@ -140,6 +143,9 @@ export async function loadMemberStatementSection(
     creditLabel: money(ledger.creditMinor),
     paidMinor: ledger.paidMinor,
     spentMinor,
+    fundSpentMinor: ledger.fundSpentMinor,
+    pocketSpentMinor: ledger.pocketSpentMinor,
+    pocketPaidMinor: ledger.pocketPaidMinor,
     owesMinor: ledger.owesMinor,
     creditMinor: ledger.creditMinor,
     payInstruction,

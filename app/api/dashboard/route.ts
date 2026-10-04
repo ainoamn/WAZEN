@@ -27,7 +27,7 @@ import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-for
 import { filterSpacesByPlan } from "../../../lib/plan-features";
 import { filterSpacesForPlanAccess } from "../../../lib/plan-retention";
 import { ensureBootstrapPlatformRole } from "../../../lib/platform-role-bootstrap";
-import { reconcileMemberLedgers, writeApprovedCashBalance, voidApprovedTransaction } from "../../../lib/ledger-void";
+import { reconcileMemberLedgers, repairVoidedPeerSettlements, writeApprovedCashBalance, voidApprovedTransaction } from "../../../lib/ledger-void";
 
 type SpaceRow = {
   id: string;
@@ -808,6 +808,9 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
   try {
     await migratePerExpenseTripSettlements(db, ids);
   } catch { /* keep serving dashboard if netting fails */ }
+  try {
+    await repairVoidedPeerSettlements(db, ids);
+  } catch { /* keep serving dashboard if repair fails */ }
 
   if (options?.refreshDerived !== false) {
     try {

@@ -41,6 +41,9 @@ type MemberSection = {
   creditLabel: string;
   paidMinor: number;
   spentMinor: number;
+  fundSpentMinor?: number;
+  pocketSpentMinor?: number;
+  pocketPaidMinor?: number;
   owesMinor: number;
   creditMinor: number;
   lines: MemberLine[];
@@ -65,6 +68,9 @@ type MemberPayload = {
   creditLabel: string;
   paidMinor: number;
   spentMinor: number;
+  fundSpentMinor?: number;
+  pocketSpentMinor?: number;
+  pocketPaidMinor?: number;
   owesMinor: number;
   creditMinor: number;
   payInstruction?: string;
@@ -184,6 +190,9 @@ export default function StatementShareClient({ token }: { token: string }) {
           joinedAt: data.joinedAt,
           paidMinor: data.paidMinor,
           spentMinor: data.spentMinor,
+          fundSpentMinor: data.fundSpentMinor,
+          pocketSpentMinor: data.pocketSpentMinor,
+          pocketPaidMinor: data.pocketPaidMinor,
           owesMinor: data.owesMinor,
           creditMinor: data.creditMinor,
           lines: data.lines,
@@ -194,6 +203,9 @@ export default function StatementShareClient({ token }: { token: string }) {
           ledger: {
             paidMinor: section.paidMinor,
             addonMinor: section.spentMinor,
+            fundSpentMinor: section.fundSpentMinor,
+            pocketSpentMinor: section.pocketSpentMinor,
+            pocketPaidMinor: section.pocketPaidMinor,
             owesMinor: section.owesMinor,
             creditMinor: section.creditMinor,
             lines: section.lines,
@@ -309,6 +321,13 @@ export default function StatementShareClient({ token }: { token: string }) {
             <div><span>{locale === "ar" ? "عليه" : "Owes"}</span><strong className={data.owesMinor ? "amount-negative" : ""}>{data.owesLabel}</strong></div>
             <div><span>{locale === "ar" ? "له" : "Credit"}</span><strong className={data.creditMinor ? "amount-positive" : ""}>{data.creditLabel}</strong></div>
           </div>
+          {(data.fundSpentMinor ?? 0) > 0 || (data.pocketSpentMinor ?? 0) > 0 ? (
+            <p className="receipt-share-date">
+              {locale === "ar"
+                ? `صُرف له من الصندوق ${formatMoneyMinor(data.fundSpentMinor ?? 0, data.currency, locale)} · صُرف له شخصياً (فواتير الأعضاء) ${formatMoneyMinor(data.pocketSpentMinor ?? 0, data.currency, locale)} · دفع من جيبه ${formatMoneyMinor(data.pocketPaidMinor ?? 0, data.currency, locale)}`
+                : `Spent for him from fund ${formatMoneyMinor(data.fundSpentMinor ?? 0, data.currency, locale)} · personally (member bills) ${formatMoneyMinor(data.pocketSpentMinor ?? 0, data.currency, locale)} · paid from pocket ${formatMoneyMinor(data.pocketPaidMinor ?? 0, data.currency, locale)}`}
+            </p>
+          ) : null}
           {data.payInstruction ? (
             <p className="statement-share-pay">{locale === "ar" ? "كيف تسدّد: " : "How to pay: "}{data.payInstruction}</p>
           ) : null}

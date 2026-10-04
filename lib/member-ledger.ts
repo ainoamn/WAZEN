@@ -134,6 +134,7 @@ export function buildMemberLedger(input: {
   let expenseDebit = 0;
   let expenseCredit = 0;
   let fundSharesTotal = 0;
+  let pocketSharesTotal = 0;
   const lines: MemberLedgerLine[] = [];
 
   const payments = input.transactions
@@ -290,6 +291,7 @@ export function buildMemberLedger(input: {
       });
     }
     if (shareMinor > 0) {
+      pocketSharesTotal += shareMinor;
       const payer = expense.paid_by_name || "—";
       lines.push({
         at: expense.occurred_at,
@@ -475,9 +477,13 @@ export function buildMemberLedger(input: {
       : Number(member.paid_minor) || 0,
     extraMinor: Number(member.extra_minor) || 0,
     addonMinor: Number(member.addon_minor ?? 0),
+    // Trip «صرف» = what was consumed for him (fund shares + shares of bills members paid), not cash he laid out.
     spentMinor: input.spaceType === "trip"
-      ? fundSharesTotal + tripPocket
+      ? fundSharesTotal + pocketSharesTotal
       : Number(member.addon_minor ?? 0) + lines.filter((line) => line.focus === "spent" && line.direction === "out").reduce((sum, line) => sum + (line.titleAr.startsWith("حصة") || line.titleEn.startsWith("Share") ? line.amountMinor : 0), 0),
+    fundSpentMinor: fundSharesTotal,
+    pocketSpentMinor: pocketSharesTotal,
+    pocketPaidMinor: tripPocket,
     accruedDueMinor: accrued,
     remainingDueMinor: remainingDue,
     cashCreditMinor: cashCredit,
@@ -554,9 +560,15 @@ function ledgerTypeLabel(locale: MemberLedgerLocale, focus: MemberLedgerLine["fo
 function statementTotalsTable(
   locale: MemberLedgerLocale,
   currency: string,
-  ledger: { paidMinor: number; spentMinor?: number; addonMinor: number; owesMinor: number; creditMinor: number },
+  ledger: { paidMinor: number; spentMinor?: number; addonMinor: number; owesMinor: number; creditMinor: number; fundSpentMinor?: number; pocketSpentMinor?: number; pocketPaidMinor?: number },
 ) {
   const spentMinor = ledger.spentMinor ?? ledger.addonMinor;
+  const tripBreakdown = (ledger.fundSpentMinor ?? 0) > 0 || (ledger.pocketSpentMinor ?? 0) > 0
+    ? `<p class="footer-note">${escapeHtml(text(locale,
+      `صرف له من الصندوق ${formatMoneyMinor(ledger.fundSpentMinor ?? 0, currency, "ar")} · صرف له شخصياً (فواتير دفعها الأعضاء) ${formatMoneyMinor(ledger.pocketSpentMinor ?? 0, currency, "ar")} · دفع من جيبه ${formatMoneyMinor(ledger.pocketPaidMinor ?? 0, currency, "ar")}`,
+      `Spent for him from the fund ${formatMoneyMinor(ledger.fundSpentMinor ?? 0, currency, "en")} · spent for him personally (bills members paid) ${formatMoneyMinor(ledger.pocketSpentMinor ?? 0, currency, "en")} · paid from his pocket ${formatMoneyMinor(ledger.pocketPaidMinor ?? 0, currency, "en")}`,
+    ))}</p>`
+    : "";
   return `<div class="statement-table-wrap">
     <table class="statement-totals">
       <thead>
@@ -576,7 +588,7 @@ function statementTotalsTable(
         </tr>
       </tbody>
     </table>
-  </div>`;
+  </div>${tripBreakdown}`;
 }
 
 function statementMovementsTable(
@@ -632,6 +644,9 @@ function statementAssociationHtml(input: {
     addonMinor: number;
     owesMinor: number;
     creditMinor: number;
+    fundSpentMinor?: number;
+    pocketSpentMinor?: number;
+    pocketPaidMinor?: number;
     lines: MemberLedgerLine[];
   };
 }) {
@@ -676,6 +691,9 @@ export function buildMemberLedgerHtml(input: {
     addonMinor: number;
     owesMinor: number;
     creditMinor: number;
+    fundSpentMinor?: number;
+    pocketSpentMinor?: number;
+    pocketPaidMinor?: number;
     lines: MemberLedgerLine[];
   };
 }) {
@@ -744,6 +762,9 @@ export function buildCombinedMemberLedgerHtml(input: {
       addonMinor: number;
       owesMinor: number;
       creditMinor: number;
+      fundSpentMinor?: number;
+      pocketSpentMinor?: number;
+      pocketPaidMinor?: number;
       lines: MemberLedgerLine[];
     };
   }>;

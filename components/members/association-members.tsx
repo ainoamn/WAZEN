@@ -483,6 +483,13 @@ function MemberLedgerBody({
         <div><span>{locale === "ar" ? "الهدف المالي" : "Financial goal"}</span><b>{money(member.due_minor, space.currency, locale)}</b></div>
         <div><span>{locale === "ar" ? "كم دفع" : "Paid"}</span><b>{money(ledger.paidMinor, space.currency, locale)}</b></div>
         <div><span>{locale === "ar" ? "كم صرف" : "Spent"}</span><b>{money(ledger.spentMinor || ledger.addonMinor, space.currency, locale)}</b></div>
+        {space.type === "trip" ? (
+          <>
+            <div><span>{locale === "ar" ? "صُرف له من الصندوق" : "Spent for him from fund"}</span><b>{money(ledger.fundSpentMinor, space.currency, locale)}</b></div>
+            <div><span>{locale === "ar" ? "صُرف له شخصياً (فواتير الأعضاء)" : "Spent for him personally (member bills)"}</span><b>{money(ledger.pocketSpentMinor, space.currency, locale)}</b></div>
+            <div><span>{locale === "ar" ? "دفع من جيبه" : "Paid from pocket"}</span><b>{money(ledger.pocketPaidMinor, space.currency, locale)}</b></div>
+          </>
+        ) : null}
         <div><span>{locale === "ar" ? "كم عليه" : "Owes"}</span><b>{money(Math.max(0, ledger.owesMinor), space.currency, locale)}</b></div>
         <div><span>{locale === "ar" ? "كم له" : "Credit"}</span><b>{money(Math.max(0, ledger.creditMinor), space.currency, locale)}</b></div>
       </div>

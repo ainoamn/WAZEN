@@ -2,10 +2,72 @@
 
 import { prepareAudit } from "./audit";
 import { ApiError } from "./security";
+import { rebuildSpaceTripSettlements } from "./trip-settlements";
 
 /** Member-to-member settlement rows (`postPeerMemberSettlement`) move cash outside the fund: never fund income or «مدفوع». */
 const NOT_PEER_TRANSFER_SQL = (alias: string) =>
   `COALESCE(${alias}description_ar,'') NOT LIKE 'تحويل مسجّل:%' AND COALESCE(${alias}description_ar,'') NOT LIKE 'استلام تحويل:%'`;
+
+const PEER_TRANSFER_SQL = (alias: string) =>
+  `(COALESCE(${alias}description_ar,'') LIKE 'تحويل مسجّل:%' OR COALESCE(${alias}description_ar,'') LIKE 'استلام تحويل:%')`;
+
+export function isPeerTransferDescription(descriptionAr?: string | null) {
+  const text = String(descriptionAr ?? "");
+  return text.startsWith("تحويل مسجّل:") || text.startsWith("استلام تحويل:");
+}
+
+/**
+ * Cancelling either half of a posted member-to-member transfer cancels the whole transfer:
+ * the sibling row is voided and the settlement returns to pending so trip balances are re-netted.
+ */
+async function revertPeerTransfer(db: D1Database, txn: VoidableTransaction, recordStatus: string) {
+  if (!txn.occurred_at || !txn.member_id) return;
+  const amountMinor = Number(txn.amount_minor);
+  await db.prepare(`UPDATE transactions SET status=?
+    WHERE space_id=? AND status='approved' AND amount_minor=? AND occurred_at=? AND id<>?
+      AND ${PEER_TRANSFER_SQL("")}`)
+    .bind(recordStatus, txn.space_id, amountMinor, txn.occurred_at, txn.id)
+    .run();
+  await db.prepare(`UPDATE settlements SET status='pending', settled_at=NULL
+    WHERE space_id=? AND status='settled' AND amount_minor=? AND settled_at=?
+      AND (from_member_id=? OR to_member_id=?)
+      AND from_member_id NOT LIKE 'space:%' AND to_member_id NOT LIKE 'space:%'`)
+    .bind(txn.space_id, amountMinor, txn.occurred_at, txn.member_id, txn.member_id)
+    .run();
+  await rebuildSpaceTripSettlements(db, txn.space_id);
+}
+
+/** Heal transfers voided before `revertPeerTransfer` existed: settlement stuck «settled» while its transfer rows are voided. */
+export async function repairVoidedPeerSettlements(db: D1Database, spaceIds: string[]) {
+  if (!spaceIds.length) return;
+  const placeholders = spaceIds.map(() => "?").join(",");
+  const stuck = await db.prepare(`SELECT s.id, s.space_id, s.amount_minor, s.settled_at
+    FROM settlements s
+    WHERE s.space_id IN (${placeholders})
+      AND s.status='settled' AND s.settled_at IS NOT NULL
+      AND s.from_member_id NOT LIKE 'space:%' AND s.to_member_id NOT LIKE 'space:%'
+      AND EXISTS (
+        SELECT 1 FROM transactions t
+        WHERE t.space_id=s.space_id AND t.status IN ('voided','superseded')
+          AND t.amount_minor=s.amount_minor AND t.occurred_at=s.settled_at
+          AND t.member_id IN (s.from_member_id, s.to_member_id)
+          AND ${PEER_TRANSFER_SQL("t.")}
+      )`).bind(...spaceIds).all<{ id: string; space_id: string; amount_minor: number; settled_at: string }>();
+  const touched = new Set<string>();
+  for (const row of stuck.results ?? []) {
+    await db.prepare(`UPDATE transactions SET status='voided'
+      WHERE space_id=? AND status='approved' AND amount_minor=? AND occurred_at=? AND ${PEER_TRANSFER_SQL("")}`)
+      .bind(row.space_id, Number(row.amount_minor), row.settled_at)
+      .run();
+    await db.prepare("UPDATE settlements SET status='pending', settled_at=NULL WHERE id=? AND status='settled'").bind(row.id).run();
+    touched.add(row.space_id);
+  }
+  for (const spaceId of touched) {
+    await rebuildSpaceTripSettlements(db, spaceId);
+    await writeApprovedCashBalance(db, spaceId);
+    await reconcileMemberLedgers(db, [spaceId]);
+  }
+}
 
 export async function reconcileMemberLedgers(db: D1Database, spaceIds: string[]) {
   if (!spaceIds.length) return;
@@ -97,6 +159,11 @@ export async function voidApprovedTransaction(
           .bind(txn.space_id, amountMinor, txn.member_id, txn.member_id, txn.occurred_at)
           .run();
       }
+    } catch { /* best-effort */ }
+  }
+  if (isPeerTransferDescription(txn.description_ar)) {
+    try {
+      await revertPeerTransfer(db, txn, recordStatus);
     } catch { /* best-effort */ }
   }
   const statements: D1PreparedStatement[] = [

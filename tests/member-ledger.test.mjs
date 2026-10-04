@@ -461,3 +461,44 @@ test("paying the trip contribution reduces ticket shortfall, it is not a second 
   assert.equal(ledger.owesMinor, 54_966);
   assert.equal(ledger.remainingDueMinor, 0);
 });
+
+test("trip ledger separates what was spent for him from the fund, from member bills, and what he paid from pocket", () => {
+  const ledger = buildMemberLedger({
+    member: { ...member, due_minor: 0, paid_minor: 150_000, addon_minor: 0 },
+    spaceNameAr: "رحلة",
+    spaceNameEn: "Trip",
+    currency: "OMR",
+    spaceType: "trip",
+    plan: null,
+    installments: [],
+    transactions: [],
+    settlements: [],
+    tripExpenses: [
+      { id: "e-fund", space_id: "s1", paid_by_member_id: "", paid_by_name: "صندوق الجمعية", amount_minor: 300_000, description: "فندق", occurred_at: "2026-09-10T10:00:00.000Z", paid_from: "common_fund" },
+      { id: "e-other", space_id: "s1", paid_by_member_id: "m2", paid_by_name: "داود", amount_minor: 90_000, description: "عشاء", occurred_at: "2026-09-11T10:00:00.000Z", paid_from: "member" },
+      { id: "e-mine", space_id: "s1", paid_by_member_id: "m1", paid_by_name: "ماجد", amount_minor: 60_000, description: "تاكسي", occurred_at: "2026-09-12T10:00:00.000Z", paid_from: "member" },
+    ],
+    expenseSplits: [
+      { expense_id: "e-fund", member_id: "m1", share_minor: 100_000 },
+      { expense_id: "e-other", member_id: "m1", share_minor: 30_000 },
+      { expense_id: "e-mine", member_id: "m1", share_minor: 20_000 },
+    ],
+  });
+  assert.equal(ledger.fundSpentMinor, 100_000);
+  assert.equal(ledger.pocketSpentMinor, 50_000);
+  assert.equal(ledger.pocketPaidMinor, 60_000);
+  assert.equal(ledger.spentMinor, 150_000);
+  const html = buildMemberLedgerHtml({
+    locale: "ar",
+    logoUrl: "/brand/wazen-lockup.png",
+    issuerName: "أمين",
+    memberName: "ماجد",
+    spaceName: "رحلة",
+    currency: "OMR",
+    focus: "all",
+    ledger,
+  });
+  assert.match(html, /صرف له من الصندوق/);
+  assert.match(html, /صرف له شخصياً/);
+  assert.match(html, /دفع من جيبه/);
+});
