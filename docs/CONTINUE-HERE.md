@@ -79,8 +79,9 @@ npm install
 | دعوة: من الهاتف أو **من Gmail** مباشرة أو رفع/تنزيل vCard وCSV | ✅ |
 | Next.js 16.3.4 لتمرير `npm audit` ونشر Vercel | ✅ |
 | تطبيق [`BHD-SESSION-POLICY.md`](./BHD-SESSION-POLICY.md) حرفياً (4 أكتوبر): الجلسة تبقى حتى «خروج» (كوكي 400 يوم)، حذف `SessionKeepAlive` ومهلة الخمول، `/api/auth/me` بلا `Set-Cookie`، لا إعادة تحميل عند عودة التبويب، إزالة زر/سكربت جوجل من المنتج | ✅ على `main` ومنشور (`bbb960d`) |
+| تدقيق رحلة أذربيجان وجورجيا: كل الأرقام متطابقة؛ إصلاح: اعتماد تحويل بين عضوين لم يعد يرفع «مدفوع» المستلم ولا نقد الصندوق في إعادة الحساب بالخادم — [WALLET-ACCOUNTING.md](./WALLET-ACCOUNTING.md) | ✅ على `main` ومنشور (`4d6ea0b`) |
 
-**الإنتاج:** https://wazen.bhd-om.com — `buildId` الحي: `bbb960d46870e49aa68a4c0d73c77eb167070a6b` (سياسة الجلسة، 4 أكتوبر 2026)
+**الإنتاج:** https://wazen.bhd-om.com — `buildId` الحي: `4d6ea0b7c6a67a9c645a3d66cfcc87cd51e299ff` (تحويلات الأعضاء خارج نقد الصندوق، 4 أكتوبر 2026)
 
 Vercel كان يرفض `8aaedce` لأن Hobby لا يسمح بـ cron كل 5 دقائق. `426551d` يُشغّل `/api/jobs/tick` مرة يومياً في 02:00 و03:00 و06:00 و14:00 UTC. CI `verify` ما زال يفشل على lint قديم؛ Vercel لا ينتظره.
 
