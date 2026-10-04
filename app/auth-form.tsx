@@ -2,7 +2,6 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { GoogleSignInButton } from "./google-sign-in";
 import { WazenIcon } from "../components/brand/WazenLogo";
 import { Brand, useCommerceLocale } from "./commercial-kit";
 import { clearAdminConsole } from "../lib/admin-session";
@@ -11,7 +10,7 @@ import { completeClientLogout } from "../lib/client-logout";
 import { clearDashboardCache } from "../lib/dashboard-session";
 import { canOpenPlatformConsole } from "../lib/platform-console";
 
-function googleErrorMessage(code: string, l: (ar: string, en: string) => string) {
+function signInErrorMessage(code: string, l: (ar: string, en: string) => string) {
   if (code === "GOOGLE_NOT_CONFIGURED") return l("تسجيل جوجل غير مهيأ بعد.", "Google sign-in is not configured yet.");
   if (code === "GOOGLE_EMAIL_UNVERIFIED") return l("بريد جوجل غير مؤكد.", "The Google email is not verified.");
   if (code === "ACCOUNT_UNAVAILABLE") return l("الحساب غير متاح.", "This account is unavailable.");
@@ -28,7 +27,7 @@ function googleErrorMessage(code: string, l: (ar: string, en: string) => string)
   if (code.startsWith("BHD_")) return l("تعذر الدخول بحساب BHD. حاول مرة أخرى.", "Could not sign in with BHD. Try again.");
   if (code === "RATE_LIMITED") return l("محاولات دخول كثيرة. انتظر قليلاً ثم حاول مرة أخرى.", "Too many sign-in attempts. Wait briefly, then try again.");
   if (code === "IP_BLOCKED") return l("أوقف وازن هذا الاتصال مؤقتاً بعد محاولات كثيرة.", "Wazen temporarily blocked this connection after too many attempts.");
-  return l("تعذر الدخول عبر جوجل. حاول مرة أخرى.", "Google sign-in failed. Try again.");
+  return l("تعذر تسجيل الدخول. حاول مرة أخرى.", "Sign-in failed. Try again.");
 }
 
 function authRedirectTarget(role?: string) {
@@ -38,7 +37,7 @@ function authRedirectTarget(role?: string) {
   return safeNext.startsWith("/admin") && !canOpenPlatformConsole(role) ? "/home" : safeNext;
 }
 
-export function AuthForm({ mode, next = "/home", googleClientId = "", identityEnabled = false, ssoReady = false, identityOnly = false }: { mode: "login" | "register"; next?: string; googleClientId?: string; identityEnabled?: boolean; ssoReady?: boolean; identityOnly?: boolean }) {
+export function AuthForm({ mode, next = "/home", identityEnabled = false, ssoReady = false, identityOnly = false }: { mode: "login" | "register"; next?: string; identityEnabled?: boolean; ssoReady?: boolean; identityOnly?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { locale, setLocale, l } = useCommerceLocale();
@@ -48,7 +47,7 @@ export function AuthForm({ mode, next = "/home", googleClientId = "", identityEn
   const [activeSession, setActiveSession] = useState<{ dest: string } | null>(null);
   const showLocalForm = !identityOnly;
   const urlError = searchParams.get("error");
-  const displayedError = error || (urlError ? googleErrorMessage(urlError, l) : "");
+  const displayedError = error || (urlError ? signInErrorMessage(urlError, l) : "");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -167,23 +166,6 @@ export function AuthForm({ mode, next = "/home", googleClientId = "", identityEn
       {displayedError && <p className="auth-error" role="alert">{displayedError}</p>}<button className="auth-submit" type="submit" disabled={saving}>{saving ? l("جارٍ التحقق…", "Checking…") : mode === "login" ? l("تسجيل الدخول", "Sign in") : l("إنشاء الحساب", "Create account")}</button>
     </form>
     ) : null}
-    {!identityEnabled && <div className="auth-divider"><span>{l("أو المتابعة عبر", "Or continue with")}</span></div>}
-      {identityEnabled ? null : googleClientId ? (
-        <GoogleSignInButton
-          clientId={googleClientId}
-          label={l("المتابعة عبر جوجل", "Continue with Google")}
-          disabled={saving}
-          onError={(code) => setError(googleErrorMessage(code, l))}
-          onSignedIn={(result) => {
-            clearDashboardCache();
-            clearAdminConsole();
-            notifyBrowserSessionChange(result.user?.id ?? null);
-            window.location.assign(authRedirectTarget(result.role));
-          }}
-        />
-      ) : (
-        <p className="auth-error" role="status">{l("تسجيل جوجل غير مهيأ بعد.", "Google sign-in is not configured yet.")}</p>
-      )}
     <footer>{mode === "login" ? <>{l("ليس لديك حساب؟", "No account?")} {identityOnly || identityEnabled ? <a href="https://id.bhd-om.com/login">{l("أنشئ حساباً", "Create one")}</a> : <Link href="/register">{l("أنشئ حساباً", "Create one")}</Link>}</> : <>{l("لديك حساب؟", "Already registered?")} {identityOnly || identityEnabled ? <a href="https://id.bhd-om.com/login">{l("سجّل الدخول", "Sign in")}</a> : <Link href="/login">{l("سجّل الدخول", "Sign in")}</Link>}</>}</footer>
   </section><aside><span className="brand-glyph"><WazenIcon className="h-10 w-auto" /></span><h2>{l("وضوح مالي، من أول ريال.", "Financial clarity from day one.")}</h2><p>{l("المحافظ الشخصية والمنزلية والجمعيات والرحلات في نظام واحد.", "Personal, household, circle and trip wallets in one system.")}</p></aside></main>;
 }

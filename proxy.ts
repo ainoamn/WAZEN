@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signInEntryPath } from "./lib/bhd-identity";
-import { browserSessionCookie, sessionCookieName } from "./lib/session-policy";
+import { sessionCookieName } from "./lib/session-policy";
 
 function sessionToken(request: NextRequest) {
   return request.cookies.get(sessionCookieName())?.value
@@ -54,7 +54,6 @@ export function proxy(request: NextRequest) {
   requestHeaders.set("Content-Security-Policy", policy);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", policy);
-  if (token) response.headers.append("Set-Cookie", browserSessionCookie(token));
   return response;
 }
 

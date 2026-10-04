@@ -11,6 +11,21 @@ import {
   type ImportedContact,
 } from "../../lib/contact-file";
 
+type GoogleOAuth2 = {
+  initTokenClient: (config: {
+    client_id: string;
+    scope: string;
+    callback: (response: { access_token?: string; error?: string }) => void;
+    error_callback?: (error: { type?: string; message?: string }) => void;
+  }) => { requestAccessToken: () => void };
+};
+
+declare global {
+  interface Window {
+    google?: { accounts?: { oauth2: GoogleOAuth2 } };
+  }
+}
+
 type Locale = "ar" | "en";
 type SavedContact = { id: string; display_name: string; email: string | null; phone: string | null };
 

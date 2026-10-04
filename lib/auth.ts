@@ -1,11 +1,12 @@
 import { getRequestUser, type RequestUser } from "../db/runtime";
 import { browserIdCookie, browserIdFromRequest } from "./browser-session";
-import { browserCsrfCookie, browserSessionCookie, csrfCookieName, idleCutoffIso, isSessionIdle, SESSION_MAX_MS, sessionCookieName } from "./session-policy";
+import { csrfCookieName, persistentCsrfCookie, persistentSessionCookie, SESSION_MAX_MS, sessionCookieName } from "./session-policy";
 import { clientCountry, clientIp, ipHash, maskIp } from "./ip-security";
 
 const SESSION_COOKIE = sessionCookieName();
 const CSRF_COOKIE = csrfCookieName();
 const PASSWORD_ITERATIONS = 600_000;
+const LAST_SEEN_WRITE_MS = 15 * 60 * 1000;
 
 function bytesToBase64(bytes: Uint8Array) {
   let binary = "";
@@ -45,12 +46,12 @@ export function createSessionToken() {
   return bytesToBase64(crypto.getRandomValues(new Uint8Array(32))).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
 
-export function sessionCookie(token: string, _expiresAt?: Date) {
-  return browserSessionCookie(token);
+export function sessionCookie(token: string) {
+  return persistentSessionCookie(token);
 }
 
-export function csrfCookie(token: string, _expiresAt?: Date) {
-  return browserCsrfCookie(token);
+export function csrfCookie(token: string) {
+  return persistentCsrfCookie(token);
 }
 
 export function sessionHeaders(session: { token: string; csrfToken: string; expiresAt: Date; browserId?: string | null }) {
@@ -124,47 +125,50 @@ export async function authenticateRequest(db: D1Database, request: Request): Pro
   const token = cookieValue(request, SESSION_COOKIE);
   if (!token) return null;
   const requestBrowserId = browserIdFromRequest(request);
-  const row = await db.prepare(`SELECT u.id,u.email,u.display_name,u.avatar_url,p.status,s.id AS session_id,s.last_seen_at,s.browser_id
+  const row = await db.prepare(`SELECT u.id,u.email,u.display_name,u.avatar_url,p.status,s.id AS session_id,s.last_seen_at,s.created_at AS session_created_at,s.expires_at,s.browser_id
     FROM auth_sessions s JOIN users u ON u.id=s.user_id
     LEFT JOIN customer_profiles p ON p.user_id=u.id
     WHERE s.token_hash=? AND s.expires_at>? LIMIT 1`)
     .bind(await sha256(token), new Date().toISOString())
-    .first<{ id: string; email: string; display_name: string; avatar_url: string | null; status: string | null; session_id: string; last_seen_at: string; browser_id: string | null }>();
+    .first<{ id: string; email: string; display_name: string; avatar_url: string | null; status: string | null; session_id: string; last_seen_at: string | null; session_created_at: string; expires_at: string; browser_id: string | null }>();
   if (!row || row.status === "suspended" || row.status === "closed") return null;
   if (requestBrowserId && row.browser_id !== requestBrowserId) {
     await db.prepare("UPDATE auth_sessions SET browser_id=? WHERE id=?").bind(requestBrowserId, row.session_id).run();
   }
-  if (isSessionIdle(row.last_seen_at)) {
-    await db.prepare("DELETE FROM auth_sessions WHERE id=?").bind(row.session_id).run();
-    return null;
+  // last_seen_at is activity telemetry only; it never expires the session.
+  const nowMs = Date.now();
+  const lastSeenMs = new Date(row.last_seen_at ?? 0).getTime() || 0;
+  const fixedExpiryMs = (new Date(row.session_created_at).getTime() || nowMs) + SESSION_MAX_MS;
+  const expiresMs = new Date(row.expires_at).getTime() || nowMs;
+  // Sessions minted under the old 48h sliding policy get their fixed 400-day expiry once.
+  const legacyShortExpiry = fixedExpiryMs - expiresMs > 86_400_000;
+  if (nowMs - lastSeenMs > LAST_SEEN_WRITE_MS || legacyShortExpiry) {
+    await db.prepare("UPDATE auth_sessions SET last_seen_at=?, expires_at=? WHERE id=?")
+      .bind(new Date(nowMs).toISOString(), new Date(legacyShortExpiry ? fixedExpiryMs : expiresMs).toISOString(), row.session_id).run();
   }
-  // Sliding idle + absolute expiry renew (BHD §0.2 — 48h window).
-  const touchedAt = new Date();
-  const nextExpiry = new Date(touchedAt.getTime() + SESSION_MAX_MS).toISOString();
-  await db.prepare("UPDATE auth_sessions SET last_seen_at=?, expires_at=? WHERE id=?")
-    .bind(touchedAt.toISOString(), nextExpiry, row.session_id).run();
   return { id: row.id, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url, isDemo: false, authType: "session" };
 }
 
+/** Returns `changed: true` only when the CSRF cookie was missing or stale and must be repaired. */
 export async function issueCsrfToken(db: D1Database, request: Request) {
   const sessionToken = cookieValue(request, SESSION_COOKIE); if (!sessionToken) return null;
   const now = new Date().toISOString(); const sessionHash = await sha256(sessionToken);
-  const row = await db.prepare("SELECT csrf_token_hash,expires_at FROM auth_sessions WHERE token_hash=? AND expires_at>? AND last_seen_at>?").bind(sessionHash, now, idleCutoffIso()).first<{ csrf_token_hash: string | null; expires_at: string }>();
+  const row = await db.prepare("SELECT csrf_token_hash,expires_at FROM auth_sessions WHERE token_hash=? AND expires_at>?").bind(sessionHash, now).first<{ csrf_token_hash: string | null; expires_at: string }>();
   if (!row) return null;
   const existingToken = cookieValue(request, CSRF_COOKIE);
-  if (existingToken && row.csrf_token_hash && constantTimeEqual(await sha256(existingToken), row.csrf_token_hash)) return { csrfToken: existingToken, expiresAt: new Date(row.expires_at) };
+  if (existingToken && row.csrf_token_hash && constantTimeEqual(await sha256(existingToken), row.csrf_token_hash)) return { csrfToken: existingToken, expiresAt: new Date(row.expires_at), changed: false };
   const csrfToken = createSessionToken(); const nextHash = await sha256(csrfToken);
   const result = await db.prepare("UPDATE auth_sessions SET csrf_token_hash=? WHERE token_hash=? AND csrf_token_hash IS NOT DISTINCT FROM ? AND expires_at>?")
     .bind(nextHash, sessionHash, row.csrf_token_hash, now).run();
-  return Number(result.meta.changes) > 0 ? { csrfToken, expiresAt: new Date(row.expires_at) } : null;
+  return Number(result.meta.changes) > 0 ? { csrfToken, expiresAt: new Date(row.expires_at), changed: true } : null;
 }
 
 export async function verifyCsrfToken(db: D1Database, request: Request) {
   const authorization = request.headers.get("authorization") ?? ""; if (authorization.startsWith("Bearer wzn_")) return true;
   const sessionToken = cookieValue(request, SESSION_COOKIE); const cookieToken = cookieValue(request, CSRF_COOKIE); const headerToken = request.headers.get("x-csrf-token");
   if (!sessionToken || !cookieToken || !headerToken || !constantTimeEqual(cookieToken, headerToken)) return false;
-  const row = await db.prepare("SELECT id FROM auth_sessions WHERE token_hash=? AND csrf_token_hash=? AND expires_at>? AND last_seen_at>? LIMIT 1")
-    .bind(await sha256(sessionToken), await sha256(cookieToken), new Date().toISOString(), idleCutoffIso()).first();
+  const row = await db.prepare("SELECT id FROM auth_sessions WHERE token_hash=? AND csrf_token_hash=? AND expires_at>? LIMIT 1")
+    .bind(await sha256(sessionToken), await sha256(cookieToken), new Date().toISOString()).first();
   return Boolean(row);
 }
 

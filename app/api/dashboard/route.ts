@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
-import { authenticateRequest, clearCsrfCookie, clearSessionCookie, csrfCookie, issueCsrfToken } from "../../../lib/auth";
+import { authenticateRequest, csrfCookie, issueCsrfToken } from "../../../lib/auth";
 import { buildCircleOrder, fundChargeFits, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, takeShareSlice, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
 import { hasComposeParts, planExpenseSplitsForApi, planPayerSplitForApi } from "../../../lib/expense-split";
 import { migratePerExpenseTripSettlements, rebuildSpaceTripSettlements } from "../../../lib/trip-settlements";
@@ -1084,10 +1084,7 @@ async function readDashboardRevision(db: D1Database, userId: string) {
 }
 
 function unauthenticatedResponse() {
-  const headers = new Headers({ "Cache-Control": "no-store" });
-  headers.append("Set-Cookie", clearSessionCookie());
-  headers.append("Set-Cookie", clearCsrfCookie());
-  return Response.json({ error: "AUTHENTICATION_REQUIRED" }, { status: 401, headers });
+  return Response.json({ error: "AUTHENTICATION_REQUIRED" }, { status: 401, headers: { "Cache-Control": "no-store" } });
 }
 
 export async function GET(request: Request) {
@@ -1123,7 +1120,7 @@ export async function GET(request: Request) {
         };
       }
       const role = await platformRoleOf(db, user.id);
-      let issued: { csrfToken: string; expiresAt: Date } | null = null;
+      let issued: { csrfToken: string; expiresAt: Date; changed: boolean } | null = null;
       try {
         issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
       } catch (error) {
@@ -1134,7 +1131,7 @@ export async function GET(request: Request) {
           at: new Date().toISOString(),
         }));
       }
-      const headers = new Headers({ "Cache-Control": "no-store" }); if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
+      const headers = new Headers({ "Cache-Control": "no-store" }); if (issued?.changed) headers.append("Set-Cookie", csrfCookie(issued.csrfToken));
       let revision = "";
       try {
         revision = await readDashboardRevision(db, user.id);

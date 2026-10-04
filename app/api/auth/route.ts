@@ -11,7 +11,6 @@ import { ensureBootstrapPlatformRole } from "../../../lib/platform-role-bootstra
 import { createTotpSecret, verifyTotp } from "../../../lib/totp";
 import { isEmailProviderConfigured } from "../../../lib/email-provider";
 import { isBhdIdentityConfigured, bhdEndSessionUrl } from "../../../lib/bhd-identity";
-import { isGoogleOAuthConfigured } from "../../../lib/google-oauth";
 import { isProductionLikeRuntime } from "../../../lib/production-setup";
 
 const credentialsSchema = z.object({
@@ -57,15 +56,12 @@ export async function GET(request: Request) {
     const db = getRawDb(); await ensureSchema(db);
     const user = await authenticateRequest(db, request);
     if (!user) {
-      const headers = new Headers({ "Cache-Control": "no-store" });
-      headers.append("Set-Cookie", clearSessionCookie());
-      headers.append("Set-Cookie", clearCsrfCookie());
-      return Response.json({ authenticated: false, googleEnabled: isGoogleOAuthConfigured() && !isBhdIdentityConfigured(), identityEnabled: isBhdIdentityConfigured() }, { status: 401, headers });
+      return Response.json({ authenticated: false, googleEnabled: false, identityEnabled: isBhdIdentityConfigured() }, { status: 401, headers: { "Cache-Control": "no-store" } });
     }
     const role = await platformRoleOf(db, user.id);
     const issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
-    const headers = new Headers({ "Cache-Control": "no-store" }); if (issued) headers.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
-    return Response.json({ authenticated: true, user, role, googleEnabled: isGoogleOAuthConfigured() && !isBhdIdentityConfigured(), identityEnabled: isBhdIdentityConfigured() }, { headers });
+    const headers = new Headers({ "Cache-Control": "no-store" }); if (issued?.changed) headers.append("Set-Cookie", csrfCookie(issued.csrfToken));
+    return Response.json({ authenticated: true, user, role, googleEnabled: false, identityEnabled: isBhdIdentityConfigured() }, { headers });
   } catch (error) { return errorResponse(error); }
 }
 

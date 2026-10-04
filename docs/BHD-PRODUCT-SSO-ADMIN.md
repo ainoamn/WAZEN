@@ -96,5 +96,5 @@
 - مسارات `start` / `callback` / `logout` + `admin-entry` → `start?returnTo=/admin`
 - غلاف `/login` و`/register`؛ `local=1` + `/admin` → `admin-entry`
 - ربط `bhd_sub` مع الإبقاء على `platform_roles`؛ لا أدمن تلقائي من الهوية
-- كتالوج محلي `mode: "sso"`؛ خمول 48 ساعة + `SessionKeepAlive` + `/api/auth/me`
+- كتالوج محلي `mode: "sso"`؛ الجلسة تبقى حتى «خروج» حسب `docs/BHD-SESSION-POLICY.md` (كوكي 400 يوم، بلا خمول، `/api/auth/me` قراءة فقط)
 - التفصيل: القسم **12.2** في [BHD-UNIFIED-LOGIN-AND-APPS.md](BHD-UNIFIED-LOGIN-AND-APPS.md)

@@ -1,8 +1,8 @@
-/** Browser session cookies (no Expires) plus a 48-hour sliding idle cut-off (BHD §0.2). */
+/** Product session per docs/BHD-SESSION-POLICY.md: persists until explicit logout, no idle timeout. */
 
-export const SESSION_IDLE_MS = 48 * 60 * 60 * 1000;
-export const SESSION_MAX_MS = 48 * 60 * 60 * 1000;
-export const SESSION_IDLE_MAX_AGE_SEC = Math.floor(SESSION_IDLE_MS / 1000);
+/** 400 days — Chromium's practical cookie ceiling, not an idle window. */
+export const SESSION_MAX_AGE_SEC = 400 * 24 * 60 * 60;
+export const SESSION_MAX_MS = SESSION_MAX_AGE_SEC * 1000;
 
 export function sessionCookieName() {
   return process.env.NODE_ENV === "production" ? "__Host-wazen_session" : "wazen_session";
@@ -23,22 +23,11 @@ function secureAttribute() {
   return process.env.NODE_ENV === "production" ? "; Secure" : "";
 }
 
-/** Session cookie with no Expires/Max-Age so it dies when the browser closes. */
-export function browserSessionCookie(token: string) {
-  return `${sessionCookieName()}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secureAttribute()}`;
+/** Host-only (no Domain), written only on explicit sign-in. */
+export function persistentSessionCookie(token: string) {
+  return `${sessionCookieName()}=${encodeURIComponent(token)}; Path=/; Max-Age=${SESSION_MAX_AGE_SEC}; HttpOnly; SameSite=Lax${secureAttribute()}`;
 }
 
-export function browserCsrfCookie(token: string) {
-  return `${csrfCookieName()}=${encodeURIComponent(token)}; Path=/; SameSite=Strict${secureAttribute()}`;
-}
-
-export function isSessionIdle(lastSeenAt: string | null | undefined, nowMs = Date.now()) {
-  if (!lastSeenAt) return true;
-  const seen = Date.parse(lastSeenAt);
-  if (Number.isNaN(seen)) return true;
-  return nowMs - seen > SESSION_IDLE_MS;
-}
-
-export function idleCutoffIso(nowMs = Date.now()) {
-  return new Date(nowMs - SESSION_IDLE_MS).toISOString();
+export function persistentCsrfCookie(token: string) {
+  return `${csrfCookieName()}=${encodeURIComponent(token)}; Path=/; Max-Age=${SESSION_MAX_AGE_SEC}; SameSite=Strict${secureAttribute()}`;
 }

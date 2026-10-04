@@ -3,7 +3,6 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AuthForm } from "../auth-form";
 import { isBhdIdentityConfigured, isBhdSsoReadyForOrigin, safeReturnTo } from "../../lib/bhd-identity";
-import { googleClientId } from "../../lib/google-oauth";
 import { originFromHeaders } from "../../lib/server-request";
 
 export const metadata: Metadata = { title: "إنشاء حساب" };
@@ -34,7 +33,6 @@ export default async function RegisterPage({
   return (
     <AuthForm
       mode="register"
-      googleClientId={identityEnabled ? "" : googleClientId()}
       identityEnabled={identityEnabled}
       ssoReady={ssoReady}
     />

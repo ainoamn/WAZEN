@@ -2,7 +2,6 @@
 
 import { loadKeyring, rotateSecret } from "./encryption";
 import { sanitizeAuditMetadata } from "./audit";
-import { idleCutoffIso } from "./session-policy";
 import {
   archiveExpiredGraceSpaces,
   expireLapsedPaidSubscriptions,
@@ -12,7 +11,7 @@ import {
 export async function runMaintenanceJob(db: D1Database) {
   const now = new Date().toISOString();
   await db.batch([
-    db.prepare("DELETE FROM auth_sessions WHERE expires_at<=? OR last_seen_at<=?").bind(now, idleCutoffIso()),
+    db.prepare("DELETE FROM auth_sessions WHERE expires_at<=?").bind(now),
     db.prepare("DELETE FROM rate_limits WHERE expires_at<=?").bind(now),
     db.prepare("UPDATE blocked_ips SET status='allowed' WHERE status='blocked' AND (expires_at IS NULL OR expires_at<=?)").bind(now),
     db.prepare("DELETE FROM security_events WHERE created_at<=?").bind(new Date(Date.now() - 90 * 86_400_000).toISOString()),

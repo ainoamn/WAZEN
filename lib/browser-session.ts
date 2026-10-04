@@ -21,5 +21,5 @@ export function browserIdFromRequest(request: Request) {
 
 export function browserIdCookie(id: string) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${browserIdCookieName()}=${encodeURIComponent(id)}; Path=/; SameSite=Lax; Max-Age=31536000${secure}`;
+  return `${browserIdCookieName()}=${encodeURIComponent(id)}; Path=/; SameSite=Lax; Max-Age=34560000${secure}`;
 }

@@ -47,9 +47,9 @@
 
 ---
 
-## 0.2 الجلسة: خمول 48 ساعة، حساب واحد، الإدارة
+## 0.2 الجلسة: البقاء حتى الخروج الصريح، حساب واحد، الإدارة
 
-**الخمول.** بعد **48 ساعة بلا استخدام** يُسجَّل الخروج تلقائياً. أي استخدام (نقرة، لوحة مفاتيح، إعادة إظهار التبويب، طلب `/api/auth/me`) يجدّد النافذة 48 ساعة أخرى. المرجع في البوابة: `SESSION_IDLE_MAX_AGE_SEC` و`SessionKeepAlive` وتجديد الكوكي في `GET /api/auth/me`. المنتج يطبّق النافذة نفسها على **جلسته المحلية**، وتبقى جلسة الهوية على `id` بنفس القاعدة حتى يبقى التنقل الصامت متسقاً.
+**البقاء حتى «خروج».** المرجع الملزم: [`docs/BHD-SESSION-POLICY.md`](./BHD-SESSION-POLICY.md) (4 أكتوبر 2026) ويُلغي سياسة «خمول 48 ساعة» السابقة. المستخدم يبقى داخلاً حتى يضغط «خروج»؛ الخمول وإغلاق التبويب أو المتصفح لا تُسقط الجلسة. كوكي المنتج ثابتة 400 يوم Host-only، تُكتب عند الدخول والخروج الصريحين فقط. ممنوع: مهلة خمول، `SessionKeepAlive`، تجديد كوكي في `GET /api/auth/me`، `router.refresh()`/`location.reload()` عند عودة التبويب، Google One Tap في المنتجات.
 
 **حساب واحد لكل متصفح — إلزامي.** لا يُسمح بجلستين لحسابين في نفس المتصفح (نفس الملف الشخصي) في **أي** موقع من المجموعة في الوقت نفسه.
 
@@ -584,9 +584,9 @@ authorize وtoken دائماً على https://id.bhd-om.com وليس أصل ال
 | الأدمن | محلي في `platform_roles` مربوط بـ `bhd_sub` فقط. `BHD_PLATFORM_ADMIN_EMAILS` يخص الهوية. مسار: `/api/auth/admin-entry` |
 | التنقل الصامت | كوكي `bhd_id` على مضيف الهوية؛ وازن يستدعي authorize فقط |
 | المشغّل | `BhdAppSwitcher` بعد الجلسة؛ الحساب → `https://id.bhd-om.com/account`؛ الفتح عبر `startUrl` عند `mode=sso` |
-| جلسة المنتج | خمول منزلق **48 ساعة** (`SESSION_IDLE_MS`) + `SessionKeepAlive` + `GET /api/auth/me` يجدّد `last_seen_at`/`expires_at` · كوكي `__Host-wazen_session` Host-only |
+| جلسة المنتج | حسب [`BHD-SESSION-POLICY.md`](./BHD-SESSION-POLICY.md): تبقى حتى «خروج» — كوكي `__Host-wazen_session` Host-only ثابتة **400 يوم** تُكتب عند الدخول/الخروج فقط · لا خمول · لا `SessionKeepAlive` · `GET /api/auth/me` JSON فقط بلا `Set-Cookie` |
 | الفوتر | برامجنا من `BHD_APPS` · عن الشركة / هوية الشركة → بوابة `www.bhd-om.com` · دخول الأدمن → `admin-entry` |
-| ملفات | `app/api/auth/bhd/start\|callback\|logout` · `admin-entry` · `app/api/auth/me` · `components/auth/SessionKeepAlive.tsx` · `lib/bhd-account.ts` · `lib/platform-role-bootstrap.ts` · `docs/BHD-PRODUCT-SSO-ADMIN.md` |
+| ملفات | `app/api/auth/bhd/start\|callback\|logout` · `admin-entry` · `app/api/auth/me` · `lib/session-policy.ts` · `lib/bhd-account.ts` · `lib/platform-role-bootstrap.ts` · `docs/BHD-PRODUCT-SSO-ADMIN.md` |
 | عمود `bhd_sub` | جدول `users` |
 | تاريخ قلب `mode` إلى `sso` | 20 أغسطس 2026 في وازن؛ يُزامَن في ONE-BHD |
 | أسرار (أسماء فقط) | `BHD_IDENTITY_ISSUER`, `BHD_IDENTITY_ENDPOINT` (اختياري), `BHD_OAUTH_CLIENT_ID`, `BHD_OAUTH_CLIENT_SECRET`, `BHD_OAUTH_REDIRECT_URI`, `BHD_IDENTITY_TOKEN_SECRET`, `WAZEN_ADMIN_EMAILS`, سر الجلسة, `DATABASE_URL` |

@@ -53,18 +53,10 @@ export function BrowserSessionSync() {
       }
     };
 
+    // Only explicit sign-in/out in another tab triggers reconcile — never tab focus/visibility (docs/BHD-SESSION-POLICY.md).
     const unsub = subscribeBrowserSessionChange(() => { void reconcile(); });
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void reconcile();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
     void reconcile();
-    return () => {
-      unsub();
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-    };
+    return unsub;
   }, [pathname, router]);
 
   return null;

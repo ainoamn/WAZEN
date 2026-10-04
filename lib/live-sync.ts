@@ -65,12 +65,10 @@ export function LiveBuildGuard() {
       }
     };
     const timer = window.setInterval(() => { void check(); }, BUILD_POLL_MS);
-    document.addEventListener("visibilitychange", check);
     void check();
     return () => {
       stopped = true;
       window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", check);
     };
   }, [pathname]);
   return null;

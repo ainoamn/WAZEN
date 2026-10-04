@@ -28,7 +28,7 @@ export function ensureBrowserId() {
       id = crypto.randomUUID();
     }
     window.localStorage.setItem(STORAGE_KEY, id);
-    document.cookie = `wazen_browser=${encodeURIComponent(id)}; Path=/; SameSite=Lax; Max-Age=31536000${secureSuffix()}`;
+    if (fromCookie !== id) document.cookie = `wazen_browser=${encodeURIComponent(id)}; Path=/; SameSite=Lax; Max-Age=34560000${secureSuffix()}`;
     return id;
   } catch {
     return "";

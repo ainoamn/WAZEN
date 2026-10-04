@@ -12,7 +12,6 @@ test("google oauth supports Hisaby-style GIS id tokens without a client secret",
   const callback = fs.readFileSync(path.join(root, "app/api/auth/google/callback/route.ts"), "utf8");
   const account = fs.readFileSync(path.join(root, "lib/google-account.ts"), "utf8");
   const form = fs.readFileSync(path.join(root, "app/auth-form.tsx"), "utf8");
-  const gsi = fs.readFileSync(path.join(root, "app/google-sign-in.tsx"), "utf8");
   assert.match(oauth, /code_challenge_method/);
   assert.match(oauth, /GOOGLE_CLIENT_ID/);
   assert.match(oauth, /HISABY_COMPAT_CLIENT_ID/);
@@ -29,7 +28,7 @@ test("google oauth supports Hisaby-style GIS id tokens without a client secret",
   assert.match(start, /verifyGoogleIdToken/);
   assert.match(callback, /exchangeGoogleCode/);
   assert.match(account, /oauth_identities/);
-  assert.match(form, /GoogleSignInButton/);
-  assert.match(gsi, /accounts\.google\.com\/gsi\/client/);
-  assert.match(gsi, /openid email profile/);
+  // BHD session policy: products never load GIS / One Tap in the UI.
+  assert.doesNotMatch(form, /GoogleSignInButton|accounts\.google\.com\/gsi/);
+  assert.equal(fs.existsSync(path.join(root, "app/google-sign-in.tsx")), false);
 });

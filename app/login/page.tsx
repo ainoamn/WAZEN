@@ -3,7 +3,6 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AuthForm } from "../auth-form";
 import { isBhdIdentityConfigured, isBhdSsoReadyForOrigin, safeReturnTo } from "../../lib/bhd-identity";
-import { googleClientId } from "../../lib/google-oauth";
 import { originFromHeaders } from "../../lib/server-request";
 
 export const metadata: Metadata = { title: "تسجيل الدخول" };
@@ -36,7 +35,6 @@ export default async function LoginPage({
     <AuthForm
       mode="login"
       next={next}
-      googleClientId={identityEnabled ? "" : googleClientId()}
       identityEnabled={identityEnabled}
       ssoReady={ssoReady}
       identityOnly={ssoReady}

@@ -175,9 +175,7 @@ test("login and register wrap the unified BHD portal", () => {
   assert.match(form, /name="email"/);
   assert.match(form, /name="password"/);
   assert.match(form, /name="action"/);
-  const gsi = fs.readFileSync(path.join(root, "app/google-sign-in.tsx"), "utf8");
-  assert.match(gsi, /\/api\/auth\/google/);
-  assert.match(gsi, /idToken/);
+  assert.equal(fs.existsSync(path.join(root, "app/google-sign-in.tsx")), false);
 });
 
 test("BHD SSO start/callback exist and login can wrap identity", () => {
@@ -207,7 +205,7 @@ test("BHD SSO start/callback exist and login can wrap identity", () => {
   assert.match(home, /isClientLogoutInProgress/);
   assert.match(dashboard, /isClientLogoutInProgress/);
   assert.match(fs.readFileSync(path.join(root, "app/api/auth/bhd/logout/route.ts"), "utf8"), /bhdEndSessionUrl/);
-  assert.match(fs.readFileSync(path.join(root, "components/auth/SessionKeepAlive.tsx"), "utf8"), /\/api\/auth\/me/);
+  assert.equal(fs.existsSync(path.join(root, "components/auth/SessionKeepAlive.tsx")), false);
   assert.match(fs.readFileSync(path.join(root, "docs/BHD-PRODUCT-SSO-ADMIN.md"), "utf8"), /admin-entry/);
   assert.match(home, /BhdAppSwitcher/);
   assert.match(home, /completeClientLogout/);
@@ -292,7 +290,7 @@ test("logged-out sign-in does not paint the home load-error screen", () => {
   assert.match(dashboardRoute, /DELETE FROM member_installments WHERE space_id=\?/);
   assert.match(dashboardRoute, /DELETE FROM circle_turns WHERE space_id=\?/);
   assert.match(dashboardRoute, /unauthenticatedResponse/);
-  assert.match(dashboardRoute, /clearSessionCookie/);
+  assert.doesNotMatch(dashboardRoute, /clearSessionCookie/);
 });
 
 test("auth form stays visible when a browser session is already active", () => {

@@ -308,7 +308,7 @@ export async function GET(request: Request) {
     const role = await roleOf(db, user.id);
     const responseHeaders = new Headers({ "Cache-Control": "no-store" });
     const issued = user.authType === "session" ? await issueCsrfToken(db, request) : null;
-    if (issued) responseHeaders.append("Set-Cookie", csrfCookie(issued.csrfToken, issued.expiresAt));
+    if (issued?.changed) responseHeaders.append("Set-Cookie", csrfCookie(issued.csrfToken));
 
     if (view === "documents") {
       assertApiScope(user, "documents:read");
