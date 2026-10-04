@@ -8,6 +8,7 @@
 | **المستودع** | https://github.com/ainoamn/WAZEN |
 | **آخر عمل** | 4 أكتوبر 2026 — تطبيق [`BHD-SESSION-POLICY.md`](./BHD-SESSION-POLICY.md): الجلسة تبقى حتى «خروج» |
 | **الإنتاج** | https://wazen.bhd-om.com |
+| **تفاصيل 4 أكتوبر (سياسة الجلسة)** | [HANDOFF-2026-10-04-SESSION-POLICY.md](./HANDOFF-2026-10-04-SESSION-POLICY.md) |
 | **تفاصيل 11 سبتمبر** | [HANDOFF-2026-09-11.md](./HANDOFF-2026-09-11.md) |
 | **تفاصيل 9 سبتمبر** | [HANDOFF-2026-09-09.md](./HANDOFF-2026-09-09.md) |
 | **جلسة 1 سبتمبر** | [HANDOFF-2026-09-01-SESSION.md](./HANDOFF-2026-09-01-SESSION.md) |
@@ -25,10 +26,11 @@ npm install
 ثم افتح بالترتيب:
 
 1. **هذا الملف** (`docs/CONTINUE-HERE.md`)
-2. **[HANDOFF-2026-09-11.md](./HANDOFF-2026-09-11.md)** — مدفوع الرحلة + هدف غير محصّل + محفظة بلا مساهمة
-3. **[WALLET-ACCOUNTING.md](./WALLET-ACCOUNTING.md)** — قواعد عليه/له/مدفوع لكل نوع محفظة
-4. **[HANDOFF-2026-09-09.md](./HANDOFF-2026-09-09.md)** — تكرار / دمج / جهات اتصال
-5. **[HANDOFF-2026-09-01-SESSION.md](./HANDOFF-2026-09-01-SESSION.md)** — بريد الكشف والخروج وواتساب
+2. **[HANDOFF-2026-10-04-SESSION-POLICY.md](./HANDOFF-2026-10-04-SESSION-POLICY.md)** — الجلسة تبقى حتى «خروج» (سياسة BHD)
+3. **[HANDOFF-2026-09-11.md](./HANDOFF-2026-09-11.md)** — مدفوع الرحلة + هدف غير محصّل + محفظة بلا مساهمة
+4. **[WALLET-ACCOUNTING.md](./WALLET-ACCOUNTING.md)** — قواعد عليه/له/مدفوع لكل نوع محفظة
+5. **[HANDOFF-2026-09-09.md](./HANDOFF-2026-09-09.md)** — تكرار / دمج / جهات اتصال
+6. **[HANDOFF-2026-09-01-SESSION.md](./HANDOFF-2026-09-01-SESSION.md)** — بريد الكشف والخروج وواتساب
 
 ---
 
@@ -76,9 +78,9 @@ npm install
 | دخول BHD: فصل حد البداية عن الإرجاع ومنع محاولات SSO من إنشاء/توريث حظر IP لساعتين | ✅ على `main` ومنشور (`b026c77`) |
 | دعوة: من الهاتف أو **من Gmail** مباشرة أو رفع/تنزيل vCard وCSV | ✅ |
 | Next.js 16.3.4 لتمرير `npm audit` ونشر Vercel | ✅ |
-| تطبيق [`BHD-SESSION-POLICY.md`](./BHD-SESSION-POLICY.md) حرفياً (4 أكتوبر): الجلسة تبقى حتى «خروج» (كوكي 400 يوم)، حذف `SessionKeepAlive` ومهلة الخمول، `/api/auth/me` بلا `Set-Cookie`، لا إعادة تحميل عند عودة التبويب، إزالة زر/سكربت جوجل من المنتج | ✅ على `main` |
+| تطبيق [`BHD-SESSION-POLICY.md`](./BHD-SESSION-POLICY.md) حرفياً (4 أكتوبر): الجلسة تبقى حتى «خروج» (كوكي 400 يوم)، حذف `SessionKeepAlive` ومهلة الخمول، `/api/auth/me` بلا `Set-Cookie`، لا إعادة تحميل عند عودة التبويب، إزالة زر/سكربت جوجل من المنتج | ✅ على `main` ومنشور (`bbb960d`) |
 
-**الإنتاج:** https://wazen.bhd-om.com — `buildId` الحي: `b026c77fd82fa2ad35e9b39380d53cbd7e5149fd`
+**الإنتاج:** https://wazen.bhd-om.com — `buildId` الحي: `bbb960d46870e49aa68a4c0d73c77eb167070a6b` (سياسة الجلسة، 4 أكتوبر 2026)
 
 Vercel كان يرفض `8aaedce` لأن Hobby لا يسمح بـ cron كل 5 دقائق. `426551d` يُشغّل `/api/jobs/tick` مرة يومياً في 02:00 و03:00 و06:00 و14:00 UTC. CI `verify` ما زال يفشل على lint قديم؛ Vercel لا ينتظره.
 
