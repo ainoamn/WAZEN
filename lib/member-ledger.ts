@@ -272,6 +272,11 @@ export function buildMemberLedger(input: {
     const share = splits.find((row) => row.member_id === member.id);
     const shareMinor = share ? Number(share.share_minor) || 0 : 0;
     const fromFund = isFundPaidExpense(expense);
+    const billMinor = Number(expense.amount_minor) || 0;
+    const ofBill = shareMinor > 0 && shareMinor !== billMinor
+      ? { ar: ` · حصته من فاتورة ${formatMoneyMinor(billMinor, input.currency, "ar")}`, en: ` · his share of a ${formatMoneyMinor(billMinor, input.currency, "en")} bill` }
+      : { ar: "", en: "" };
+    const payerName = expense.paid_by_member_id === member.id ? member.display_name : expense.paid_by_name || "—";
 
     if (fromFund) {
       // Fund share is consumed from contributions; net leftover/shortfall applied after the loop.
@@ -283,8 +288,8 @@ export function buildMemberLedger(input: {
           direction: "out",
           titleAr: `حصة من: ${expense.description || "مصروف"}`,
           titleEn: `Share of: ${expense.description || "expense"}`,
-          detailAr: "دفعها الصندوق",
-          detailEn: "Paid by the fund",
+          detailAr: `مدفوعة من: صندوق الجمعية${ofBill.ar}`,
+          detailEn: `Paid from: the association fund${ofBill.en}`,
           amountMinor: shareMinor,
         });
       }
@@ -298,22 +303,21 @@ export function buildMemberLedger(input: {
         direction: "in",
         titleAr: expense.description || "مصروف مشترك",
         titleEn: expense.description || "Shared expense",
-        detailAr: "دفعها كاملة من جيبه",
-        detailEn: "He paid the whole bill from his pocket",
+        detailAr: `مدفوعة من: حساب عضو — ${payerName} (دفع الفاتورة كاملة)`,
+        detailEn: `Paid from: a member's account — ${payerName} (paid the whole bill)`,
         amountMinor: Number(expense.amount_minor) || 0,
       });
     }
     if (shareMinor > 0) {
       pocketSharesTotal += shareMinor;
-      const payer = expense.paid_by_name || "—";
       lines.push({
         at: expense.occurred_at,
         focus: "spent",
         direction: "out",
         titleAr: `حصة من: ${expense.description || "مصروف"}`,
         titleEn: `Share of: ${expense.description || "expense"}`,
-        detailAr: expense.paid_by_member_id === member.id ? "من فاتورة دفعها هو" : `دفعها ${payer}`,
-        detailEn: expense.paid_by_member_id === member.id ? "From a bill he paid" : `Paid by ${payer}`,
+        detailAr: `مدفوعة من: حساب عضو — ${payerName}${ofBill.ar}`,
+        detailEn: `Paid from: a member's account — ${payerName}${ofBill.en}`,
         amountMinor: shareMinor,
       });
     }

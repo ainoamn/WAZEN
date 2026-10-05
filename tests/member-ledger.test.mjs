@@ -504,4 +504,11 @@ test("trip ledger separates what was spent for him from the fund, from member bi
   assert.match(html, /حصته من فواتير الصندوق/);
   assert.match(html, /حصته من فواتير دفعها الأعضاء/);
   assert.match(html, /دفع فواتير من جيبه/);
+  assert.match(html, /مدفوعة من: صندوق الجمعية/);
+  assert.match(html, /مدفوعة من: حساب عضو — داود/);
+  const detailOf = (id, focus) => ledger.lines.find((line) => line.titleAr.includes(id) && line.focus === focus)?.detailAr ?? "";
+  assert.match(detailOf("فندق", "spent"), /^مدفوعة من: صندوق الجمعية · حصته من فاتورة/);
+  assert.match(detailOf("عشاء", "spent"), /^مدفوعة من: حساب عضو — داود · حصته من فاتورة/);
+  assert.match(detailOf("تاكسي", "paid"), /^مدفوعة من: حساب عضو — .+ \(دفع الفاتورة كاملة\)$/);
+  assert.match(detailOf("تاكسي", "spent"), /^مدفوعة من: حساب عضو — /);
 });

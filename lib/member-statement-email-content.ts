@@ -72,13 +72,14 @@ export function buildStatementSummaryHtml(input: {
   const rows = recent.map((line) => {
     const date = new Date(line.at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB", { day: "numeric", month: "short" });
     const title = locale === "ar" ? line.titleAr : line.titleEn;
+    const detail = locale === "ar" ? line.detailAr : line.detailEn;
     const amount = formatMemberLedgerLineMoney(line, input.currency, locale);
     const tone = line.focus === "owes" || line.focus === "spent" || line.direction === "out" ? "#b42318" : "#24443c";
     const align = locale === "ar" ? "right" : "left";
     const amountAlign = locale === "ar" ? "left" : "right";
     return `<tr>
       <td style="padding:7px 10px;border-top:1px solid #e3ece8;font-size:12px;white-space:nowrap;text-align:${align};">${escapeHtml(date)}</td>
-      <td style="padding:7px 10px;border-top:1px solid #e3ece8;font-size:12px;text-align:${align};">${escapeHtml(title)}</td>
+      <td style="padding:7px 10px;border-top:1px solid #e3ece8;font-size:12px;text-align:${align};">${escapeHtml(title)}${detail ? `<br><span style="font-size:11px;color:#5f6e68;">${escapeHtml(detail)}</span>` : ""}</td>
       <td style="padding:7px 10px;border-top:1px solid #e3ece8;font-size:12px;white-space:nowrap;text-align:${amountAlign};color:${tone};">${escapeHtml(amount)}</td>
     </tr>`;
   }).join("");
