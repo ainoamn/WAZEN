@@ -1058,6 +1058,22 @@ html[data-theme="dark"] .space-picker-field select { background: var(--surface);
 .duplicate-safety { flex-direction: row; align-items: center; gap: 8px; }
 .workflow-panel { display: grid; gap: 16px; padding: 18px 20px; }
 .trip-expense-row { border-bottom: 1px solid var(--border); }
+.trip-expense-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin: 4px 0 12px; }
+.trip-expense-tools select,
+.trip-expense-tools input { min-height: 40px; border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; background: #fff; color: var(--ink); font: inherit; font-weight: 700; }
+.trip-expense-search { flex: 1 1 260px; display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--muted); }
+.trip-expense-search input { flex: 1; min-width: 0; min-height: 38px; border: 0; padding: 0; background: transparent; outline: none; }
+.trip-expense-date-filter { display: grid; gap: 2px; }
+.trip-expense-date-filter span { font-size: 11px; font-weight: 800; color: var(--muted); }
+.trip-expense-summary { flex-basis: 100%; margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; color: var(--muted); font-size: 13px; font-weight: 700; }
+.trip-expense-summary .link-button { border: 0; background: transparent; padding: 0; color: #0d7a65; font: inherit; font-weight: 800; cursor: pointer; text-decoration: underline; }
+.trip-expense-date { font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+html[data-theme="dark"] .trip-expense-tools select,
+html[data-theme="dark"] .trip-expense-tools input,
+html[data-theme="dark"] .trip-expense-search { background: var(--field); border-color: var(--line); color: var(--field-ink); }
+html[data-theme="dark"] .trip-expense-search input { background: transparent; }
+html[data-theme="dark"] .trip-expense-date { color: var(--field-ink); }
+@media (max-width: 640px) { .trip-expense-tools > select, .trip-expense-date-filter { flex: 1 1 45%; } .trip-expense-date-filter input { width: 100%; } }
 .trip-expense-row .transaction-row { border: 0; }
 .split-chips { padding: 0 50px 11px; display: flex; flex-wrap: wrap; gap: 6px; }
 .split-chips span { padding: 5px 8px; border-radius: 99px; background: #eef6f2; color: #4f655e; font-size: 9px; }
