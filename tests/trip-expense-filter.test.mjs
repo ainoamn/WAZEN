@@ -34,6 +34,14 @@ test("searches by date, description and member names", () => {
   assert.deepEqual(filterTripExpenses([...expenses], names, { query: "مواقف" }).map((row) => row.id), ["a"]);
 });
 
+test("sorts by entry number by default and finds «#n» exactly", () => {
+  const numbered = expenses.map((row, index) => ({ ...row, seq_no: [3, 12, 1, 20][index] }));
+  assert.deepEqual(filterTripExpenses([...numbered], names, {}).map((row) => row.seq_no), [20, 12, 3, 1]);
+  assert.deepEqual(filterTripExpenses([...numbered], names, { sort: "number_asc" }).map((row) => row.seq_no), [1, 3, 12, 20]);
+  assert.deepEqual(filterTripExpenses([...numbered], names, { query: "#12" }).map((row) => row.id), ["b"]);
+  assert.deepEqual(filterTripExpenses([...numbered], names, { query: "#١" }).map((row) => row.id), ["c"]);
+});
+
 test("filters by payer and date range", () => {
   assert.deepEqual(filterTripExpenses([...expenses], names, { payer: "fund" }).map((row) => row.id), ["c"]);
   assert.deepEqual(filterTripExpenses([...expenses], names, { payer: "ah" }).map((row) => row.id), ["b", "a"]);

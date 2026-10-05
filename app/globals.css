@@ -1058,6 +1058,8 @@ html[data-theme="dark"] .space-picker-field select { background: var(--surface);
 .duplicate-safety { flex-direction: row; align-items: center; gap: 8px; }
 .workflow-panel { display: grid; gap: 16px; padding: 18px 20px; }
 .trip-expense-row { border-bottom: 1px solid var(--border); }
+.entry-no { display: inline-block; margin-inline-end: 6px; padding: 1px 7px; border-radius: 999px; background: #eef3f0; color: #42534c; font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; vertical-align: middle; }
+html[data-theme="dark"] .entry-no { background: var(--field); color: var(--field-ink); }
 .trip-expense-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin: 4px 0 12px; }
 .trip-expense-tools select,
 .trip-expense-tools input { min-height: 40px; border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; background: #fff; color: var(--ink); font: inherit; font-weight: 700; }

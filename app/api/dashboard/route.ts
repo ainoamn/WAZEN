@@ -6,6 +6,7 @@ import { hasComposeParts, planExpenseSplitsForApi, planPayerSplitForApi } from "
 import { migratePerExpenseTripSettlements, rebuildSpaceTripSettlements, refreshTripWalletSettlements } from "../../../lib/trip-settlements";
 import { fundPayoutStatements, postPeerMemberSettlement } from "../../../lib/settlement-posting";
 import { assertSpaceSettledForArchive } from "../../../lib/archive-gate";
+import { assignEntryNumbers } from "../../../lib/entry-numbers";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
 import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf, actorCanIssueSpaceDocuments } from "../../../lib/authorization";
 import { prepareAudit, writeAudit } from "../../../lib/audit";
@@ -816,6 +817,9 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
   await refreshTripWalletSettlements(db, allowed
     .filter((space) => space.type === "trip" && (space.status ?? "active") !== "archived")
     .map((space) => space.id));
+  try {
+    await assignEntryNumbers(db, ids);
+  } catch { /* numbering must not block the dashboard */ }
 
   if (options?.refreshDerived !== false) {
     try {
@@ -833,7 +837,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     db.prepare(`SELECT * FROM contribution_plans WHERE space_id IN (${placeholders})`).bind(...ids).all(),
     db.prepare(`SELECT ct.*,m.display_name FROM circle_turns ct JOIN members m ON m.id=ct.member_id
       WHERE ct.space_id IN (${placeholders}) ORDER BY ct.space_id,ct.turn_number`).bind(...ids).all(),
-    db.prepare(`SELECT te.id, te.space_id, te.paid_by_member_id, te.amount_minor, te.description, te.occurred_at, te.transaction_id, te.status,
+    db.prepare(`SELECT te.id, te.space_id, te.paid_by_member_id, te.amount_minor, te.description, te.occurred_at, te.transaction_id, te.status, te.seq_no,
         CASE WHEN COALESCE(te.paid_from, CASE WHEN t.kind='expense' THEN 'common_fund' ELSE 'member' END)='common_fund'
           THEN 'صندوق الجمعية' ELSE m.display_name END AS paid_by_name,
         COALESCE(te.paid_from, CASE WHEN t.kind='expense' THEN 'common_fund' ELSE 'member' END) AS paid_from

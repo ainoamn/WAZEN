@@ -2,7 +2,7 @@
 
 import { currencyScale } from "./money.ts";
 
-export type TripExpenseSort = "newest" | "oldest" | "amount_desc" | "amount_asc" | "name";
+export type TripExpenseSort = "number_desc" | "number_asc" | "newest" | "oldest" | "amount_desc" | "amount_asc" | "name";
 
 export type FilterableTripExpense = {
   id: string;
@@ -12,6 +12,7 @@ export type FilterableTripExpense = {
   paid_by_member_id?: string | null;
   paid_by_name?: string | null;
   paid_from?: string | null;
+  seq_no?: number | null;
 };
 
 export type TripExpenseFilter = {
@@ -110,10 +111,15 @@ export function filterTripExpenses<T extends FilterableTripExpense>(
     if (filter.to && day > filter.to) return false;
     if (!tokens.length) return true;
     const haystack = tripExpenseSearchText(expense, namesByExpense.get(expense.id) ?? [], currency);
-    return tokens.every((token) => haystack.includes(token));
+    // «#12» is an exact entry number; other tokens are free text.
+    return tokens.every((token) => (token.startsWith("#") ? Number(token.slice(1)) === Number(expense.seq_no ?? NaN) : haystack.includes(token)));
   });
   const byDate = (a: T, b: T) => String(a.occurred_at).localeCompare(String(b.occurred_at)) || a.id.localeCompare(b.id);
-  switch (filter.sort ?? "newest") {
+  const byNumber = (a: T, b: T) => (Number(a.seq_no ?? Number.MAX_SAFE_INTEGER) - Number(b.seq_no ?? Number.MAX_SAFE_INTEGER)) || byDate(a, b);
+  switch (filter.sort ?? "number_desc") {
+    case "number_desc": return rows.sort((a, b) => byNumber(b, a));
+    case "number_asc": return rows.sort(byNumber);
+    case "newest": return rows.sort((a, b) => byDate(b, a));
     case "oldest": return rows.sort(byDate);
     case "amount_desc": return rows.sort((a, b) => b.amount_minor - a.amount_minor || byDate(b, a));
     case "amount_asc": return rows.sort((a, b) => a.amount_minor - b.amount_minor || byDate(b, a));

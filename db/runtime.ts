@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 26;
+const SCHEMA_VERSION = 27;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -316,6 +316,14 @@ async function ensureSchemaPatches(db: D1Database) {
   if (!txnNames.has("edit_count")) {
     try { await db.prepare("ALTER TABLE transactions ADD COLUMN edit_count INTEGER NOT NULL DEFAULT 0").run(); } catch { /* exists */ }
   }
+  if (!txnNames.has("seq_no")) {
+    try { await db.prepare("ALTER TABLE transactions ADD COLUMN seq_no INTEGER").run(); } catch { /* exists */ }
+  }
+  if (!tripExpenseNames.has("seq_no")) {
+    try { await db.prepare("ALTER TABLE trip_expenses ADD COLUMN seq_no INTEGER").run(); } catch { /* exists */ }
+  }
+  try { await db.prepare("CREATE INDEX IF NOT EXISTS idx_transactions_space_seq ON transactions(space_id, seq_no)").run(); } catch { /* exists */ }
+  try { await db.prepare("CREATE INDEX IF NOT EXISTS idx_trip_expenses_space_seq ON trip_expenses(space_id, seq_no)").run(); } catch { /* exists */ }
   await db.batch([
     db.prepare(`CREATE TABLE IF NOT EXISTS transaction_revisions (
       id TEXT PRIMARY KEY,
