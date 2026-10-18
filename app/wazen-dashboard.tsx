@@ -1079,13 +1079,20 @@ function TripSettlementLedger({
             : (locale === "ar" ? "تحويل مباشر بين الأعضاء" : "direct member-to-member transfer");
         return (
           <div className="settlement-alert" key={settlement.id}>
-            <ShieldCheck size={17} />
-            <span>
-              {label}
-              {settlement.reservedMinor > 0 ? (locale === "ar" ? ` · حُجز ${formatMoney(settlement.reservedMinor, space.currency, locale)} من رصيده` : ` · reserved ${formatMoney(settlement.reservedMinor, space.currency, locale)} from credit`) : ""}
-              <small className="settlement-meta">{locale === "ar" ? `السبب: ${why} · كيف: ${how} · المتبقي ${formatMoney(settlement.payableMinor, space.currency, locale)}${!fromFund ? ` · عليه الآن ${formatMoney(remaining, space.currency, locale)}` : ""}` : `Why: ${why} · how: ${how} · remaining ${formatMoney(settlement.payableMinor, space.currency, locale)}${!fromFund ? ` · still owes ${formatMoney(remaining, space.currency, locale)}` : ""}`}</small>
-            </span>
-            <b className="claim-stack">
+            <ShieldCheck size={17} className="settlement-alert-icon" aria-hidden />
+            <div className="settlement-alert-body">
+              <strong className="settlement-alert-title">
+                {label}
+                {settlement.reservedMinor > 0 ? (locale === "ar" ? ` · حُجز ${formatMoney(settlement.reservedMinor, space.currency, locale)} من رصيده` : ` · reserved ${formatMoney(settlement.reservedMinor, space.currency, locale)} from credit`) : ""}
+              </strong>
+              <small className="settlement-meta">
+                <span>{locale === "ar" ? `السبب: ${why}` : `Why: ${why}`}</span>
+                <span>{locale === "ar" ? `كيف: ${how}` : `How: ${how}`}</span>
+                <span>{locale === "ar" ? `المتبقي ${formatMoney(settlement.payableMinor, space.currency, locale)}` : `Remaining ${formatMoney(settlement.payableMinor, space.currency, locale)}`}</span>
+                {!fromFund ? <span>{locale === "ar" ? `عليه الآن ${formatMoney(remaining, space.currency, locale)}` : `Still owes ${formatMoney(remaining, space.currency, locale)}`}</span> : null}
+              </small>
+            </div>
+            <b className="settlement-alert-amount claim-stack">
               {settlement.reservedMinor > 0 && <s className="claim-struck">{formatMoney(settlement.amountMinor, space.currency, locale)}</s>}
               {formatMoney(settlement.payableMinor, space.currency, locale)}
             </b>
@@ -1100,11 +1107,12 @@ function TripSettlementLedger({
               });
               // Trip transfers are recomputed from the ledger, so deleting one would only bring it back.
               const canManage = !tripPlan && ["owner", "manager", "supervisor", "treasurer"].includes(myRoleInSpace(data, space));
+              if (!decision.ok && !canManage) return null;
               return (
-                <>
+                <div className="settlement-alert-actions">
                   {decision.ok ? <button type="button" onClick={() => onSettle(settlement.id)}>{settlementConfirmLabel(decision.as, locale)}</button> : null}
                   {canManage ? <button type="button" className="secondary-button compact" onClick={() => voidRow(settlement.id)}>{locale === "ar" ? "حذف" : "Delete"}</button> : null}
-                </>
+                </div>
               );
             })()}
           </div>
@@ -1126,13 +1134,20 @@ function TripSettlementLedger({
             : (locale === "ar" ? "تحويل مباشر بين الأعضاء" : "direct member transfer");
         return (
           <div className="settlement-alert is-posted" key={settlement.id}>
-            <ArrowLeftRight size={17} />
-            <span>
-              {locale === "ar" ? `من ${fromName} إلى ${toName}` : `${fromName} → ${toName}`}
-              {when(settlement.settled_at) ? ` · ${when(settlement.settled_at)}` : ""}
-              <small className="settlement-meta">{locale === "ar" ? `السبب: ${why} · كيف: ${how} · مدفوع ${formatMoney(settlement.amount_minor, space.currency, locale)} · متبقي عليه ${formatMoney(remaining, space.currency, locale)}` : `Why: ${why} · how: ${how} · paid ${formatMoney(settlement.amount_minor, space.currency, locale)} · still owes ${formatMoney(remaining, space.currency, locale)}`}</small>
-            </span>
-            <b className="amount-positive">{formatMoney(settlement.amount_minor, space.currency, locale)}</b>
+            <ArrowLeftRight size={17} className="settlement-alert-icon" aria-hidden />
+            <div className="settlement-alert-body">
+              <strong className="settlement-alert-title">
+                {locale === "ar" ? `من ${fromName} إلى ${toName}` : `${fromName} → ${toName}`}
+                {when(settlement.settled_at) ? ` · ${when(settlement.settled_at)}` : ""}
+              </strong>
+              <small className="settlement-meta">
+                <span>{locale === "ar" ? `السبب: ${why}` : `Why: ${why}`}</span>
+                <span>{locale === "ar" ? `كيف: ${how}` : `How: ${how}`}</span>
+                <span>{locale === "ar" ? `مدفوع ${formatMoney(settlement.amount_minor, space.currency, locale)}` : `Paid ${formatMoney(settlement.amount_minor, space.currency, locale)}`}</span>
+                <span>{locale === "ar" ? `متبقي عليه ${formatMoney(remaining, space.currency, locale)}` : `Still owes ${formatMoney(remaining, space.currency, locale)}`}</span>
+              </small>
+            </div>
+            <b className="settlement-alert-amount amount-positive">{formatMoney(settlement.amount_minor, space.currency, locale)}</b>
           </div>
         );
       })}
