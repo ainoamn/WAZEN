@@ -1,7 +1,7 @@
 /** Archiving seals a wallet (read-only, hidden), so it is refused until every balance is settled and zeroed. */
 
-import { ApiError } from "./api-error";
-import { rebuildSpaceTripSettlements } from "./trip-settlements";
+import { ApiError } from "./api-error.ts";
+import { rebuildSpaceTripSettlements } from "./trip-settlements.ts";
 
 export type ArchiveBlockers = {
   pendingSettlements: number;
@@ -17,16 +17,21 @@ export function archiveIsClear(blockers: ArchiveBlockers) {
 export async function archiveBlockers(db: D1Database, spaceId: string): Promise<ArchiveBlockers> {
   const space = await db.prepare("SELECT type FROM spaces WHERE id=?").bind(spaceId).first<{ type: string }>();
   if (space?.type === "trip" || space?.type === "household") await rebuildSpaceTripSettlements(db, spaceId);
+  // Trips settle via net transfers, not monthly dues. A leftover contribution plan must not block archive
+  // when every settlement is already cleared (camping / one-off outings often leave unpaid installment rows).
+  const checkInstallments = space?.type !== "trip";
   const [pending, unpaid] = await Promise.all([
     db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(amount_minor),0) AS total FROM settlements WHERE space_id=? AND status='pending'")
       .bind(spaceId)
       .first<{ n: number; total: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(mi.amount_minor - mi.paid_minor),0) AS total
+    checkInstallments
+      ? db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(mi.amount_minor - mi.paid_minor),0) AS total
       FROM member_installments mi
       JOIN members m ON m.id=mi.member_id AND m.status='active'
       WHERE mi.space_id=? AND mi.paid_minor < mi.amount_minor`)
-      .bind(spaceId)
-      .first<{ n: number; total: number }>(),
+        .bind(spaceId)
+        .first<{ n: number; total: number }>()
+      : Promise.resolve({ n: 0, total: 0 }),
   ]);
   return {
     pendingSettlements: Number(pending?.n ?? 0),
