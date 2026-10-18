@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { planTripSettlements, sameTransferSet, tripMemberPosition } from "../lib/trip-net.ts";
+import { planTripSettlements, sameTransferSet, tripHasBillActivity, tripMemberPosition } from "../lib/trip-net.ts";
 
 const FUND = "space:trip";
 
@@ -61,6 +61,13 @@ test("debt left after member creditors are paid goes into the fund", () => {
     { fromMemberId: "b", toMemberId: "a", amountMinor: 10_000 },
     { fromMemberId: "b", toMemberId: FUND, amountMinor: 15_000 },
   ]);
+});
+
+test("tripHasBillActivity ignores voided rows and other spaces", () => {
+  assert.equal(tripHasBillActivity([], "trip"), false);
+  assert.equal(tripHasBillActivity([{ id: "v", space_id: "trip", status: "voided", paid_from: "common_fund" }], "trip"), false);
+  assert.equal(tripHasBillActivity([{ id: "e", space_id: "other", paid_from: "common_fund" }], "trip"), false);
+  assert.equal(tripHasBillActivity([{ id: "e", space_id: "trip", paid_from: "member" }], "trip"), true);
 });
 
 test("settled trip plans produce no transfers and identical pending rows are kept", () => {

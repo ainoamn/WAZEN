@@ -32,7 +32,7 @@ import { PwaInstallCard } from "../components/pwa/PwaInstallCard";
 import { PushNotifyCard } from "../components/pwa/PushNotifyCard";
 import { allocateOldestFirst, periodKeyFromDate, remainingInstallmentMinor, selectByAmount, selectThroughOldest, totalRemainingMinor } from "../lib/installments";
 import { formatMoneyMinor, currencyScale, parseMoneyToMinor, parseNonNegativeMoneyToMinor, applyTypedFundShare, finalizeTypedFundShare } from "../lib/money";
-import { isFundId, tripMemberPosition } from "../lib/trip-net";
+import { isFundId, tripHasBillActivity, tripMemberPosition } from "../lib/trip-net";
 import { filterTripExpenses, type TripExpenseSort } from "../lib/trip-expense-filter";
 import { composeSharedRemainder, coverBillFromFundCash, inferSharedRemainder, isFundPaidExpense, isPeerSettlementTransfer, memberDisplayCreditMinor, memberExtraCreditMinor, memberFundPoolNet, memberTripPaidMinor, memberTripPocketMinor, netMemberClaim, pendingSettlementsWithCredit, splitEvenly, tripPostedSpendMinor, tripWalletUsesFundCash } from "../lib/finance";
 import { memberRemainingSettlementOwe } from "../lib/settlement-posting";
@@ -641,33 +641,39 @@ function memberPosition(member: Member, data?: DashboardData, spaceId?: string) 
   const expenseSpaceId = spaceId ?? member.space_id;
   const tripSpace = Boolean(data && expenseSpaceId && data.spaces.find((item) => item.id === expenseSpaceId)?.type === "trip");
   if (data && expenseSpaceId && tripSpace) {
-    const position = tripMemberPosition({
-      spaceId: expenseSpaceId,
-      memberId: member.id,
-      paidMinor: paid,
-      expenses: data.tripExpenses,
-      splits: data.expenseSplits,
-      settlements: data.settlements,
-    });
-    const fundNet = position.paidMinor - position.fundShareMinor;
-    fundLeftoverMinor = Math.max(0, fundNet);
-    fundShortfallMinor = Math.max(0, -fundNet);
-    settlementCreditMinor = Math.max(0, position.netMinor - fundNet);
-    settlementDebitMinor = Math.max(0, fundNet - position.netMinor);
-    for (const row of data.settlements) {
-      if (row.space_id !== expenseSpaceId || row.status !== "pending") continue;
-      const amount = Number(row.amount_minor) || 0;
-      if (row.to_member_id === member.id) {
-        if (isFundId(row.from_member_id)) settlePlan.fromFundMinor += amount;
-        else settlePlan.fromMembersMinor += amount;
+    // Before any bill: show unpaid dues as عليه and only true advance as له (not «fund owes him his contribution»).
+    if (!tripHasBillActivity(data.tripExpenses, expenseSpaceId)) {
+      debit = remainingDue;
+      credit = cashCredit;
+    } else {
+      const position = tripMemberPosition({
+        spaceId: expenseSpaceId,
+        memberId: member.id,
+        paidMinor: paid,
+        expenses: data.tripExpenses,
+        splits: data.expenseSplits,
+        settlements: data.settlements,
+      });
+      const fundNet = position.paidMinor - position.fundShareMinor;
+      fundLeftoverMinor = Math.max(0, fundNet);
+      fundShortfallMinor = Math.max(0, -fundNet);
+      settlementCreditMinor = Math.max(0, position.netMinor - fundNet);
+      settlementDebitMinor = Math.max(0, fundNet - position.netMinor);
+      for (const row of data.settlements) {
+        if (row.space_id !== expenseSpaceId || row.status !== "pending") continue;
+        const amount = Number(row.amount_minor) || 0;
+        if (row.to_member_id === member.id) {
+          if (isFundId(row.from_member_id)) settlePlan.fromFundMinor += amount;
+          else settlePlan.fromMembersMinor += amount;
+        }
+        if (row.from_member_id === member.id) {
+          if (isFundId(row.to_member_id)) settlePlan.toFundMinor += amount;
+          else settlePlan.toMembersMinor += amount;
+        }
       }
-      if (row.from_member_id === member.id) {
-        if (isFundId(row.to_member_id)) settlePlan.toFundMinor += amount;
-        else settlePlan.toMembersMinor += amount;
-      }
+      credit = memberExtraCreditMinor(member, data.transactions) + Math.max(0, position.netMinor);
+      debit = Math.max(0, -position.netMinor);
     }
-    credit = memberExtraCreditMinor(member, data.transactions) + Math.max(0, position.netMinor);
-    debit = Math.max(0, -position.netMinor);
   } else if (data && expenseSpaceId) {
     let fundShares = 0;
     for (const expense of data.tripExpenses.filter((item) => item.space_id === expenseSpaceId)) {

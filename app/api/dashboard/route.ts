@@ -3,7 +3,7 @@ import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
 import { authenticateRequest, csrfCookie, issueCsrfToken } from "../../../lib/auth";
 import { buildCircleOrder, fundChargeFits, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, takeShareSlice, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
 import { hasComposeParts, planExpenseSplitsForApi, planPayerSplitForApi } from "../../../lib/expense-split";
-import { migratePerExpenseTripSettlements, rebuildSpaceTripSettlements } from "../../../lib/trip-settlements";
+import { healCollectionPhaseTripSettlements, migratePerExpenseTripSettlements, rebuildSpaceTripSettlements } from "../../../lib/trip-settlements";
 import { fundPayoutStatements, postPeerMemberSettlement } from "../../../lib/settlement-posting";
 import { assertSpaceSettledForArchive } from "../../../lib/archive-gate";
 import { assignEntryNumbers } from "../../../lib/entry-numbers";
@@ -813,6 +813,9 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
   try {
     await migratePerExpenseTripSettlements(db, ids);
   } catch { /* keep serving dashboard if netting fails */ }
+  try {
+    await healCollectionPhaseTripSettlements(db, ids);
+  } catch { /* keep serving dashboard if heal fails */ }
   try {
     await assignEntryNumbers(db, ids);
   } catch { /* numbering must not block the dashboard */ }

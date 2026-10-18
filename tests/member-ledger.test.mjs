@@ -512,3 +512,38 @@ test("trip ledger separates what was spent for him from the fund, from member bi
   assert.match(detailOf("تاكسي", "paid"), /^مدفوعة من: حساب عضو — .+ \(دفع الفاتورة كاملة\)$/);
   assert.match(detailOf("تاكسي", "spent"), /^مدفوعة من: حساب عضو — /);
 });
+
+test("trip still collecting dues (no bills) shows unpaid contribution as عليه, not له", () => {
+  const short = buildMemberLedger({
+    member: { ...member, due_minor: 240_000, paid_minor: 40_000, addon_minor: 0 },
+    spaceNameAr: "جمعية السفر",
+    spaceNameEn: "Travel circle",
+    currency: "OMR",
+    spaceType: "trip",
+    plan: null,
+    installments: [],
+    transactions: [],
+    settlements: [],
+    tripExpenses: [],
+    expenseSplits: [],
+  });
+  assert.equal(short.owesMinor, 200_000);
+  assert.equal(short.creditMinor, 0);
+  assert.equal(short.tripPosition, null);
+
+  const advance = buildMemberLedger({
+    member: { ...member, due_minor: 240_000, paid_minor: 340_000, addon_minor: 0 },
+    spaceNameAr: "جمعية السفر",
+    spaceNameEn: "Travel circle",
+    currency: "OMR",
+    spaceType: "trip",
+    plan: null,
+    installments: [],
+    transactions: [],
+    settlements: [],
+    tripExpenses: [],
+    expenseSplits: [],
+  });
+  assert.equal(advance.owesMinor, 0);
+  assert.equal(advance.creditMinor, 100_000);
+});

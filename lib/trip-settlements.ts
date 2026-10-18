@@ -2,7 +2,7 @@
 
 import { applySettledTransfers, minimizeSettlements, netTripMemberBalances } from "./finance.ts";
 import { prepareAudit } from "./audit.ts";
-import { planTripSettlements, sameTransferSet, tripMemberPosition } from "./trip-net.ts";
+import { planTripSettlements, sameTransferSet, tripHasBillActivity, tripMemberPosition } from "./trip-net.ts";
 
 /** One-shot: old rows were one transfer per bill (`expense_id` set). Collapse those spaces to net transfers. */
 export async function migratePerExpenseTripSettlements(db: D1Database, spaceIds: string[]) {
@@ -48,6 +48,13 @@ async function rebuildTripWalletSettlements(db: D1Database, spaceId: string, use
       .bind(spaceId)
       .all<{ from_member_id: string; to_member_id: string; amount_minor: number }>(),
   ]);
+  // Collection phase (dues only, no bills yet): contributions sit in the fund.
+  // Do not invent fund→member payouts that flip «عليه» into «له» and empty the cash.
+  if (!tripHasBillActivity(expenses.results ?? [], spaceId)) {
+    if (!(pending.results ?? []).length) return { settlementCount: 0, changed: false };
+    await db.prepare("UPDATE settlements SET status='voided' WHERE space_id=? AND status='pending'").bind(spaceId).run();
+    return { settlementCount: 0, changed: true };
+  }
   const nets = (members.results ?? []).map((member) => tripMemberPosition({
     spaceId,
     memberId: member.id,
@@ -87,6 +94,27 @@ export async function refreshTripWalletSettlements(db: D1Database, spaceIds: str
   for (const spaceId of spaceIds) {
     try {
       await rebuildTripWalletSettlements(db, spaceId);
+    } catch { /* one wallet must not block the dashboard */ }
+  }
+}
+
+/**
+ * Cheap read-path heal: void bogus fund-payout plans on trips that are still only collecting dues
+ * (no live bills). Full rebuild stays on write.
+ */
+export async function healCollectionPhaseTripSettlements(db: D1Database, spaceIds: string[]) {
+  if (!spaceIds.length) return;
+  const placeholders = spaceIds.map(() => "?").join(",");
+  const stale = await db.prepare(`SELECT s.id AS space_id FROM spaces s
+    WHERE s.id IN (${placeholders}) AND s.type='trip' AND COALESCE(s.status,'active')<>'archived'
+      AND EXISTS (SELECT 1 FROM settlements x WHERE x.space_id=s.id AND x.status='pending')
+      AND NOT EXISTS (
+        SELECT 1 FROM trip_expenses te
+        WHERE te.space_id=s.id AND COALESCE(te.status,'posted')<>'voided'
+      )`).bind(...spaceIds).all<{ space_id: string }>();
+  for (const row of stale.results ?? []) {
+    try {
+      await db.prepare("UPDATE settlements SET status='voided' WHERE space_id=? AND status='pending'").bind(row.space_id).run();
     } catch { /* one wallet must not block the dashboard */ }
   }
 }

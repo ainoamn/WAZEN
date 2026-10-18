@@ -19,7 +19,7 @@ import {
   tripWalletUsesFundCash,
 } from "./finance.ts";
 import { formatDebitMoneyMinor, formatMoneyMinor } from "./money.ts";
-import { tripMemberPosition, type TripMemberPosition } from "./trip-net.ts";
+import { tripHasBillActivity, tripMemberPosition, type TripMemberPosition } from "./trip-net.ts";
 import { wrapPrintDocument } from "./print-document.ts";
 
 export type MemberLedgerFocus = "all" | "paid" | "spent" | "owes" | "credit";
@@ -458,8 +458,9 @@ export function buildMemberLedger(input: {
   const baseCredit = fundSharesTotal > 0
     ? memberExtraCreditMinor(member, input.transactions)
     : cashCredit;
-  // Trip: عليه/له is the full position (fund + bills + posted transfers), never the savings goal.
-  const tripPosition = isTrip
+  // Trip with bills: عليه/له from the full position. Trip still collecting dues (no bills): unpaid dues = عليه.
+  const tripCollecting = isTrip && !tripHasBillActivity(input.tripExpenses, member.space_id);
+  const tripPosition = isTrip && !tripCollecting
     ? tripMemberPosition({
       spaceId: member.space_id,
       memberId: member.id,
@@ -469,12 +470,16 @@ export function buildMemberLedger(input: {
       settlements: input.settlements,
     })
     : null;
-  const debit = tripPosition
-    ? Math.max(0, -tripPosition.netMinor)
-    : remainingDue + Math.max(0, expenseDebit);
-  const credit = tripPosition
-    ? memberExtraCreditMinor(member, input.transactions) + Math.max(0, tripPosition.netMinor)
-    : baseCredit + Math.max(0, expenseCredit);
+  const debit = tripCollecting
+    ? remainingDue
+    : tripPosition
+      ? Math.max(0, -tripPosition.netMinor)
+      : remainingDue + Math.max(0, expenseDebit);
+  const credit = tripCollecting
+    ? cashCredit
+    : tripPosition
+      ? memberExtraCreditMinor(member, input.transactions) + Math.max(0, tripPosition.netMinor)
+      : baseCredit + Math.max(0, expenseCredit);
   const net = netMemberClaim(debit, credit);
   lines.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 

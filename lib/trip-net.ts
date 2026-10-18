@@ -58,6 +58,11 @@ export function isFundId(id: string | null | undefined) {
   return String(id ?? "").startsWith("space:");
 }
 
+/** True when the trip has live bills (fund or pocket). Until then members are only collecting contributions. */
+export function tripHasBillActivity(expenses: TripNetExpense[], spaceId: string) {
+  return expenses.some((expense) => inSpace(expense, spaceId) && (expense.status ?? "posted") !== "voided");
+}
+
 export function tripMemberPosition(input: {
   spaceId: string;
   memberId: string;
