@@ -1347,12 +1347,21 @@ export async function POST(request: Request) {
       await rebuildSpaceBalance(db, [hub.id, linked.id]);
     } else if (action === "addWallet") {
       assertApiScope(user, "wallets:write");
+      const optionalMoney = z.preprocess(
+        (value) => (value === "" || value === null || value === undefined ? undefined : value),
+        z.union([z.string(), z.number()]).optional(),
+      );
+      const optionalDuration = z.preprocess((value) => {
+        if (value === "" || value === null || value === undefined) return undefined;
+        const number = Number(value);
+        return Number.isFinite(number) ? number : undefined;
+      }, z.number().int().min(1).max(120).optional());
       const parsed = z.object({
         name: z.string().trim().min(2).max(80),
         type: z.enum(["personal", "household", "trip", "society", "group"]),
         goal: z.union([z.string(), z.number()]).default("0"),
-        monthlyContribution: z.union([z.string(), z.number()]).optional(),
-        durationMonths: z.coerce.number().int().min(1).max(120).optional(),
+        monthlyContribution: optionalMoney,
+        durationMonths: optionalDuration,
         dueDay: z.coerce.number().int().min(1).max(28).optional(),
         startsAt: z.string().min(8).max(40).optional(),
         cloneFromSpaceId: z.string().min(1).max(120).optional(),
@@ -1373,9 +1382,10 @@ export async function POST(request: Request) {
       const isGroup = ["household", "trip", "society", "group"].includes(type);
       let contributionMinor = 0;
       const durationMonths = parsed.data.durationMonths ?? 12;
+      // Contribution plan is optional — empty / zero means open the wallet with no dues schedule.
       if (isGroup && parsed.data.monthlyContribution !== undefined && parsed.data.monthlyContribution !== "") {
-        try { contributionMinor = parseMoneyToMinor(parsed.data.monthlyContribution, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
-        goalMinor = multiplyMinor(contributionMinor, durationMonths);
+        try { contributionMinor = parseNonNegativeMoneyToMinor(parsed.data.monthlyContribution, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+        if (contributionMinor > 0) goalMinor = multiplyMinor(contributionMinor, durationMonths);
       }
       const tenantId = await ensureDefaultTenant(db, user);
       const statements: D1PreparedStatement[] = [
@@ -1407,12 +1417,21 @@ export async function POST(request: Request) {
       }
       await db.batch(statements);
     } else if (action === "updateWallet") {
+      const optionalMoney = z.preprocess(
+        (value) => (value === "" || value === null || value === undefined ? undefined : value),
+        z.union([z.string(), z.number()]).optional(),
+      );
+      const optionalDuration = z.preprocess((value) => {
+        if (value === "" || value === null || value === undefined) return undefined;
+        const number = Number(value);
+        return Number.isFinite(number) ? number : undefined;
+      }, z.number().int().min(1).max(120).optional());
       const parsed = z.object({
         spaceId: z.string().min(1).max(120),
         name: z.string().trim().min(2).max(80),
         goal: z.union([z.string(), z.number()]).optional(),
-        monthlyContribution: z.union([z.string(), z.number()]).optional(),
-        durationMonths: z.coerce.number().int().min(1).max(120).optional(),
+        monthlyContribution: optionalMoney,
+        durationMonths: optionalDuration,
         startsAt: z.string().min(8).max(40).optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_WALLET");
@@ -1425,10 +1444,10 @@ export async function POST(request: Request) {
       }
       let contributionMinor: number | undefined;
       if (parsed.data.monthlyContribution !== undefined && parsed.data.monthlyContribution !== "") {
-        try { contributionMinor = parseMoneyToMinor(parsed.data.monthlyContribution, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+        try { contributionMinor = parseNonNegativeMoneyToMinor(parsed.data.monthlyContribution, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
       }
       const durationMonths = parsed.data.durationMonths;
-      if (contributionMinor !== undefined && durationMonths) goalMinor = multiplyMinor(contributionMinor, durationMonths);
+      if (contributionMinor !== undefined && contributionMinor > 0 && durationMonths) goalMinor = multiplyMinor(contributionMinor, durationMonths);
       const createdAt = now();
       const statements: D1PreparedStatement[] = [
         db.prepare("UPDATE spaces SET name_ar=?, name_en=? WHERE id=?").bind(parsed.data.name, parsed.data.name, parsed.data.spaceId),
@@ -1905,8 +1924,15 @@ export async function POST(request: Request) {
         email: z.union([z.email().max(254), z.literal("")]).optional(),
         phone: z.string().trim().max(20).optional(),
         role: z.enum(["member", "treasurer", "manager", "supervisor", "auditor", "viewer"]).default("member"),
-        monthlyContribution: z.union([z.string(), z.number()]).optional(),
-        durationMonths: z.coerce.number().int().min(1).max(120).optional(),
+        monthlyContribution: z.preprocess(
+          (value) => (value === "" || value === null || value === undefined ? undefined : value),
+          z.union([z.string(), z.number()]).optional(),
+        ),
+        durationMonths: z.preprocess((value) => {
+          if (value === "" || value === null || value === undefined) return undefined;
+          const number = Number(value);
+          return Number.isFinite(number) ? number : undefined;
+        }, z.number().int().min(1).max(120).optional()),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_MEMBER");
       if (parsed.data.phone && !isLikelyPhone(parsed.data.phone)) throw new ApiError(400, "INVALID_PHONE");
@@ -1931,7 +1957,7 @@ export async function POST(request: Request) {
       const contribution = await db.prepare("SELECT amount_minor,duration_months,starts_at FROM contribution_plans WHERE space_id=? LIMIT 1").bind(parsed.data.spaceId).first<{ amount_minor: number; duration_months: number; starts_at: string }>();
       let monthlyMinor = Number(contribution?.amount_minor ?? 0);
       if (parsed.data.monthlyContribution !== undefined && parsed.data.monthlyContribution !== "") {
-        try { monthlyMinor = parseMoneyToMinor(parsed.data.monthlyContribution, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+        try { monthlyMinor = parseNonNegativeMoneyToMinor(parsed.data.monthlyContribution, currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
       }
       const durationMonths = parsed.data.durationMonths ?? Number(contribution?.duration_months ?? 12);
       const memberId = crypto.randomUUID(); const createdAt = now();
