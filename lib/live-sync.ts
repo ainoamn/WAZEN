@@ -20,7 +20,15 @@ export async function fetchDashboardRevision() {
   return result.revision ?? "";
 }
 
+/** Same-tab writes set this so the BroadcastChannel echo does not trigger a second full GET. */
+let suppressRefreshUntil = 0;
+
+export function suppressLiveRefresh(ms = 2_500) {
+  suppressRefreshUntil = Date.now() + Math.max(0, ms);
+}
+
 export function notifyLiveRefresh() {
+  suppressLiveRefresh();
   try {
     new BroadcastChannel(CHANNEL).postMessage("refresh");
   } catch {
@@ -90,6 +98,7 @@ export function useLiveDashboard(onChange: () => void, enabled: boolean) {
 
     const refresh = () => {
       const now = Date.now();
+      if (now < suppressRefreshUntil) return;
       if (now - lastRefreshAt < 1_500) return;
       lastRefreshAt = now;
       onChangeRef.current();

@@ -4,6 +4,7 @@ import { BarChart3, Building2, CreditCard, FileText, Globe2, LayoutDashboard, Me
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import InstantLink from "../components/brand/InstantLink";
 import WazenLogo, { WazenIcon } from "../components/brand/WazenLogo";
 import WazenPageLoader from "../components/brand/WazenPageLoader";
 import { BhdAppSwitcher, type BhdSwitcherUser } from "../components/bhd/BhdAppSwitcher";
@@ -130,10 +131,10 @@ export function AccountHeader({
     <header className="documents-header account-header">
       <Brand />
       <nav>
-        <Link href="/dashboard" className={linkClass("dashboard")}>{l("لوحة المستخدم", "Dashboard")}</Link>
-        <Link href="/pricing" className={linkClass("pricing")}>{l("الباقات", "Plans")}</Link>
-        <Link href="/billing" className={linkClass("billing")}>{l("الفوترة", "Billing")}</Link>
-        <Link href="/documents" className={linkClass("documents")}>{l("المستندات", "Documents")}</Link>
+        <InstantLink href="/dashboard" className={linkClass("dashboard")}>{l("لوحة المستخدم", "Dashboard")}</InstantLink>
+        <InstantLink href="/pricing" className={linkClass("pricing")}>{l("الباقات", "Plans")}</InstantLink>
+        <InstantLink href="/billing" className={linkClass("billing")}>{l("الفوترة", "Billing")}</InstantLink>
+        <InstantLink href="/documents" className={linkClass("documents")}>{l("المستندات", "Documents")}</InstantLink>
       </nav>
       <button type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>
         <Globe2 size={16} />{locale === "ar" ? "EN" : "عربي"}

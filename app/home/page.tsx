@@ -1,14 +1,13 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import WazenPageLoader from "../../components/brand/WazenPageLoader";
 import { HomeClient } from "./home-client";
 
 export const metadata: Metadata = { title: "الرئيسية" };
-export const dynamic = "force-dynamic";
 
 export default function HomePage() {
+  // No branded Suspense splash — HomeClient paints from local cache first (BHD nav policy).
   return (
-    <Suspense fallback={<WazenPageLoader compact label="…" />}>
+    <Suspense fallback={null}>
       <HomeClient />
     </Suspense>
   );

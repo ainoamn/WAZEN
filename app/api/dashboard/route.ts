@@ -3,7 +3,7 @@ import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
 import { authenticateRequest, csrfCookie, issueCsrfToken } from "../../../lib/auth";
 import { buildCircleOrder, fundChargeFits, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, takeShareSlice, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
 import { hasComposeParts, planExpenseSplitsForApi, planPayerSplitForApi } from "../../../lib/expense-split";
-import { migratePerExpenseTripSettlements, rebuildSpaceTripSettlements, refreshTripWalletSettlements } from "../../../lib/trip-settlements";
+import { migratePerExpenseTripSettlements, rebuildSpaceTripSettlements } from "../../../lib/trip-settlements";
 import { fundPayoutStatements, postPeerMemberSettlement } from "../../../lib/settlement-posting";
 import { assertSpaceSettledForArchive } from "../../../lib/archive-gate";
 import { assignEntryNumbers } from "../../../lib/entry-numbers";
@@ -29,7 +29,7 @@ import { forecastFamilyEvent, monthCountUntil } from "../../../lib/household-for
 import { filterSpacesByPlan } from "../../../lib/plan-features";
 import { filterSpacesForPlanAccess } from "../../../lib/plan-retention";
 import { ensureBootstrapPlatformRole } from "../../../lib/platform-role-bootstrap";
-import { reconcileMemberLedgers, repairVoidedPeerSettlements, writeApprovedCashBalance, voidApprovedTransaction } from "../../../lib/ledger-void";
+import { reconcileMemberLedgers, writeApprovedCashBalance, voidApprovedTransaction } from "../../../lib/ledger-void";
 
 type SpaceRow = {
   id: string;
@@ -382,7 +382,7 @@ async function syncFundDeficitShares(db: D1Database, spaceIds: string[]) {
   const createdAt = now();
   for (const spaceId of spaceIds) {
     const space = await db.prepare("SELECT type, balance_minor FROM spaces WHERE id=?").bind(spaceId).first<{ type: string; balance_minor: number }>();
-    // Trips plan fund rows from each member's full position (`refreshTripWalletSettlements`).
+    // Trips plan fund rows from each member's full position (`rebuildSpaceTripSettlements` on write).
     if (!space || space.type === "personal" || space.type === "trip") continue;
     const fundId = `space:${spaceId}`;
     await db.prepare("UPDATE settlements SET status='voided' WHERE space_id=? AND status='pending' AND to_member_id=? AND expense_id IS NULL").bind(spaceId, fundId).run();
@@ -808,15 +808,11 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
   const ids = allowed.map((space) => space.id);
   if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results ?? [], periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [] };
 
+  // Read path stays light: trip plans rebuild on write (`rebuildSpaceTripSettlements`),
+  // peer-transfer heal runs on void, and entry numbers fill only when a row is still NULL.
   try {
     await migratePerExpenseTripSettlements(db, ids);
   } catch { /* keep serving dashboard if netting fails */ }
-  try {
-    await repairVoidedPeerSettlements(db, ids);
-  } catch { /* keep serving dashboard if repair fails */ }
-  await refreshTripWalletSettlements(db, allowed
-    .filter((space) => space.type === "trip" && (space.status ?? "active") !== "archived")
-    .map((space) => space.id));
   try {
     await assignEntryNumbers(db, ids);
   } catch { /* numbering must not block the dashboard */ }

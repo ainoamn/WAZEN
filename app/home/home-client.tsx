@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import InstantLink from "../../components/brand/InstantLink";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -496,10 +497,10 @@ export function HomeClient() {
             <Plus size={18} />
             <b>{locale === "ar" ? "إضافة عملية" : "Add transaction"}</b>
           </button>
-          <Link className="home-action" href="/dashboard">
+          <InstantLink className="home-action" href="/dashboard">
             <Settings2 size={18} />
             <b>{locale === "ar" ? "التحكم" : "Control"}</b>
-          </Link>
+          </InstantLink>
         </div>
       </main>
 

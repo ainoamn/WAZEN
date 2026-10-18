@@ -108,7 +108,7 @@ import { completeClientLogout, isClientLogoutInProgress } from "../lib/client-lo
 import { clientSignInPath } from "../lib/client-sign-in";
 import { BhdAppSwitcher } from "../components/bhd/BhdAppSwitcher";
 import { fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../lib/dashboard-session";
-import { notifyLiveRefresh, useLiveDashboard } from "../lib/live-sync";
+import { notifyLiveRefresh, suppressLiveRefresh, useLiveDashboard } from "../lib/live-sync";
 
 type Locale = "ar" | "en";
 type ThemeMode = "light" | "dark";
@@ -1631,10 +1631,12 @@ export function WazenDashboard() {
     });
   };
 
-  const setData = (next: DashboardData) => {
+  const softReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const setData = (next: DashboardData, options?: { broadcast?: boolean }) => {
     writeDashboardCache(next);
     setDataState(next);
-    notifyLiveRefresh();
+    if (options?.broadcast !== false) notifyLiveRefresh();
   };
 
   const showUpgradeNotice = (targetKey: string, featureLabel: string) => {
@@ -1646,7 +1648,10 @@ export function WazenDashboard() {
     try {
       setError(false);
       const result = await fetchDashboardSession<DashboardData>(force);
-      if (result.data) setDataState(result.data);
+      if (result.data) {
+        writeDashboardCache(result.data);
+        setDataState(result.data);
+      }
     } catch (caught) {
       if ((caught as { status?: number }).status === 401) {
         if (!isClientLogoutInProgress()) {
@@ -1660,11 +1665,33 @@ export function WazenDashboard() {
     }
   }, [router]);
 
-  const acceptWrite = (patch: Partial<DashboardData> = {}) => {
+  const scheduleSoftReload = useCallback(() => {
+    suppressLiveRefresh(3_000);
+    if (softReloadTimer.current) clearTimeout(softReloadTimer.current);
+    softReloadTimer.current = setTimeout(() => {
+      softReloadTimer.current = null;
+      void load(true);
+    }, 350);
+  }, [load]);
+
+  useEffect(() => () => {
+    if (softReloadTimer.current) clearTimeout(softReloadTimer.current);
+  }, []);
+
+  /** Apply a local patch immediately; sync from the server in the background (never block the UI). */
+  const acceptWrite = (patch: Partial<DashboardData> = {}, options?: { sync?: "soft" | "force" | "none" }) => {
     if (!data) return;
     const keys = Object.keys(patch).filter((key) => key !== "ok" && key !== "error" && key !== "revision" && key !== "notification");
-    if (keys.length) setData({ ...data, ...patch });
-    void load(true);
+    if (keys.length) setData({ ...data, ...patch }, { broadcast: false });
+    else suppressLiveRefresh(3_000);
+    const sync = options?.sync ?? (keys.length ? "soft" : "force");
+    if (sync === "none") return;
+    if (sync === "force") {
+      suppressLiveRefresh(3_000);
+      void load(true);
+      return;
+    }
+    scheduleSoftReload();
   };
 
   useLiveDashboard(() => { void load(true); }, !loading);
@@ -1933,7 +1960,7 @@ export function WazenDashboard() {
             </div>
           </div>
           <div className="topbar-actions">
-            <Link className="secondary-button topbar-home" href="/home">{locale === "ar" ? "الرئيسية" : "Home"}</Link>
+            <Link className="secondary-button topbar-home" href="/home" prefetch>{locale === "ar" ? "الرئيسية" : "Home"}</Link>
             <button className="language-button" onClick={() => { const next = locale === "ar" ? "en" : "ar"; setLocale(next); try { window.localStorage.setItem("wazen-locale", next); } catch { /* ignore */ } }} aria-label="Change language">
               <Globe2 size={17} /><span>{locale === "ar" ? "EN" : "عربي"}</span>
             </button>
@@ -2439,6 +2466,88 @@ function txnBalanceDelta(kind: string, allocation: string, amountMinor: number) 
   if (kind === "income" || kind === "contribution") return amountMinor;
   if (kind === "expense") return -amountMinor;
   return 0;
+}
+
+function dashboardDataKeys(patch: Partial<DashboardData> & { ok?: boolean; error?: string; revision?: string; notification?: unknown }) {
+  return Object.keys(patch).filter((key) => key !== "ok" && key !== "error" && key !== "revision" && key !== "notification");
+}
+
+function patchAddedTransaction(
+  data: DashboardData,
+  input: {
+    spaceId: string;
+    kind: string;
+    allocation: string;
+    description: string;
+    amountMinor: number;
+    memberId?: string | null;
+    occurredAt: string;
+  },
+): Partial<DashboardData> {
+  const createdAt = new Date().toISOString();
+  const tempId = `temp-${createdAt}-${Math.random().toString(36).slice(2, 8)}`;
+  const delta = txnBalanceDelta(input.kind, input.allocation, input.amountMinor);
+  const row: Transaction = {
+    id: tempId,
+    space_id: input.spaceId,
+    member_id: input.memberId ?? null,
+    kind: input.kind,
+    allocation: input.allocation,
+    amount_minor: input.amountMinor,
+    description_ar: input.description,
+    description_en: input.description,
+    occurred_at: input.occurredAt,
+    created_at: createdAt,
+    status: "approved",
+    seq_no: null,
+  };
+  return {
+    transactions: [row, ...data.transactions],
+    spaces: data.spaces.map((space) => (
+      space.id === input.spaceId
+        ? { ...space, balance_minor: Number(space.balance_minor) + delta }
+        : space
+    )),
+  };
+}
+
+function patchAddedTripExpense(
+  data: DashboardData,
+  input: {
+    spaceId: string;
+    description: string;
+    amountMinor: number;
+    paidFrom: "common_fund" | "member" | "split";
+    paidByMemberId?: string;
+    paidByName: string;
+    occurredAt: string;
+  },
+): Partial<DashboardData> {
+  const createdAt = new Date().toISOString();
+  const tempId = `temp-${createdAt}-${Math.random().toString(36).slice(2, 8)}`;
+  const expense: TripExpense = {
+    id: tempId,
+    space_id: input.spaceId,
+    paid_by_member_id: input.paidByMemberId ?? "",
+    paid_by_name: input.paidByName,
+    paid_from: input.paidFrom === "split" ? "member" : input.paidFrom,
+    amount_minor: input.amountMinor,
+    description: input.description,
+    occurred_at: input.occurredAt,
+    seq_no: null,
+  };
+  // Split fund/member legs are reconciled by the soft reload; only pure fund spends adjust cash here.
+  const fundDelta = input.paidFrom === "common_fund" ? -input.amountMinor : 0;
+  return {
+    tripExpenses: [expense, ...(data.tripExpenses ?? [])],
+    spaces: fundDelta
+      ? data.spaces.map((space) => (
+        space.id === input.spaceId
+          ? { ...space, balance_minor: Number(space.balance_minor) + fundDelta }
+          : space
+      ))
+      : data.spaces,
+  };
 }
 
 function patchVoidTransaction(data: DashboardData, transaction: Transaction): Partial<DashboardData> {
@@ -4220,7 +4329,36 @@ function TransactionModal({ data, locale, preferredSpaceId, onClose, onSaved }: 
       });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
       if (!response.ok) throw new Error(dashboardError(result.error ?? "save failed", locale));
-      onSaved(result);
+      if (dashboardDataKeys(result).length) {
+        onSaved(result);
+      } else if (space && useGroupExpense) {
+        const amountMinor = parseMoneyToMinor(amount, space.currency);
+        const payer = members.find((row) => row.id === memberId);
+        onSaved(patchAddedTripExpense(data, {
+          spaceId,
+          description: description || (locale === "ar" ? "مصروف جماعي" : "Group expense"),
+          amountMinor,
+          paidFrom,
+          paidByMemberId: memberId || undefined,
+          paidByName: paidFrom === "common_fund"
+            ? (locale === "ar" ? "صندوق الجمعية" : "Association fund")
+            : (payer?.display_name ?? (locale === "ar" ? "عضو" : "Member")),
+          occurredAt: occurredAt ?? new Date().toISOString(),
+        }));
+      } else if (space) {
+        const amountMinor = parseMoneyToMinor(amount, space.currency);
+        onSaved(patchAddedTransaction(data, {
+          spaceId,
+          kind,
+          allocation: kind === "contribution" ? "mandatory" : allocation,
+          description: description || (locale === "ar" ? "عملية مالية" : "Transaction"),
+          amountMinor,
+          memberId: memberId || null,
+          occurredAt: occurredAt ?? new Date().toISOString(),
+        }));
+      } else {
+        onSaved(result);
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "SAVE_FAILED");
     } finally { setSaving(false); }
@@ -4924,7 +5062,23 @@ function TripExpenseModal({ data, locale, preferredSpaceId, expenseId, onClose, 
       });
       const result = await response.json() as Partial<DashboardData> & { error?: string };
       if (!response.ok) throw new Error(result.error);
-      onSaved(result);
+      if (dashboardDataKeys(result).length || existing) {
+        onSaved(result);
+      } else {
+        const amountMinor = parseMoneyToMinor(amount, currency);
+        const payer = members.find((member) => member.id === paidByMemberId);
+        onSaved(patchAddedTripExpense(data, {
+          spaceId,
+          description,
+          amountMinor,
+          paidFrom,
+          paidByMemberId: paidByMemberId || undefined,
+          paidByName: paidFrom === "common_fund"
+            ? (locale === "ar" ? "صندوق الجمعية" : "Association fund")
+            : (payer?.display_name ?? (locale === "ar" ? "عضو" : "Member")),
+          occurredAt: occurredAt ?? new Date().toISOString(),
+        }));
+      }
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : "SAVE_FAILED";
       const messages: Record<string, string> = locale === "ar"
