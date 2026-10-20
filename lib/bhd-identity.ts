@@ -358,7 +358,11 @@ export async function resolveBhdOauthState(request: Request, stateParam: string 
   return null;
 }
 
-export async function createBhdAuthRequest(request: Request, returnTo: string) {
+export async function createBhdAuthRequest(
+  request: Request,
+  returnTo: string,
+  options?: { loginHint?: string | null },
+) {
   if (!isBhdIdentityConfigured()) throw new ApiError(503, "BHD_NOT_CONFIGURED");
   const state = randomOauthToken();
   const nonce = randomOauthToken();
@@ -376,6 +380,8 @@ export async function createBhdAuthRequest(request: Request, returnTo: string) {
   url.searchParams.set("nonce", nonce);
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");
+  const hint = String(options?.loginHint ?? "").trim().slice(0, 254);
+  if (hint) url.searchParams.set("login_hint", hint);
   return { url: url.toString(), cookie: encodeBhdOauthState(payload) };
 }
 

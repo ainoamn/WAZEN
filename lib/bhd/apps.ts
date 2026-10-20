@@ -159,26 +159,48 @@ function samePortalOrigin(pageOrigin?: string) {
   );
 }
 
-/** مساحة العمل مباشرة — بلا سلسلة start في كل نقرة. */
+function stripOrigin(value: string) {
+  return value.replace(/\/$/, "");
+}
+
+/** مساحة العمل مباشرة — للميدلوير وprefetch عندما تكون جلسة المنتج قائمة. */
 export function workspaceUrlForApp(app: BhdApp, pageOrigin?: string): string {
   if (app.mode === "identity") {
     if (pageOrigin) {
-      const here = pageOrigin.replace(/\/$/, "");
+      const here = stripOrigin(pageOrigin);
       if (here === "https://id.bhd-om.com" || samePortalOrigin(pageOrigin)) return app.workspacePath;
     }
-    return `${app.origin.replace(/\/$/, "")}${app.workspacePath}`;
+    return `${stripOrigin(app.origin)}${app.workspacePath}`;
   }
   if (app.id === "portal" && samePortalOrigin(pageOrigin)) {
     return app.workspacePath;
   }
   if (app.origin) {
-    return `${app.origin.replace(/\/$/, "")}${app.workspacePath || "/"}`;
+    return `${stripOrigin(app.origin)}${app.workspacePath || "/"}`;
   }
   return app.workspacePath || "/";
 }
 
+/**
+ * رابط النقر من المشغّل.
+ * - نفس المنشأ: مساحة العمل (الميدلوير → start فقط إن لزم).
+ * - منتج SSO آخر: start الصامت حتى تُعاد استخدام جلسة الهوية بلا نموذج دخول.
+ * انظر BHD-APP-SWITCHER §0.4 / §3 وBHD-SESSION-POLICY «تنقّل صامت».
+ */
 export function launchUrlForApp(app: BhdApp, pageOrigin?: string): string {
-  return workspaceUrlForApp(app, pageOrigin);
+  if (app.mode === "identity") {
+    return workspaceUrlForApp(app, pageOrigin);
+  }
+  if (app.mode === "browse" || !app.startUrl) {
+    return app.origin ? `${stripOrigin(app.origin)}/` : workspaceUrlForApp(app, pageOrigin);
+  }
+  if (pageOrigin && stripOrigin(pageOrigin) === stripOrigin(app.origin)) {
+    return workspaceUrlForApp(app, pageOrigin);
+  }
+  if (app.id === "portal" && samePortalOrigin(pageOrigin)) {
+    return workspaceUrlForApp(app, pageOrigin);
+  }
+  return app.startUrl;
 }
 
 export function startUrlForApp(app: BhdApp): string | null {

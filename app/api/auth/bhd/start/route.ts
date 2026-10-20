@@ -16,13 +16,14 @@ export async function GET(request: Request) {
     const origin = publicRequestOrigin(request);
     const params = new URL(request.url).searchParams;
     const next = safeReturnTo(params.get("next") ?? params.get("returnTo"));
+    const loginHint = (params.get("login_hint") ?? params.get("loginHint") ?? "").trim().slice(0, 254);
     if (!isBhdIdentityConfigured()) {
       return Response.redirect(`${origin}${bhdAuthFailurePath(origin, "BHD_NOT_CONFIGURED", next)}`, 302);
     }
     if (!isBhdSsoReadyForRequest(request)) {
       return Response.redirect(`${origin}${bhdAuthFailurePath(origin, "BHD_REDIRECT_DENIED", next)}`, 302);
     }
-    const started = await createBhdAuthRequest(request, next);
+    const started = await createBhdAuthRequest(request, next, { loginHint: loginHint || null });
     const headers = new Headers({ Location: started.url, "Cache-Control": "no-store" });
     headers.append("Set-Cookie", bhdOauthStateCookie(started.cookie));
     return new Response(null, { status: 302, headers });

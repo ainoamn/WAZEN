@@ -283,7 +283,12 @@ export function BhdAppSwitcher({
     if (panel !== "apps" || !origin) return;
     BHD_APPS.forEach((app) => {
       if (!app.enabled) return;
-      hintHop(app.mode === "identity" ? accountPageUrl(origin) : launchUrlForApp(app, origin));
+      if (app.mode === "identity") {
+        hintHop(accountPageUrl(origin));
+        return;
+      }
+      hintHop(launchUrlForApp(app, origin));
+      if (app.startUrl) hintHop(app.startUrl);
     });
   }, [panel, origin]);
 

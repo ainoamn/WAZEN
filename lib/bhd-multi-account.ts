@@ -74,12 +74,20 @@ export async function logoutIdentityAccount(all: boolean): Promise<IdentityMeRes
 }
 
 /**
- * One hop to the product workspace. Middleware sends unauthenticated browsers
- * to /api/auth/bhd/start — do not call start on every click.
+ * Re-bind this product's session to the active identity account (silent SSO).
+ * Used after switch / sign-out-this when another roster account remains.
  */
-export function openProductWorkspace(returnTo = wazenWorkspacePath()) {
+export function openProductSilentSso(returnTo = wazenWorkspacePath(), loginHint?: string | null) {
   const path = returnTo.startsWith("/") ? returnTo : `/${returnTo}`;
-  window.location.assign(path);
+  const url = new URL("/api/auth/bhd/start", window.location.origin);
+  url.searchParams.set("returnTo", path);
+  if (loginHint) url.searchParams.set("login_hint", loginHint);
+  window.location.assign(url.toString());
+}
+
+/** @deprecated use openProductSilentSso when the product session must follow identity */
+export function openProductWorkspace(returnTo = wazenWorkspacePath()) {
+  openProductSilentSso(returnTo);
 }
 
 export function buildEndSessionUrl(all: boolean) {

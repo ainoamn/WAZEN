@@ -7,7 +7,7 @@ import {
   fetchIdentityAccounts,
   identityLoginAddUrl,
   logoutIdentityAccount,
-  openProductWorkspace,
+  openProductSilentSso,
   switchIdentityAccount,
   wazenWorkspacePath,
   type IdentityAccount,
@@ -123,10 +123,10 @@ export function useBhdAccountMenu(productUser: BhdSwitcherUser, locale: "ar" | "
     if (!data.user) return;
     applyMe(productUser, data, setUser, setAccounts);
 
-    // Product session still belongs to the previous identity — one hop to workspace.
+    // Product session still belongs to the previous identity — silent SSO rebinds it.
     if (data.user.id && data.user.id !== previousId) {
       await clearProductSessionOnly();
-      openProductWorkspace(wazenWorkspacePath());
+      openProductSilentSso(wazenWorkspacePath(), data.user.email);
       await new Promise<never>(() => {});
     }
   }, [accounts, productUser, user.id]);
@@ -140,7 +140,7 @@ export function useBhdAccountMenu(productUser: BhdSwitcherUser, locale: "ar" | "
     if (data.user) {
       applyMe(productUser, data, setUser, setAccounts);
       await clearProductSessionOnly();
-      openProductWorkspace(wazenWorkspacePath());
+      openProductSilentSso(wazenWorkspacePath(), data.user.email);
       await new Promise<never>(() => {});
       return;
     }

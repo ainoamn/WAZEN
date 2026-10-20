@@ -8,7 +8,7 @@ import { resetAppPrefetch } from "./app-prefetch";
 import {
   buildEndSessionUrl,
   logoutIdentityAccount,
-  openProductWorkspace,
+  openProductSilentSso,
   wazenWorkspacePath,
 } from "./bhd-multi-account";
 
@@ -48,7 +48,7 @@ export async function completeClientLogout(options?: { all?: boolean }) {
     try {
       const remaining = await logoutIdentityAccount(false);
       if (remaining.user?.id) {
-        openProductWorkspace(wazenWorkspacePath());
+        openProductSilentSso(wazenWorkspacePath(), remaining.user.email);
         await new Promise<never>(() => {});
       }
     } catch {
