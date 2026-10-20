@@ -365,6 +365,11 @@ export function buildAccountStatementHtml(input: {
   holdings?: StatementHolding[];
   /** Append members roster (society/group). */
   includeMembers?: boolean;
+  /** When false, skip the movements table (members-only dues sheet). */
+  includeMovements?: boolean;
+  includeHoldings?: boolean;
+  titleOverride?: string;
+  subtitleOverride?: string;
   memberRows?: RosterMemberRow[];
   memberColumns?: RosterColumnId[];
   memberSort?: RosterSort;
@@ -379,48 +384,53 @@ export function buildAccountStatementHtml(input: {
   const opening = model.openingMinor;
   const closing = model.closingMinor;
   const entityName = model.entityName;
-  const title = model.title;
-  const subtitle = model.subtitle;
+  const includeMovements = input.includeMovements !== false;
+  const title = input.titleOverride ?? model.title;
+  const subtitle = input.subtitleOverride ?? model.subtitle;
   const rows = model.lines;
-  const columns = (input.columns?.length ? input.columns : defaultStatementColumns())
+  const columns = (input.columns?.length ? input.columns : (includeMovements ? defaultStatementColumns() : []))
     .filter((id, index, list) => list.indexOf(id) === index);
 
-  const head = columns.map((id) => {
-    const meta = STATEMENT_COLUMNS.find((column) => column.id === id);
-    return locale === "ar" ? (meta?.ar ?? id) : (meta?.en ?? id);
-  });
+  let table = "";
 
-  const body = rows.map((line) => ({
-    live: line.live,
-    cells: columns.map((column) => cellForColumn(line, column, money, signedMoney, locale)),
-  }));
+  if (includeMovements && columns.length) {
+    const head = columns.map((id) => {
+      const meta = STATEMENT_COLUMNS.find((column) => column.id === id);
+      return locale === "ar" ? (meta?.ar ?? id) : (meta?.en ?? id);
+    });
 
-  const depositIndex = columns.indexOf("deposit");
-  const withdrawIndex = columns.indexOf("withdraw");
+    const body = rows.map((line) => ({
+      live: line.live,
+      cells: columns.map((column) => cellForColumn(line, column, money, signedMoney, locale)),
+    }));
 
-  let table = `<section><h2>${escapeHtml(t(locale, "الحركات", "Movements"))}</h2>
-    <table>
-      <thead><tr>${head.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr></thead>
-      <tbody>${body.length
-        ? body.map((row) => `<tr class="${row.live ? "" : "voided"}">${row.cells.map((cell, index) => {
-          const tone = index === depositIndex && cell.text !== "—" ? " in" : index === withdrawIndex && cell.text !== "—" ? " out" : "";
-          return `<td class="${cell.cls}${tone}">${escapeHtml(cell.text)}</td>`;
-        }).join("")}</tr>`).join("")
-        : `<tr><td colspan="${head.length}">${escapeHtml(t(locale, "لا توجد حركات في هذا النطاق.", "No movements in this scope."))}</td></tr>`}
-      </tbody>
-    </table>
-    <p class="footer-note${txnFilter !== "voided" && closing < 0 ? " neg" : ""}">${escapeHtml(
-      txnFilter === "voided"
-        ? t(locale, `عدد المعاملات المحذوفة: ${rows.length}`, `Deleted movements: ${rows.length}`)
-        : t(
-          locale,
-          `نقد ختامي: ${signedMoney(closing)}${model.holdingsMinor > 0 ? ` · ودائع/استثمارات: ${money(model.holdingsMinor)} · إجمالي الأصول: ${money(closing + model.holdingsMinor)}` : ""}`,
-          `Closing cash: ${signedMoney(closing)}${model.holdingsMinor > 0 ? ` · Holdings: ${money(model.holdingsMinor)} · Total assets: ${money(closing + model.holdingsMinor)}` : ""}`,
-        ),
-    )}</p>
-  </section>`;
+    const depositIndex = columns.indexOf("deposit");
+    const withdrawIndex = columns.indexOf("withdraw");
 
-  if (model.holdings.length) {
+    table += `<section><h2>${escapeHtml(t(locale, "الحركات", "Movements"))}</h2>
+      <table>
+        <thead><tr>${head.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr></thead>
+        <tbody>${body.length
+          ? body.map((row) => `<tr class="${row.live ? "" : "voided"}">${row.cells.map((cell, index) => {
+            const tone = index === depositIndex && cell.text !== "—" ? " in" : index === withdrawIndex && cell.text !== "—" ? " out" : "";
+            return `<td class="${cell.cls}${tone}">${escapeHtml(cell.text)}</td>`;
+          }).join("")}</tr>`).join("")
+          : `<tr><td colspan="${Math.max(head.length, 1)}">${escapeHtml(t(locale, "لا توجد حركات في هذا النطاق.", "No movements in this scope."))}</td></tr>`}
+        </tbody>
+      </table>
+      <p class="footer-note${txnFilter !== "voided" && closing < 0 ? " neg" : ""}">${escapeHtml(
+        txnFilter === "voided"
+          ? t(locale, `عدد المعاملات المحذوفة: ${rows.length}`, `Deleted movements: ${rows.length}`)
+          : t(
+            locale,
+            `نقد ختامي: ${signedMoney(closing)}${model.holdingsMinor > 0 ? ` · ودائع/استثمارات: ${money(model.holdingsMinor)} · إجمالي الأصول: ${money(closing + model.holdingsMinor)}` : ""}`,
+            `Closing cash: ${signedMoney(closing)}${model.holdingsMinor > 0 ? ` · Holdings: ${money(model.holdingsMinor)} · Total assets: ${money(closing + model.holdingsMinor)}` : ""}`,
+          ),
+      )}</p>
+    </section>`;
+  }
+
+  if (input.includeHoldings !== false && model.holdings.length && includeMovements) {
     const holdingRows = model.holdings.map((holding) => {
       const due = holding.matures_at
         ? new Date(holding.matures_at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB")
@@ -493,21 +503,35 @@ export function buildAccountStatementHtml(input: {
   }
 
   const scopeLabel = filterTitle(txnFilter, locale);
-  const kpis = txnFilter === "voided"
-    ? [
-        { label: t(locale, "عدد الملغاة", "Voided count"), value: String(rows.length) },
-        { label: t(locale, "إجمالي المبالغ", "Total amounts"), value: money(rows.reduce((sum, line) => sum + line.depositMinor + line.withdrawMinor, 0)) },
-        { label: t(locale, "المحفظة", "Wallet"), value: entityName },
-        { label: t(locale, "الرصيد الحالي", "Current balance"), value: signedMoney(closing), tone: signedTone(closing) },
-      ]
-    : [
-        { label: t(locale, "رصيد أول المدة (نقد)", "Opening cash"), value: signedMoney(opening), tone: signedTone(opening) },
-        { label: t(locale, "إجمالي الإيداع", "Total in"), value: money(model.totalInMinor) },
-        { label: t(locale, "إجمالي السحب / التحويل", "Total out / transfers"), value: money(model.totalOutMinor) },
-        { label: t(locale, "نقد آخر المدة", "Closing cash"), value: signedMoney(closing), tone: signedTone(closing) },
-      ];
+  const memberCount = input.includeMembers && input.memberRows?.length ? input.memberRows.length : 0;
+  const duesPaid = input.memberRows?.reduce((sum, row) => sum + row.paid_minor, 0) ?? 0;
+  const duesOwes = input.memberRows?.reduce((sum, row) => sum + Math.max(0, row.owes_minor), 0) ?? 0;
 
-  if (model.holdingsMinor > 0 && txnFilter !== "voided") {
+  const kpis = !includeMovements
+    ? [
+        { label: t(locale, "عدد الأعضاء", "Members"), value: String(memberCount) },
+        { label: t(locale, "إجمالي المدفوع", "Total paid"), value: money(duesPaid) },
+        {
+          label: t(locale, "إجمالي المتأخر حتى الشهر الحالي", "Total arrears to current month"),
+          value: duesOwes > 0 ? formatDebitMoneyMinor(duesOwes, currency, locale) : money(0),
+        },
+        { label: t(locale, "المحفظة", "Wallet"), value: entityName },
+      ]
+    : txnFilter === "voided"
+      ? [
+          { label: t(locale, "عدد الملغاة", "Voided count"), value: String(rows.length) },
+          { label: t(locale, "إجمالي المبالغ", "Total amounts"), value: money(rows.reduce((sum, line) => sum + line.depositMinor + line.withdrawMinor, 0)) },
+          { label: t(locale, "المحفظة", "Wallet"), value: entityName },
+          { label: t(locale, "الرصيد الحالي", "Current balance"), value: signedMoney(closing), tone: signedTone(closing) },
+        ]
+      : [
+          { label: t(locale, "رصيد أول المدة (نقد)", "Opening cash"), value: signedMoney(opening), tone: signedTone(opening) },
+          { label: t(locale, "إجمالي الإيداع", "Total in"), value: money(model.totalInMinor) },
+          { label: t(locale, "إجمالي السحب / التحويل", "Total out / transfers"), value: money(model.totalOutMinor) },
+          { label: t(locale, "نقد آخر المدة", "Closing cash"), value: signedMoney(closing), tone: signedTone(closing) },
+        ];
+
+  if (includeMovements && model.holdingsMinor > 0 && txnFilter !== "voided") {
     kpis.push({ label: t(locale, "ودائع واستثمارات", "Holdings"), value: money(model.holdingsMinor) });
   }
 
@@ -517,13 +541,20 @@ export function buildAccountStatementHtml(input: {
     entityName,
     logoUrl: input.logoUrl,
     subtitle,
-    orientation: "landscape",
+    orientation: includeMovements ? "landscape" : "portrait",
     meta: [
       { label: t(locale, "النطاق", "Scope"), value: entityName },
-      { label: t(locale, "نوع الكشف", "Statement type"), value: scopeLabel },
+      {
+        label: t(locale, "نوع الكشف", "Statement type"),
+        value: includeMovements
+          ? scopeLabel
+          : t(locale, "متأخرات الأعضاء حتى الشهر الحالي", "Member arrears to current month"),
+      },
       { label: t(locale, "أُصدر بواسطة", "Issued by"), value: input.issuerName },
       { label: t(locale, "تاريخ الإصدار", "Issued at"), value: new Date().toLocaleString(locale === "ar" ? "ar-OM" : "en-GB") },
-      { label: t(locale, "عدد الحركات", "Movements"), value: String(rows.length) },
+      includeMovements
+        ? { label: t(locale, "عدد الحركات", "Movements"), value: String(rows.length) }
+        : { label: t(locale, "عدد الأعضاء", "Members"), value: String(memberCount) },
     ],
     kpis,
     bodyHtml: table,

@@ -90,7 +90,7 @@ export function MembersRosterExportModal({
   initialSort: RosterSort;
   onClose: () => void;
 }) {
-  const [columns, setColumns] = useState<RosterColumnId[]>(defaultRosterColumns());
+  const [columns, setColumns] = useState<RosterColumnId[]>(() => defaultRosterColumns());
   const [sort, setSort] = useState<RosterSort>(initialSort === "asIs" ? "alphaAsc" : initialSort);
   const [busy, setBusy] = useState(false);
   const canDownload = planHasFeature(features ?? [], "downloads");

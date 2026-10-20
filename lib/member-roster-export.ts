@@ -35,16 +35,21 @@ export const ROSTER_COLUMNS: Array<{
   defaultOn: boolean;
 }> = [
   { id: "member", ar: "العضو", en: "Member", defaultOn: true },
-  { id: "goal", ar: "الهدف المالي", en: "Goal", defaultOn: true },
+  { id: "goal", ar: "الهدف المالي", en: "Goal", defaultOn: false },
   { id: "paid", ar: "مدفوع", en: "Paid", defaultOn: true },
-  { id: "extra", ar: "إضافي", en: "Extra", defaultOn: true },
-  { id: "owes", ar: "عليه", en: "Owes", defaultOn: true },
-  { id: "credit", ar: "له", en: "Credit", defaultOn: true },
-  { id: "status", ar: "الحالة", en: "Status", defaultOn: true },
+  { id: "extra", ar: "إضافي", en: "Extra", defaultOn: false },
+  { id: "owes", ar: "متأخر حتى الشهر الحالي", en: "Arrears to current month", defaultOn: true },
+  { id: "credit", ar: "له", en: "Credit", defaultOn: false },
+  { id: "status", ar: "الحالة", en: "Status", defaultOn: false },
 ];
 
 export function defaultRosterColumns(): RosterColumnId[] {
   return ROSTER_COLUMNS.filter((column) => column.defaultOn).map((column) => column.id);
+}
+
+/** Compact dues sheet: name + paid + arrears accrued through current month. */
+export function duesRosterColumns(): RosterColumnId[] {
+  return ["member", "paid", "owes"];
 }
 
 export function sortRosterRows(rows: RosterMemberRow[], sort: RosterSort, locale: RosterLocale) {

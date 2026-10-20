@@ -13,6 +13,7 @@ import {
 import {
   ROSTER_COLUMNS,
   defaultRosterColumns,
+  duesRosterColumns,
   type RosterColumnId,
   type RosterMemberRow,
   type RosterSort,
@@ -22,6 +23,7 @@ import { consumePlanQuota } from "../../lib/plan-quota-client";
 import { planHasFeature } from "../../lib/plan-features";
 
 type Locale = "ar" | "en";
+type ReportKind = "movements" | "dues";
 
 const FILTERS: Array<{ id: StatementTxnFilter; ar: string; en: string }> = [
   { id: "full", ar: "الكشف الكامل", en: "Full statement" },
@@ -75,26 +77,49 @@ export function StatementExportModal({
   onShare?: (filter: StatementTxnFilter) => void;
   onClose: () => void;
 }) {
+  const societyMembers = Boolean(memberRows?.length);
+  const [reportKind, setReportKind] = useState<ReportKind>(societyMembers ? "dues" : "movements");
   const [filter, setFilter] = useState<StatementTxnFilter>("full");
   const [columns, setColumns] = useState<StatementColumnId[]>(defaultStatementColumns());
   const [includeMembers, setIncludeMembers] = useState(Boolean(memberRows?.length));
   const [memberSort, setMemberSort] = useState<RosterSort>("alphaAsc");
-  const [memberColumns, setMemberColumns] = useState<RosterColumnId[]>(defaultRosterColumns());
+  const [memberColumns, setMemberColumns] = useState<RosterColumnId[]>(
+    societyMembers ? duesRosterColumns() : defaultRosterColumns(),
+  );
   const [busy, setBusy] = useState(false);
   const canDownload = planHasFeature(features ?? [], "downloads");
-  const societyMembers = Boolean(memberRows?.length);
+  const duesOnly = reportKind === "dues";
 
   const summary = useMemo(() => {
+    if (duesOnly) {
+      return locale === "ar"
+        ? `${spaceName} · كشف متأخرات: الاسم + المدفوع + المتأخر حتى الشهر الحالي`
+        : `${spaceName} · dues sheet: name + paid + arrears to current month`;
+    }
     if (locale === "ar") {
       return `${spaceName} · ${columns.length} أعمدة حركات${includeMembers ? ` · أعضاء (${memberSort === "alphaAsc" ? "أ→ي" : memberSort === "alphaDesc" ? "ي→أ" : "سجل"})` : ""}`;
     }
     return `${spaceName} · ${columns.length} movement columns${includeMembers ? ` · members (${memberSort})` : ""}`;
-  }, [locale, spaceName, columns.length, includeMembers, memberSort]);
+  }, [locale, spaceName, columns.length, includeMembers, memberSort, duesOnly]);
+
+  const applyReportKind = (kind: ReportKind) => {
+    setReportKind(kind);
+    if (kind === "dues") {
+      setIncludeMembers(true);
+      setMemberColumns(duesRosterColumns());
+      setMemberSort("alphaAsc");
+      setColumns([]);
+      return;
+    }
+    setColumns(defaultStatementColumns());
+    setIncludeMembers(false);
+    setMemberColumns(defaultRosterColumns());
+  };
 
   const toggleColumn = (id: StatementColumnId) => {
     setColumns((current) => {
       if (current.includes(id)) {
-        if (id === "description" || id === "when") return current;
+        if (current.length <= 1) return current;
         return current.filter((item) => item !== id);
       }
       return STATEMENT_COLUMNS.map((column) => column.id).filter((item) => item === id || current.includes(item));
@@ -105,6 +130,7 @@ export function StatementExportModal({
     setMemberColumns((current) => {
       if (current.includes(id)) {
         if (id === "member") return current;
+        if (current.length <= 1) return current;
         return current.filter((item) => item !== id);
       }
       return ROSTER_COLUMNS.map((column) => column.id).filter((item) => item === id || current.includes(item));
@@ -122,16 +148,34 @@ export function StatementExportModal({
     occurrences,
     spaceId,
     txnFilter: filter,
-    columns,
+    columns: duesOnly ? [] : columns,
     holdings,
-    includeMembers: includeMembers && societyMembers,
+    includeMovements: !duesOnly,
+    includeHoldings: !duesOnly,
+    includeMembers: duesOnly ? societyMembers : (includeMembers && societyMembers),
     memberRows,
     memberColumns,
     memberSort,
+    titleOverride: duesOnly
+      ? (locale === "ar" ? "كشف المتأخرات حتى الشهر الحالي" : "Arrears statement to current month")
+      : undefined,
+    subtitleOverride: duesOnly
+      ? (locale === "ar"
+        ? "أسماء الأعضاء مع المدفوع والمتأخر المستحق حتى نهاية الشهر الحالي. الهدف المالي لا يُعرض إلا إذا اخترته."
+        : "Member names with paid and arrears accrued through the current month. Goal appears only if selected.")
+      : undefined,
   });
 
   const run = async (mode: "print" | "download") => {
     if (busy) return;
+    if (duesOnly && !societyMembers) {
+      window.alert(locale === "ar" ? "لا يوجد أعضاء لهذا الكشف." : "No members available for this statement.");
+      return;
+    }
+    if (!duesOnly && !columns.length && !(includeMembers && societyMembers)) {
+      window.alert(locale === "ar" ? "اختر عموداً واحداً على الأقل أو أرفق الأعضاء." : "Pick at least one column or attach members.");
+      return;
+    }
     if (mode === "download" && !canDownload) {
       window.alert(locale === "ar" ? "التحميل غير متاح في خطتك الحالية." : "Downloads are not available on your current plan.");
       return;
@@ -147,7 +191,7 @@ export function StatementExportModal({
       }
       const logoUrl = await resolvePrintLogoUrl();
       const stamp = new Date().toISOString().slice(0, 10);
-      await downloadReportHtml(buildHtml(logoUrl), `wazen-statement-${stamp}.html`);
+      await downloadReportHtml(buildHtml(logoUrl), duesOnly ? `wazen-dues-${stamp}.html` : `wazen-statement-${stamp}.html`);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "FAILED");
     } finally {
@@ -164,74 +208,91 @@ export function StatementExportModal({
         </div>
         <div className="modal-form statement-export-form">
           <p className="modal-note">{summary}</p>
-          <label>
-            <span>{locale === "ar" ? "نطاق المعاملات" : "Transaction scope"}</span>
-            <select value={filter} onChange={(event) => setFilter(event.target.value as StatementTxnFilter)}>
-              {FILTERS.map((item) => (
-                <option key={item.id} value={item.id}>{locale === "ar" ? item.ar : item.en}</option>
-              ))}
-            </select>
-          </label>
-
-          <fieldset className="roster-column-picker">
-            <legend>{locale === "ar" ? "أعمدة الحركات في الكشف" : "Movement columns"}</legend>
-            {STATEMENT_COLUMNS.map((column) => (
-              <label key={column.id} className="check-row">
-                <input
-                  type="checkbox"
-                  checked={columns.includes(column.id)}
-                  disabled={column.id === "description" || column.id === "when"}
-                  onChange={() => toggleColumn(column.id)}
-                />
-                <span>{locale === "ar" ? column.ar : column.en}</span>
-              </label>
-            ))}
-          </fieldset>
 
           {societyMembers ? (
+            <label>
+              <span>{locale === "ar" ? "نوع الكشف" : "Statement type"}</span>
+              <select value={reportKind} onChange={(event) => applyReportKind(event.target.value as ReportKind)}>
+                <option value="dues">{locale === "ar" ? "متأخرات الأعضاء (اسم · مدفوع · متأخر حتى الشهر الحالي)" : "Member dues (name · paid · arrears to current month)"}</option>
+                <option value="movements">{locale === "ar" ? "كشف الحركات / الحساب" : "Movements / account statement"}</option>
+              </select>
+            </label>
+          ) : null}
+
+          {!duesOnly ? (
             <>
-              <label className="check-row">
-                <input type="checkbox" checked={includeMembers} onChange={(event) => setIncludeMembers(event.target.checked)} />
-                <span>{locale === "ar" ? "إرفاق جدول الأعضاء في نفس الكشف" : "Attach members table to the same statement"}</span>
+              <label>
+                <span>{locale === "ar" ? "نطاق المعاملات" : "Transaction scope"}</span>
+                <select value={filter} onChange={(event) => setFilter(event.target.value as StatementTxnFilter)}>
+                  {FILTERS.map((item) => (
+                    <option key={item.id} value={item.id}>{locale === "ar" ? item.ar : item.en}</option>
+                  ))}
+                </select>
               </label>
-              {includeMembers ? (
-                <>
-                  <label>
-                    <span>{locale === "ar" ? "ترتيب الأعضاء" : "Member order"}</span>
-                    <select value={memberSort} onChange={(event) => setMemberSort(event.target.value as RosterSort)}>
-                      <option value="alphaAsc">{locale === "ar" ? "أبجدي أ → ي" : "Alphabetical A → Z"}</option>
-                      <option value="alphaDesc">{locale === "ar" ? "أبجدي ي → أ" : "Alphabetical Z → A"}</option>
-                      <option value="asIs">{locale === "ar" ? "ترتيب السجل" : "Ledger order"}</option>
-                    </select>
+
+              <fieldset className="roster-column-picker">
+                <legend>{locale === "ar" ? "أعمدة الحركات في الكشف" : "Movement columns"}</legend>
+                {STATEMENT_COLUMNS.map((column) => (
+                  <label key={column.id} className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={columns.includes(column.id)}
+                      onChange={() => toggleColumn(column.id)}
+                    />
+                    <span>{locale === "ar" ? column.ar : column.en}</span>
                   </label>
-                  <fieldset className="roster-column-picker">
-                    <legend>{locale === "ar" ? "أعمدة الأعضاء" : "Member columns"}</legend>
-                    {ROSTER_COLUMNS.map((column) => (
-                      <label key={column.id} className="check-row">
-                        <input
-                          type="checkbox"
-                          checked={memberColumns.includes(column.id)}
-                          disabled={column.id === "member"}
-                          onChange={() => toggleMemberColumn(column.id)}
-                        />
-                        <span>{locale === "ar" ? column.ar : column.en}</span>
-                      </label>
-                    ))}
-                  </fieldset>
-                </>
+                ))}
+              </fieldset>
+
+              {societyMembers ? (
+                <label className="check-row">
+                  <input type="checkbox" checked={includeMembers} onChange={(event) => setIncludeMembers(event.target.checked)} />
+                  <span>{locale === "ar" ? "إرفاق جدول الأعضاء في نفس الكشف" : "Attach members table to the same statement"}</span>
+                </label>
               ) : null}
             </>
           ) : null}
 
+          {(duesOnly || includeMembers) && societyMembers ? (
+            <>
+              <label>
+                <span>{locale === "ar" ? "ترتيب الأعضاء" : "Member order"}</span>
+                <select value={memberSort} onChange={(event) => setMemberSort(event.target.value as RosterSort)}>
+                  <option value="alphaAsc">{locale === "ar" ? "أبجدي أ → ي" : "Alphabetical A → Z"}</option>
+                  <option value="alphaDesc">{locale === "ar" ? "أبجدي ي → أ" : "Alphabetical Z → A"}</option>
+                  <option value="asIs">{locale === "ar" ? "ترتيب السجل" : "Ledger order"}</option>
+                </select>
+              </label>
+              <fieldset className="roster-column-picker">
+                <legend>{locale === "ar" ? "أعمدة الأعضاء (الهدف المالي اختياري)" : "Member columns (goal optional)"}</legend>
+                {ROSTER_COLUMNS.map((column) => (
+                  <label key={column.id} className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={memberColumns.includes(column.id)}
+                      disabled={column.id === "member"}
+                      onChange={() => toggleMemberColumn(column.id)}
+                    />
+                    <span>{locale === "ar" ? column.ar : column.en}</span>
+                  </label>
+                ))}
+              </fieldset>
+            </>
+          ) : null}
+
           <p className="modal-note">
-            {locale === "ar"
-              ? "الودائع تظهر كتحويل من النقد (ليست مصروفاً). النقد الختامي منفصل عن إجمالي الأصول."
-              : "Deposits appear as cash transfers (not expenses). Closing cash is separate from total assets."}
+            {duesOnly
+              ? (locale === "ar"
+                ? "المتأخر = المستحق حتى الشهر الحالي − المدفوع. أضف «الهدف المالي» فقط إن أردت ظهوره."
+                : "Arrears = accrued through current month − paid. Add “Goal” only if you want it shown.")
+              : (locale === "ar"
+                ? "يمكنك إلغاء أي عمود بما فيه البيان. الهدف المالي لا يُطبع إلا إذا فعّلته في أعمدة الأعضاء."
+                : "You can uncheck any column including description. Goal prints only if you enable it.")}
           </p>
 
           <div className="modal-actions">
             <button type="button" className="secondary-button" onClick={onClose}>{locale === "ar" ? "إلغاء" : "Cancel"}</button>
-            {onShare ? (
+            {onShare && !duesOnly ? (
               <button
                 type="button"
                 className="secondary-button"
