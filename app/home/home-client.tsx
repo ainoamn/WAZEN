@@ -17,11 +17,11 @@ import {
 import OmrSymbol from "../../components/brand/OmrSymbol";
 import WazenLogo from "../../components/brand/WazenLogo";
 import WazenPageLoader from "../../components/brand/WazenPageLoader";
-import { BhdAppSwitcher } from "../../components/bhd/BhdAppSwitcher";
+import { BhdSignedInSwitcher } from "../../components/bhd/BhdSignedInSwitcher";
 import { HomeNotificationBell, HomeWorkspaceAlertsBanner, type HomeUserNotification, type HomeWorkspaceAlert } from "../../components/home/home-notifications";
 import { apiFetch } from "../../lib/client-api";
 import { prefetchAppRoutes, warmAppCaches } from "../../lib/app-prefetch";
-import { completeClientLogout, isClientLogoutInProgress } from "../../lib/client-logout";
+import { isClientLogoutInProgress } from "../../lib/client-logout";
 import { clientSignInPath } from "../../lib/client-sign-in";
 import { fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../../lib/dashboard-session";
 import { useLiveDashboard } from "../../lib/live-sync";
@@ -330,10 +330,6 @@ export function HomeClient() {
     return { available, spend, income, wallets, associations, currency: active[0]?.currency ?? "OMR", pending };
   }, [data]);
 
-  const logout = async () => {
-    await completeClientLogout();
-  };
-
   const switcherUser = data?.user ?? sessionUser;
 
   if (loading && !data) {
@@ -351,13 +347,13 @@ export function HomeClient() {
                 <Globe2 size={16} />
                 {locale === "ar" ? "EN" : "عربي"}
               </button>
-              <BhdAppSwitcher
+              <BhdSignedInSwitcher
                 user={{
                   name: switcherUser.displayName,
                   email: switcherUser.email,
                   picture: switcherUser.avatarUrl ?? null,
                 }}
-                onSignOut={() => void logout()}
+                locale={locale === "en" ? "en" : "ar"}
               />
             </div>
           </header>
@@ -381,13 +377,13 @@ export function HomeClient() {
                 <Globe2 size={16} />
                 {locale === "ar" ? "EN" : "عربي"}
               </button>
-              <BhdAppSwitcher
+              <BhdSignedInSwitcher
                 user={{
                   name: switcherUser.displayName,
                   email: switcherUser.email,
                   picture: switcherUser.avatarUrl ?? null,
                 }}
-                onSignOut={() => void logout()}
+                locale={locale === "en" ? "en" : "ar"}
               />
             </div>
           </header>
@@ -425,9 +421,9 @@ export function HomeClient() {
             <Globe2 size={16} />
             {locale === "ar" ? "EN" : "عربي"}
           </button>
-          <BhdAppSwitcher
+          <BhdSignedInSwitcher
             user={{ name: data.user.displayName, email: data.user.email, picture: data.user.avatarUrl ?? null }}
-            onSignOut={() => void logout()}
+            locale={locale === "en" ? "en" : "ar"}
           />
         </div>
       </header>

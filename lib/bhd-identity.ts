@@ -268,11 +268,12 @@ export function bhdRedirectUri(request: Request) {
   return `${origin}/api/auth/bhd/callback`;
 }
 
-export function bhdEndSessionUrl(request: Request) {
+export function bhdEndSessionUrl(request: Request, options?: { all?: boolean }) {
   const issuer = identityEndpointBase();
   const url = new URL(`${issuer}/oauth/end-session`);
   url.searchParams.set("post_logout_redirect_uri", `${publicRequestOrigin(request)}/`);
   url.searchParams.set("client_id", bhdClientId());
+  if (options?.all) url.searchParams.set("all", "1");
   return url.toString();
 }
 

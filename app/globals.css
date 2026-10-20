@@ -2155,6 +2155,13 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
   color: #fff;
 }
 
+.bhd-switcher-signout-all {
+  margin-top: 6px;
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid #d7e2dc;
+}
+
 @media (max-width: 600px) {
   .bhd-switcher-card {
     max-width: calc(100vw - 24px);

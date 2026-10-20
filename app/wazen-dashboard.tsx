@@ -106,7 +106,7 @@ import { createPortal } from "react-dom";
 import { prefetchAppRoutes, warmAppCaches } from "../lib/app-prefetch";
 import { completeClientLogout, isClientLogoutInProgress } from "../lib/client-logout";
 import { clientSignInPath } from "../lib/client-sign-in";
-import { BhdAppSwitcher } from "../components/bhd/BhdAppSwitcher";
+import { BhdSignedInSwitcher } from "../components/bhd/BhdSignedInSwitcher";
 import { fetchDashboardSession, readDashboardCache, writeDashboardCache } from "../lib/dashboard-session";
 import { notifyLiveRefresh, suppressLiveRefresh, useLiveDashboard } from "../lib/live-sync";
 
@@ -1996,9 +1996,9 @@ export function WazenDashboard() {
               }
               changeView(view, spaceId);
             }} />
-            <BhdAppSwitcher
+            <BhdSignedInSwitcher
               user={{ name: data.user.displayName, email: data.user.email, picture: data.user.avatarUrl ?? null }}
-              onSignOut={() => void logout()}
+              locale={locale === "en" ? "en" : "ar"}
             />
           </div>
         </header>

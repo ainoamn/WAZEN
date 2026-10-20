@@ -5,6 +5,7 @@
 > **التاريخ:** 18 أغسطس 2026  
 > **الإصدار:** `bhd-appswitcher.v1`  
 > **يعتمد على:** [`BHD-IDENTITY-SSO.md`](BHD-IDENTITY-SSO.md) الإصدار `bhd-identity.v1`  
+> **الدليل التشغيلي:** [`BHD-UNIFIED-LOGIN-AND-APPS.md`](BHD-UNIFIED-LOGIN-AND-APPS.md)  
 > **الناشر:** بوابة BHD — مشروع Vercel `one-bhd`
 
 انسخ هذا الملف إلى مستودع المنتج تحت `docs/BHD-APP-SWITCHER.md` دون تعديل القيم المجمّدة. انسخ أيضاً الكتالوج المجمد في القسم 4 إلى `lib/bhd/apps.ts` **حرفياً**. لا تضف تطبيقاً محلياً، ولا تحذف تطبيقاً، ولا تغيّر رابط النقر.
@@ -16,7 +17,10 @@
 1. المشغّل يظهر **فقط بعد وجود جلسة منتج صالحة** (المستخدم مسجّل في هذا الموقع). بلا جلسة: لا شبكة تطبيقات ولا أيقونة تسع نقاط بجانب الحساب.
 2. موضع المشغّل ثابت: **يسار أيقونة المستخدم في الواجهة العربية (RTL)**، ملاصق لها في شريط الرأس. لا يُوضع في التذييل ولا في القائمة الجانبية ولا في صفحة مستقلة.
 3. النقر على تطبيق **آخر** لا يفتح `iframe` ولا نافذة منبثقة ولا يشارك كوكي. ينتقل المتصفح انتقالاً كاملاً (`window.location.assign`).
-4. إن كان للتطبيق `mode: "sso"` فالنقر يذهب إلى `{origin}/api/auth/bhd/start?returnTo=/` وليس إلى أصل الموقع وحده. هذا يعيد استخدام جلسة الهوية على `id.bhd-om.com` دون طلب كلمة مرور إن كانت قائمة.
+4. إن كان للتطبيق `mode: "sso"` فالنقر يذهب إلى  
+   `{origin}/api/auth/bhd/start?returnTo={workspacePath}`  
+   حيث `workspacePath` هو مساحة عمل العميل في الكتالوج (لوحة التحكم/البوابة الداخلية للمنتج)، **وليس** الصفحة التسويقية العامة و**وليس** `/admin` (الإدارة عبر `admin-entry` فقط).  
+   هذا يعيد استخدام جلسة الهوية على `id.bhd-om.com` دون طلب كلمة مرور إن كانت قائمة.
 5. إن كان `mode: "browse"` فالنقر يذهب إلى `origin` فقط (الموقع لم يُكمل بعد قسم 6 من SSO). لا تخترع مساراً محلياً بديلاً.
 6. **لا تضبط** `Domain=.bhd-om.com` على أي كوكي. الجلسات تبقى Host-only كما في مواصفة الهوية.
 7. **لا تجلب** قائمة التطبيقات من شبكة خارجية في v1. المصدر هو الملف المجمد في القسم 4. تحديث القائمة يتم في ONE-BHD ثم يُنسخ الملف.
@@ -28,7 +32,7 @@
 
 ## 1. الهدف
 
-بعد تسجيل الدخول الموحّد، يرى المستخدم بجانب صورته شبكة تطبيقات مجموعة بن حمود (سلوك تطبيقات Google: أيقونة تسع نقاط → بطاقة → شبكة 3 أعمدة). ينتقل بين البوابة ووازن وحسابي ونَسَب وبيتك والمتجر دون أن يبحث عن الروابط.
+بعد تسجيل الدخول الموحّد، يرى المستخدم بجانب صورته شبكة تطبيقات مجموعة بن حمود (سلوك تطبيقات Google: أيقونة تسع نقاط → بطاقة → شبكة 3 أعمدة). ينتقل بين البوابة ووازن وحسابي ونَسَب وBHD R والمتجر دون أن يبحث عن الروابط.
 
 ```mermaid
 sequenceDiagram
@@ -93,7 +97,10 @@ sequenceDiagram
 | الاسم | جلسة المنتج |
 | البريد | جلسة المنتج |
 | رابط «الحساب» | على البوابة/الهوية: `/account`. على بقية المنتجات: `https://id.bhd-om.com/account` |
-| خروج | `POST` مسار الخروج الحالي للمنتج ثم تحويل إلى `{ISSUER}/oauth/end-session` كما في قسم 6.5 من SSO |
+| قائمة الحسابات | من `/api/auth/me` → `accounts` على الهوية. النقر يبدّل فوراً (`POST /api/auth/switch`) |
+| إضافة حساب | `/login?add=1` على الهوية |
+| خروج من هذا الحساب | `POST /api/auth/logout` (إن بقي حساب يُفعَّل فوراً) |
+| خروج من كل الحسابات | `POST` خروج المنتج ثم `{ISSUER}/oauth/end-session?all=1` |
 
 ---
 
@@ -109,13 +116,23 @@ sequenceDiagram
 | `mode: "browse"` | `window.location.assign(app.origin + "/")` |
 | `mode: "identity"` | `window.location.assign` لصفحة الحساب (`/account` على البوابة، وإلا `https://id.bhd-om.com/account`) |
 
-`startUrl` ثابت:
+`startUrl` يُبنى من `workspacePath`:
 
 ```
-{origin}/api/auth/bhd/start?returnTo=/
+{origin}/api/auth/bhd/start?returnTo={workspacePath}
 ```
 
-`returnTo` دائماً `/` من المشغّل. لا تمرّر عنوان الصفحة الحالية إلى موقع آخر (منع تسريب مسارات داخلية).
+| التطبيق | `workspacePath` (مساحة عمل العميل) |
+|---|---|
+| بوابة بن حمود | `/company` |
+| وازن | `/dashboard` |
+| حسابي | `/dashboard` |
+| نَسَب | `/app` |
+| BHD R | `/ar/portal` |
+| المتجر | `/dashboard` |
+| المكتب | `/ar` |
+
+`returnTo` من الرئيسية ومن المشغّل = `workspacePath` فقط (مسار نسبي داخل نفس المنتج). كل منتج يسمح بهذه المسارات في تحقق `returnTo` بعد `callback`. لا تمرّر عنوان الصفحة الحالية إلى موقع آخر. `/admin` يبقى عبر `admin-entry` فقط.
 
 لا تستخدم `target="_blank"` في المشغّل بعد الدخول.
 
@@ -123,134 +140,12 @@ sequenceDiagram
 
 ## 4. الكتالوج المجمد (`lib/bhd/apps.ts`)
 
-انسخ هذا الملف كما هو. `current` يُحسب في المكوّن بمقارنة `window.location.origin` مع `origin` بعد إزالة الشرطة النهائية.
+انسخ الملف المصدر حرفياً من  
+`BHD-Complete-Brand-and-Portal-v1.1.0/app/lib/bhd/apps.ts`  
+(يشمل الحقل `workspacePath` ودوال `gatewayApps` / `launchUrlForApp`).  
+`current` يُحسب في المكوّن بمقارنة `window.location.origin` مع `origin` بعد إزالة الشرطة النهائية.
 
-```ts
-export type BhdAppMode = "identity" | "sso" | "browse";
-
-export type BhdApp = {
-  id: string;
-  clientId: string | null;
-  nameAr: string;
-  nameEn: string;
-  origin: string;
-  startUrl: string | null;
-  mode: BhdAppMode;
-  enabled: boolean;
-  mark: string;
-  accent: string;
-  soft: string;
-};
-
-export const BHD_APP_SWITCHER_SPEC = "bhd-appswitcher.v1";
-
-export const BHD_APPS: BhdApp[] = [
-  {
-    id: "account",
-    clientId: null,
-    nameAr: "الحساب",
-    nameEn: "Account",
-    origin: "https://id.bhd-om.com",
-    startUrl: null,
-    mode: "identity",
-    enabled: true,
-    mark: "حـ",
-    accent: "#092d24",
-    soft: "#e8f4f1",
-  },
-  {
-    id: "portal",
-    clientId: "bhd-portal",
-    nameAr: "البوابة",
-    nameEn: "Portal",
-    origin: "https://www.bhd-om.com",
-    startUrl: "https://www.bhd-om.com/api/auth/bhd/start?returnTo=/",
-    mode: "sso",
-    enabled: true,
-    mark: "B",
-    accent: "#075c45",
-    soft: "#e6f1ec",
-  },
-  {
-    id: "wazen",
-    clientId: "bhd-wazen",
-    nameAr: "وازن",
-    nameEn: "WAZEN",
-    origin: "https://wazen.bhd-om.com",
-    startUrl: "https://wazen.bhd-om.com/api/auth/bhd/start?returnTo=/",
-    mode: "browse",
-    enabled: true,
-    mark: "و",
-    accent: "#126b63",
-    soft: "#e8f4f1",
-  },
-  {
-    id: "hisaby",
-    clientId: "bhd-hisaby",
-    nameAr: "حسابي",
-    nameEn: "HISAB",
-    origin: "https://hisaby.bhd-om.com",
-    startUrl: "https://hisaby.bhd-om.com/api/auth/bhd/start?returnTo=/",
-    mode: "browse",
-    enabled: true,
-    mark: "ح",
-    accent: "#075c45",
-    soft: "#e6f1ec",
-  },
-  {
-    id: "nasab",
-    clientId: "bhd-nasab",
-    nameAr: "نَسَب",
-    nameEn: "NASAB",
-    origin: "https://nasab.bhd-om.com",
-    startUrl: "https://nasab.bhd-om.com/api/auth/bhd/start?returnTo=/",
-    mode: "sso",
-    enabled: true,
-    mark: "ن",
-    accent: "#8a3c45",
-    soft: "#f6e9eb",
-  },
-  {
-    id: "baitak",
-    clientId: "bhd-baitak",
-    nameAr: "بيتك",
-    nameEn: "BAITAK",
-    origin: "https://baitak.bhd-om.com",
-    startUrl: "https://baitak.bhd-om.com/api/auth/bhd/start?returnTo=/",
-    mode: "browse",
-    enabled: true,
-    mark: "ب",
-    accent: "#a66b2d",
-    soft: "#f8efe4",
-  },
-  {
-    id: "store",
-    clientId: "bhd-store",
-    nameAr: "المتجر",
-    nameEn: "BHD Store",
-    origin: "https://bhdstor.bhd-om.com",
-    startUrl: "https://bhdstor.bhd-om.com/api/auth/bhd/start?returnTo=/",
-    mode: "sso",
-    enabled: true,
-    mark: "م",
-    accent: "#315d89",
-    soft: "#e9f0f7",
-  },
-  {
-    id: "office",
-    clientId: "bhd-office",
-    nameAr: "المكتب",
-    nameEn: "BHD Office",
-    origin: "",
-    startUrl: null,
-    mode: "browse",
-    enabled: false,
-    mark: "B",
-    accent: "#283b4d",
-    soft: "#e9edf0",
-  },
-];
-```
+> ملاحظة مجمّدة: الرئيسية `www.bhd-om.com/` بوابة تطبيقات. المحتوى التعريفي للشركة على `/company`. منتج العقار العام **BHD R**. نطاق `baitak.bhd-om.com` يخص **مكتب BHD**.
 
 عندما يُكمل منتج قسم 6 من SSO، **لا يعدّل المنتج ملفه**. يُغيَّر `mode` من `"browse"` إلى `"sso"` هنا في ONE-BHD ثم يُنسخ `apps.ts` إلى الجميع.
 

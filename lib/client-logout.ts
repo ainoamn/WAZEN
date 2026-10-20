@@ -5,6 +5,12 @@ import { notifyBrowserSessionChange } from "./browser-session-client";
 import { apiFetch } from "./client-api";
 import { clearDashboardCache } from "./dashboard-session";
 import { resetAppPrefetch } from "./app-prefetch";
+import {
+  buildEndSessionUrl,
+  logoutIdentityAccount,
+  silentProductStart,
+  wazenWorkspacePath,
+} from "./bhd-multi-account";
 
 let clientLogoutInProgress = false;
 
@@ -13,35 +19,13 @@ export function isClientLogoutInProgress() {
   return clientLogoutInProgress;
 }
 
-/**
- * Clears the Wazen session then navigates to identity end-session (or `/api/auth/bhd/logout`).
- * Do not call `location.replace(signIn…)` afterward — that re-opens SSO while identity is still alive.
- * This promise intentionally never resolves after navigation starts so awaiters cannot race.
- */
-export async function completeClientLogout() {
-  clientLogoutInProgress = true;
-  let endSessionUrl = "";
+async function clearProductSessionOnly() {
   try {
-    const response = await apiFetch("/api/auth", {
+    await apiFetch("/api/auth", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "logout" }),
     });
-    const result = await response.json() as { endSessionUrl?: string };
-    if (typeof result.endSessionUrl === "string") {
-      try {
-        const url = new URL(result.endSessionUrl);
-        const identityHost = url.hostname.toLowerCase();
-        const allowed = identityHost === "id.bhd-om.com"
-          || identityHost === "one-bhd.vercel.app"
-          || identityHost === "localhost";
-        if ((url.protocol === "https:" || (url.protocol === "http:" && identityHost === "localhost")) && allowed) {
-          endSessionUrl = result.endSessionUrl;
-        }
-      } catch {
-        /* stay on product logout route */
-      }
-    }
   } catch {
     /* still leave the product session */
   }
@@ -49,6 +33,34 @@ export async function completeClientLogout() {
   clearDashboardCache();
   resetAppPrefetch();
   notifyBrowserSessionChange(null);
-  window.location.replace(endSessionUrl || "/api/auth/bhd/logout");
+}
+
+/**
+ * Clears the Wazen session then navigates to identity end-session (or remaining account).
+ * `all: true` (default for sidebar) ends every roster account.
+ * `all: false` activates the next identity account and silent-starts the product.
+ */
+export async function completeClientLogout(options?: { all?: boolean }) {
+  clientLogoutInProgress = true;
+  const all = options?.all !== false;
+  await clearProductSessionOnly();
+  if (!all) {
+    try {
+      const { user: remaining } = await logoutIdentityAccount(false);
+      if (remaining?.id) {
+        silentProductStart(wazenWorkspacePath());
+        await new Promise<never>(() => {});
+      }
+    } catch {
+      /* fall through to end-session */
+    }
+  } else {
+    try {
+      await logoutIdentityAccount(true);
+    } catch {
+      /* still end-session */
+    }
+  }
+  window.location.replace(buildEndSessionUrl(all));
   await new Promise<never>(() => {});
 }

@@ -7,12 +7,11 @@ import { createContext, ReactNode, useContext, useEffect, useMemo, useState } fr
 import InstantLink from "../components/brand/InstantLink";
 import WazenLogo, { WazenIcon } from "../components/brand/WazenLogo";
 import WazenPageLoader from "../components/brand/WazenPageLoader";
-import { BhdAppSwitcher, type BhdSwitcherUser } from "../components/bhd/BhdAppSwitcher";
+import { BhdSignedInSwitcher } from "../components/bhd/BhdSignedInSwitcher";
+import type { BhdSwitcherUser } from "../components/bhd/BhdAppSwitcher";
 import { formatMoneyMinor } from "../lib/money";
 import { statusLabel } from "../lib/admin-labels";
 import { fetchAdminConsole, readAdminConsole } from "../lib/admin-session";
-import { completeClientLogout } from "../lib/client-logout";
-
 export type CommerceLocale = "ar" | "en";
 
 type CommerceLocaleApi = {
@@ -140,7 +139,7 @@ export function AccountHeader({
         <Globe2 size={16} />{locale === "ar" ? "EN" : "عربي"}
       </button>
       {sessionUser ? (
-        <BhdAppSwitcher user={sessionUser} onSignOut={() => void completeClientLogout()} />
+        <BhdSignedInSwitcher user={sessionUser} locale={locale === "en" ? "en" : "ar"} />
       ) : null}
     </header>
   );
@@ -190,7 +189,7 @@ function AdminShellUserSwitcher({ locale }: { locale: CommerceLocale }) {
     }).catch(() => {});
   }, [locale]);
   if (!user) return null;
-  return <BhdAppSwitcher user={user} onSignOut={() => void completeClientLogout()} />;
+  return <BhdSignedInSwitcher user={user} locale={locale === "en" ? "en" : "ar"} />;
 }
 
 export function AdminShell({ active, locale, setLocale, children }: { active?: string; locale: CommerceLocale; setLocale: (locale: CommerceLocale) => void; children: ReactNode }) {
