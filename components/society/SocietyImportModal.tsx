@@ -179,6 +179,8 @@ export function SocietyImportModal({
           <div className="modal-note split-preview">
             <span>{fileName || pack.spaceName}</span>
             <strong>
+              {pack.spaceName}
+              {" · "}
               {pack.members.length} {locale === "ar" ? "عضو" : "members"}
               {" · "}
               {pack.payments?.length ?? 0} {locale === "ar" ? "دفعة" : "payments"}
@@ -186,15 +188,22 @@ export function SocietyImportModal({
               {pack.expenses?.length ?? 0} {locale === "ar" ? "مصروف" : "expenses"}
               {pack.openingBalance ? ` · ${locale === "ar" ? "افتتاحي" : "opening"} ${pack.openingBalance.amount}` : ""}
             </strong>
+            {pack.members.length <= 2 && Number(pack.openingBalance?.amount ?? 0) === 100 ? (
+              <p className="modal-error" style={{ marginTop: 8 }}>
+                {locale === "ar"
+                  ? "هذا يبدو ملف المثال التجريبي وليس حزمة أبناء خلفان (51 عضواً). اختر الملف الصحيح من التنزيلات."
+                  : "This looks like the demo example, not a full society pack. Pick the correct file from Downloads."}
+              </p>
+            ) : null}
           </div>
         ) : null}
         <div className="form-row">
           <button
             type="button"
             className="secondary-button"
-            onClick={() => downloadText("wazen-society-pack-example.json", societyPackExampleJson(), "application/json")}
+            onClick={() => downloadText("مثال-حزمة-تجريبية-لا-ترفعه-لأبناء-خلفان.json", societyPackExampleJson(), "application/json")}
           >
-            <Download size={14} />{locale === "ar" ? "مثال JSON" : "JSON example"}
+            <Download size={14} />{locale === "ar" ? "مثال JSON (تجريبي)" : "JSON example (demo)"}
           </button>
           <button
             type="button"
