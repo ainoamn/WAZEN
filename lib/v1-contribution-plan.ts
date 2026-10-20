@@ -50,11 +50,15 @@ async function rebuildInstallmentsForPlan(
 ) {
   if (Number(plan.amount_minor) <= 0) return;
   const members = await db.prepare(
-    "SELECT id, paid_minor FROM members WHERE space_id=? AND status='active'",
-  ).bind(spaceId).all<{ id: string; paid_minor: number }>();
+    "SELECT id, paid_minor, COALESCE(dues_exempt,0) AS dues_exempt FROM members WHERE space_id=? AND status='active'",
+  ).bind(spaceId).all<{ id: string; paid_minor: number; dues_exempt: number }>();
   await db.prepare("DELETE FROM member_installments WHERE space_id=?").bind(spaceId).run();
   const statements: D1PreparedStatement[] = [];
   for (const member of members.results ?? []) {
+    if (Number(member.dues_exempt) === 1) {
+      statements.push(db.prepare("UPDATE members SET due_minor=0 WHERE id=? AND space_id=?").bind(member.id, spaceId));
+      continue;
+    }
     const schedule = buildInstallmentSchedule({
       memberId: member.id,
       spaceId,

@@ -16,7 +16,8 @@ import { prepareAudit, writeAudit } from "../../../lib/audit";
 import { currencyScale, formatMoneyMinor, multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
 import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, periodKeyFromDate, type InstallmentLike } from "../../../lib/installments";
 import { coveringPeriod } from "../../../lib/accounting-periods";
-import { isLikelyPhone, toWhatsAppNumber } from "../../../lib/phone";
+import { isLikelyPhone, normalizeOptionalMemberPhone, toWhatsAppNumber } from "../../../lib/phone";
+import { isExternalLedgerMemberName } from "../../../lib/member-dues-exempt";
 import { appOrigin } from "../../../lib/app-origin";
 import { buildReceiptWhatsAppMessage, signReceiptShareToken, whatsappShareUrl } from "../../../lib/receipt-share";
 import { buildMemberStatementWhatsAppMessage, buildAssociationStatementWhatsAppMessage, signMemberStatementToken, signAssociationStatementToken } from "../../../lib/statement-share";
@@ -89,6 +90,7 @@ type MemberRow = {
   paid_minor: number;
   extra_minor: number;
   addon_minor?: number;
+  dues_exempt?: number;
   phone?: string | null;
   avatar: string;
   joined_at: string;
@@ -499,13 +501,19 @@ async function rebuildSpaceInstallments(
   createdAt: string,
 ) {
   if (!plan || Number(plan.amount_minor) <= 0) return;
-  const members = await db.prepare("SELECT id,space_id,paid_minor FROM members WHERE space_id=? AND status='active'").bind(spaceId).all<{ id: string; space_id: string; paid_minor: number }>();
+  const members = await db.prepare(
+    "SELECT id,space_id,paid_minor,COALESCE(dues_exempt,0) AS dues_exempt FROM members WHERE space_id=? AND status='active'",
+  ).bind(spaceId).all<{ id: string; space_id: string; paid_minor: number; dues_exempt: number }>();
   const duration = Number(plan.duration_months) || 12;
   const dueMinor = Number(plan.amount_minor) * duration;
   const statements: ReturnType<D1Database["prepare"]>[] = [
     db.prepare("DELETE FROM member_installments WHERE space_id=?").bind(spaceId),
   ];
   for (const member of members.results) {
+    if (Number(member.dues_exempt) === 1) {
+      statements.push(db.prepare("UPDATE members SET due_minor=0 WHERE id=?").bind(member.id));
+      continue;
+    }
     const paid = Number(member.paid_minor);
     statements.push(db.prepare("UPDATE members SET due_minor=? WHERE id=?").bind(Math.max(dueMinor, paid), member.id));
     const schedule = buildInstallmentSchedule({
@@ -2494,18 +2502,39 @@ export async function POST(request: Request) {
         displayName: z.string().trim().min(2).max(80).optional(),
         email: z.union([z.email().max(254), z.literal("")]).optional(),
         phone: z.string().trim().max(20).optional(),
+        duesExempt: z.boolean().optional(),
         syncLinked: z.boolean().optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_MEMBER");
-      if (parsed.data.phone && parsed.data.phone.length > 0 && !isLikelyPhone(parsed.data.phone)) throw new ApiError(400, "INVALID_PHONE");
-      const member = await db.prepare("SELECT id,space_id,display_name,email,phone,role,status FROM members WHERE id=?").bind(parsed.data.memberId)
-        .first<{ id: string; space_id: string; display_name: string; email: string | null; phone: string | null; role: string; status: string }>();
+      let nextPhone: string | null;
+      try {
+        nextPhone = parsed.data.phone === undefined
+          ? null
+          : normalizeOptionalMemberPhone(parsed.data.phone);
+      } catch {
+        throw new ApiError(400, "INVALID_PHONE");
+      }
+      const member = await db.prepare(
+        "SELECT id,space_id,display_name,email,phone,role,status,COALESCE(dues_exempt,0) AS dues_exempt,due_minor,paid_minor FROM members WHERE id=?",
+      ).bind(parsed.data.memberId)
+        .first<{
+          id: string; space_id: string; display_name: string; email: string | null; phone: string | null;
+          role: string; status: string; dues_exempt: number; due_minor: number; paid_minor: number;
+        }>();
       if (!member) throw new ApiError(404, "MEMBER_NOT_FOUND");
       await authorizeSpace(db, user, member.space_id, "members:write", ["household", "trip", "society", "group"]);
       const nextName = parsed.data.displayName?.trim() || member.display_name;
       const nextEmail = parsed.data.email === undefined ? member.email : (parsed.data.email.trim() || null);
-      const nextPhoneRaw = parsed.data.phone === undefined ? member.phone : (parsed.data.phone.trim() || null);
-      const nextPhone = nextPhoneRaw ? (toWhatsAppNumber(nextPhoneRaw) || nextPhoneRaw) : null;
+      if (parsed.data.phone === undefined) {
+        try {
+          nextPhone = normalizeOptionalMemberPhone(member.phone);
+        } catch {
+          nextPhone = null;
+        }
+      }
+      const nextDuesExempt = parsed.data.duesExempt === undefined
+        ? Number(member.dues_exempt) === 1 || isExternalLedgerMemberName(nextName)
+        : parsed.data.duesExempt;
       const createdAt = now();
       const targetIds = new Set<string>([member.id]);
       if (parsed.data.syncLinked !== false) {
@@ -2546,14 +2575,63 @@ export async function POST(request: Request) {
         if (contactConflict) throwMemberContactConflict(contactConflict);
       }
       const statements = [...targetIds].map((id) =>
-        db.prepare("UPDATE members SET display_name=?, email=?, phone=? WHERE id=?").bind(nextName, nextEmail, nextPhone, id),
+        db.prepare("UPDATE members SET display_name=?, email=?, phone=?, dues_exempt=? WHERE id=?")
+          .bind(nextName, nextEmail, nextPhone, nextDuesExempt ? 1 : 0, id),
       );
+      if (nextDuesExempt) {
+        for (const id of targetIds) {
+          statements.push(db.prepare("UPDATE members SET due_minor=0 WHERE id=?").bind(id));
+          statements.push(db.prepare("DELETE FROM member_installments WHERE member_id=?").bind(id));
+        }
+        statements.push(
+          db.prepare(`UPDATE spaces SET goal_minor = COALESCE((SELECT SUM(due_minor) FROM members WHERE space_id=? AND status='active'), 0) WHERE id=?`)
+            .bind(member.space_id, member.space_id),
+        );
+      } else if (Number(member.dues_exempt) === 1 && !nextDuesExempt) {
+        const plan = await db.prepare(
+          "SELECT amount_minor, duration_months, starts_at FROM contribution_plans WHERE space_id=? ORDER BY starts_at LIMIT 1",
+        ).bind(member.space_id).first<{ amount_minor: number; duration_months: number; starts_at: string }>();
+        if (plan && Number(plan.amount_minor) > 0) {
+          const duration = Number(plan.duration_months) || 12;
+          const dueMinor = Number(plan.amount_minor) * duration;
+          for (const id of targetIds) {
+            const paidRow = await db.prepare("SELECT paid_minor FROM members WHERE id=?").bind(id).first<{ paid_minor: number }>();
+            const paid = Number(paidRow?.paid_minor ?? 0);
+            statements.push(db.prepare("UPDATE members SET due_minor=? WHERE id=?").bind(Math.max(dueMinor, paid), id));
+            statements.push(db.prepare("DELETE FROM member_installments WHERE member_id=?").bind(id));
+            const schedule = buildInstallmentSchedule({
+              memberId: id,
+              spaceId: member.space_id,
+              startAt: plan.starts_at || createdAt,
+              durationMonths: duration,
+              amountMinor: Number(plan.amount_minor),
+              paidMinor: paid,
+            });
+            for (const row of schedule.rows) {
+              statements.push(
+                db.prepare("INSERT INTO member_installments (id,member_id,space_id,period_index,period_key,due_at,amount_minor,paid_minor,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
+                  .bind(row.id, id, member.space_id, row.period_index, row.period_key, row.due_at, row.amount_minor, row.paid_minor, row.status, createdAt),
+              );
+            }
+          }
+          statements.push(
+            db.prepare(`UPDATE spaces SET goal_minor = COALESCE((SELECT SUM(due_minor) FROM members WHERE space_id=? AND status='active'), 0) WHERE id=?`)
+              .bind(member.space_id, member.space_id),
+          );
+        }
+      }
       statements.push(prepareAudit(db, {
         userId: user.id,
         action: "member.contact_updated",
         entityType: "member",
         entityId: member.id,
-        metadata: { spaceId: member.space_id, email: nextEmail, phone: nextPhone, synced: [...targetIds] },
+        metadata: {
+          spaceId: member.space_id,
+          email: nextEmail,
+          phone: nextPhone,
+          duesExempt: nextDuesExempt,
+          synced: [...targetIds],
+        },
         createdAt,
       }));
       await db.batch(statements);
@@ -3069,7 +3147,8 @@ export async function POST(request: Request) {
         db.prepare(`INSERT INTO contribution_plans (id,space_id,amount_minor,interval,due_day,extra_policy,duration_months,starts_at) VALUES (?, ?, ?, 'monthly', ?, 'personal_reserve', ?, ?)
           ON CONFLICT(id) DO UPDATE SET amount_minor=excluded.amount_minor,due_day=excluded.due_day,duration_months=excluded.duration_months`)
           .bind(existingPlan?.id ?? `${parsed.data.spaceId}-plan`, parsed.data.spaceId, contributionMinor, parsed.data.dueDay, parsed.data.durationMonths, createdAt),
-        db.prepare("UPDATE members SET due_minor=? WHERE space_id=? AND status='active'").bind(totalDueMinor, parsed.data.spaceId),
+        db.prepare("UPDATE members SET due_minor=? WHERE space_id=? AND status='active' AND COALESCE(dues_exempt,0)=0").bind(totalDueMinor, parsed.data.spaceId),
+        db.prepare("UPDATE members SET due_minor=0 WHERE space_id=? AND status='active' AND COALESCE(dues_exempt,0)=1").bind(parsed.data.spaceId),
       ];
       ordered.members.forEach((member, index) => statements.push(db.prepare(`INSERT INTO circle_turns
         (id,space_id,member_id,turn_number,status,amount_minor,created_at) VALUES (?,?,?,?,'scheduled',?,?)`)

@@ -117,7 +117,8 @@ export async function setV1CircleOrder(
     db.prepare(`INSERT INTO contribution_plans (id,space_id,amount_minor,interval,due_day,extra_policy,duration_months,starts_at) VALUES (?, ?, ?, 'monthly', ?, 'personal_reserve', ?, ?)
       ON CONFLICT(id) DO UPDATE SET amount_minor=excluded.amount_minor,due_day=excluded.due_day,duration_months=excluded.duration_months`)
       .bind(existingPlan?.id ?? `${space.id}-plan`, space.id, contributionMinor, dueDay, durationMonths, createdAt),
-    db.prepare("UPDATE members SET due_minor=? WHERE space_id=? AND status='active'").bind(totalDueMinor, space.id),
+    db.prepare("UPDATE members SET due_minor=? WHERE space_id=? AND status='active' AND COALESCE(dues_exempt,0)=0").bind(totalDueMinor, space.id),
+    db.prepare("UPDATE members SET due_minor=0 WHERE space_id=? AND status='active' AND COALESCE(dues_exempt,0)=1").bind(space.id),
   ];
   for (const [index, member] of ordered.members.entries()) {
     statements.push(

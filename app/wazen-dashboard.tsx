@@ -169,6 +169,7 @@ type Member = {
   paid_minor: number;
   extra_minor: number;
   addon_minor?: number;
+  dues_exempt?: number;
   phone?: string | null;
   avatar: string;
   joined_at?: string;

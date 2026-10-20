@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 29;
+const SCHEMA_VERSION = 30;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -278,9 +278,32 @@ async function ensureSchemaPatches(db: D1Database) {
     try { await db.prepare("ALTER TABLE settlements ADD COLUMN expense_id TEXT").run(); } catch { /* exists */ }
   }
   const memberAddon = await db.prepare("PRAGMA table_info(members)").all<{ name: string }>();
-  if (!memberAddon.results.some((column) => column.name === "addon_minor")) {
+  const memberColNames = new Set(memberAddon.results.map((column) => column.name));
+  if (!memberColNames.has("addon_minor")) {
     try { await db.prepare("ALTER TABLE members ADD COLUMN addon_minor INTEGER NOT NULL DEFAULT 0").run(); } catch { /* exists */ }
   }
+  if (!memberColNames.has("dues_exempt")) {
+    try { await db.prepare("ALTER TABLE members ADD COLUMN dues_exempt INTEGER NOT NULL DEFAULT 0").run(); } catch { /* exists */ }
+  }
+  try {
+    await db.prepare(`
+      UPDATE members SET dues_exempt=1, due_minor=0
+      WHERE COALESCE(dues_exempt,0)=0 AND (
+        LOWER(TRIM(display_name)) IN ('أخرى','اخرى','other','others')
+        OR display_name LIKE '%مساهمات أو مصاريف أخرى%'
+        OR display_name LIKE '%مصادر أخرى%'
+      )
+    `).run();
+    await db.prepare(`
+      DELETE FROM member_installments
+      WHERE member_id IN (SELECT id FROM members WHERE COALESCE(dues_exempt,0)=1)
+    `).run();
+    await db.prepare(`
+      UPDATE spaces SET goal_minor = COALESCE((
+        SELECT SUM(due_minor) FROM members WHERE space_id=spaces.id AND status='active'
+      ), 0)
+    `).run();
+  } catch { /* members/installments may be mid-migrate */ }
   const spaceStart = await db.prepare("PRAGMA table_info(spaces)").all<{ name: string }>();
   if (!spaceStart.results.some((column) => column.name === "starts_at")) {
     try { await db.prepare("ALTER TABLE spaces ADD COLUMN starts_at TEXT").run(); } catch { /* exists */ }

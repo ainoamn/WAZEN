@@ -53,6 +53,24 @@ export function splitPhoneParts(phone: string, fallbackDial = DEFAULT_DIAL_CODE)
 export function isLikelyPhone(phone: string) {
   const digits = digitsOnly(phone);
   if (digits.length < 7 || digits.length > 15) return false;
+  if (/^0+$/.test(digits)) return false;
   if (digits.startsWith(DEFAULT_DIAL_CODE)) return digits.length >= 10 && digits.length <= 15;
   return true;
+}
+
+/**
+ * Optional member contact phone: empty / Excel placeholders ("0") → null.
+ * Real but invalid numbers throw so the UI can show INVALID_PHONE.
+ */
+export function normalizeOptionalMemberPhone(phone: string | null | undefined): string | null {
+  const raw = String(phone ?? "").trim();
+  if (!raw) return null;
+  const digits = digitsOnly(raw);
+  if (!digits || /^0+$/.test(digits) || digits.length < 7) return null;
+  if (!isLikelyPhone(raw)) {
+    const error = new Error("INVALID_PHONE");
+    error.name = "INVALID_PHONE";
+    throw error;
+  }
+  return toWhatsAppNumber(raw) || raw;
 }

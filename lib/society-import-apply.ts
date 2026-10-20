@@ -8,6 +8,7 @@ import { installmentInsertStatements } from "./installment-payments";
 import { reconcileMemberLedgers, writeApprovedCashBalance } from "./ledger-void";
 import { multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "./money";
 import { digitsOnly, isLikelyPhone, toWhatsAppNumber } from "./phone";
+import { isExternalLedgerMemberName } from "./member-dues-exempt";
 import { filterSpacesByPlan } from "./plan-features";
 import { ApiError } from "./security";
 import {
@@ -200,15 +201,17 @@ export async function applySocietyImportPack(
     if (existingCount + membersCreated >= memberLimit) throw new ApiError(403, "PLAN_MEMBER_LIMIT");
 
     const memberId = crypto.randomUUID();
+    const external = isExternalLedgerMemberName(member.displayName);
+    const memberDue = external ? 0 : dueMinor;
     memberStatements.push(
       db.prepare(
-        "INSERT INTO members (id,space_id,user_id,display_name,email,phone,role,status,due_minor,paid_minor,extra_minor,avatar,joined_at) VALUES (?,?,NULL,?,?,?,'member','active',?,0,0,'#0f766e',?)",
-      ).bind(memberId, spaceId, member.displayName, email, phone, dueMinor, joinedAt),
+        "INSERT INTO members (id,space_id,user_id,display_name,email,phone,role,status,due_minor,paid_minor,extra_minor,avatar,joined_at,dues_exempt) VALUES (?,?,NULL,?,?,?,'member','active',?,0,0,'#0f766e',?,?)",
+      ).bind(memberId, spaceId, member.displayName, email, phone, memberDue, joinedAt, external ? 1 : 0),
     );
     byName.set(normalizePersonKey(member.displayName), memberId);
     indexPhone(byPhone, phone, memberId);
     paidByMember.set(memberId, 0);
-    dueByMember.set(memberId, dueMinor);
+    dueByMember.set(memberId, memberDue);
     membersCreated += 1;
   }
 
@@ -448,7 +451,18 @@ export async function applySocietyImportPack(
   // Build installment schedules once from final paid totals (avoids per-payment DB work).
   if (planForMember.amount_minor > 0) {
     const installmentStatements: D1PreparedStatement[] = [];
+    const exemptRows = await db.prepare(
+      "SELECT id FROM members WHERE space_id=? AND status='active' AND COALESCE(dues_exempt,0)=1",
+    ).bind(spaceId).all<{ id: string }>();
+    const exemptIds = new Set((exemptRows.results ?? []).map((row) => row.id));
     for (const [memberId, paidMinor] of paidByMember) {
+      if (exemptIds.has(memberId) || Number(dueByMember.get(memberId) ?? 0) <= 0) {
+        installmentStatements.push(
+          db.prepare("DELETE FROM member_installments WHERE member_id=?").bind(memberId),
+          db.prepare("UPDATE members SET due_minor=0 WHERE id=? AND space_id=?").bind(memberId, spaceId),
+        );
+        continue;
+      }
       installmentStatements.push(
         db.prepare("DELETE FROM member_installments WHERE member_id=?").bind(memberId),
       );

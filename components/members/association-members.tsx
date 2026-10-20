@@ -24,6 +24,7 @@ import { formatMoneyMinor } from "../../lib/money";
 import { isFundPaidExpense } from "../../lib/finance";
 import { openWhatsAppUrl } from "../../lib/receipt-share";
 import { spaceRoleLabel } from "../../lib/space-role-permissions";
+import { memberIsDuesExempt } from "../../lib/member-dues-exempt";
 
 type Locale = "ar" | "en";
 
@@ -40,6 +41,7 @@ export type AssociationMember = {
   paid_minor: number;
   extra_minor: number;
   addon_minor?: number;
+  dues_exempt?: number;
   avatar: string;
   joined_at?: string;
 };
@@ -76,6 +78,7 @@ export function memberInstallments(
   installments: AssociationInstallment[],
   plan?: AssociationPlan | null,
 ): AssociationInstallment[] {
+  if (memberIsDuesExempt(member) || Number(member.due_minor) <= 0) return [];
   const rows = installments.filter((row: AssociationInstallment) => (row as { member_id?: string }).member_id === member.id);
   if (rows.length) return rows.sort((a, b) => a.period_index - b.period_index);
   const monthly = Number(plan?.amount_minor ?? 0);
@@ -97,6 +100,7 @@ export function memberAccruedDueMinor(
   plan?: AssociationPlan | null,
   asOf?: Date,
 ) {
+  if (memberIsDuesExempt(member) || Number(member.due_minor) <= 0) return 0;
   const months = memberInstallments(member, installments, plan);
   if (!months.length) return member.due_minor;
   return accruedDueMinor(months, asOf);
@@ -880,6 +884,7 @@ export function MemberPersonProfile({
   const [displayName, setDisplayName] = useState(primary?.display_name ?? "");
   const [email, setEmail] = useState(primary?.email ?? "");
   const [phone, setPhone] = useState(primary?.phone ?? "");
+  const [duesExempt, setDuesExempt] = useState(memberIsDuesExempt(primary ?? { due_minor: 0 }));
   const [savingContact, setSavingContact] = useState(false);
   const [contactError, setContactError] = useState("");
   const [editingContact, setEditingContact] = useState(startEditingContact || !(primary?.email));
@@ -890,11 +895,12 @@ export function MemberPersonProfile({
   useEffect(() => {
     setDisplayName(primary?.display_name ?? "");
     setEmail(primary?.email ?? "");
-    setPhone(primary?.phone ?? "");
+    setPhone(primary?.phone && !/^0+$/.test(String(primary.phone).replace(/\D/g, "")) ? primary.phone : "");
+    setDuesExempt(memberIsDuesExempt(primary ?? { due_minor: 0 }));
     setInviteNote("");
     setInviteError("");
     if (startEditingContact) setEditingContact(true);
-  }, [primary?.id, primary?.display_name, primary?.email, primary?.phone, startEditingContact]);
+  }, [primary?.id, primary?.display_name, primary?.email, primary?.phone, primary?.dues_exempt, primary?.due_minor, startEditingContact]);
   const selected = records.find((row) => row.space_id === spaceId) ?? null;
   const space = spaces.find((item) => item.id === selected?.space_id);
   const plan = plans.find((item) => item.space_id === selected?.space_id);
@@ -938,6 +944,7 @@ export function MemberPersonProfile({
           displayName,
           email,
           phone,
+          duesExempt,
           syncLinked: true,
         }),
       });
@@ -948,12 +955,17 @@ export function MemberPersonProfile({
           const name = result.conflictName || (locale === "ar" ? "عضو آخر" : "another member");
           throw new Error(memberContactConflictMessage({ field, displayName: name }, locale));
         }
+        if (result.error === "INVALID_PHONE") {
+          throw new Error(locale === "ar"
+            ? "رقم الهاتف غير صالح. اتركه فارغاً أو أدخل رقماً كاملاً (مثال عمان: 9904406)."
+            : "Invalid phone. Leave it blank or enter a full number.");
+        }
         throw new Error(result.error ?? "UPDATE_FAILED");
       }
       setEditingContact(false);
-      onContactSaved?.(locale === "ar" ? "تم حفظ بيانات التواصل" : "Contact details saved");
+      onContactSaved?.(locale === "ar" ? "تم حفظ بيانات العضو" : "Member details saved");
     } catch (caught) {
-      setContactError(caught instanceof Error ? caught.message : (locale === "ar" ? "تعذر حفظ البريد أو الهاتف." : "Could not save email or phone."));
+      setContactError(caught instanceof Error ? caught.message : (locale === "ar" ? "تعذر حفظ بيانات العضو." : "Could not save member details."));
     } finally {
       setSavingContact(false);
     }
@@ -1036,13 +1048,19 @@ export function MemberPersonProfile({
               <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" dir="ltr" />
             </label>
             <label>
-              <span>{locale === "ar" ? "الهاتف" : "Phone"}</span>
+              <span>{locale === "ar" ? "الهاتف (اختياري)" : "Phone (optional)"}</span>
               <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="9689xxxxxxx" dir="ltr" />
+            </label>
+            <label className="check-row">
+              <input type="checkbox" checked={duesExempt} onChange={(event) => setDuesExempt(event.target.checked)} />
+              <span>{locale === "ar"
+                ? "بلا مستحقات اشتراك (مصادر أخرى / سجل فقط — لا تظهر متأخرات)"
+                : "No subscription dues (other sources / ledger only — no arrears)"}</span>
             </label>
             {contactError ? <p className="modal-error">{contactError}</p> : null}
             <div className="modal-actions">
               <button type="button" className="secondary-button" onClick={() => setEditingContact(false)}>{locale === "ar" ? "إلغاء" : "Cancel"}</button>
-              <button type="submit" className="primary-button" disabled={savingContact}>{savingContact ? (locale === "ar" ? "جارٍ الحفظ…" : "Saving…") : (locale === "ar" ? "حفظ التواصل" : "Save contact")}</button>
+              <button type="submit" className="primary-button" disabled={savingContact}>{savingContact ? (locale === "ar" ? "جارٍ الحفظ…" : "Saving…") : (locale === "ar" ? "حفظ" : "Save")}</button>
             </div>
           </form>
         ) : (
