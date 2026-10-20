@@ -23,6 +23,33 @@ def iso(value) -> str:
     return text[:10] if text else "2026-04-01"
 
 
+def infer_months(label: str) -> int | None:
+    text = str(label or "")
+    # Arabic-Indic digits → ASCII
+    trans = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+    text = text.translate(trans)
+    if re.search(r"سن[ةه]|عام|year", text, re.I):
+        return 12
+    if re.search(r"نصف\s*سن", text, re.I):
+        return 6
+    match = re.search(r"(\d+)\s*(شهر|أشهر|اشهر|month)", text, re.I)
+    if match:
+        value = int(match.group(1))
+        if 1 <= value <= 120:
+            return value
+    return None
+
+
+def add_months(start: str, months: int) -> str:
+    year, month, day = (int(part) for part in start[:10].split("-"))
+    month += months
+    while month > 12:
+        year += 1
+        month -= 12
+    day = min(day, 28)
+    return f"{year:04d}-{month:02d}-{day:02d}"
+
+
 def is_opening(name: str, typ: str, note: str, amount: float) -> bool:
     blob = f"{name}|{typ}|{note}"
     if re.search(r"مبالغ\s*سابقة|الجمعية السابقة|رصيد افتتاح", blob, re.I):
@@ -84,13 +111,29 @@ def convert(path: Path, space_name: str) -> dict:
         details = str(row[4] or "").strip()
         blob = f"{typ} {details}"
         if re.search(r"وديع|استثمار|أسهم", blob, re.I):
-            holdings.append({
-                "date": iso(row[1]),
+            name = details or typ or "وديعة"
+            when = iso(row[1])
+            item = {
+                "date": when,
                 "amount": float(row[2]),
-                "name": details or typ or "وديعة",
-                "kind": "deposit",
+                "name": name,
+                "kind": "investment" if re.search(r"استثمار|أسهم", blob, re.I) else "deposit",
                 "note": typ or None,
-            })
+            }
+            months = infer_months(name) or infer_months(typ)
+            if months:
+                item["durationMonths"] = months
+                item["maturesAt"] = add_months(when, months)
+            # Optional profit column (index 6) if workbook uses it as أرباح
+            profit = row[6] if len(row) > 6 else None
+            if profit is not None and str(profit).strip() not in ("", "None"):
+                try:
+                    profit_val = float(profit)
+                    if profit_val > 0:
+                        item["expectedReturn"] = profit_val
+                except (TypeError, ValueError):
+                    pass
+            holdings.append(item)
             continue
         item = {
             "date": iso(row[1]),

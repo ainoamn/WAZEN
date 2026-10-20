@@ -28,6 +28,9 @@ export type SocietyImportHolding = {
   name: string;
   kind?: "deposit" | "investment" | "other";
   note?: string;
+  maturesAt?: string;
+  durationMonths?: number | string;
+  expectedReturn?: number | string;
 };
 
 export type SocietyImportPack = {
@@ -230,6 +233,9 @@ export function parseSocietyImportPack(raw: unknown): SocietyImportPack {
       name: cleanCell(holding.name),
       kind: holding.kind === "investment" || holding.kind === "other" ? holding.kind : "deposit",
       note: holding.note ? cleanCell(holding.note) : undefined,
+      maturesAt: holding.maturesAt ? cleanCell(holding.maturesAt) : undefined,
+      durationMonths: holding.durationMonths,
+      expectedReturn: holding.expectedReturn,
     })).filter((holding) => holding.name.length >= 2),
   };
 }
@@ -264,6 +270,17 @@ export function societyPackExampleJson() {
     ],
     expenses: [
       { date: "2026-04-20", amount: 1.05, description: "رسوم بنكية" },
+    ],
+    holdings: [
+      {
+        date: "2026-05-01",
+        amount: 1000,
+        name: "وديعة 6 أشهر",
+        kind: "deposit",
+        durationMonths: 6,
+        expectedReturn: 25,
+        note: "بنك",
+      },
     ],
   }, null, 2)}\n`;
 }

@@ -14,7 +14,7 @@ import {
   normalizePersonKey,
   type SocietyImportPack,
 } from "./society-import";
-import { normalizeHoldingKind } from "./space-holdings";
+import { addMonthsIso, inferHoldingDurationMonths, normalizeHoldingKind } from "./space-holdings";
 
 function cleanId(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]+/g, "").slice(0, 48) || "user";
@@ -383,14 +383,32 @@ export async function applySocietyImportPack(
     const kind = normalizeHoldingKind(holding.kind);
     const name = holding.name.slice(0, 120);
     const notes = (holding.note || "").slice(0, 300) || null;
+    let expectedReturnMinor = 0;
+    if (holding.expectedReturn !== undefined && holding.expectedReturn !== "") {
+      try {
+        expectedReturnMinor = parseNonNegativeMoneyToMinor(holding.expectedReturn, currency);
+      } catch {
+        expectedReturnMinor = 0;
+      }
+    }
+    let maturesAt: string | null = holding.maturesAt ? toIsoDate(holding.maturesAt, occurredAt) : null;
+    if (!maturesAt) {
+      const months = Number(holding.durationMonths);
+      if (Number.isFinite(months) && months > 0 && months <= 120) {
+        maturesAt = addMonthsIso(occurredAt, months);
+      } else {
+        const inferred = inferHoldingDurationMonths(name);
+        if (inferred) maturesAt = addMonthsIso(occurredAt, inferred);
+      }
+    }
     const holdingId = crypto.randomUUID();
     const transactionId = crypto.randomUUID();
     const entryId = crypto.randomUUID();
     const description = `تحويل إلى ${kind === "investment" ? "استثمار" : "وديعة"}: ${name}`.slice(0, 300);
     holdingStatements.push(
       db.prepare(
-        "INSERT INTO space_holdings (id,space_id,name,kind,amount_minor,notes,acquired_at,status,created_at) VALUES (?,?,?,?,?,?,?,'active',?)",
-      ).bind(holdingId, spaceId, name, kind, amountMinor, notes, occurredAt, createdAt),
+        "INSERT INTO space_holdings (id,space_id,name,kind,amount_minor,notes,acquired_at,matures_at,expected_return_minor,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,'active',?)",
+      ).bind(holdingId, spaceId, name, kind, amountMinor, notes, occurredAt, maturesAt, expectedReturnMinor, createdAt),
       db.prepare("INSERT INTO transactions VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'approved', ?, ?)")
         .bind(transactionId, spaceId, user.id, "transfer", "holding", amountMinor, description, description, occurredAt, createdAt),
       db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")

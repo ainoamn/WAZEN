@@ -33,6 +33,33 @@ import { filterSpacesByPlan } from "../../../lib/plan-features";
 import { filterSpacesForPlanAccess } from "../../../lib/plan-retention";
 import { ensureBootstrapPlatformRole } from "../../../lib/platform-role-bootstrap";
 import { reconcileMemberLedgers, writeApprovedCashBalance, voidApprovedTransaction } from "../../../lib/ledger-void";
+import { addMonthsIso, inferHoldingDurationMonths } from "../../../lib/space-holdings";
+
+function holdingDateIso(value: string | undefined | null) {
+  if (!value?.trim()) return null;
+  const text = value.trim();
+  if (text.includes("T")) return text;
+  const day = text.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  return `${day}T12:00:00.000Z`;
+}
+
+function resolveHoldingMaturesAt(input: {
+  maturesAt?: string;
+  durationMonths?: number;
+  occurredAt: string;
+  name: string;
+}) {
+  const explicit = holdingDateIso(input.maturesAt ?? null);
+  if (explicit) return explicit;
+  const months = Number(input.durationMonths);
+  if (Number.isFinite(months) && months > 0 && months <= 120) {
+    return addMonthsIso(input.occurredAt, months);
+  }
+  const inferred = inferHoldingDurationMonths(input.name);
+  if (inferred) return addMonthsIso(input.occurredAt, inferred);
+  return null;
+}
 
 type SpaceRow = {
   id: string;
@@ -885,7 +912,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     writeMode
       ? Promise.resolve({ results: [] as Array<Record<string, unknown>> })
       : db.prepare(`SELECT * FROM space_holdings WHERE space_id IN (${placeholders}) ORDER BY acquired_at DESC, created_at DESC`).bind(...ids).all<{
-      id: string; space_id: string; name: string; kind: string; amount_minor: number; notes: string | null; acquired_at: string; status: string; created_at: string;
+      id: string; space_id: string; name: string; kind: string; amount_minor: number; notes: string | null; acquired_at: string; matures_at: string | null; expected_return_minor: number; status: string; created_at: string;
     }>().catch(() => ({ results: [] as Array<Record<string, unknown>> })),
   ]);
   } catch (error) {
@@ -1056,7 +1083,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     payoutAccounts: payoutAccounts.results,
     familyEvents,
     spaceHoldings: (spaceHoldingsRaw?.results ?? []) as Array<{
-      id: string; space_id: string; name: string; kind: string; amount_minor: number; notes: string | null; acquired_at: string; status: string; created_at: string;
+      id: string; space_id: string; name: string; kind: string; amount_minor: number; notes: string | null; acquired_at: string; matures_at?: string | null; expected_return_minor?: number; status: string; created_at: string;
     }>,
     spaceLinks: spaceLinks.results,
     spaceBankLinks: spaceBankLinks.results,
@@ -1642,6 +1669,9 @@ export async function POST(request: Request) {
         amount: z.union([z.string(), z.number()]),
         notes: z.string().trim().max(300).optional(),
         occurredAt: z.string().min(8).max(40).optional(),
+        maturesAt: z.string().min(8).max(40).optional(),
+        durationMonths: z.union([z.string(), z.number()]).optional(),
+        expectedReturn: z.union([z.string(), z.number()]).optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_HOLDING");
       const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["society", "group", "household", "trip"]);
@@ -1649,18 +1679,34 @@ export async function POST(request: Request) {
       try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
       if (amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
       if (Number(space.balance_minor) < amountMinor) throw new ApiError(409, "INSUFFICIENT_FUNDS");
+      let expectedReturnMinor = 0;
+      if (parsed.data.expectedReturn !== undefined && parsed.data.expectedReturn !== "") {
+        try { expectedReturnMinor = parseNonNegativeMoneyToMinor(parsed.data.expectedReturn, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      }
+      const durationMonths = parsed.data.durationMonths === undefined || parsed.data.durationMonths === ""
+        ? undefined
+        : Number(parsed.data.durationMonths);
+      if (durationMonths !== undefined && (!Number.isFinite(durationMonths) || durationMonths < 1 || durationMonths > 120)) {
+        throw new ApiError(400, "INVALID_HOLDING");
+      }
       const createdAt = now();
       const occurredAt = parsed.data.occurredAt
         ? (parsed.data.occurredAt.includes("T") ? parsed.data.occurredAt : `${parsed.data.occurredAt.slice(0, 10)}T12:00:00.000Z`)
         : createdAt;
+      const maturesAt = resolveHoldingMaturesAt({
+        maturesAt: parsed.data.maturesAt,
+        durationMonths,
+        occurredAt,
+        name: parsed.data.name,
+      });
       const holdingId = crypto.randomUUID();
       const transactionId = crypto.randomUUID();
       const entryId = crypto.randomUUID();
       const label = parsed.data.kind === "investment" ? "استثمار" : parsed.data.kind === "other" ? "أصل" : "وديعة";
       const description = `تحويل إلى ${label}: ${parsed.data.name}`.slice(0, 300);
       await db.batch([
-        db.prepare("INSERT INTO space_holdings (id,space_id,name,kind,amount_minor,notes,acquired_at,status,created_at) VALUES (?,?,?,?,?,?,?,'active',?)")
-          .bind(holdingId, space.id, parsed.data.name, parsed.data.kind, amountMinor, parsed.data.notes ?? null, occurredAt, createdAt),
+        db.prepare("INSERT INTO space_holdings (id,space_id,name,kind,amount_minor,notes,acquired_at,matures_at,expected_return_minor,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,'active',?)")
+          .bind(holdingId, space.id, parsed.data.name, parsed.data.kind, amountMinor, parsed.data.notes ?? null, occurredAt, maturesAt, expectedReturnMinor, createdAt),
         db.prepare("INSERT INTO transactions VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'approved', ?, ?)")
           .bind(transactionId, space.id, user.id, "transfer", "holding", amountMinor, description, description, occurredAt, createdAt),
         db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
@@ -1669,18 +1715,64 @@ export async function POST(request: Request) {
           .bind(crypto.randomUUID(), entryId, parsed.data.kind === "investment" ? "asset:investment" : "asset:deposit", null, amountMinor, 0, createdAt),
         db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
           .bind(crypto.randomUUID(), entryId, "asset:cash", null, 0, amountMinor, createdAt),
-        prepareAudit(db, { userId: user.id, action: "holding.created", entityType: "space_holding", entityId: holdingId, metadata: { spaceId: space.id, amountMinor, kind: parsed.data.kind }, createdAt }),
+        prepareAudit(db, { userId: user.id, action: "holding.created", entityType: "space_holding", entityId: holdingId, metadata: { spaceId: space.id, amountMinor, kind: parsed.data.kind, maturesAt, expectedReturnMinor }, createdAt }),
       ]);
       await writeApprovedCashBalance(db, space.id);
-    } else if (action === "redeemSpaceHolding") {
+    } else if (action === "updateSpaceHolding") {
       const parsed = z.object({
         holdingId: z.string().min(1).max(120),
-        amount: z.union([z.string(), z.number()]).optional(),
+        name: z.string().trim().min(2).max(120).optional(),
+        notes: z.string().trim().max(300).optional().nullable(),
+        maturesAt: z.string().min(8).max(40).optional().nullable(),
+        durationMonths: z.union([z.string(), z.number()]).optional(),
+        expectedReturn: z.union([z.string(), z.number()]).optional(),
+        clearMaturesAt: z.boolean().optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_HOLDING");
       const holding = await db.prepare("SELECT * FROM space_holdings WHERE id=? LIMIT 1")
         .bind(parsed.data.holdingId)
-        .first<{ id: string; space_id: string; name: string; kind: string; amount_minor: number; status: string }>();
+        .first<{ id: string; space_id: string; name: string; notes: string | null; acquired_at: string; matures_at: string | null; expected_return_minor: number; status: string }>();
+      if (!holding || holding.status !== "active") throw new ApiError(404, "HOLDING_NOT_FOUND");
+      const space = await authorizeSpace(db, user, holding.space_id, "transact", ["society", "group", "household", "trip"]);
+      const name = parsed.data.name?.trim() || holding.name;
+      const notes = parsed.data.notes === undefined ? holding.notes : (parsed.data.notes?.trim() || null);
+      let expectedReturnMinor = Number(holding.expected_return_minor || 0);
+      if (parsed.data.expectedReturn !== undefined && parsed.data.expectedReturn !== "") {
+        try { expectedReturnMinor = parseNonNegativeMoneyToMinor(parsed.data.expectedReturn, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      }
+      const durationMonths = parsed.data.durationMonths === undefined || parsed.data.durationMonths === ""
+        ? undefined
+        : Number(parsed.data.durationMonths);
+      if (durationMonths !== undefined && (!Number.isFinite(durationMonths) || durationMonths < 1 || durationMonths > 120)) {
+        throw new ApiError(400, "INVALID_HOLDING");
+      }
+      let maturesAt = holding.matures_at;
+      if (parsed.data.clearMaturesAt) maturesAt = null;
+      else if (parsed.data.maturesAt !== undefined || durationMonths !== undefined) {
+        maturesAt = resolveHoldingMaturesAt({
+          maturesAt: parsed.data.maturesAt === null ? undefined : (parsed.data.maturesAt ?? undefined),
+          durationMonths,
+          occurredAt: holding.acquired_at,
+          name,
+        });
+      }
+      const createdAt = now();
+      await db.batch([
+        db.prepare("UPDATE space_holdings SET name=?, notes=?, matures_at=?, expected_return_minor=? WHERE id=?")
+          .bind(name, notes, maturesAt, expectedReturnMinor, holding.id),
+        prepareAudit(db, { userId: user.id, action: "holding.updated", entityType: "space_holding", entityId: holding.id, metadata: { maturesAt, expectedReturnMinor }, createdAt }),
+      ]);
+    } else if (action === "redeemSpaceHolding") {
+      const parsed = z.object({
+        holdingId: z.string().min(1).max(120),
+        amount: z.union([z.string(), z.number()]).optional(),
+        includeExpectedReturn: z.boolean().optional(),
+        expectedReturn: z.union([z.string(), z.number()]).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_HOLDING");
+      const holding = await db.prepare("SELECT * FROM space_holdings WHERE id=? LIMIT 1")
+        .bind(parsed.data.holdingId)
+        .first<{ id: string; space_id: string; name: string; kind: string; amount_minor: number; expected_return_minor: number; status: string }>();
       if (!holding || holding.status !== "active") throw new ApiError(404, "HOLDING_NOT_FOUND");
       const space = await authorizeSpace(db, user, holding.space_id, "transact", ["society", "group", "household", "trip"]);
       let amountMinor = Number(holding.amount_minor);
@@ -1688,15 +1780,23 @@ export async function POST(request: Request) {
         try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
       }
       if (amountMinor <= 0 || amountMinor > Number(holding.amount_minor)) throw new ApiError(400, "INVALID_AMOUNT");
+      const remaining = Number(holding.amount_minor) - amountMinor;
+      let returnMinor = 0;
+      if (remaining === 0) {
+        if (parsed.data.expectedReturn !== undefined && parsed.data.expectedReturn !== "") {
+          try { returnMinor = parseNonNegativeMoneyToMinor(parsed.data.expectedReturn, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+        } else if (parsed.data.includeExpectedReturn === true) {
+          returnMinor = Math.max(0, Number(holding.expected_return_minor || 0));
+        }
+      }
       const createdAt = now();
       const transactionId = crypto.randomUUID();
       const entryId = crypto.randomUUID();
       const description = `استرداد من ${holding.kind === "investment" ? "استثمار" : "وديعة"}: ${holding.name}`.slice(0, 300);
-      const remaining = Number(holding.amount_minor) - amountMinor;
-      await db.batch([
+      const statements = [
         remaining > 0
           ? db.prepare("UPDATE space_holdings SET amount_minor=? WHERE id=?").bind(remaining, holding.id)
-          : db.prepare("UPDATE space_holdings SET amount_minor=0, status='closed' WHERE id=?").bind(holding.id),
+          : db.prepare("UPDATE space_holdings SET amount_minor=0, expected_return_minor=0, status='closed' WHERE id=?").bind(holding.id),
         db.prepare("INSERT INTO transactions VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'approved', ?, ?)")
           .bind(transactionId, space.id, user.id, "transfer", "from_holding", amountMinor, description, description, createdAt, createdAt),
         db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
@@ -1705,8 +1805,24 @@ export async function POST(request: Request) {
           .bind(crypto.randomUUID(), entryId, "asset:cash", null, amountMinor, 0, createdAt),
         db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
           .bind(crypto.randomUUID(), entryId, holding.kind === "investment" ? "asset:investment" : "asset:deposit", null, 0, amountMinor, createdAt),
-        prepareAudit(db, { userId: user.id, action: "holding.redeemed", entityType: "space_holding", entityId: holding.id, metadata: { amountMinor, remaining }, createdAt }),
-      ]);
+        prepareAudit(db, { userId: user.id, action: "holding.redeemed", entityType: "space_holding", entityId: holding.id, metadata: { amountMinor, remaining, returnMinor }, createdAt }),
+      ];
+      if (returnMinor > 0) {
+        const profitTxn = crypto.randomUUID();
+        const profitEntry = crypto.randomUUID();
+        const profitDesc = `أرباح ${holding.kind === "investment" ? "استثمار" : "وديعة"}: ${holding.name}`.slice(0, 300);
+        statements.push(
+          db.prepare("INSERT INTO transactions VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'approved', ?, ?)")
+            .bind(profitTxn, space.id, user.id, "income", "general", returnMinor, profitDesc, profitDesc, createdAt, createdAt),
+          db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+            .bind(profitEntry, space.id, profitTxn, user.id, profitDesc, createdAt, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), profitEntry, "asset:cash", null, returnMinor, 0, createdAt),
+          db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+            .bind(crypto.randomUUID(), profitEntry, "income:general", null, 0, returnMinor, createdAt),
+        );
+      }
+      await db.batch(statements);
       await writeApprovedCashBalance(db, space.id);
     } else if (action === "updatePersonalAccount") {
       const parsed = z.object({

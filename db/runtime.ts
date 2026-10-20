@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 28;
+const SCHEMA_VERSION = 29;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -468,6 +468,16 @@ async function ensureSchemaPatches(db: D1Database) {
   if (!totpNames.has("pending_key_version")) {
     try { await db.prepare("ALTER TABLE totp_credentials ADD COLUMN pending_key_version TEXT").run(); } catch { /* exists */ }
   }
+  try {
+    const holdingCols = await db.prepare("PRAGMA table_info(space_holdings)").all<{ name: string }>();
+    const holdingNames = new Set(holdingCols.results.map((column) => column.name));
+    if (!holdingNames.has("matures_at")) {
+      try { await db.prepare("ALTER TABLE space_holdings ADD COLUMN matures_at TEXT").run(); } catch { /* exists */ }
+    }
+    if (!holdingNames.has("expected_return_minor")) {
+      try { await db.prepare("ALTER TABLE space_holdings ADD COLUMN expected_return_minor INTEGER NOT NULL DEFAULT 0").run(); } catch { /* exists */ }
+    }
+  } catch { /* table may not exist yet on first boot */ }
   const { ensureSubscriptionAdminColumns, ensurePlanQuotaColumns, ensurePaymentGateways } = await import("../services/admin/billing-service");
   await ensureSubscriptionAdminColumns(db);
   await ensurePlanQuotaColumns(db);
@@ -1141,6 +1151,8 @@ async function initializeSchema(db: D1Database) {
       amount_minor INTEGER NOT NULL DEFAULT 0,
       notes TEXT,
       acquired_at TEXT NOT NULL,
+      matures_at TEXT,
+      expected_return_minor INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'active',
       created_at TEXT NOT NULL
     )`),
