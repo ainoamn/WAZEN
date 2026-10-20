@@ -54,7 +54,7 @@ const COPY = {
   },
 } as const;
 
-type SwitcherCopy = (typeof COPY)["ar"];
+type SwitcherCopy = (typeof COPY)[keyof typeof COPY];
 
 const PROVIDER_MARK: Record<AuthProviderMark, string> = {
   password: "●",
