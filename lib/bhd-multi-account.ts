@@ -2,11 +2,19 @@
 
 import { DEFAULT_BHD_IDENTITY_ISSUER } from "./bhd-identity";
 
+export type AuthProviderMark = "password" | "google" | "facebook" | "whatsapp";
+
 export type IdentityAccount = {
   id?: string;
   name: string;
   email: string;
+  username?: string | null;
+  phone?: string | null;
   picture: string | null;
+  providers?: AuthProviderMark[];
+  googleLinked?: boolean;
+  facebookLinked?: boolean;
+  hasPassword?: boolean;
 };
 
 export type IdentityMeResponse = {

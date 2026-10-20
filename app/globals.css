@@ -2121,14 +2121,71 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
   margin-bottom: 12px;
 }
 
-.bhd-switcher-account-row strong,
-.bhd-switcher-account-row small {
-  display: block;
+.bhd-switcher-identity {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
 }
 
+.bhd-switcher-identity strong,
+.bhd-switcher-identity small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bhd-switcher-identity small,
 .bhd-switcher-account-row small {
   color: #5d7169;
   font-size: 12px;
+  font-weight: 600;
+}
+
+.bhd-switcher-providers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bhd-switcher-provider {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  text-decoration: none;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: default;
+}
+
+.bhd-switcher-provider.is-password {
+  background: #092d24;
+  color: #fff;
+}
+
+.bhd-switcher-provider.is-google {
+  background: #fff;
+  color: #1a73e8;
+  box-shadow: inset 0 0 0 1px #d7e2dc;
+}
+
+.bhd-switcher-provider.is-facebook {
+  background: #1877f2;
+  color: #fff;
+}
+
+.bhd-switcher-provider.is-whatsapp {
+  background: #25d366;
+  color: #fff;
+}
+
+.bhd-switcher-account-switch {
+  display: grid;
+  justify-items: start;
 }
 
 .bhd-switcher-account-link,

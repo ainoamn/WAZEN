@@ -10,6 +10,7 @@ import {
   silentProductStart,
   switchIdentityAccount,
   wazenWorkspacePath,
+  type IdentityAccount,
 } from "../../lib/bhd-multi-account";
 import { clearAdminConsole } from "../../lib/admin-session";
 import { notifyBrowserSessionChange } from "../../lib/browser-session-client";
@@ -33,6 +34,22 @@ async function clearProductSessionOnly() {
   notifyBrowserSessionChange(null);
 }
 
+function mergeAccount(base: BhdSwitcherUser, identity?: IdentityAccount | null): BhdSwitcherUser {
+  if (!identity) return base;
+  return {
+    id: identity.id || base.id,
+    name: identity.name || base.name,
+    email: identity.email || base.email,
+    username: identity.username ?? base.username ?? null,
+    phone: identity.phone ?? base.phone ?? null,
+    picture: identity.picture ?? base.picture,
+    providers: identity.providers,
+    googleLinked: identity.googleLinked,
+    facebookLinked: identity.facebookLinked,
+    hasPassword: identity.hasPassword,
+  };
+}
+
 export function useBhdAccountMenu(productUser: BhdSwitcherUser, locale: "ar" | "en" = "ar") {
   const [user, setUser] = useState<BhdSwitcherUser>(productUser);
   const [accounts, setAccounts] = useState<BhdSwitcherUser[]>([productUser]);
@@ -41,26 +58,33 @@ export function useBhdAccountMenu(productUser: BhdSwitcherUser, locale: "ar" | "
     setUser((current) => ({
       ...productUser,
       id: current.id || productUser.id,
+      username: current.username ?? productUser.username,
+      phone: current.phone ?? productUser.phone,
+      providers: current.providers ?? productUser.providers,
+      googleLinked: current.googleLinked ?? productUser.googleLinked,
+      facebookLinked: current.facebookLinked ?? productUser.facebookLinked,
+      hasPassword: current.hasPassword ?? productUser.hasPassword,
     }));
-  }, [productUser.id, productUser.name, productUser.email, productUser.picture]);
+  }, [
+    productUser.id,
+    productUser.name,
+    productUser.email,
+    productUser.picture,
+    productUser.username,
+    productUser.phone,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
     void fetchIdentityAccounts()
       .then((data) => {
         if (cancelled) return;
-        if (data.user) {
-          setUser({
-            id: data.user.id,
-            name: data.user.name || productUser.name,
-            email: data.user.email || productUser.email,
-            picture: data.user.picture ?? productUser.picture,
-          });
-        }
+        const nextUser = mergeAccount(productUser, data.user);
+        setUser(nextUser);
         const list = data.accounts?.length
-          ? data.accounts
+          ? data.accounts.map((item) => mergeAccount(productUser, item))
           : data.user
-            ? [data.user]
+            ? [nextUser]
             : [productUser];
         setAccounts(list);
       })
@@ -70,7 +94,14 @@ export function useBhdAccountMenu(productUser: BhdSwitcherUser, locale: "ar" | "
     return () => {
       cancelled = true;
     };
-  }, [productUser.email, productUser.name, productUser.picture, productUser.id]);
+  }, [
+    productUser.id,
+    productUser.name,
+    productUser.email,
+    productUser.picture,
+    productUser.username,
+    productUser.phone,
+  ]);
 
   const switchAccount = useCallback(async (sub: string) => {
     const ok = await switchIdentityAccount(sub);
