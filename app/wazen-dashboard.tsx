@@ -2103,23 +2103,21 @@ export function WazenDashboard() {
                     </select>
                   </label>
                 ) : null}
-                {!activeSpace ? (
-                  <div className="space-switcher-actions">
-                    <button type="button" className="secondary-button" onClick={() => setShowArchived((current) => !current)}>
-                      {showArchived ? (locale === "ar" ? "إخفاء المؤرشف" : "Hide archived") : (locale === "ar" ? "عرض المؤرشف" : "Show archived")}
+                <div className="space-switcher-actions">
+                  <button type="button" className="secondary-button" onClick={() => setShowArchived((current) => !current)}>
+                    {showArchived ? (locale === "ar" ? "إخفاء المؤرشف" : "Hide archived") : (locale === "ar" ? "عرض المؤرشف" : "Show archived")}
+                  </button>
+                  <button type="button" className={!canCreateCurrentType ? "is-plan-locked primary-button" : "primary-button"} onClick={openNewWallet}>
+                    {canCreateCurrentType ? <Plus size={16} /> : <Lock size={16} />}
+                    {canCreateCurrentType ? addWalletLabel : (locale === "ar" ? "ترقية لإضافة محفظة" : "Upgrade to add")}
+                    {!canCreateCurrentType && <PlanLockBadge locale={locale} />}
+                  </button>
+                  {activeView === "society" ? (
+                    <button type="button" className="secondary-button" onClick={() => setModal("societyImport")}>
+                      <Upload size={16} />{locale === "ar" ? "استيراد حزمة" : "Import pack"}
                     </button>
-                    <button type="button" className={!canCreateCurrentType ? "is-plan-locked primary-button" : "primary-button"} onClick={openNewWallet}>
-                      {canCreateCurrentType ? <Plus size={16} /> : <Lock size={16} />}
-                      {canCreateCurrentType ? addWalletLabel : (locale === "ar" ? "ترقية لإضافة محفظة" : "Upgrade to add")}
-                      {!canCreateCurrentType && <PlanLockBadge locale={locale} />}
-                    </button>
-                    {activeView === "society" && canCreateCurrentType ? (
-                      <button type="button" className="secondary-button" onClick={() => setModal("societyImport")}>
-                        <Upload size={16} />{locale === "ar" ? "استيراد حزمة" : "Import pack"}
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
+                  ) : null}
+                </div>
               </div>
               {!activeSpace && (
                 <article className="panel"><div className="empty-state"><WalletCards size={28} /><strong>{addWalletLabel}</strong><p>{activeView === "society" ? (locale === "ar" ? "لا توجد جمعية بعد. أنشئ جمعية جديدة أو استورد حزمة الأعضاء والمدفوعات دفعة واحدة." : "No savings circle yet. Create one or import a members-and-payments pack in one batch.") : (locale === "ar" ? "لا توجد محفظة في هذا القسم بعد." : "No wallet in this section yet.")}</p><div className="space-switcher-actions"><button className="primary-button" onClick={openNewWallet}>{canCreateCurrentType ? <Plus size={16} /> : <Lock size={16} />}{canCreateCurrentType ? addWalletLabel : (locale === "ar" ? "ترقية الباقة" : "Upgrade plan")}</button>{activeView === "society" && canCreateCurrentType ? <button type="button" className="secondary-button" onClick={() => setModal("societyImport")}><Upload size={16} />{locale === "ar" ? "استيراد حزمة" : "Import pack"}</button> : null}</div></div></article>
@@ -2884,6 +2882,12 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onImportPack, onEdi
       <SpaceOverflowMenu
         locale={locale}
         items={[
+          ...(onImportPack && canManageRoles ? [{
+            id: "import-pack",
+            label: locale === "ar" ? "استيراد حزمة" : "Import pack",
+            icon: <Upload size={16} />,
+            onClick: onImportPack,
+          }] : []),
           ...(onToggleArchived ? [{
             id: "archived",
             label: showArchived ? (locale === "ar" ? "إخفاء المؤرشف" : "Hide archived") : (locale === "ar" ? "عرض المؤرشف" : "Show archived"),
