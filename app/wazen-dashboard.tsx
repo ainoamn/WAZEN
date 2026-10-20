@@ -3170,8 +3170,18 @@ function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCa
   const runMemberLifecycle = async (member: Member, action: "archiveMember" | "removeMember" | "restoreMember") => {
     setMenuOpenId(null);
     if (lifecycleId) return;
+    if (!canManageMembers) {
+      window.alert(locale === "ar" ? "ليست لديك صلاحية إدارة الأعضاء." : "You cannot manage members.");
+      return;
+    }
     if (member.role === "owner") {
       window.alert(locale === "ar" ? "لا يمكن حذف أو أرشفة مالك المحفظة." : "Cannot remove or archive the wallet owner.");
+      return;
+    }
+    if (action === "removeMember" && member.user_id) {
+      window.alert(locale === "ar"
+        ? "لا يُحذف العضو المرتبط بحساب — استخدم الأرشفة."
+        : "Linked accounts cannot be deleted — archive instead.");
       return;
     }
     if (action === "restoreMember") {
@@ -3182,8 +3192,8 @@ function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCa
         : `Archive ${member.display_name}? Future dues stop; contribution history is kept.`)) return;
     } else {
       if (!window.confirm(locale === "ar"
-        ? `حذف ${member.display_name} من المحفظة؟ إن وُجدت مساهمات سابقة سيتم أرشفته بدل الحذف.`
-        : `Remove ${member.display_name}? If they already contributed they will be archived instead.`)) return;
+        ? `حذف ${member.display_name} نهائياً؟ متاح فقط لمن بلا حساب مرتبط وبلا سجل مساهمات.`
+        : `Permanently delete ${member.display_name}? Only unlinked members with no contribution history can be deleted.`)) return;
     }
     setLifecycleId(member.id);
     try {
@@ -3194,7 +3204,7 @@ function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCa
           action,
           idempotencyKey: crypto.randomUUID(),
           memberId: member.id,
-          mode: action === "removeMember" ? "auto" : undefined,
+          mode: action === "removeMember" ? "remove" : undefined,
         }),
       });
       const result = await response.json() as Partial<DashboardData> & { error?: string; mode?: string };
@@ -3202,9 +3212,11 @@ function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCa
         window.alert(
           result.error === "OWNER_MEMBER_LOCKED"
             ? (locale === "ar" ? "لا يمكن تعديل مالك المحفظة." : "Cannot modify the wallet owner.")
-            : result.error === "MEMBER_HAS_HISTORY"
-              ? (locale === "ar" ? "للعضو سجل مساهمات — استخدم الأرشفة." : "Member has contribution history — use archive.")
-              : (locale === "ar" ? "تعذر تنفيذ الإجراء على العضو." : "Could not update this member."),
+            : result.error === "MEMBER_LINKED_ACCOUNT"
+              ? (locale === "ar" ? "العضو مرتبط بحساب — استخدم الأرشفة." : "Member is linked to an account — use archive.")
+              : result.error === "MEMBER_HAS_HISTORY"
+                ? (locale === "ar" ? "للعضو سجل مساهمات — استخدم الأرشفة." : "Member has contribution history — use archive.")
+                : (locale === "ar" ? "تعذر تنفيذ الإجراء على العضو." : "Could not update this member."),
         );
         return;
       }
@@ -3366,19 +3378,21 @@ function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCa
                           {locale === "ar" ? "صرف فائض" : "Withdraw surplus"}
                         </button>
                       ) : null}
-                      {isActive && member.role !== "owner" ? (
+                      {canManageMembers && isActive && member.role !== "owner" ? (
                         <>
                           <button type="button" role="menuitem" onClick={() => void runMemberLifecycle(member, "archiveMember")}>
                             <Archive size={14} />
                             {locale === "ar" ? "أرشفة / إيقاف" : "Archive / stop"}
                           </button>
-                          <button type="button" role="menuitem" className="is-danger" onClick={() => void runMemberLifecycle(member, "removeMember")}>
-                            <Trash2 size={14} />
-                            {locale === "ar" ? "حذف العضو" : "Remove member"}
-                          </button>
+                          {!member.user_id ? (
+                            <button type="button" role="menuitem" className="is-danger" onClick={() => void runMemberLifecycle(member, "removeMember")}>
+                              <Trash2 size={14} />
+                              {locale === "ar" ? "حذف العضو" : "Delete member"}
+                            </button>
+                          ) : null}
                         </>
                       ) : null}
-                      {!isActive && member.role !== "owner" ? (
+                      {canManageMembers && !isActive && member.role !== "owner" ? (
                         <button type="button" role="menuitem" onClick={() => void runMemberLifecycle(member, "restoreMember")}>
                           <Archive size={14} />
                           {locale === "ar" ? "استعادة" : "Restore"}

@@ -2062,7 +2062,7 @@ export async function POST(request: Request) {
       const space = await authorizeSpace(db, user, member.space_id, "members:write", ["household", "trip", "society", "group"]);
       const { archiveOrRemoveSpaceMember } = await import("../../../lib/member-lifecycle");
       const prefer = parsed.data.mode
-        ?? (action === "removeMember" ? "auto" : "archive");
+        ?? (action === "removeMember" ? "remove" : "archive");
       const result = await archiveOrRemoveSpaceMember({
         db,
         actorUserId: user.id,
