@@ -125,6 +125,7 @@ export function SocietyImportModal({
         membersCreated?: number;
         paymentsPosted?: number;
         expensesPosted?: number;
+        holdingsPosted?: number;
         openingPosted?: boolean;
         unmatchedPayments?: string[];
       };
@@ -153,8 +154,8 @@ export function SocietyImportModal({
         : "";
       onDone(
         locale === "ar"
-          ? `استوردت «${result.spaceName}»: ${result.membersCreated} عضو، ${result.paymentsPosted} دفعة، ${result.expensesPosted} مصروف${result.openingPosted ? "، ورصيد افتتاحي" : ""}${unmatched}`
-          : `Imported “${result.spaceName}”: ${result.membersCreated} members, ${result.paymentsPosted} payments, ${result.expensesPosted} expenses${result.openingPosted ? ", opening balance" : ""}${unmatched}`,
+          ? `استوردت «${result.spaceName}»: ${result.membersCreated} عضو، ${result.paymentsPosted} دفعة، ${result.expensesPosted} مصروف، ${result.holdingsPosted ?? 0} وديعة/استثمار${result.openingPosted ? "، ورصيد افتتاحي" : ""}${unmatched}`
+          : `Imported “${result.spaceName}”: ${result.membersCreated} members, ${result.paymentsPosted} payments, ${result.expensesPosted} expenses, ${result.holdingsPosted ?? 0} holdings${result.openingPosted ? ", opening balance" : ""}${unmatched}`,
         result.spaceId ?? "",
       );
     } catch (caught) {
@@ -201,6 +202,8 @@ export function SocietyImportModal({
               {pack.payments?.length ?? 0} {locale === "ar" ? "دفعة" : "payments"}
               {" · "}
               {pack.expenses?.length ?? 0} {locale === "ar" ? "مصروف" : "expenses"}
+              {" · "}
+              {pack.holdings?.length ?? 0} {locale === "ar" ? "وديعة/استثمار" : "holdings"}
               {pack.openingBalance ? ` · ${locale === "ar" ? "افتتاحي" : "opening"} ${pack.openingBalance.amount}` : ""}
             </strong>
             {pack.members.length <= 2 && Number(pack.openingBalance?.amount ?? 0) === 100 ? (

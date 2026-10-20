@@ -132,6 +132,8 @@ export async function writeApprovedCashBalance(db: D1Database, spaceId: string) 
     WHEN COALESCE(allocation,'general') = 'personal_reserve' THEN 0
     WHEN kind IN ('income','contribution') THEN amount_minor
     WHEN kind = 'expense' THEN -amount_minor
+    WHEN kind = 'transfer' AND allocation = 'holding' THEN -amount_minor
+    WHEN kind = 'transfer' AND allocation = 'from_holding' THEN amount_minor
     WHEN kind = 'reimbursement' AND ${FUND_PAYOUT_SQL("")} THEN -amount_minor
     ELSE 0
   END), 0) AS balance FROM transactions WHERE space_id=? AND status='approved' AND ${NOT_PEER_TRANSFER_SQL("")}`).bind(spaceId).first<{ balance: number }>();

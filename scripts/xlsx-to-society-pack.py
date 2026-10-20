@@ -76,13 +76,26 @@ def convert(path: Path, space_name: str) -> dict:
         payments.append(pay)
 
     expenses = []
+    holdings = []
     for i, row in enumerate(wb["المصروفات"].iter_rows(values_only=True)):
         if i == 0 or row[2] is None:
+            continue
+        typ = str(row[3] or "").strip()
+        details = str(row[4] or "").strip()
+        blob = f"{typ} {details}"
+        if re.search(r"وديع|استثمار|أسهم", blob, re.I):
+            holdings.append({
+                "date": iso(row[1]),
+                "amount": float(row[2]),
+                "name": details or typ or "وديعة",
+                "kind": "deposit",
+                "note": typ or None,
+            })
             continue
         item = {
             "date": iso(row[1]),
             "amount": float(row[2]),
-            "description": str(row[4] or row[3] or "مصروف").strip(),
+            "description": details or typ or "مصروف",
         }
         beneficiary = str(row[5]).strip() if row[5] else ""
         if beneficiary:
@@ -101,6 +114,7 @@ def convert(path: Path, space_name: str) -> dict:
         "members": members,
         "payments": payments,
         "expenses": expenses,
+        "holdings": holdings,
     }
 
 
@@ -115,6 +129,7 @@ def main() -> None:
     print(
         f"wrote {args.output} · members={len(pack['members'])} "
         f"payments={len(pack['payments'])} expenses={len(pack['expenses'])} "
+        f"holdings={len(pack.get('holdings') or [])} "
         f"opening={pack['openingBalance']}"
     )
 

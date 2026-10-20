@@ -809,7 +809,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
   ]);
   const allowed = filterSpacesForPlanAccess(spaces.results ?? [], options?.features ?? [], Date.now(), userId);
   const ids = allowed.map((space) => space.id);
-  if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results ?? [], periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [] };
+  if (!ids.length) return { spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [], settlements: [], installments: [], contacts: contacts.results ?? [], periods: [], personalAccounts: [], personalRules: [], personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceHoldings: [], spaceLinks: [], spaceBankLinks: [] };
 
   // Read path stays light: trip plans rebuild on write (`rebuildSpaceTripSettlements`),
   // peer-transfer heal runs on void, and entry numbers fill only when a row is still NULL.
@@ -882,6 +882,11 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
       : db.prepare(`SELECT * FROM family_events WHERE space_id IN (${placeholders}) ORDER BY target_at ASC`).bind(...ids).all<{
       id: string; space_id: string; title: string; kind: string; target_at: string; expected_minor: number; notes: string | null; status: string;
     }>(),
+    writeMode
+      ? Promise.resolve({ results: [] as Array<Record<string, unknown>> })
+      : db.prepare(`SELECT * FROM space_holdings WHERE space_id IN (${placeholders}) ORDER BY acquired_at DESC, created_at DESC`).bind(...ids).all<{
+      id: string; space_id: string; name: string; kind: string; amount_minor: number; notes: string | null; acquired_at: string; status: string; created_at: string;
+    }>().catch(() => ({ results: [] as Array<Record<string, unknown>> })),
   ]);
   } catch (error) {
     console.error(JSON.stringify({
@@ -908,6 +913,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
       personalOccurrences: [],
       payoutAccounts: [],
       familyEvents: [],
+      spaceHoldings: [],
       spaceLinks: [],
       spaceBankLinks: [],
     });
@@ -929,6 +935,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     personalOccurrences,
     payoutAccounts,
     familyEventsRaw,
+    spaceHoldingsRaw,
   ] = packed;
   let spaceLinks = { results: [] as Array<{ id: string; hub_space_id: string; linked_space_id: string; status: string; created_at: string }> };
   let spaceBankLinks = { results: [] as Array<{ id: string; hub_space_id: string; linked_space_id: string; account_id: string; created_at: string }> };
@@ -1048,6 +1055,9 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     personalOccurrences: syncedOccurrences,
     payoutAccounts: payoutAccounts.results,
     familyEvents,
+    spaceHoldings: (spaceHoldingsRaw?.results ?? []) as Array<{
+      id: string; space_id: string; name: string; kind: string; amount_minor: number; notes: string | null; acquired_at: string; status: string; created_at: string;
+    }>,
     spaceLinks: spaceLinks.results,
     spaceBankLinks: spaceBankLinks.results,
   });
@@ -1130,7 +1140,7 @@ export async function GET(request: Request) {
         dashboard = {
           spaces: [], members: [], transactions: [], plans: [], circleTurns: [], tripExpenses: [], expenseSplits: [],
           settlements: [], installments: [], contacts: [], periods: [], periodEvents: [], personalAccounts: [], personalRules: [],
-          personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceLinks: [], spaceBankLinks: [],
+          personalOccurrences: [], payoutAccounts: [], familyEvents: [], spaceHoldings: [], spaceLinks: [], spaceBankLinks: [],
         };
       }
       const role = await platformRoleOf(db, user.id);
@@ -1624,6 +1634,80 @@ export async function POST(request: Request) {
         prepareAudit(db, { userId: user.id, action: "personal.account_added", entityType: "space", entityId: parsed.data.spaceId, metadata: { name: parsed.data.name }, createdAt }),
       ]);
       await rebuildSpaceBalance(db, [parsed.data.spaceId]);
+    } else if (action === "addSpaceHolding") {
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        name: z.string().trim().min(2).max(120),
+        kind: z.enum(["deposit", "investment", "other"]).default("deposit"),
+        amount: z.union([z.string(), z.number()]),
+        notes: z.string().trim().max(300).optional(),
+        occurredAt: z.string().min(8).max(40).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_HOLDING");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "transact", ["society", "group", "household", "trip"]);
+      let amountMinor: number;
+      try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      if (amountMinor <= 0) throw new ApiError(400, "INVALID_AMOUNT");
+      if (Number(space.balance_minor) < amountMinor) throw new ApiError(409, "INSUFFICIENT_FUNDS");
+      const createdAt = now();
+      const occurredAt = parsed.data.occurredAt
+        ? (parsed.data.occurredAt.includes("T") ? parsed.data.occurredAt : `${parsed.data.occurredAt.slice(0, 10)}T12:00:00.000Z`)
+        : createdAt;
+      const holdingId = crypto.randomUUID();
+      const transactionId = crypto.randomUUID();
+      const entryId = crypto.randomUUID();
+      const label = parsed.data.kind === "investment" ? "استثمار" : parsed.data.kind === "other" ? "أصل" : "وديعة";
+      const description = `تحويل إلى ${label}: ${parsed.data.name}`.slice(0, 300);
+      await db.batch([
+        db.prepare("INSERT INTO space_holdings (id,space_id,name,kind,amount_minor,notes,acquired_at,status,created_at) VALUES (?,?,?,?,?,?,?,'active',?)")
+          .bind(holdingId, space.id, parsed.data.name, parsed.data.kind, amountMinor, parsed.data.notes ?? null, occurredAt, createdAt),
+        db.prepare("INSERT INTO transactions VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'approved', ?, ?)")
+          .bind(transactionId, space.id, user.id, "transfer", "holding", amountMinor, description, description, occurredAt, createdAt),
+        db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+          .bind(entryId, space.id, transactionId, user.id, description, occurredAt, createdAt),
+        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(crypto.randomUUID(), entryId, parsed.data.kind === "investment" ? "asset:investment" : "asset:deposit", null, amountMinor, 0, createdAt),
+        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(crypto.randomUUID(), entryId, "asset:cash", null, 0, amountMinor, createdAt),
+        prepareAudit(db, { userId: user.id, action: "holding.created", entityType: "space_holding", entityId: holdingId, metadata: { spaceId: space.id, amountMinor, kind: parsed.data.kind }, createdAt }),
+      ]);
+      await writeApprovedCashBalance(db, space.id);
+    } else if (action === "redeemSpaceHolding") {
+      const parsed = z.object({
+        holdingId: z.string().min(1).max(120),
+        amount: z.union([z.string(), z.number()]).optional(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_HOLDING");
+      const holding = await db.prepare("SELECT * FROM space_holdings WHERE id=? LIMIT 1")
+        .bind(parsed.data.holdingId)
+        .first<{ id: string; space_id: string; name: string; kind: string; amount_minor: number; status: string }>();
+      if (!holding || holding.status !== "active") throw new ApiError(404, "HOLDING_NOT_FOUND");
+      const space = await authorizeSpace(db, user, holding.space_id, "transact", ["society", "group", "household", "trip"]);
+      let amountMinor = Number(holding.amount_minor);
+      if (parsed.data.amount !== undefined && parsed.data.amount !== "") {
+        try { amountMinor = parseMoneyToMinor(parsed.data.amount, space.currency); } catch { throw new ApiError(400, "INVALID_AMOUNT"); }
+      }
+      if (amountMinor <= 0 || amountMinor > Number(holding.amount_minor)) throw new ApiError(400, "INVALID_AMOUNT");
+      const createdAt = now();
+      const transactionId = crypto.randomUUID();
+      const entryId = crypto.randomUUID();
+      const description = `استرداد من ${holding.kind === "investment" ? "استثمار" : "وديعة"}: ${holding.name}`.slice(0, 300);
+      const remaining = Number(holding.amount_minor) - amountMinor;
+      await db.batch([
+        remaining > 0
+          ? db.prepare("UPDATE space_holdings SET amount_minor=? WHERE id=?").bind(remaining, holding.id)
+          : db.prepare("UPDATE space_holdings SET amount_minor=0, status='closed' WHERE id=?").bind(holding.id),
+        db.prepare("INSERT INTO transactions VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'approved', ?, ?)")
+          .bind(transactionId, space.id, user.id, "transfer", "from_holding", amountMinor, description, description, createdAt, createdAt),
+        db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+          .bind(entryId, space.id, transactionId, user.id, description, createdAt, createdAt),
+        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(crypto.randomUUID(), entryId, "asset:cash", null, amountMinor, 0, createdAt),
+        db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(crypto.randomUUID(), entryId, holding.kind === "investment" ? "asset:investment" : "asset:deposit", null, 0, amountMinor, createdAt),
+        prepareAudit(db, { userId: user.id, action: "holding.redeemed", entityType: "space_holding", entityId: holding.id, metadata: { amountMinor, remaining }, createdAt }),
+      ]);
+      await writeApprovedCashBalance(db, space.id);
     } else if (action === "updatePersonalAccount") {
       const parsed = z.object({
         accountId: z.string().min(1).max(120),

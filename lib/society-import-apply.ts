@@ -14,6 +14,7 @@ import {
   normalizePersonKey,
   type SocietyImportPack,
 } from "./society-import";
+import { normalizeHoldingKind } from "./space-holdings";
 
 function cleanId(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]+/g, "").slice(0, 48) || "user";
@@ -78,6 +79,7 @@ export type SocietyImportResult = {
   membersCreated: number;
   paymentsPosted: number;
   expensesPosted: number;
+  holdingsPosted: number;
   openingPosted: boolean;
   unmatchedPayments: string[];
 };
@@ -366,8 +368,47 @@ export async function applySocietyImportPack(
     expensesPosted += 1;
   }
 
+  let holdingsPosted = 0;
+  const holdingStatements: D1PreparedStatement[] = [];
+  for (const holding of pack.holdings ?? []) {
+    const amountText = String(holding.amount ?? "").trim().replace(/,/g, "");
+    if (!amountText || Number(amountText) <= 0) continue;
+    let amountMinor: number;
+    try {
+      amountMinor = parseMoneyToMinor(amountText, currency);
+    } catch {
+      continue;
+    }
+    const occurredAt = toIsoDate(holding.date, createdAt);
+    const kind = normalizeHoldingKind(holding.kind);
+    const name = holding.name.slice(0, 120);
+    const notes = (holding.note || "").slice(0, 300) || null;
+    const holdingId = crypto.randomUUID();
+    const transactionId = crypto.randomUUID();
+    const entryId = crypto.randomUUID();
+    const description = `تحويل إلى ${kind === "investment" ? "استثمار" : "وديعة"}: ${name}`.slice(0, 300);
+    holdingStatements.push(
+      db.prepare(
+        "INSERT INTO space_holdings (id,space_id,name,kind,amount_minor,notes,acquired_at,status,created_at) VALUES (?,?,?,?,?,?,?,'active',?)",
+      ).bind(holdingId, spaceId, name, kind, amountMinor, notes, occurredAt, createdAt),
+      db.prepare("INSERT INTO transactions VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'approved', ?, ?)")
+        .bind(transactionId, spaceId, user.id, "transfer", "holding", amountMinor, description, description, occurredAt, createdAt),
+      db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
+        .bind(entryId, spaceId, transactionId, user.id, description, occurredAt, createdAt),
+      db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+        .bind(crypto.randomUUID(), entryId, kind === "investment" ? "asset:investment" : "asset:deposit", null, amountMinor, 0, createdAt),
+      db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
+        .bind(crypto.randomUUID(), entryId, "asset:cash", null, 0, amountMinor, createdAt),
+    );
+    balanceDelta -= amountMinor;
+    holdingsPosted += 1;
+  }
+
   if (ledgerStatements.length) {
     await flushBatches(db, ledgerStatements);
+  }
+  if (holdingStatements.length) {
+    await flushBatches(db, holdingStatements);
   }
 
   const paidUpdates: D1PreparedStatement[] = [];
@@ -415,6 +456,7 @@ export async function applySocietyImportPack(
     membersCreated,
     paymentsPosted,
     expensesPosted,
+    holdingsPosted,
     openingPosted,
     unmatchedPayments: unmatchedPayments.slice(0, 20),
   };

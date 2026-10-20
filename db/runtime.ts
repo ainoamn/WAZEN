@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 27;
+const SCHEMA_VERSION = 28;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -105,7 +105,7 @@ async function applyPostgresRls(db: D1Database) {
     "transaction_revisions", "documents", "invites", "journal_entries", "circle_configs",
     "circle_turns", "trip_expenses", "expense_splits", "settlements", "accounting_periods",
     "period_ledger_events", "personal_accounts", "personal_rules", "personal_occurrences",
-    "space_payout_accounts", "family_events", "space_links", "space_bank_links",
+    "space_payout_accounts", "family_events", "space_holdings", "space_links", "space_bank_links",
   ];
   await db.prepare(`CREATE OR REPLACE FUNCTION wazen_space_visible(p_space_id text) RETURNS boolean AS $fn$
 DECLARE
@@ -1133,6 +1133,18 @@ async function initializeSchema(db: D1Database) {
       created_at TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_family_events_space ON family_events(space_id, target_at)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS space_holdings (
+      id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'deposit',
+      amount_minor INTEGER NOT NULL DEFAULT 0,
+      notes TEXT,
+      acquired_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_space_holdings_space ON space_holdings(space_id, status)"),
   ]);
   await ensureSchemaPatches(db);
   await applyPostgresPaymentGuard(db);

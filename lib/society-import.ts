@@ -22,6 +22,14 @@ export type SocietyImportExpense = {
   beneficiary?: string;
 };
 
+export type SocietyImportHolding = {
+  date: string;
+  amount: number | string;
+  name: string;
+  kind?: "deposit" | "investment" | "other";
+  note?: string;
+};
+
 export type SocietyImportPack = {
   spaceName: string;
   type?: "society" | "group";
@@ -39,6 +47,7 @@ export type SocietyImportPack = {
   members: SocietyImportMember[];
   payments?: SocietyImportPayment[];
   expenses?: SocietyImportExpense[];
+  holdings?: SocietyImportHolding[];
 };
 
 export function normalizePersonKey(value: string) {
@@ -185,6 +194,7 @@ export function parseSocietyImportPack(raw: unknown): SocietyImportPack {
   if (data.members.length > 200) throw new Error("TOO_MANY_MEMBERS");
   if ((data.payments?.length ?? 0) > 2000) throw new Error("TOO_MANY_PAYMENTS");
   if ((data.expenses?.length ?? 0) > 500) throw new Error("TOO_MANY_EXPENSES");
+  if ((data.holdings?.length ?? 0) > 200) throw new Error("TOO_MANY_HOLDINGS");
   return {
     spaceName,
     type: data.type === "group" ? "group" : "society",
@@ -214,6 +224,13 @@ export function parseSocietyImportPack(raw: unknown): SocietyImportPack {
       description: cleanCell(expense.description),
       beneficiary: expense.beneficiary ? cleanCell(expense.beneficiary) : undefined,
     })),
+    holdings: (data.holdings ?? []).map((holding) => ({
+      date: cleanCell(holding.date),
+      amount: holding.amount,
+      name: cleanCell(holding.name),
+      kind: holding.kind === "investment" || holding.kind === "other" ? holding.kind : "deposit",
+      note: holding.note ? cleanCell(holding.note) : undefined,
+    })).filter((holding) => holding.name.length >= 2),
   };
 }
 
