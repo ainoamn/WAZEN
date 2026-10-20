@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { ensureSchema, getRawDb, type RequestUser } from "../../../db/runtime";
+
+/** Society pack import can exceed the default 10s on large rosters. */
+export const maxDuration = 120;
 import { authenticateRequest, csrfCookie, issueCsrfToken } from "../../../lib/auth";
 import { buildCircleOrder, fundChargeFits, resolveExpenseSplitMembers, splitContributionPayment, splitEvenly, takeShareSlice, type CircleMode, type ExtraPolicy } from "../../../lib/finance";
 import { hasComposeParts, planExpenseSplitsForApi, planPayerSplitForApi } from "../../../lib/expense-split";

@@ -94,15 +94,30 @@ export function SocietyImportModal({
         ...pack,
         spaceId: intoExisting && preferredSpaceId ? preferredSpaceId : undefined,
       };
-      const response = await apiFetch("/api/dashboard", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "importSocietyPack",
-          idempotencyKey: crypto.randomUUID(),
-          pack: payload,
-        }),
-      });
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 110_000);
+      let response: Response;
+      try {
+        response = await apiFetch("/api/dashboard", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            action: "importSocietyPack",
+            idempotencyKey: crypto.randomUUID(),
+            pack: payload,
+          }),
+        });
+      } catch (caught) {
+        if (caught instanceof DOMException && caught.name === "AbortError") {
+          throw new Error(locale === "ar"
+            ? "انتهت مهلة الاستيراد. حدّث الصفحة وتحقق إن ظهرت الجمعية، أو أعد المحاولة."
+            : "Import timed out. Refresh to check if the society appeared, or try again.");
+        }
+        throw caught;
+      } finally {
+        window.clearTimeout(timeout);
+      }
       const result = await response.json() as {
         error?: string;
         spaceId?: string;

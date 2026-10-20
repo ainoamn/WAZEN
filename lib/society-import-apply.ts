@@ -1,13 +1,10 @@
-/** Apply a SocietyImportPack into Neon/D1 in one request. */
+/** Apply a SocietyImportPack into Neon/D1 in one request (batched for speed). */
 
 import type { RequestUser } from "../db/runtime";
 import { prepareAudit } from "./audit";
 import { authorizeSpace, ensureDefaultTenant, platformRoleOf } from "./authorization";
 import { splitContributionPayment } from "./finance";
-import {
-  installmentInsertStatements,
-  paymentInstallmentStatements,
-} from "./installment-payments";
+import { installmentInsertStatements } from "./installment-payments";
 import { reconcileMemberLedgers } from "./ledger-void";
 import { multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "./money";
 import { digitsOnly, isLikelyPhone, toWhatsAppNumber } from "./phone";
@@ -66,6 +63,12 @@ function resolveMemberId(
 function looksLikeOpeningRow(memberName: string, note?: string) {
   const blob = `${memberName} ${note ?? ""}`;
   return /مبالغ\s*سابقة|الجمعية السابقة|رصيد افتتاح|مرشد/.test(blob);
+}
+
+async function flushBatches(db: D1Database, statements: D1PreparedStatement[], chunkSize = 80) {
+  for (let i = 0; i < statements.length; i += chunkSize) {
+    await db.batch(statements.slice(i, i + chunkSize));
+  }
 }
 
 export type SocietyImportResult = {
@@ -159,24 +162,32 @@ export async function applySocietyImportPack(
     duration_months: Number(plan?.duration_months ?? durationMonths),
     starts_at: plan?.starts_at || startsAt,
   };
+  const dueMinor = multiplyMinor(planForMember.amount_minor, planForMember.duration_months);
 
   const byName = new Map<string, string>();
   const byPhone = new Map<string, string>();
+  const paidByMember = new Map<string, number>();
+  const dueByMember = new Map<string, number>();
+
   const existingMembers = await db.prepare(
-    "SELECT id,display_name,phone FROM members WHERE space_id=? AND status='active'",
-  ).bind(spaceId).all<{ id: string; display_name: string; phone: string | null }>();
+    "SELECT id,display_name,phone,due_minor,paid_minor FROM members WHERE space_id=? AND status='active'",
+  ).bind(spaceId).all<{ id: string; display_name: string; phone: string | null; due_minor: number; paid_minor: number }>();
   for (const row of existingMembers.results ?? []) {
     byName.set(normalizePersonKey(row.display_name), row.id);
     indexPhone(byPhone, row.phone, row.id);
+    paidByMember.set(row.id, Number(row.paid_minor) || 0);
+    dueByMember.set(row.id, Number(row.due_minor) || 0);
   }
 
+  let existingCount = existingMembers.results?.length ?? 0;
+  const memberStatements: D1PreparedStatement[] = [];
   let membersCreated = 0;
+
   for (const member of pack.members) {
     const phoneRaw = member.phone?.trim() || "";
     const phone = phoneRaw && isLikelyPhone(phoneRaw) ? (toWhatsAppNumber(phoneRaw) || phoneRaw) : (phoneRaw || null);
     const email = member.email?.includes("@") ? member.email : null;
     const joinedAt = toIsoDate(member.joinedAt, startsAt);
-    const dueMinor = multiplyMinor(planForMember.amount_minor, planForMember.duration_months);
 
     const existingId = resolveMemberId(byName, byPhone, member.displayName, phone || undefined);
     if (existingId) {
@@ -184,42 +195,41 @@ export async function applySocietyImportPack(
       indexPhone(byPhone, phone, existingId);
       continue;
     }
-
-    const activeCount = await db.prepare("SELECT COUNT(*) AS count FROM members WHERE space_id=? AND status='active'")
-      .bind(spaceId).first<{ count: number }>();
-    if (Number(activeCount?.count ?? 0) >= memberLimit) throw new ApiError(403, "PLAN_MEMBER_LIMIT");
+    if (existingCount + membersCreated >= memberLimit) throw new ApiError(403, "PLAN_MEMBER_LIMIT");
 
     const memberId = crypto.randomUUID();
-    const statements: D1PreparedStatement[] = [
+    memberStatements.push(
       db.prepare(
         "INSERT INTO members (id,space_id,user_id,display_name,email,phone,role,status,due_minor,paid_minor,extra_minor,avatar,joined_at) VALUES (?,?,NULL,?,?,?,'member','active',?,0,0,'#0f766e',?)",
       ).bind(memberId, spaceId, member.displayName, email, phone, dueMinor, joinedAt),
-      ...await installmentInsertStatements(
-        db,
-        { id: memberId, space_id: spaceId, paid_minor: 0 },
-        planForMember.amount_minor > 0 ? planForMember : null,
-        createdAt,
-      ),
-      prepareAudit(db, {
-        userId: user.id,
-        action: "member.created",
-        entityType: "member",
-        entityId: memberId,
-        metadata: { spaceId, via: "society.import" },
-        createdAt,
-      }),
-    ];
-    await db.batch(statements);
+    );
     byName.set(normalizePersonKey(member.displayName), memberId);
     indexPhone(byPhone, phone, memberId);
+    paidByMember.set(memberId, 0);
+    dueByMember.set(memberId, dueMinor);
     membersCreated += 1;
+  }
+
+  if (memberStatements.length) {
+    memberStatements.push(prepareAudit(db, {
+      userId: user.id,
+      action: "member.created",
+      entityType: "space",
+      entityId: spaceId,
+      metadata: { spaceId, via: "society.import", count: membersCreated },
+      createdAt,
+    }));
+    await flushBatches(db, memberStatements);
   }
 
   await db.prepare(
     `UPDATE spaces SET goal_minor = COALESCE((SELECT SUM(due_minor) FROM members WHERE space_id=? AND status='active'), 0) WHERE id=?`,
   ).bind(spaceId, spaceId).run();
 
+  const ledgerStatements: D1PreparedStatement[] = [];
+  let balanceDelta = 0;
   let openingPosted = false;
+
   if (pack.openingBalance && Number(pack.openingBalance.amount) > 0) {
     const amountMinor = moneyMajor(pack.openingBalance.amount, currency);
     if (amountMinor > 0) {
@@ -227,17 +237,17 @@ export async function applySocietyImportPack(
       const description = pack.openingBalance.note?.trim() || "رصيد افتتاحي / مبالغ سابقة";
       const transactionId = crypto.randomUUID();
       const entryId = crypto.randomUUID();
-      await db.batch([
+      ledgerStatements.push(
         db.prepare("INSERT INTO transactions VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'approved', ?, ?)")
           .bind(transactionId, spaceId, user.id, "income", "general", amountMinor, description, description, occurredAt, createdAt),
-        db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id = ?").bind(amountMinor, spaceId),
         db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
           .bind(entryId, spaceId, transactionId, user.id, description, occurredAt, createdAt),
         db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
           .bind(crypto.randomUUID(), entryId, "asset:cash", null, amountMinor, 0, createdAt),
         db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
           .bind(crypto.randomUUID(), entryId, "income:general", null, 0, amountMinor, createdAt),
-      ]);
+      );
+      balanceDelta += amountMinor;
       openingPosted = true;
     }
   }
@@ -262,15 +272,10 @@ export async function applySocietyImportPack(
       unmatchedPayments.push(payment.memberName);
       continue;
     }
-    const member = await db.prepare("SELECT id,space_id,due_minor,paid_minor,extra_minor FROM members WHERE id=? AND space_id=?")
-      .bind(memberId, spaceId)
-      .first<{ id: string; space_id: string; due_minor: number; paid_minor: number; extra_minor: number }>();
-    if (!member) {
-      unmatchedPayments.push(payment.memberName);
-      continue;
-    }
 
-    const remainingDueMinor = Math.max(0, Number(member.due_minor) - Number(member.paid_minor));
+    const paidSoFar = paidByMember.get(memberId) ?? 0;
+    const due = dueByMember.get(memberId) ?? dueMinor;
+    const remainingDueMinor = Math.max(0, due - paidSoFar);
     let split;
     try {
       split = splitContributionPayment(amountMinor, planForMember.amount_minor || remainingDueMinor || amountMinor, {
@@ -284,24 +289,15 @@ export async function applySocietyImportPack(
 
     const occurredAt = toIsoDate(payment.date, createdAt);
     const description = (payment.note || `مساهمة ${payment.memberName}`).slice(0, 300);
-    const statements: D1PreparedStatement[] = [];
+    let applied = 0;
+
     if (split.mandatoryMinor > 0) {
-      const installmentWork = await paymentInstallmentStatements(
-        db,
-        member,
-        planForMember.amount_minor > 0 ? planForMember : null,
-        split.mandatoryMinor,
-        createdAt,
-      );
-      statements.push(...installmentWork.statements);
       const transactionId = crypto.randomUUID();
       const entryId = crypto.randomUUID();
       const lineDescription = `${description} · سداد مطالبة`;
-      statements.push(
+      ledgerStatements.push(
         db.prepare("INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)")
           .bind(transactionId, spaceId, user.id, memberId, "contribution", "mandatory", split.mandatoryMinor, lineDescription, lineDescription, occurredAt, createdAt),
-        db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id = ?").bind(split.mandatoryMinor, spaceId),
-        db.prepare("UPDATE members SET paid_minor = paid_minor + ? WHERE id = ? AND space_id = ?").bind(split.mandatoryMinor, memberId, spaceId),
         db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
           .bind(entryId, spaceId, transactionId, user.id, lineDescription, occurredAt, createdAt),
         db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
@@ -309,16 +305,16 @@ export async function applySocietyImportPack(
         db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
           .bind(crypto.randomUUID(), entryId, "income:contribution", memberId, 0, split.mandatoryMinor, createdAt),
       );
+      balanceDelta += split.mandatoryMinor;
+      applied += split.mandatoryMinor;
     }
     if (split.surplusMinor > 0) {
       const transactionId = crypto.randomUUID();
       const entryId = crypto.randomUUID();
       const lineDescription = `${description} · مقدّم`;
-      statements.push(
+      ledgerStatements.push(
         db.prepare("INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)")
           .bind(transactionId, spaceId, user.id, memberId, "contribution", "advance", split.surplusMinor, lineDescription, lineDescription, occurredAt, createdAt),
-        db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id = ?").bind(split.surplusMinor, spaceId),
-        db.prepare("UPDATE members SET paid_minor = paid_minor + ? WHERE id = ? AND space_id = ?").bind(split.surplusMinor, memberId, spaceId),
         db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
           .bind(entryId, spaceId, transactionId, user.id, lineDescription, occurredAt, createdAt),
         db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
@@ -326,9 +322,12 @@ export async function applySocietyImportPack(
         db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
           .bind(crypto.randomUUID(), entryId, "liability:advance", memberId, 0, split.surplusMinor, createdAt),
       );
+      balanceDelta += split.surplusMinor;
+      applied += split.surplusMinor;
     }
-    if (statements.length) {
-      await db.batch(statements);
+
+    if (applied > 0) {
+      paidByMember.set(memberId, paidSoFar + applied);
       paymentsPosted += 1;
     }
   }
@@ -347,18 +346,57 @@ export async function applySocietyImportPack(
     const description = `${expense.description}${expense.beneficiary ? ` · ${expense.beneficiary}` : ""}`.slice(0, 300);
     const transactionId = crypto.randomUUID();
     const entryId = crypto.randomUUID();
-    await db.batch([
+    ledgerStatements.push(
       db.prepare("INSERT INTO transactions VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'approved', ?, ?)")
         .bind(transactionId, spaceId, user.id, "expense", "general", amountMinor, description, description, occurredAt, createdAt),
-      db.prepare("UPDATE spaces SET balance_minor = balance_minor - ? WHERE id = ?").bind(amountMinor, spaceId),
       db.prepare("INSERT INTO journal_entries (id,space_id,transaction_id,created_by,description,status,occurred_at,created_at) VALUES (?,?,?,?,?,'posted',?,?)")
         .bind(entryId, spaceId, transactionId, user.id, description, occurredAt, createdAt),
       db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
         .bind(crypto.randomUUID(), entryId, "expense:general", null, amountMinor, 0, createdAt),
       db.prepare("INSERT INTO journal_lines (id,entry_id,account_code,member_id,debit_minor,credit_minor,created_at) VALUES (?,?,?,?,?,?,?)")
         .bind(crypto.randomUUID(), entryId, "asset:cash", null, 0, amountMinor, createdAt),
-    ]);
+    );
+    balanceDelta -= amountMinor;
     expensesPosted += 1;
+  }
+
+  if (ledgerStatements.length) {
+    await flushBatches(db, ledgerStatements);
+  }
+
+  const paidUpdates: D1PreparedStatement[] = [];
+  for (const [memberId, paidMinor] of paidByMember) {
+    // Only touch members we created or that received payments in this import.
+    paidUpdates.push(
+      db.prepare("UPDATE members SET paid_minor=? WHERE id=? AND space_id=?")
+        .bind(paidMinor, memberId, spaceId),
+    );
+  }
+  if (balanceDelta !== 0) {
+    paidUpdates.push(
+      db.prepare("UPDATE spaces SET balance_minor = balance_minor + ? WHERE id = ?")
+        .bind(balanceDelta, spaceId),
+    );
+  }
+  if (paidUpdates.length) await flushBatches(db, paidUpdates);
+
+  // Build installment schedules once from final paid totals (avoids per-payment DB work).
+  if (planForMember.amount_minor > 0) {
+    const installmentStatements: D1PreparedStatement[] = [];
+    for (const [memberId, paidMinor] of paidByMember) {
+      installmentStatements.push(
+        db.prepare("DELETE FROM member_installments WHERE member_id=?").bind(memberId),
+      );
+      installmentStatements.push(
+        ...await installmentInsertStatements(
+          db,
+          { id: memberId, space_id: spaceId, paid_minor: paidMinor },
+          planForMember,
+          createdAt,
+        ),
+      );
+    }
+    if (installmentStatements.length) await flushBatches(db, installmentStatements);
   }
 
   await reconcileMemberLedgers(db, [spaceId]);
