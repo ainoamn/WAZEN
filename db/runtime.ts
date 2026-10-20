@@ -1146,6 +1146,8 @@ export type RequestUser = {
   email: string;
   displayName: string;
   avatarUrl?: string | null;
+  /** BHD identity subject — used to match the active identity account. */
+  bhdSub?: string | null;
   isDemo: boolean;
   authType?: "session" | "api_key" | "hosted" | "demo";
   scopes?: string[];

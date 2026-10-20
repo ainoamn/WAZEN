@@ -125,12 +125,12 @@ export async function authenticateRequest(db: D1Database, request: Request): Pro
   const token = cookieValue(request, SESSION_COOKIE);
   if (!token) return null;
   const requestBrowserId = browserIdFromRequest(request);
-  const row = await db.prepare(`SELECT u.id,u.email,u.display_name,u.avatar_url,p.status,s.id AS session_id,s.last_seen_at,s.created_at AS session_created_at,s.expires_at,s.browser_id
+  const row = await db.prepare(`SELECT u.id,u.email,u.display_name,u.avatar_url,u.bhd_sub,p.status,s.id AS session_id,s.last_seen_at,s.created_at AS session_created_at,s.expires_at,s.browser_id
     FROM auth_sessions s JOIN users u ON u.id=s.user_id
     LEFT JOIN customer_profiles p ON p.user_id=u.id
     WHERE s.token_hash=? AND s.expires_at>? LIMIT 1`)
     .bind(await sha256(token), new Date().toISOString())
-    .first<{ id: string; email: string; display_name: string; avatar_url: string | null; status: string | null; session_id: string; last_seen_at: string | null; session_created_at: string; expires_at: string; browser_id: string | null }>();
+    .first<{ id: string; email: string; display_name: string; avatar_url: string | null; bhd_sub: string | null; status: string | null; session_id: string; last_seen_at: string | null; session_created_at: string; expires_at: string; browser_id: string | null }>();
   if (!row || row.status === "suspended" || row.status === "closed") return null;
   if (requestBrowserId && row.browser_id !== requestBrowserId) {
     await db.prepare("UPDATE auth_sessions SET browser_id=? WHERE id=?").bind(requestBrowserId, row.session_id).run();
@@ -146,7 +146,15 @@ export async function authenticateRequest(db: D1Database, request: Request): Pro
     await db.prepare("UPDATE auth_sessions SET last_seen_at=?, expires_at=? WHERE id=?")
       .bind(new Date(nowMs).toISOString(), new Date(legacyShortExpiry ? fixedExpiryMs : expiresMs).toISOString(), row.session_id).run();
   }
-  return { id: row.id, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url, isDemo: false, authType: "session" };
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.display_name,
+    avatarUrl: row.avatar_url,
+    bhdSub: row.bhd_sub,
+    isDemo: false,
+    authType: "session",
+  };
 }
 
 /** Returns `changed: true` only when the CSRF cookie was missing or stale and must be repaired. */

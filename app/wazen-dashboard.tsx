@@ -131,7 +131,7 @@ function isViewId(value: string | null | undefined): value is ViewId {
   return Boolean(value && VIEW_IDS.includes(value as ViewId));
 }
 
-type User = { id: string; email: string; displayName: string; avatarUrl?: string | null; isDemo: boolean; role?: string | null };
+type User = { id: string; email: string; displayName: string; avatarUrl?: string | null; bhdSub?: string | null; isDemo: boolean; role?: string | null };
 type Space = {
   id: string;
   owner_user_id: string;
@@ -1997,7 +1997,12 @@ export function WazenDashboard() {
               changeView(view, spaceId);
             }} />
             <BhdSignedInSwitcher
-              user={{ name: data.user.displayName, email: data.user.email, picture: data.user.avatarUrl ?? null }}
+              user={{
+                id: data.user.bhdSub || data.user.id,
+                name: data.user.displayName,
+                email: data.user.email,
+                picture: data.user.avatarUrl ?? null,
+              }}
               locale={locale === "en" ? "en" : "ar"}
             />
           </div>

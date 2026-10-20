@@ -1,6 +1,10 @@
 "use client";
 
-import { DEFAULT_BHD_IDENTITY_ISSUER } from "./bhd-identity";
+import {
+  addAccountUrl,
+  applyAccountIsolation,
+  identityFetch,
+} from "./identity/client";
 
 export type AuthProviderMark = "password" | "google" | "facebook" | "whatsapp";
 
@@ -23,24 +27,19 @@ export type IdentityMeResponse = {
   accounts?: IdentityAccount[];
 };
 
-function identityOrigin() {
-  return (process.env.NEXT_PUBLIC_BHD_IDENTITY_ISSUER || DEFAULT_BHD_IDENTITY_ISSUER).replace(/\/$/, "");
-}
-
 /** Workspace path after silent product SSO (frozen catalog). */
 export function wazenWorkspacePath() {
   return "/dashboard";
 }
 
+/** Only «إضافة حساب آخر» may open login?add=1. */
 export function identityLoginAddUrl() {
-  return `${identityOrigin()}/login?add=1`;
+  return addAccountUrl();
 }
 
 export async function fetchIdentityAccounts(): Promise<IdentityMeResponse> {
-  const response = await fetch(`${identityOrigin()}/api/auth/me`, {
+  const response = await identityFetch("/api/auth/me", {
     method: "GET",
-    credentials: "include",
-    cache: "no-store",
     headers: { Accept: "application/json" },
   });
   if (!response.ok) return { user: null, accounts: [] };
@@ -48,10 +47,8 @@ export async function fetchIdentityAccounts(): Promise<IdentityMeResponse> {
 }
 
 export async function switchIdentityAccount(sub: string): Promise<IdentityMeResponse> {
-  const response = await fetch(`${identityOrigin()}/api/auth/switch`, {
+  const response = await identityFetch("/api/auth/switch", {
     method: "POST",
-    credentials: "include",
-    cache: "no-store",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ sub }),
   });
@@ -61,10 +58,8 @@ export async function switchIdentityAccount(sub: string): Promise<IdentityMeResp
 }
 
 export async function logoutIdentityAccount(all: boolean): Promise<IdentityMeResponse> {
-  const response = await fetch(`${identityOrigin()}/api/auth/logout`, {
+  const response = await identityFetch("/api/auth/logout", {
     method: "POST",
-    credentials: "include",
-    cache: "no-store",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ all }),
   });
@@ -73,27 +68,26 @@ export async function logoutIdentityAccount(all: boolean): Promise<IdentityMeRes
   return data;
 }
 
-/**
- * Re-bind this product's session to the active identity account (silent SSO).
- * Used after switch / sign-out-this when another roster account remains.
- */
-export function openProductSilentSso(returnTo = wazenWorkspacePath(), loginHint?: string | null) {
-  const path = returnTo.startsWith("/") ? returnTo : `/${returnTo}`;
-  const url = new URL("/api/auth/bhd/start", window.location.origin);
-  url.searchParams.set("returnTo", path);
-  if (loginHint) url.searchParams.set("login_hint", loginHint);
-  window.location.assign(url.toString());
+/** Re-bind product session to the active identity account (never /login?add=1). */
+export function openProductSilentSso(returnTo?: string) {
+  if (returnTo) {
+    const path = returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/";
+    window.location.assign(`/api/auth/bhd/start?returnTo=${encodeURIComponent(path)}`);
+    return;
+  }
+  applyAccountIsolation();
 }
 
-/** @deprecated use openProductSilentSso when the product session must follow identity */
 export function openProductWorkspace(returnTo = wazenWorkspacePath()) {
   openProductSilentSso(returnTo);
 }
 
 export function buildEndSessionUrl(all: boolean) {
-  const url = new URL(`${identityOrigin()}/oauth/end-session`);
+  const url = new URL(`${(process.env.NEXT_PUBLIC_BHD_IDENTITY_ISSUER || "https://id.bhd-om.com").replace(/\/$/, "")}/oauth/end-session`);
   url.searchParams.set("post_logout_redirect_uri", `${window.location.origin}/`);
   url.searchParams.set("client_id", process.env.NEXT_PUBLIC_BHD_OAUTH_CLIENT_ID || "bhd-wazen");
   if (all) url.searchParams.set("all", "1");
   return url.toString();
 }
+
+export { applyAccountIsolation, addAccountUrl };

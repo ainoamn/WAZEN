@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; error?: string; local?: string; returnTo?: string }>;
+  searchParams: Promise<{ next?: string; error?: string; local?: string; returnTo?: string; add?: string }>;
 }) {
   const params = await searchParams;
   const hdrs = await headers();
@@ -25,7 +25,13 @@ export default async function LoginPage({
     redirect(`/api/auth/admin-entry?next=${encodeURIComponent(next)}`);
   }
 
-  // Production SSO origin: identity only — never honor local=1.
+  // add=1 is identity-only. Product /login?add=1 must not open a local form —
+  // send the browser through silent SSO (or identity login if needed).
+  if (ssoReady && params.add === "1") {
+    redirect(`/api/auth/bhd/start?returnTo=${encodeURIComponent(next)}`);
+  }
+
+  // Production SSO: already signed-in identity → silent start; no password panel.
   // On OAuth errors, show a thin interstitial (no password panel) then retry BHD.
   if (ssoReady && !params.error) {
     redirect(`/api/auth/bhd/start?returnTo=${encodeURIComponent(next)}`);

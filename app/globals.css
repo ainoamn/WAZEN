@@ -2198,17 +2198,18 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
   font-weight: 500;
 }
 
-.bhd-switcher-face .bhd-switcher-providers {
-  position: absolute;
-  inset-inline-end: -2px;
-  bottom: -2px;
-}
-
 .bhd-switcher-who {
   min-width: 0;
   flex: 1;
   display: grid;
   gap: 2px;
+}
+
+.bhd-switcher-who-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .bhd-switcher-who strong,
@@ -2233,6 +2234,7 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
 
 .bhd-switcher-providers {
   display: flex;
+  flex: 0 0 auto;
   gap: 2px;
 }
 

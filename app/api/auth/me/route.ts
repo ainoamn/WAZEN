@@ -22,6 +22,7 @@ export async function GET(request: Request) {
           email: user.email,
           displayName: user.displayName,
           avatarUrl: user.avatarUrl,
+          bhdSub: user.bhdSub ?? null,
         },
         role,
         identityEnabled: isBhdIdentityConfigured(),

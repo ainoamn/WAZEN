@@ -6,10 +6,9 @@ import { apiFetch } from "./client-api";
 import { clearDashboardCache } from "./dashboard-session";
 import { resetAppPrefetch } from "./app-prefetch";
 import {
+  applyAccountIsolation,
   buildEndSessionUrl,
   logoutIdentityAccount,
-  openProductSilentSso,
-  wazenWorkspacePath,
 } from "./bhd-multi-account";
 
 let clientLogoutInProgress = false;
@@ -33,6 +32,13 @@ async function clearProductSessionOnly() {
   clearDashboardCache();
   resetAppPrefetch();
   notifyBrowserSessionChange(null);
+  try {
+    for (const key of Object.keys(sessionStorage)) {
+      if (key.startsWith("bhd-sso:")) sessionStorage.removeItem(key);
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 /**
@@ -48,7 +54,7 @@ export async function completeClientLogout(options?: { all?: boolean }) {
     try {
       const remaining = await logoutIdentityAccount(false);
       if (remaining.user?.id) {
-        openProductSilentSso(wazenWorkspacePath(), remaining.user.email);
+        applyAccountIsolation();
         await new Promise<never>(() => {});
       }
     } catch {

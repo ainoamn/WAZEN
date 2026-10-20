@@ -118,7 +118,7 @@ type Occurrence = {
 type PersonalAccount = { id: string; space_id: string; name: string };
 
 type HomeData = {
-  user: { displayName: string; email: string; avatarUrl?: string | null; role?: string };
+  user: { id?: string; bhdSub?: string | null; displayName: string; email: string; avatarUrl?: string | null; role?: string };
   spaces: Space[];
   members: Member[];
   transactions: Transaction[];
@@ -349,6 +349,7 @@ export function HomeClient() {
               </button>
               <BhdSignedInSwitcher
                 user={{
+                  id: switcherUser.bhdSub || switcherUser.id,
                   name: switcherUser.displayName,
                   email: switcherUser.email,
                   picture: switcherUser.avatarUrl ?? null,
@@ -379,6 +380,7 @@ export function HomeClient() {
               </button>
               <BhdSignedInSwitcher
                 user={{
+                  id: switcherUser.bhdSub || switcherUser.id,
                   name: switcherUser.displayName,
                   email: switcherUser.email,
                   picture: switcherUser.avatarUrl ?? null,
@@ -422,7 +424,12 @@ export function HomeClient() {
             {locale === "ar" ? "EN" : "عربي"}
           </button>
           <BhdSignedInSwitcher
-            user={{ name: data.user.displayName, email: data.user.email, picture: data.user.avatarUrl ?? null }}
+            user={{
+              id: data.user.bhdSub || data.user.id,
+              name: data.user.displayName,
+              email: data.user.email,
+              picture: data.user.avatarUrl ?? null,
+            }}
             locale={locale === "en" ? "en" : "ar"}
           />
         </div>

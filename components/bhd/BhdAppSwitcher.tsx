@@ -143,7 +143,7 @@ function ProviderMarks({
   );
 }
 
-function Face({ user, t, large = false }: { user: BhdSwitcherUser; t: SwitcherCopy; large?: boolean }) {
+function Face({ user, large = false }: { user: BhdSwitcherUser; large?: boolean }) {
   const [broken, setBroken] = useState(false);
   const show = Boolean(user.picture) && !broken;
   const initial = (user.name || user.email || "B").trim().slice(0, 1).toUpperCase();
@@ -161,7 +161,6 @@ function Face({ user, t, large = false }: { user: BhdSwitcherUser; t: SwitcherCo
       ) : (
         <span aria-hidden="true">{initial}</span>
       )}
-      <ProviderMarks providers={accountProviders(user).slice(0, 1)} t={t} />
     </span>
   );
 }
@@ -178,10 +177,13 @@ function AccountRow({
   const meta = accountMeta(user);
   return (
     <span className="bhd-switcher-person">
-      <Face user={user} t={t} large={large} />
+      <Face user={user} large={large} />
       <span className="bhd-switcher-who">
         <strong dir="ltr">{accountHandle(user)}</strong>
-        {meta.length ? <small dir="ltr">{meta.join(" · ")}</small> : null}
+        <span className="bhd-switcher-who-meta">
+          <ProviderMarks providers={accountProviders(user).slice(0, 1)} t={t} />
+          {meta.length ? <small dir="ltr">{meta.join(" · ")}</small> : null}
+        </span>
       </span>
     </span>
   );
@@ -408,7 +410,7 @@ export function BhdAppSwitcher({
                   type="button"
                   className="bhd-switcher-account-choice"
                   aria-label={`${t.switchTo} ${accountHandle(item)}`}
-                  onClick={() => item.id && void onSwitchAccount?.(item.id)}
+                  onClick={() => void onSwitchAccount?.(item.id || item.email)}
                 >
                   <AccountRow user={item} t={t} />
                 </button>

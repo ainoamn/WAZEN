@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans_Arabic, Inter } from "next/font/google";
 import NavigationProgress from "../components/brand/NavigationProgress";
+import { BhdSilentSso } from "../components/bhd/BhdSilentSso";
 import AppProviders from "./providers";
 import "./globals.css";
 import "./commercial.css";
@@ -88,6 +89,7 @@ export default function RootLayout({
       <body className={plexArabic.className}>
         <AppProviders>
           <NavigationProgress />
+          <BhdSilentSso />
           {children}
         </AppProviders>
       </body>

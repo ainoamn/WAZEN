@@ -3,13 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import type { BhdSwitcherUser } from "./BhdAppSwitcher";
 import {
+  addAccountUrl,
+  applyAccountIsolation,
   buildEndSessionUrl,
   fetchIdentityAccounts,
-  identityLoginAddUrl,
   logoutIdentityAccount,
-  openProductSilentSso,
   switchIdentityAccount,
-  wazenWorkspacePath,
   type IdentityAccount,
   type IdentityMeResponse,
 } from "../../lib/bhd-multi-account";
@@ -33,6 +32,13 @@ async function clearProductSessionOnly() {
   clearDashboardCache();
   resetAppPrefetch();
   notifyBrowserSessionChange(null);
+  try {
+    for (const key of Object.keys(sessionStorage)) {
+      if (key.startsWith("bhd-sso:")) sessionStorage.removeItem(key);
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 function mergeAccount(base: BhdSwitcherUser, identity?: IdentityAccount | null): BhdSwitcherUser {
@@ -115,24 +121,26 @@ export function useBhdAccountMenu(productUser: BhdSwitcherUser, locale: "ar" | "
   ]);
 
   const switchAccount = useCallback(async (sub: string) => {
-    const previousId = user.id;
-    const optimistic = accounts.find((item) => item.id === sub);
+    const target = String(sub || "").trim();
+    if (!target) return;
+    const optimistic = accounts.find((item) => item.id === target || item.email === target);
     if (optimistic) setUser(optimistic);
 
-    const data = await switchIdentityAccount(sub);
-    if (!data.user) return;
-    applyMe(productUser, data, setUser, setAccounts);
-
-    // Product session still belongs to the previous identity — silent SSO rebinds it.
-    if (data.user.id && data.user.id !== previousId) {
-      await clearProductSessionOnly();
-      openProductSilentSso(wazenWorkspacePath(), data.user.email);
-      await new Promise<never>(() => {});
+    const data = await switchIdentityAccount(target);
+    if (!data.user) {
+      // Do not open /login?add=1 — leave roster UI; user can retry.
+      if (optimistic) setUser(user);
+      return;
     }
-  }, [accounts, productUser, user.id]);
+    applyMe(productUser, data, setUser, setAccounts);
+    // Spec §2: wipe previous product data, then silent start on current path.
+    await clearProductSessionOnly();
+    applyAccountIsolation();
+    await new Promise<never>(() => {});
+  }, [accounts, productUser, user]);
 
   const addAccount = useCallback(() => {
-    window.location.assign(identityLoginAddUrl());
+    window.location.assign(addAccountUrl());
   }, []);
 
   const signOutThis = useCallback(async () => {
@@ -140,7 +148,7 @@ export function useBhdAccountMenu(productUser: BhdSwitcherUser, locale: "ar" | "
     if (data.user) {
       applyMe(productUser, data, setUser, setAccounts);
       await clearProductSessionOnly();
-      openProductSilentSso(wazenWorkspacePath(), data.user.email);
+      applyAccountIsolation();
       await new Promise<never>(() => {});
       return;
     }
