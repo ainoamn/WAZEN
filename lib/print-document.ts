@@ -317,6 +317,14 @@ body.is-receipt .receipt-badge {
   border-radius: 8px;
   background: #fff;
 }
+.statement-verify-qr .verify-url {
+  font-size: 10px;
+  word-break: break-all;
+  color: #596b64;
+  margin: 4px 0 0;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
 .receipt-qr p {
   margin: 0;
   color: var(--muted);
@@ -669,6 +677,9 @@ export function wrapPrintDocument(options: {
   orientation?: PrintOrientation;
   /** Receipt / statement layouts for phone-clear documents. */
   variant?: "report" | "receipt" | "statement";
+  /** Public https URL + QR (scan opens statement details on Wazen). */
+  verifyUrl?: string;
+  qrDataUrl?: string;
 }) {
   const dir = options.locale === "ar" ? "rtl" : "ltr";
   const orientation = options.orientation ?? "portrait";
@@ -687,9 +698,17 @@ export function wrapPrintDocument(options: {
       ? "@page { size: A4 portrait; margin: 8mm; }"
       : "@page { size: A4 portrait; margin: 12mm; }";
   const receiptFoot = receiptElectronicFooter(options.locale);
-  const statementFootAr = { mark: "هذا كشف إلكتروني من موقع وازن", site: "واضح على الجوال والكمبيوتر" };
-  const statementFootEn = { mark: "Electronic statement from Wazen", site: "Clear on phone and desktop" };
+  const statementFootAr = {
+    mark: "صدر هذا الكشف إلكترونياً من منصة وازن — بإدارة بن حمود للتطوير (BHD).",
+    site: "امسح رمز الاستجابة السريعة للتحقق من الكشف على الموقع · wazen.bhd-om.com",
+  };
+  const statementFootEn = {
+    mark: "This statement was issued electronically by the Wazen platform — managed by Bin Hamoud for Development (BHD).",
+    site: "Scan the QR code to verify this statement online · wazen.bhd-om.com",
+  };
   const statementFoot = options.locale === "ar" ? statementFootAr : statementFootEn;
+  const reportFootAr = "مستند رسمي صادر إلكترونياً من منصة وازن — بإدارة بن حمود للتطوير (BHD).";
+  const reportFootEn = "Official document issued electronically by Wazen — managed by Bin Hamoud for Development (BHD).";
   const footerHtml = isReceipt
     ? (options.footer
       ? escapeHtml(options.footer)
@@ -698,14 +717,22 @@ export function wrapPrintDocument(options: {
       ? (options.footer
         ? escapeHtml(options.footer)
         : `<span class="foot-mark">${escapeHtml(statementFoot.mark)}</span><span class="foot-site">${escapeHtml(statementFoot.site)}</span>`)
-    : escapeHtml(options.footer ?? (options.locale === "ar"
-      ? "مستند رسمي من منصة وازن — للاستخدام داخل الجمعية أو المحفظة."
-      : "Official document from Wazen — for the wallet or association."));
+    : escapeHtml(options.footer ?? (options.locale === "ar" ? reportFootAr : reportFootEn));
   const badge = isReceipt
     ? `<span class="receipt-badge">${options.locale === "ar" ? "إيصال إلكتروني" : "Electronic receipt"}</span>`
     : isStatement
       ? `<span class="receipt-badge">${options.locale === "ar" ? "كشف إلكتروني" : "Electronic statement"}</span>`
       : "";
+  const qrHint = options.locale === "ar"
+    ? "امسح الرمز لفتح تفاصيل الكشف على موقع وازن"
+    : "Scan to open statement details on Wazen";
+  const verifyBlock = options.qrDataUrl && options.verifyUrl
+    ? `<div class="receipt-qr statement-verify-qr">
+  <img src="${escapeHtml(options.qrDataUrl)}" width="148" height="148" alt="QR" />
+  <p>${escapeHtml(qrHint)}</p>
+  <p class="verify-url">${escapeHtml(options.verifyUrl)}</p>
+</div>`
+    : "";
   return `<!doctype html>
 <html lang="${options.locale}" dir="${dir}" data-orientation="${orientation}">
 <head>
@@ -721,7 +748,7 @@ export function wrapPrintDocument(options: {
     <div class="brand-bar">
       <img src="${escapeHtml(options.logoUrl)}" alt="WAZEN · وازن" />
       <div>
-        <small>WAZEN · وازن</small>
+        <small>WAZEN · وازن · BHD</small>
         <strong>${escapeHtml(options.entityName)}</strong>
       </div>
     </div>
@@ -733,6 +760,7 @@ export function wrapPrintDocument(options: {
     ${metaHtml ? `<div class="meta">${metaHtml}</div>` : ""}
     ${kpiHtml ? `<div class="kpis">${kpiHtml}</div>` : ""}
     ${options.bodyHtml}
+    ${verifyBlock}
     <footer class="sheet-foot">${footerHtml}</footer>
   </article>
 </body>
@@ -938,8 +966,9 @@ export function openReportPreview(html: string, autoPrint = false) {
 
 export async function downloadReportHtml(html: string, filename: string) {
   if (typeof window === "undefined") return;
-  // Arabic receipts/statements: keep native HTML so shaping stays intact (canvas PDF breaks joins).
-  if (/lang=["']ar["']/i.test(html) && (/\bis-receipt\b/.test(html) || /\bis-statement\b/.test(html))) {
+  const wantsPdf = /\.pdf$/i.test(filename) || !/\.html$/i.test(filename);
+  // Arabic receipts without explicit PDF request: HTML keeps shaping. Statements requested as PDF use canvas.
+  if (!wantsPdf && /lang=["']ar["']/i.test(html) && (/\bis-receipt\b/.test(html) || /\bis-statement\b/.test(html))) {
     openReportPreview(html, false);
     return;
   }
@@ -947,6 +976,10 @@ export async function downloadReportHtml(html: string, filename: string) {
     const blob = await htmlDocumentToPdfBlob(html);
     triggerBlobDownload(blob, pdfFilename(filename));
   } catch {
+    if (/lang=["']ar["']/i.test(html) && (/\bis-receipt\b/.test(html) || /\bis-statement\b/.test(html))) {
+      openReportPreview(html, false);
+      return;
+    }
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     triggerBlobDownload(blob, filename.endsWith(".html") ? filename : `${filename}.html`);
   }

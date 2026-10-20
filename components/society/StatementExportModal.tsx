@@ -5,6 +5,7 @@ import { Download, Printer, X } from "lucide-react";
 import {
   STATEMENT_COLUMNS,
   buildAccountStatementHtml,
+  buildAccountStatementModel,
   defaultStatementColumns,
   type StatementColumnId,
   type StatementHolding,
@@ -18,9 +19,18 @@ import {
   type RosterMemberRow,
   type RosterSort,
 } from "../../lib/member-roster-export";
-import { downloadReportHtml, printWazenHtml, resolvePrintLogoUrl } from "../../lib/print-document";
+import {
+  buildReceiptQrDataUrl,
+  downloadReportHtml,
+  printWazenHtml,
+  resolvePrintLogoUrl,
+  shareWazenPdfWithText,
+} from "../../lib/print-document";
 import { consumePlanQuota } from "../../lib/plan-quota-client";
 import { planHasFeature } from "../../lib/plan-features";
+import { apiFetch } from "../../lib/client-api";
+import { buildAssociationStatementWhatsAppMessage } from "../../lib/statement-share";
+import { formatDebitMoneyMinor, formatMoneyMinor } from "../../lib/money";
 
 type Locale = "ar" | "en";
 type ReportKind = "movements" | "dues";
@@ -89,6 +99,7 @@ export function StatementExportModal({
   const [busy, setBusy] = useState(false);
   const canDownload = planHasFeature(features ?? [], "downloads");
   const duesOnly = reportKind === "dues";
+  const currency = spaces.find((space) => space.id === spaceId)?.currency || "OMR";
 
   const summary = useMemo(() => {
     if (duesOnly) {
@@ -137,7 +148,7 @@ export function StatementExportModal({
     });
   };
 
-  const buildHtml = (logoUrl: string) => buildAccountStatementHtml({
+  const buildHtml = (logoUrl: string, extras?: { verifyUrl?: string; qrDataUrl?: string }) => buildAccountStatementHtml({
     locale,
     logoUrl,
     issuerName,
@@ -156,17 +167,73 @@ export function StatementExportModal({
     memberRows,
     memberColumns,
     memberSort,
+    verifyUrl: extras?.verifyUrl,
+    qrDataUrl: extras?.qrDataUrl,
     titleOverride: duesOnly
       ? (locale === "ar" ? "كشف المتأخرات حتى الشهر الحالي" : "Arrears statement to current month")
       : undefined,
     subtitleOverride: duesOnly
       ? (locale === "ar"
-        ? "أسماء الأعضاء مع المدفوع والمتأخر المستحق حتى نهاية الشهر الحالي. الهدف المالي لا يُعرض إلا إذا اخترته."
-        : "Member names with paid and arrears accrued through the current month. Goal appears only if selected.")
+        ? "أسماء الأعضاء مع المدفوع والمتأخر المستحق حتى نهاية الشهر الحالي. الهدف والتفاصيل اختياريان."
+        : "Member names with paid and arrears through the current month. Goal and details are optional.")
       : undefined,
   });
 
-  const run = async (mode: "print" | "download") => {
+  const ensureVerifyLink = async () => {
+    const response = await apiFetch("/api/dashboard", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "createAssociationStatementShare",
+        idempotencyKey: crypto.randomUUID(),
+        spaceId,
+        filter: duesOnly ? "full" : filter,
+        locale,
+      }),
+    });
+    const result = await response.json() as { error?: string; notification?: { receiptUrl?: string | null } };
+    if (!response.ok) throw new Error(result.error ?? "SHARE_FAILED");
+    return String(result.notification?.receiptUrl ?? "").trim();
+  };
+
+  const buildSummaryMessage = (statementUrl: string) => {
+    const model = buildAccountStatementModel({
+      locale,
+      issuerName,
+      spaces,
+      members,
+      accounts,
+      transactions,
+      occurrences,
+      spaceId,
+      txnFilter: filter,
+      holdings,
+    });
+    const paid = (memberRows ?? []).reduce((sum, row) => sum + row.paid_minor, 0);
+    const arrears = (memberRows ?? []).reduce((sum, row) => sum + Math.max(0, row.owes_minor), 0);
+    const late = (memberRows ?? []).filter((row) => row.owes_minor > 0).length;
+    const filterLabel = duesOnly
+      ? (locale === "ar" ? "متأخرات الأعضاء حتى الشهر الحالي" : "Member arrears to current month")
+      : (FILTERS.find((item) => item.id === filter)?.[locale] ?? filter);
+    return buildAssociationStatementWhatsAppMessage({
+      locale,
+      walletName: spaceName,
+      filterLabel,
+      balanceLabel: formatMoneyMinor(model.closingMinor, currency, locale),
+      movementsLabel: String(model.movementCount),
+      statementUrl,
+      kind: duesOnly ? "dues" : "movements",
+      availableLabel: formatMoneyMinor(model.availableMinor, currency, locale),
+      expensesLabel: formatMoneyMinor(model.expenseMinor, currency, locale),
+      paidLabel: formatMoneyMinor(paid, currency, locale),
+      arrearsLabel: arrears > 0
+        ? formatDebitMoneyMinor(arrears, currency, locale)
+        : formatMoneyMinor(0, currency, locale),
+      lateMembersLabel: String(late),
+    });
+  };
+
+  const run = async (mode: "print" | "download" | "whatsapp") => {
     if (busy) return;
     if (duesOnly && !societyMembers) {
       window.alert(locale === "ar" ? "لا يوجد أعضاء لهذا الكشف." : "No members available for this statement.");
@@ -180,18 +247,61 @@ export function StatementExportModal({
       window.alert(locale === "ar" ? "التحميل غير متاح في خطتك الحالية." : "Downloads are not available on your current plan.");
       return;
     }
+    if (mode === "whatsapp" && canShare === false) {
+      window.alert(locale === "ar" ? "المشاركة عبر واتساب غير متاحة في خطتك." : "WhatsApp sharing is not available on your plan.");
+      return;
+    }
     setBusy(true);
     try {
-      const quota = await consumePlanQuota(mode === "download" ? "download" : "print", locale, spaceId);
+      const quota = await consumePlanQuota(
+        mode === "download" ? "download" : "print",
+        locale,
+        spaceId,
+      );
       if (!quota.ok) return;
+
+      let verifyUrl = "";
+      let qrDataUrl = "";
+      if (mode === "whatsapp" || canShare !== false) {
+        try {
+          verifyUrl = await ensureVerifyLink();
+          if (verifyUrl) qrDataUrl = await buildReceiptQrDataUrl(verifyUrl);
+        } catch {
+          if (mode === "whatsapp") throw new Error(locale === "ar" ? "تعذر تجهيز رابط الكشف." : "Could not prepare statement link.");
+        }
+      }
+
+      if (mode === "whatsapp") {
+        const text = buildSummaryMessage(verifyUrl);
+        const stamp = new Date().toISOString().slice(0, 10);
+        const result = await shareWazenPdfWithText({
+          buildHtml: (logoUrl) => buildHtml(logoUrl, { verifyUrl, qrDataUrl }),
+          text,
+          filename: duesOnly ? `wazen-dues-${stamp}.pdf` : `wazen-statement-${stamp}.pdf`,
+          title: spaceName,
+        });
+        if (result === "failed" && onShare && !duesOnly) {
+          onShare(filter);
+        } else if (result === "downloaded") {
+          window.alert(locale === "ar"
+            ? "تم تنزيل ملف PDF. أكمل الإرسال من واتساب مع الملخص الظاهر."
+            : "PDF downloaded. Finish sending from WhatsApp with the summary text.");
+        }
+        onClose();
+        return;
+      }
+
       if (mode === "print") {
-        const opened = await printWazenHtml((logoUrl) => buildHtml(logoUrl), true);
+        const opened = await printWazenHtml((logoUrl) => buildHtml(logoUrl, { verifyUrl, qrDataUrl }), true);
         if (!opened) window.alert(locale === "ar" ? "اسمح بالنوافذ المنبثقة أو استخدم زر الطباعة داخل المعاينة." : "Allow pop-ups or use Print inside the preview.");
         return;
       }
       const logoUrl = await resolvePrintLogoUrl();
       const stamp = new Date().toISOString().slice(0, 10);
-      await downloadReportHtml(buildHtml(logoUrl), duesOnly ? `wazen-dues-${stamp}.html` : `wazen-statement-${stamp}.html`);
+      await downloadReportHtml(
+        buildHtml(logoUrl, { verifyUrl, qrDataUrl }),
+        duesOnly ? `wazen-dues-${stamp}.pdf` : `wazen-statement-${stamp}.pdf`,
+      );
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "FAILED");
     } finally {
@@ -264,7 +374,7 @@ export function StatementExportModal({
                 </select>
               </label>
               <fieldset className="roster-column-picker">
-                <legend>{locale === "ar" ? "أعمدة الأعضاء (الهدف المالي اختياري)" : "Member columns (goal optional)"}</legend>
+                <legend>{locale === "ar" ? "أعمدة الأعضاء (الهدف والتفاصيل اختياريان)" : "Member columns (goal & details optional)"}</legend>
                 {ROSTER_COLUMNS.map((column) => (
                   <label key={column.id} className="check-row">
                     <input
@@ -283,29 +393,23 @@ export function StatementExportModal({
           <p className="modal-note">
             {duesOnly
               ? (locale === "ar"
-                ? "المتأخر = المستحق حتى الشهر الحالي − المدفوع. أضف «الهدف المالي» فقط إن أردت ظهوره."
-                : "Arrears = accrued through current month − paid. Add “Goal” only if you want it shown.")
+                ? "المتأخر بالأحمر. المتوفر = نقد + ودائع. فعّل «التفاصيل / ملاحظات الدفع» لطباعة آخر دفعة والملاحظات."
+                : "Arrears print in red. Available = cash + holdings. Enable “Details / payment notes” to print last payment notes.")
               : (locale === "ar"
-                ? "يمكنك إلغاء أي عمود بما فيه البيان. الهدف المالي لا يُطبع إلا إذا فعّلته في أعمدة الأعضاء."
-                : "You can uncheck any column including description. Goal prints only if you enable it.")}
+                ? "واتساب يرسل ملخصاً + ملف PDF فيه رمز للتحقق. المتأخرات تظهر بالأحمر."
+                : "WhatsApp sends a summary + PDF with a verification QR. Arrears appear in red.")}
           </p>
 
           <div className="modal-actions">
             <button type="button" className="secondary-button" onClick={onClose}>{locale === "ar" ? "إلغاء" : "Cancel"}</button>
-            {onShare && !duesOnly ? (
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={busy || canShare === false}
-                onClick={() => {
-                  if (canShare === false) return;
-                  onShare(filter);
-                  onClose();
-                }}
-              >
-                {locale === "ar" ? "واتساب" : "WhatsApp"}
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={busy || canShare === false}
+              onClick={() => void run("whatsapp")}
+            >
+              {locale === "ar" ? "واتساب (PDF)" : "WhatsApp (PDF)"}
+            </button>
             <button type="button" className="secondary-button" disabled={busy} onClick={() => void run("download")}>
               <Download size={15} />{locale === "ar" ? "تحميل" : "Download"}
             </button>

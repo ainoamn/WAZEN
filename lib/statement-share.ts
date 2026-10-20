@@ -230,31 +230,48 @@ export function buildAssociationStatementWhatsAppMessage(input: {
   balanceLabel: string;
   movementsLabel: string;
   statementUrl: string;
+  availableLabel?: string;
+  expensesLabel?: string;
+  paidLabel?: string;
+  arrearsLabel?: string;
+  lateMembersLabel?: string;
+  kind?: "movements" | "dues";
 }) {
+  const kindLabel = input.kind === "dues"
+    ? (input.locale === "ar" ? "كشف المتأخرات" : "Arrears statement")
+    : (input.locale === "ar" ? "كشف حساب الجمعية" : "Association statement");
   const body = input.locale === "ar"
     ? [
         "السلام عليكم",
         "",
-        "كشف حساب الجمعية — وازن",
+        `${kindLabel} — وازن (بإدارة بن حمود للتطوير)`,
         `المحفظة: ${input.walletName}`,
         `النوع: ${input.filterLabel}`,
-        `الرصيد: ${input.balanceLabel}`,
-        `الحركات: ${input.movementsLabel}`,
+        input.availableLabel ? `المتوفر (نقد + ودائع): ${input.availableLabel}` : `الرصيد: ${input.balanceLabel}`,
+        input.expensesLabel ? `المصروفات: ${input.expensesLabel}` : null,
+        input.paidLabel ? `المدفوع: ${input.paidLabel}` : null,
+        input.arrearsLabel ? `المتأخرات: ${input.arrearsLabel}` : null,
+        input.lateMembersLabel ? `عدد المتأخرين: ${input.lateMembersLabel}` : null,
+        input.kind === "dues" ? null : `الحركات: ${input.movementsLabel}`,
         "",
-        "افتح الكشف الواضح على الجوال:",
+        "مرفق ملف PDF للكشف. امسح رمز الاستجابة السريعة داخل الملف أو افتح الرابط:",
         input.statementUrl,
       ]
     : [
         "Hello",
         "",
-        "Association statement — WAZEN",
+        `${kindLabel} — WAZEN (managed by Bin Hamoud for Development)`,
         `Wallet: ${input.walletName}`,
         `Type: ${input.filterLabel}`,
-        `Balance: ${input.balanceLabel}`,
-        `Movements: ${input.movementsLabel}`,
+        input.availableLabel ? `Available (cash + holdings): ${input.availableLabel}` : `Balance: ${input.balanceLabel}`,
+        input.expensesLabel ? `Expenses: ${input.expensesLabel}` : null,
+        input.paidLabel ? `Paid: ${input.paidLabel}` : null,
+        input.arrearsLabel ? `Arrears: ${input.arrearsLabel}` : null,
+        input.lateMembersLabel ? `Members in arrears: ${input.lateMembersLabel}` : null,
+        input.kind === "dues" ? null : `Movements: ${input.movementsLabel}`,
         "",
-        "Open the clear statement on your phone:",
+        "PDF attached. Scan the QR inside the file or open:",
         input.statementUrl,
       ];
-  return body.join("\n");
+  return body.filter((line): line is string => line != null).join("\n");
 }

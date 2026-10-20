@@ -736,6 +736,7 @@ function buildSpaceRosterRows(
   space: Space,
   data: DashboardData,
   tripUsesFundCash?: boolean,
+  locale: Locale = "ar",
 ): RosterMemberRow[] {
   const members = data.members.filter((member) => member.space_id === space.id);
   return members.map((member) => {
@@ -757,6 +758,21 @@ function buildSpaceRosterRows(
           membersPaidMinor: members.map((item) => item.paid_minor),
         }))
       : Number(member.paid_minor) || 0;
+    const payments = data.transactions
+      .filter((txn) => txn.space_id === space.id
+        && txn.member_id === member.id
+        && txn.kind === "contribution"
+        && (txn.status ?? "approved") === "approved")
+      .slice()
+      .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
+    const last = payments[0];
+    const lastNote = last
+      ? `${new Date(last.occurred_at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB")} · ${locale === "ar" ? last.description_ar : last.description_en}`
+      : "";
+    const arrearsNote = pos.debit > 0
+      ? (locale === "ar" ? `متأخر ${formatMoney(pos.debit, space.currency, locale)}` : `Arrears ${formatMoney(pos.debit, space.currency, locale)}`)
+      : "";
+    const details = [lastNote, arrearsNote].filter(Boolean).join(" · ");
     return {
       id: member.id,
       display_name: member.display_name,
@@ -766,6 +782,7 @@ function buildSpaceRosterRows(
       owes_minor: pos.debit,
       credit_minor: pos.credit,
       status: member.status ?? "active",
+      details,
     };
   });
 }
@@ -785,8 +802,8 @@ function StatementPrintMenu({
 }) {
   const [open, setOpen] = useState(false);
   const memberRows = useMemo(
-    () => (["society", "group", "household", "trip"].includes(space.type) ? buildSpaceRosterRows(space, data) : []),
-    [space, data],
+    () => (["society", "group", "household", "trip"].includes(space.type) ? buildSpaceRosterRows(space, data, undefined, locale) : []),
+    [space, data, locale],
   );
   return (
     <>
@@ -3297,6 +3314,20 @@ function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCa
           membersPaidMinor: members.map((item) => item.paid_minor),
         }))
       : Number(member.paid_minor) || 0;
+    const payments = (data?.transactions ?? [])
+      .filter((txn) => txn.space_id === spaceId
+        && txn.member_id === member.id
+        && txn.kind === "contribution"
+        && (txn.status ?? "approved") === "approved")
+      .slice()
+      .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
+    const last = payments[0];
+    const lastNote = last
+      ? `${new Date(last.occurred_at).toLocaleDateString(locale === "ar" ? "ar-OM" : "en-GB")} · ${locale === "ar" ? last.description_ar : last.description_en}`
+      : "";
+    const arrearsNote = pos.debit > 0
+      ? (locale === "ar" ? `متأخر ${formatMoney(pos.debit, currency, locale)}` : `Arrears ${formatMoney(pos.debit, currency, locale)}`)
+      : "";
     return {
       id: member.id,
       display_name: member.display_name,
@@ -3306,8 +3337,9 @@ function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCa
       owes_minor: pos.debit,
       credit_minor: pos.credit,
       status: member.status ?? "active",
+      details: [lastNote, arrearsNote].filter(Boolean).join(" · "),
     };
-  }), [visible, data, spaceId, tripUsesFundCash, members]);
+  }), [visible, data, spaceId, tripUsesFundCash, members, locale, currency]);
 
   useEffect(() => {
     if (!menuOpenId) return;

@@ -13,7 +13,8 @@ export type RosterColumnId =
   | "extra"
   | "owes"
   | "credit"
-  | "status";
+  | "status"
+  | "details";
 
 export type RosterSort = "alphaAsc" | "alphaDesc" | "asIs";
 
@@ -26,6 +27,8 @@ export type RosterMemberRow = {
   owes_minor: number;
   credit_minor: number;
   status: string;
+  /** Payment notes / last contribution detail line (optional print column). */
+  details?: string;
 };
 
 export const ROSTER_COLUMNS: Array<{
@@ -41,6 +44,7 @@ export const ROSTER_COLUMNS: Array<{
   { id: "owes", ar: "متأخر حتى الشهر الحالي", en: "Arrears to current month", defaultOn: true },
   { id: "credit", ar: "له", en: "Credit", defaultOn: false },
   { id: "status", ar: "الحالة", en: "Status", defaultOn: false },
+  { id: "details", ar: "التفاصيل / ملاحظات الدفع", en: "Details / payment notes", defaultOn: false },
 ];
 
 export function defaultRosterColumns(): RosterColumnId[] {
@@ -80,6 +84,8 @@ function cellValue(
         : formatMoneyMinor(0, currency, locale);
     case "credit":
       return formatMoneyMinor(row.credit_minor, currency, locale);
+    case "details":
+      return String(row.details ?? "").trim() || "—";
     case "status": {
       const active = (row.status ?? "active") === "active";
       if (locale === "ar") return active ? "نشط" : "مؤرشف";
@@ -88,6 +94,14 @@ function cellValue(
     default:
       return "";
   }
+}
+
+function cellClass(column: RosterColumnId, row: RosterMemberRow) {
+  if (column === "owes" && row.owes_minor > 0) return "num neg";
+  if (column === "credit" && row.credit_minor < 0) return "num neg";
+  if (column === "details") return "col-desc";
+  if (["goal", "paid", "extra", "owes", "credit"].includes(column)) return "num";
+  return "";
 }
 
 export function buildMemberRosterHtml(input: {
@@ -100,6 +114,8 @@ export function buildMemberRosterHtml(input: {
   sort: RosterSort;
   rows: RosterMemberRow[];
   titleOverride?: string;
+  verifyUrl?: string;
+  qrDataUrl?: string;
 }) {
   const locale = input.locale;
   const columns = (input.columns.length ? input.columns : defaultRosterColumns())
@@ -119,7 +135,10 @@ export function buildMemberRosterHtml(input: {
 
   const head = labels.map((label) => `<th>${escapeHtml(label)}</th>`).join("");
   const body = ordered.map((row) => {
-    const cells = columns.map((column) => `<td>${escapeHtml(cellValue(row, column, input.currency, locale))}</td>`).join("");
+    const cells = columns.map((column) => {
+      const cls = cellClass(column, row);
+      return `<td${cls ? ` class="${cls}"` : ""}>${escapeHtml(cellValue(row, column, input.currency, locale))}</td>`;
+    }).join("");
     return `<tr>${cells}</tr>`;
   }).join("");
 
@@ -132,11 +151,13 @@ export function buildMemberRosterHtml(input: {
   };
   const footCells = columns.map((column) => {
     if (column === "member") return `<td><strong>${locale === "ar" ? "المجموع" : "Total"}</strong></td>`;
-    if (column === "goal") return `<td><strong>${escapeHtml(formatMoneyMinor(totals.goal, input.currency, locale))}</strong></td>`;
-    if (column === "paid") return `<td><strong>${escapeHtml(formatMoneyMinor(totals.paid, input.currency, locale))}</strong></td>`;
-    if (column === "extra") return `<td><strong>${escapeHtml(formatMoneyMinor(totals.extra, input.currency, locale))}</strong></td>`;
-    if (column === "owes") return `<td><strong>${escapeHtml(formatDebitMoneyMinor(totals.owes, input.currency, locale))}</strong></td>`;
-    if (column === "credit") return `<td><strong>${escapeHtml(formatMoneyMinor(totals.credit, input.currency, locale))}</strong></td>`;
+    if (column === "goal") return `<td class="num"><strong>${escapeHtml(formatMoneyMinor(totals.goal, input.currency, locale))}</strong></td>`;
+    if (column === "paid") return `<td class="num"><strong>${escapeHtml(formatMoneyMinor(totals.paid, input.currency, locale))}</strong></td>`;
+    if (column === "extra") return `<td class="num"><strong>${escapeHtml(formatMoneyMinor(totals.extra, input.currency, locale))}</strong></td>`;
+    if (column === "owes") {
+      return `<td class="num${totals.owes > 0 ? " neg" : ""}"><strong>${escapeHtml(formatDebitMoneyMinor(totals.owes, input.currency, locale))}</strong></td>`;
+    }
+    if (column === "credit") return `<td class="num"><strong>${escapeHtml(formatMoneyMinor(totals.credit, input.currency, locale))}</strong></td>`;
     return "<td></td>";
   }).join("");
 
@@ -159,7 +180,10 @@ export function buildMemberRosterHtml(input: {
     subtitle: input.issuerName
       ? (locale === "ar" ? `أعدّه ${input.issuerName}` : `Prepared by ${input.issuerName}`)
       : undefined,
-    orientation: columns.length > 5 ? "landscape" : "portrait",
+    orientation: columns.length > 5 || columns.includes("details") ? "landscape" : "portrait",
+    variant: "statement",
+    verifyUrl: input.verifyUrl,
+    qrDataUrl: input.qrDataUrl,
     bodyHtml,
   });
 }

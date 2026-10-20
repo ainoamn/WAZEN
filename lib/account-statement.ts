@@ -292,6 +292,9 @@ export function buildAccountStatementModel(input: {
 
   const totalIn = lines.reduce((sum, line) => sum + line.depositMinor, 0);
   const totalOut = lines.reduce((sum, line) => sum + line.withdrawMinor, 0);
+  const expenseMinor = rows
+    .filter((txn) => isLive(txn) && txn.kind === "expense")
+    .reduce((sum, txn) => sum + (Number(txn.amount_minor) || 0), 0);
   const holdings = (input.holdings ?? []).filter((row) => spaceIds.has(row.space_id) && (row.status ?? "active") === "active");
   const holdingsMinor = holdings.reduce((sum, row) => sum + Number(row.amount_minor || 0), 0);
 
@@ -306,6 +309,8 @@ export function buildAccountStatementModel(input: {
     closingMinor: closing,
     totalInMinor: totalIn,
     totalOutMinor: totalOut,
+    expenseMinor,
+    availableMinor: closing + holdingsMinor,
     holdingsMinor,
     holdings,
     movementCount: lines.length,
@@ -373,6 +378,8 @@ export function buildAccountStatementHtml(input: {
   memberRows?: RosterMemberRow[];
   memberColumns?: RosterColumnId[];
   memberSort?: RosterSort;
+  verifyUrl?: string;
+  qrDataUrl?: string;
 }) {
   const locale = input.locale;
   const model = buildAccountStatementModel(input);
@@ -468,25 +475,37 @@ export function buildAccountStatementHtml(input: {
     });
     const memberBody = ordered.map((row) => {
       const cells = memberColumns.map((column) => {
-        if (column === "member") return escapeHtml(row.display_name);
-        if (column === "goal") return escapeHtml(money(row.goal_minor));
-        if (column === "paid") return escapeHtml(money(row.paid_minor));
-        if (column === "extra") return escapeHtml(money(row.extra_minor));
+        if (column === "member") return { text: row.display_name, cls: "" };
+        if (column === "goal") return { text: money(row.goal_minor), cls: "num" };
+        if (column === "paid") return { text: money(row.paid_minor), cls: "num" };
+        if (column === "extra") return { text: money(row.extra_minor), cls: "num" };
         if (column === "owes") {
-          return escapeHtml(row.owes_minor > 0
-            ? formatDebitMoneyMinor(row.owes_minor, currency, locale)
-            : money(0));
+          return {
+            text: row.owes_minor > 0
+              ? formatDebitMoneyMinor(row.owes_minor, currency, locale)
+              : money(0),
+            cls: row.owes_minor > 0 ? "num neg" : "num",
+          };
         }
-        if (column === "credit") return escapeHtml(money(row.credit_minor));
+        if (column === "credit") {
+          return {
+            text: money(row.credit_minor),
+            cls: row.credit_minor < 0 ? "num neg" : "num",
+          };
+        }
+        if (column === "details") {
+          return { text: String(row.details ?? "").trim() || "—", cls: "col-desc" };
+        }
         if (column === "status") {
           const active = (row.status ?? "active") === "active";
-          return escapeHtml(active
-            ? t(locale, "نشط", "Active")
-            : t(locale, "مؤرشف", "Archived"));
+          return {
+            text: active ? t(locale, "نشط", "Active") : t(locale, "مؤرشف", "Archived"),
+            cls: "",
+          };
         }
-        return "";
+        return { text: "", cls: "" };
       });
-      return `<tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`;
+      return `<tr>${cells.map((cell) => `<td class="${cell.cls}">${escapeHtml(cell.text)}</td>`).join("")}</tr>`;
     }).join("");
     const sortNote = memberSort === "alphaAsc"
       ? t(locale, "مرتّب أبجدياً أ → ي", "Sorted A → Z")
@@ -506,16 +525,30 @@ export function buildAccountStatementHtml(input: {
   const memberCount = input.includeMembers && input.memberRows?.length ? input.memberRows.length : 0;
   const duesPaid = input.memberRows?.reduce((sum, row) => sum + row.paid_minor, 0) ?? 0;
   const duesOwes = input.memberRows?.reduce((sum, row) => sum + Math.max(0, row.owes_minor), 0) ?? 0;
+  const lateMembers = input.memberRows?.filter((row) => row.owes_minor > 0).length ?? 0;
+  const available = model.availableMinor;
+  const expenses = model.expenseMinor;
 
   const kpis = !includeMovements
     ? [
-        { label: t(locale, "عدد الأعضاء", "Members"), value: String(memberCount) },
+        {
+          label: t(locale, "المتوفر (نقد + ودائع)", "Available (cash + holdings)"),
+          value: money(available),
+          tone: available < 0 ? "neg" as const : undefined,
+        },
+        { label: t(locale, "المصروفات", "Expenses"), value: money(expenses) },
         { label: t(locale, "إجمالي المدفوع", "Total paid"), value: money(duesPaid) },
         {
-          label: t(locale, "إجمالي المتأخر حتى الشهر الحالي", "Total arrears to current month"),
+          label: t(locale, "المتأخرات حتى الشهر الحالي", "Arrears to current month"),
           value: duesOwes > 0 ? formatDebitMoneyMinor(duesOwes, currency, locale) : money(0),
+          tone: duesOwes > 0 ? "neg" as const : undefined,
         },
-        { label: t(locale, "المحفظة", "Wallet"), value: entityName },
+        {
+          label: t(locale, "أعضاء متأخرون", "Members in arrears"),
+          value: String(lateMembers),
+          tone: lateMembers > 0 ? "neg" as const : undefined,
+        },
+        { label: t(locale, "عدد الأعضاء", "Members"), value: String(memberCount) },
       ]
     : txnFilter === "voided"
       ? [
@@ -527,12 +560,19 @@ export function buildAccountStatementHtml(input: {
       : [
           { label: t(locale, "رصيد أول المدة (نقد)", "Opening cash"), value: signedMoney(opening), tone: signedTone(opening) },
           { label: t(locale, "إجمالي الإيداع", "Total in"), value: money(model.totalInMinor) },
-          { label: t(locale, "إجمالي السحب / التحويل", "Total out / transfers"), value: money(model.totalOutMinor) },
-          { label: t(locale, "نقد آخر المدة", "Closing cash"), value: signedMoney(closing), tone: signedTone(closing) },
+          { label: t(locale, "المصروفات", "Expenses"), value: money(expenses) },
+          {
+            label: t(locale, "المتوفر (نقد + ودائع)", "Available (cash + holdings)"),
+            value: money(available),
+            tone: available < 0 ? "neg" as const : undefined,
+          },
         ];
 
   if (includeMovements && model.holdingsMinor > 0 && txnFilter !== "voided") {
     kpis.push({ label: t(locale, "ودائع واستثمارات", "Holdings"), value: money(model.holdingsMinor) });
+  }
+  if (includeMovements && txnFilter !== "voided") {
+    kpis.push({ label: t(locale, "نقد آخر المدة", "Closing cash"), value: signedMoney(closing), tone: signedTone(closing) });
   }
 
   return wrapPrintDocument({
@@ -541,7 +581,10 @@ export function buildAccountStatementHtml(input: {
     entityName,
     logoUrl: input.logoUrl,
     subtitle,
-    orientation: includeMovements ? "landscape" : "portrait",
+    orientation: includeMovements || (input.memberColumns ?? []).includes("details") ? "landscape" : "portrait",
+    variant: "statement",
+    verifyUrl: input.verifyUrl,
+    qrDataUrl: input.qrDataUrl,
     meta: [
       { label: t(locale, "النطاق", "Scope"), value: entityName },
       {
