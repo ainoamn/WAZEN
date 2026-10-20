@@ -6,6 +6,7 @@ import { apiFetch } from "../../lib/client-api";
 import {
   contactsToCsv,
   contactsToVcard,
+  decodeContactFileBytes,
   isContactPickerSupported,
   parseContactFile,
   type ImportedContact,
@@ -128,25 +129,36 @@ export function ContactSourceBar({
   const pickerOk = isContactPickerSupported();
 
   const persist = async (contacts: ImportedContact[]) => {
-    const usable = contacts.filter((item) => item.displayName.trim().length >= 1 && (item.email || item.phone));
-    if (!usable.length) return contacts;
+    const usable = contacts
+      .map((item) => {
+        let email = item.email.trim();
+        let phone = item.phone.trim();
+        // Phone numbers often land in the email column from Excel exports.
+        if (!phone && email && !email.includes("@") && email.replace(/\D/g, "").length >= 7) {
+          phone = email;
+          email = "";
+        }
+        return {
+          displayName: item.displayName.trim().slice(0, 80),
+          email,
+          phone,
+        };
+      })
+      .filter((item) => item.displayName.length >= 1 && (item.email || item.phone));
+    if (!usable.length) return { contacts, imported: 0 };
     const response = await apiFetch("/api/dashboard", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         action: "importSavedContacts",
         idempotencyKey: crypto.randomUUID(),
-        contacts: usable.map((item) => ({
-          displayName: item.displayName.slice(0, 80),
-          email: item.email,
-          phone: item.phone,
-        })),
+        contacts: usable,
       }),
     });
     const result = await response.json() as { error?: string; contacts?: SavedContact[]; imported?: number };
     if (!response.ok) throw new Error(result.error ?? "IMPORT_FAILED");
     onContactsSaved?.(result.contacts ?? []);
-    return contacts;
+    return { contacts, imported: result.imported ?? usable.length };
   };
 
   const fromPhone = async () => {
@@ -155,11 +167,11 @@ export function ContactSourceBar({
     try {
       const picked = await pickFromDevice();
       if (!picked.length) return;
-      await persist(picked);
+      const saved = await persist(picked);
       onApply(picked[0]);
       setNote(locale === "ar"
-        ? `تم جلب ${picked.length} جهة من الهاتف. اختر واحدة من القائمة بالأسفل.`
-        : `Imported ${picked.length} contact(s) from the phone. Pick one from the list below.`);
+        ? `تم حفظ ${saved.imported} جهة من الهاتف في سجل العناوين. اختر عضواً من القائمة بالأسفل لإضافته للجمعية.`
+        : `Saved ${saved.imported} phone contact(s) to the address book. Pick one below to add to the society.`);
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : "";
       setNote(code === "CONTACTS_UNSUPPORTED" || /NotSupported|undefined/i.test(code)
@@ -224,16 +236,37 @@ export function ContactSourceBar({
     setBusy(true);
     setNote("");
     try {
-      const text = await file.text();
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+        throw new Error("XLSX_NOT_SUPPORTED");
+      }
+      const buffer = await file.arrayBuffer();
+      const text = decodeContactFileBytes(buffer);
       const parsed = parseContactFile(file.name, text);
       if (!parsed.length) throw new Error("EMPTY_FILE");
-      await persist(parsed);
-      onApply(parsed[0]);
+      const saved = await persist(parsed);
+      const firstWithPhone = parsed.find((item) => item.phone || item.email) ?? parsed[0];
+      onApply(firstWithPhone);
+      if (!saved.imported) {
+        setNote(locale === "ar"
+          ? "قُرئ الملف لكن لم يُحفظ أي سجل: كل صف يحتاج اسماً مع هاتف أو بريد. تحقق من الأعمدة: الاسم، الهاتف، البريد."
+          : "File was read but nothing was saved: each row needs a name plus a phone or email. Use columns: name, phone, email.");
+        return;
+      }
       setNote(locale === "ar"
-        ? `تم رفع ${parsed.length} جهة اتصال من الملف.`
-        : `Imported ${parsed.length} contact(s) from the file.`);
-    } catch {
-      setNote(locale === "ar" ? "تعذر قراءة الملف. استخدم vCard (.vcf) أو CSV بالأعمدة: الاسم، البريد، الهاتف." : "Could not read the file. Use vCard (.vcf) or CSV with name, email, phone columns.");
+        ? `تم حفظ ${saved.imported} جهة في سجل العناوين (من ${parsed.length} صفاً). اختر العضو من «سجل العناوين» بالأسفل ثم اضغط «إضافة المساهم». الرفع لا يضيف كل الأعضاء دفعة واحدة إلى الجمعية.`
+        : `Saved ${saved.imported} contact(s) to the address book (from ${parsed.length} rows). Pick a member from the address book below, then Add member. Upload does not add everyone to the society at once.`);
+    } catch (caught) {
+      const code = caught instanceof Error ? caught.message : "";
+      if (code === "XLSX_NOT_SUPPORTED") {
+        setNote(locale === "ar"
+          ? "ملف Excel (.xlsx) غير مدعوم هنا. من إكسل: ملف → حفظ باسم → CSV UTF-8 (أو CSV) بالأعمدة: الاسم، رقم الهاتف، البريد — ثم ارفع ملف CSV."
+          : "Excel (.xlsx) is not supported here. In Excel: File → Save As → CSV UTF-8 with columns name, phone, email — then upload the CSV.");
+        return;
+      }
+      setNote(locale === "ar"
+        ? "تعذر قراءة الملف. استخدم vCard (.vcf) أو CSV بترميز UTF-8 والأعمدة: الاسم، رقم الهاتف، البريد."
+        : "Could not read the file. Use vCard (.vcf) or UTF-8 CSV with columns: name, phone, email.");
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -277,7 +310,7 @@ export function ContactSourceBar({
       <input
         ref={fileRef}
         type="file"
-        accept=".vcf,.vcard,.csv,text/vcard,text/csv"
+        accept=".vcf,.vcard,.csv,text/vcard,text/csv,text/plain"
         hidden
         onChange={(event) => {
           const file = event.target.files?.[0];
@@ -287,11 +320,11 @@ export function ContactSourceBar({
       <small className="field-hint">
         {locale === "ar"
           ? (pickerOk
-            ? "من الهاتف يفتح دفتر الجهاز. من Gmail يجلب جهات بريدك بعد منح الصلاحية، دون تنزيل ملف."
-            : "على هذا المتصفح استخدم «من Gmail» لربط جهات البريد مباشرة، أو ارفع ملف vCard/CSV.")
+            ? "من الهاتف يفتح دفتر الجهاز. من Gmail يجلب جهات بريدك. لرفع أسماء الجمعية: احفظ ورقة «المساهمون» كـ CSV UTF-8 (ليس xlsx)."
+            : "ارفع CSV بترميز UTF-8 (الاسم، رقم الهاتف، البريد). ملف Excel .xlsx لا يُقبل — احفظه CSV من إكسل أولاً.")
           : (pickerOk
-            ? "From phone opens the device book. From Gmail links your mailbox contacts after permission, with no file download."
-            : "On this browser use From Gmail to link mailbox contacts directly, or upload a vCard/CSV file.")}
+            ? "From phone opens the device book. From Gmail links mailbox contacts. For a society roster: save the members sheet as CSV UTF-8 (not xlsx)."
+            : "Upload a UTF-8 CSV (name, phone, email). Excel .xlsx is not accepted — save as CSV from Excel first.")}
       </small>
       {note ? <p className="modal-note">{note}</p> : null}
     </div>

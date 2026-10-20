@@ -33,8 +33,18 @@ export function splitPhoneParts(phone: string, fallbackDial = DEFAULT_DIAL_CODE)
   if (!digits) {
     return { dial: fallbackDial, iso2: DEFAULT_DIAL_ISO2, national: "" };
   }
-  const dial = matchDialPrefix(digits.startsWith("00") ? digits.slice(2) : digits);
-  const body = (digits.startsWith("00") ? digits.slice(2) : digits);
+  let body = digits.startsWith("00") ? digits.slice(2) : digits;
+  // Local Oman mobiles are 8 digits starting with 9 (e.g. 91100096).
+  // Do not treat the leading "91" as India (+91).
+  if (
+    fallbackDial === DEFAULT_DIAL_CODE
+    && body.length === 8
+    && body.startsWith("9")
+    && !body.startsWith(DEFAULT_DIAL_CODE)
+  ) {
+    return { dial: DEFAULT_DIAL_CODE, iso2: DEFAULT_DIAL_ISO2, national: body };
+  }
+  const dial = matchDialPrefix(body);
   const national = body.startsWith(dial) ? body.slice(dial.length) : body;
   const country = findCountryByDial(dial);
   return { dial: country.dial, iso2: country.iso2, national };
