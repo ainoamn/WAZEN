@@ -1,6 +1,7 @@
 /** Soft-archive or hard-remove a space member from the dashboard. */
 
 import { prepareAudit } from "./audit";
+import { resolveMemberRemovalDecision } from "./member-lifecycle-policy";
 import { ApiError } from "./security";
 
 export type MemberRemovalResult = {
@@ -9,27 +10,7 @@ export type MemberRemovalResult = {
   mode: "archived" | "removed";
 };
 
-/** Pure policy helper — hard delete only for unlinked ledger rows with no history. */
-export function resolveMemberRemovalDecision(input: {
-  prefer: "archive" | "remove" | "auto";
-  linkedToAccount: boolean;
-  hasHistory: boolean;
-}): { mode: "archive" | "remove" } | { error: "MEMBER_LINKED_ACCOUNT" | "MEMBER_HAS_HISTORY" } {
-  if (input.prefer === "remove" && input.linkedToAccount) {
-    return { error: "MEMBER_LINKED_ACCOUNT" };
-  }
-  if (input.prefer === "remove" && input.hasHistory) {
-    return { error: "MEMBER_HAS_HISTORY" };
-  }
-  if (
-    input.prefer === "archive"
-    || input.linkedToAccount
-    || (input.prefer === "auto" && input.hasHistory)
-  ) {
-    return { mode: "archive" };
-  }
-  return { mode: "remove" };
-}
+export { resolveMemberRemovalDecision } from "./member-lifecycle-policy";
 
 async function memberHasContributionHistory(db: D1Database, memberId: string, spaceId: string) {
   const member = await db.prepare(

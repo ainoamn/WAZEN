@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveMemberRemovalDecision } from "../lib/member-lifecycle.ts";
+import { resolveMemberRemovalDecision } from "../lib/member-lifecycle-policy.ts";
 
 test("hard delete only for unlinked members without history", () => {
   assert.deepEqual(
