@@ -224,7 +224,7 @@ export function parseSocietyImportPack(raw: unknown): SocietyImportPack {
       description: cleanCell(expense.description),
       beneficiary: expense.beneficiary ? cleanCell(expense.beneficiary) : undefined,
     })),
-    holdings: (data.holdings ?? []).map((holding) => ({
+    holdings: (data.holdings ?? []).map((holding): SocietyImportHolding => ({
       date: cleanCell(holding.date),
       amount: holding.amount,
       name: cleanCell(holding.name),
