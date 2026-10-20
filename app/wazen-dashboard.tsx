@@ -30,7 +30,9 @@ import {
 } from "../lib/member-contact-unique";
 import { openWhatsAppUrl } from "../lib/receipt-share";
 import { apiFetch } from "../lib/client-api";
-import { buildAccountStatementHtml, type StatementTxnFilter } from "../lib/account-statement";
+import { type StatementTxnFilter } from "../lib/account-statement";
+import { StatementExportModal } from "../components/society/StatementExportModal";
+import type { RosterMemberRow } from "../lib/member-roster-export";
 import { mapBankCsvRow, parseBankCsv } from "../lib/ledger-csv";
 import { PwaInstallCard } from "../components/pwa/PwaInstallCard";
 import { PushNotifyCard } from "../components/pwa/PushNotifyCard";
@@ -729,119 +731,100 @@ function memberPosition(member: Member, data?: DashboardData, spaceId?: string) 
   };
 }
 
-function printSpaceStatement(
-  space: Space | null,
+function buildSpaceRosterRows(
+  space: Space,
   data: DashboardData,
-  locale: Locale,
-  accountId?: string | null,
-  txnFilter: StatementTxnFilter = "full",
-) {
-  void consumePlanQuota("print", locale, space?.id);
-  void printWazenHtml((logoUrl) => buildAccountStatementHtml({
-    locale,
-    logoUrl,
-    issuerName: data.user.displayName,
-    spaces: data.spaces,
-    members: data.members,
-    accounts: data.personalAccounts ?? [],
-    transactions: data.transactions,
-    occurrences: data.personalOccurrences ?? [],
-    spaceId: space?.id ?? null,
-    accountId: accountId ?? null,
-    txnFilter,
-  }), true).then((opened) => {
-    if (!opened) window.alert(locale === "ar" ? "اسمح بالنوافذ المنبثقة أو استخدم زر الطباعة داخل المعاينة." : "Allow pop-ups or use Print inside the preview.");
+  tripUsesFundCash?: boolean,
+): RosterMemberRow[] {
+  const members = data.members.filter((member) => member.space_id === space.id);
+  return members.map((member) => {
+    const pos = memberPosition(member, data, space.id);
+    const extraMinor = space.type === "trip"
+      ? memberTripPocketMinor(member.id, space.id, data.tripExpenses)
+      : Number(member.addon_minor ?? 0);
+    const usesFundCash = Boolean(tripUsesFundCash || tripWalletUsesFundCash({
+      spaceId: space.id,
+      expenses: data.tripExpenses,
+      membersPaidMinor: members.map((item) => item.paid_minor),
+    }));
+    const paidMinor = space.type === "trip"
+      ? (usesFundCash
+        ? Number(member.paid_minor) || 0
+        : memberTripPaidMinor(member.id, space.id, member.paid_minor, data.settlements, {
+          expenses: data.tripExpenses,
+          splits: data.expenseSplits,
+          membersPaidMinor: members.map((item) => item.paid_minor),
+        }))
+      : Number(member.paid_minor) || 0;
+    return {
+      id: member.id,
+      display_name: member.display_name,
+      goal_minor: personGoalMinor(member),
+      paid_minor: paidMinor,
+      extra_minor: extraMinor,
+      owes_minor: pos.debit,
+      credit_minor: pos.credit,
+      status: member.status ?? "active",
+    };
   });
 }
-
-const STATEMENT_PRINT_OPTIONS: Array<{ id: StatementTxnFilter; ar: string; en: string }> = [
-  { id: "full", ar: "الكشف الكامل", en: "Full statement" },
-  { id: "valid", ar: "المعاملات الصحيحة", en: "Valid transactions" },
-  { id: "voided", ar: "المعاملات المحذوفة", en: "Deleted transactions" },
-  { id: "all", ar: "كل المعاملات", en: "All transactions" },
-];
 
 function StatementPrintMenu({
   locale,
   locked,
   canShare,
-  onPick,
-  onShare,
+  space,
+  data,
 }: {
   locale: Locale;
   locked?: boolean;
   canShare?: boolean;
-  onPick: (filter: StatementTxnFilter) => void;
-  onShare?: (filter: StatementTxnFilter) => void;
+  space: Space;
+  data: DashboardData;
 }) {
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (event: MouseEvent) => {
-      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
+  const memberRows = useMemo(
+    () => (["society", "group", "household", "trip"].includes(space.type) ? buildSpaceRosterRows(space, data) : []),
+    [space, data],
+  );
   return (
-    <div className={`statement-print-menu${locked ? " is-plan-locked" : ""}`} ref={wrapRef}>
-      <button
-        type="button"
-        className={locked ? "is-plan-locked" : ""}
-        aria-expanded={open}
-        onClick={() => {
-          if (locked) { goToPricing(); return; }
-          setOpen((current) => !current);
-        }}
-      >
-        <Printer size={16} />
-        {locale === "ar" ? "كشف حساب" : "Statement"}
-        <ChevronDown size={15} />
-        {locked ? <PlanLockBadge locale={locale} /> : null}
-      </button>
-      {open && !locked && (
-        <div className="statement-print-panel" role="menu">
-          <p>{locale === "ar" ? "طباعة" : "Print"}</p>
-          {STATEMENT_PRINT_OPTIONS.map((option) => (
-            <button
-              type="button"
-              key={`print-${option.id}`}
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                onPick(option.id);
-              }}
-            >
-              <Printer size={14} />
-              {locale === "ar" ? option.ar : option.en}
-            </button>
-          ))}
-          {onShare ? (
-            <>
-              <p>{locale === "ar" ? "إرسال للجوال (واتساب)" : "Send to phone (WhatsApp)"}</p>
-              {STATEMENT_PRINT_OPTIONS.map((option) => (
-                <button
-                  type="button"
-                  key={`share-${option.id}`}
-                  role="menuitem"
-                  className={canShare === false ? "is-plan-locked" : ""}
-                  onClick={() => {
-                    if (canShare === false) { goToPricing(); return; }
-                    setOpen(false);
-                    onShare(option.id);
-                  }}
-                >
-                  <MessageCircle size={14} />
-                  {locale === "ar" ? `إرسال · ${option.ar}` : `Send · ${option.en}`}
-                  {canShare === false ? <PlanLockBadge locale={locale} /> : null}
-                </button>
-              ))}
-            </>
-          ) : null}
-        </div>
-      )}
-    </div>
+    <>
+      <div className={`statement-print-menu${locked ? " is-plan-locked" : ""}`}>
+        <button
+          type="button"
+          className={locked ? "is-plan-locked" : ""}
+          aria-expanded={open}
+          onClick={() => {
+            if (locked) { goToPricing(); return; }
+            setOpen(true);
+          }}
+        >
+          <Printer size={16} />
+          {locale === "ar" ? "كشف حساب" : "Statement"}
+          <ChevronDown size={15} />
+          {locked ? <PlanLockBadge locale={locale} /> : null}
+        </button>
+      </div>
+      {open && !locked ? (
+        <StatementExportModal
+          locale={locale}
+          spaceId={space.id}
+          spaceName={nameOf(space, locale)}
+          issuerName={data.user.displayName}
+          features={data.entitlements?.features}
+          spaces={data.spaces}
+          members={data.members}
+          accounts={data.personalAccounts ?? []}
+          transactions={data.transactions}
+          occurrences={data.personalOccurrences ?? []}
+          holdings={(data.spaceHoldings ?? []).filter((row) => row.space_id === space.id)}
+          memberRows={memberRows}
+          canShare={canShare}
+          onShare={(filter) => void shareSpaceStatement(space, locale, filter, Boolean(canShare))}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -2899,8 +2882,8 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onImportPack, onEdi
         locale={locale}
         locked={!canPrintForSpace(data, space)}
         canShare={planHasFeature(planFeaturesOf(data), "whatsapp") && ["owner", "manager", "treasurer", "supervisor"].includes(myRole)}
-        onPick={(filter) => printSpaceStatement(space, data, locale, null, filter)}
-        onShare={(filter) => void shareSpaceStatement(space, locale, filter, planHasFeature(planFeaturesOf(data), "whatsapp"))}
+        space={space}
+        data={data}
       />
       <SpaceOverflowMenu
         locale={locale}
@@ -3042,7 +3025,7 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onImportPack, onEdi
         />
       </FoldWrap>
     )}
-    {["household", "trip", "society", "group"].includes(space.type) && <FoldWrap id={`${space.id}:expenses`}><article className="panel workflow-panel"><div className="panel-heading"><div><span className="section-kicker"><Plane size={15} />{locale === "ar" ? "المصروفات والتسويات" : "Expenses & settlements"}</span><h2>{locale === "ar" ? "من أي حساب دُفع؟ وما له / عليه" : "Paid-from account and balances"}</h2></div><div className="section-title-actions">{space.type === "trip" && <StatementPrintMenu locale={locale} locked={!canPrintForSpace(data, space)} canShare={planHasFeature(planFeaturesOf(data), "whatsapp")} onPick={(filter) => printSpaceStatement(space, data, locale, null, filter)} onShare={(filter) => void shareSpaceStatement(space, locale, filter, planHasFeature(planFeaturesOf(data), "whatsapp"))} />}<button type="button" className="secondary-button" onClick={() => { if (window.confirm(locale === "ar" ? "إعادة تقسيم كل المصروفات بالتساوي على الأعضاء الحاليين بمن فيهم الجدد؟" : "Re-split every expense equally across current members, including new ones?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "resplitTripExpenses", idempotencyKey: crypto.randomUUID(), spaceId: space.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "RESPLIT_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "RESPLIT_FAILED")); }}><Users size={15} />{locale === "ar" ? "تقسيم الكل بالتساوي" : "Split all equally"}</button><button type="button" className="secondary-button" onClick={() => { if (window.confirm(locale === "ar" ? "تصفية التسويات: جمع صافي كل عضو عبر كل المصروفات في تحويلات كبيرة (من عليه إلى من له) بدل تقسيم كل فاتورة على حدة؟ التحويلات التي وُسِمت تم التسوية تبقى كما هي." : "Net all trip balances into large person-to-person transfers instead of splitting each bill? Already marked-settled transfers stay.")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "netTripSettlements", idempotencyKey: crypto.randomUUID(), spaceId: space.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "NET_SETTLEMENTS_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "NET_SETTLEMENTS_FAILED")); }}><Scale size={15} />{locale === "ar" ? "تصفية التسويات" : "Net settlements"}</button><button className="primary-button" onClick={onTripExpense}><Plus size={15} />{locale === "ar" ? "مصروف جماعي" : "Group expense"}</button></div></div><TripExpenseList space={space} data={data} locale={locale} onEditExpense={onEditExpense} onTxnChanged={onTxnChanged} /><TripSettlementLedger space={space} data={data} locale={locale} members={members} onSettle={onSettle} onChanged={onTxnChanged} /></article></FoldWrap>}
+    {["household", "trip", "society", "group"].includes(space.type) && <FoldWrap id={`${space.id}:expenses`}><article className="panel workflow-panel"><div className="panel-heading"><div><span className="section-kicker"><Plane size={15} />{locale === "ar" ? "المصروفات والتسويات" : "Expenses & settlements"}</span><h2>{locale === "ar" ? "من أي حساب دُفع؟ وما له / عليه" : "Paid-from account and balances"}</h2></div><div className="section-title-actions">{space.type === "trip" && <StatementPrintMenu locale={locale} locked={!canPrintForSpace(data, space)} canShare={planHasFeature(planFeaturesOf(data), "whatsapp")} space={space} data={data} />}<button type="button" className="secondary-button" onClick={() => { if (window.confirm(locale === "ar" ? "إعادة تقسيم كل المصروفات بالتساوي على الأعضاء الحاليين بمن فيهم الجدد؟" : "Re-split every expense equally across current members, including new ones?")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "resplitTripExpenses", idempotencyKey: crypto.randomUUID(), spaceId: space.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "RESPLIT_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "RESPLIT_FAILED")); }}><Users size={15} />{locale === "ar" ? "تقسيم الكل بالتساوي" : "Split all equally"}</button><button type="button" className="secondary-button" onClick={() => { if (window.confirm(locale === "ar" ? "تصفية التسويات: جمع صافي كل عضو عبر كل المصروفات في تحويلات كبيرة (من عليه إلى من له) بدل تقسيم كل فاتورة على حدة؟ التحويلات التي وُسِمت تم التسوية تبقى كما هي." : "Net all trip balances into large person-to-person transfers instead of splitting each bill? Already marked-settled transfers stay.")) void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "netTripSettlements", idempotencyKey: crypto.randomUUID(), spaceId: space.id }) }).then(async (response) => { const result = await response.json() as Partial<DashboardData> & { error?: string }; if (!response.ok) throw new Error(result.error ?? "NET_SETTLEMENTS_FAILED"); onTxnChanged(result); }).catch((error: unknown) => window.alert(error instanceof Error ? error.message : "NET_SETTLEMENTS_FAILED")); }}><Scale size={15} />{locale === "ar" ? "تصفية التسويات" : "Net settlements"}</button><button className="primary-button" onClick={onTripExpense}><Plus size={15} />{locale === "ar" ? "مصروف جماعي" : "Group expense"}</button></div></div><TripExpenseList space={space} data={data} locale={locale} onEditExpense={onEditExpense} onTxnChanged={onTxnChanged} /><TripSettlementLedger space={space} data={data} locale={locale} members={members} onSettle={onSettle} onChanged={onTxnChanged} /></article></FoldWrap>}
     {space.type !== "personal" && space.type !== "trip" && <SpaceTransactionsPanel space={space} data={data} locale={locale} onAdd={onAdd} onTxnChanged={onTxnChanged} />}
     {["society", "group"].includes(space.type) && <FoldWrap id={`${space.id}:periods`}><article className="panel workflow-panel"><div className="panel-heading"><div><span className="section-kicker"><Repeat2 size={15} />{locale === "ar" ? "الفترة المحاسبية والأدوار" : "Accounting period & turns"}</span><h2>{locale === "ar" ? "إغلاق الفترة أو فتح سنة جديدة" : "Close the period or open a new year"}</h2></div><div className="section-title-actions"><button type="button" className="secondary-button" onClick={onClosePeriod}>{locale === "ar" ? "إغلاق الفترة" : "Close period"}</button><button type="button" className="primary-button" onClick={onClonePeriod}>{locale === "ar" ? "فتح فترة جديدة / استنساخ" : "New period / clone"}</button><button className="primary-button" onClick={onCircleOrder}><Repeat2 size={15} />{locale === "ar" ? "إعداد الأدوار" : "Configure turns"}{planHasFeature(planFeaturesOf(data), "draws") ? null : <PlanLockBadge locale={locale} />}</button></div></div><p className="modal-note">{locale === "ar" ? "لا تُغلق الفترة حتى يسدّد كل الأعضاء ما عليهم من اشتراك وتسويات. بعد الإغلاق يمكن إعادة الفتح للتعديل مع تسجيل من فتح وما عُدّل." : "Do not close the period until every member has settled dues and pending shares. After closing you can reopen for corrections; who reopened and what changed are logged."}</p><div className="circle-order-list">{(data.periods ?? []).filter((period) => period.space_id === space.id).map((period) => {
       const statusLabel = period.status === "open" ? (locale === "ar" ? "مفتوحة" : "Open") : period.status === "reopened" ? (locale === "ar" ? "مفتوحة للتعديل" : "Reopened") : (locale === "ar" ? "مغلقة" : "Closed");
@@ -4162,7 +4145,7 @@ function SpaceTransactionsPanel({ space, data, locale, onAdd, onTxnChanged }: { 
   return <>
     <FoldWrap id={`${space.id}:transactions`} label={locale === "ar" ? "طي العمليات" : "Fold transactions"}>
     <article className="panel list-panel">
-      <div className="panel-heading"><h2>{t.recent}</h2><div className="section-title-actions"><StatementPrintMenu locale={locale} locked={!canPrint} canShare={planHasFeature(planFeaturesOf(data), "whatsapp")} onPick={(filter) => printSpaceStatement(space, data, locale, null, filter)} onShare={(filter) => void shareSpaceStatement(space, locale, filter, planHasFeature(planFeaturesOf(data), "whatsapp"))} />{canActorTxnAction(data, space, "add") ? <button className="secondary-button" onClick={onAdd}><Plus size={15} />{t.add}</button> : null}</div></div>
+      <div className="panel-heading"><h2>{t.recent}</h2><div className="section-title-actions"><StatementPrintMenu locale={locale} locked={!canPrint} canShare={planHasFeature(planFeaturesOf(data), "whatsapp")} space={space} data={data} />{canActorTxnAction(data, space, "add") ? <button className="secondary-button" onClick={onAdd}><Plus size={15} />{t.add}</button> : null}</div></div>
       <div className="transaction-list">
         {paged.rows.length ? paged.rows.map((transaction) => (
           <TransactionRow key={transaction.id} transaction={transaction} data={data} locale={locale} onEdit={setEditing} onVoid={(txn) => { if (!working) void voidTxn(txn); }} />
