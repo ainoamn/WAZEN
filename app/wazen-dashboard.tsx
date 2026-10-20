@@ -3043,40 +3043,215 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onImportPack, onEdi
 }
 
 function MembersView({ data, locale, onInvite, onOpenPerson, onSmartPay, onMerged }: { data: DashboardData; locale: Locale; onInvite: () => void; onOpenPerson: (memberId: string, focus?: MemberLedgerFocus, editContact?: boolean) => void; onSmartPay: (memberId: string) => void; onMerged: (message: string) => void }) {
-  const societies = data.spaces.filter((space) => space.type !== "personal");
-  const groupMembers = data.members.filter((member) => societies.some((space) => space.id === member.space_id));
-  const people = Array.from(new Map(groupMembers.map((member) => {
+  const societies = useMemo(
+    () => data.spaces.filter((space) => space.type !== "personal"),
+    [data.spaces],
+  );
+  const societiesSorted = useMemo(() => {
+    const collator = new Intl.Collator(locale === "ar" ? "ar" : "en", { sensitivity: "base", numeric: true });
+    return societies.slice().sort((a, b) => collator.compare(nameOf(a, locale), nameOf(b, locale)));
+  }, [societies, locale]);
+  const groupMembers = useMemo(
+    () => data.members.filter((member) => societies.some((space) => space.id === member.space_id)),
+    [data.members, societies],
+  );
+  const people = useMemo(() => Array.from(new Map(groupMembers.map((member) => {
     const key = personIdentityKey(member);
     return [key, groupMembers.filter((row) => personIdentityKey(row) === key)];
-  })).values());
+  })).values()), [groupMembers]);
   const t = copy[locale];
   const [query, setQuery] = useState("");
-  const visible = people.filter((records) => `${records[0].display_name} ${records[0].email ?? ""} ${records[0].phone ?? ""}`.toLowerCase().includes(query.toLowerCase()));
-  return <div className="dashboard-stack"><div className="section-title"><div><h2>{t.memberProgress}</h2><p>{locale === "ar" ? "اضغط «تعديل» لتغيير الاسم أو الهاتف أو البريد. اسم العضو يفتح الملف المالي." : "Use Edit to change name, phone, or email. The member name opens the financial file."}</p></div><div className="section-title-actions"><DuplicateMergePanel members={groupMembers} spaces={societies} locale={locale} onMerged={onMerged} /><button className="secondary-button" onClick={() => onSmartPay(groupMembers[0]?.id ?? "")}><Sparkles size={16} />{locale === "ar" ? "المحاسب الذكي" : "Smart accountant"}{planHasFeature(planFeaturesOf(data), "smart_accountant") ? null : <PlanLockBadge locale={locale} />}</button><button className="primary-button" onClick={onInvite}><UserPlus size={17} />{t.invite}</button></div></div>
-    <article className="panel members-panel person-table"><div className="panel-heading"><h2>{t.members} <span className="count-badge">{people.length}</span></h2><label className="search-field member-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={locale === "ar" ? "ابحث باسم العضو" : "Search member name"} /></label></div><div className="members-table"><div className="table-head person-head"><span>{locale === "ar" ? "العضو" : "Member"}</span><span>{locale === "ar" ? "الحالة" : "Status"}</span><span>{locale === "ar" ? "الجمعيات" : "Associations"}</span><span>{locale === "ar" ? "الانضباط" : "Discipline"}</span><span>{locale === "ar" ? "عليه" : "Owes"}</span><span>{locale === "ar" ? "المستلم" : "Received"}</span><span>{locale === "ar" ? "إجراء" : "Action"}</span></div>{visible.map((records) => {
-    const person = records[0];
-    const active = records.some((row) => (row.status ?? "active") === "active");
-    const due = records.reduce((sum, row) => sum + row.due_minor, 0);
-    const paid = records.reduce((sum, row) => sum + row.paid_minor, 0);
-    const extra = records.reduce((sum, row) => sum + row.extra_minor + Number(row.addon_minor ?? 0), 0);
-    const rate = Math.round((Math.min(paid, Math.max(due, 1)) / Math.max(due, 1)) * 100);
-    const remaining = records.reduce((sum, row) => {
-      const plan = data.plans.find((item) => String(item.space_id) === row.space_id);
-      return sum + Math.max(0, memberAccruedDueMinor(row, data.installments ?? [], plan) - row.paid_minor);
-    }, 0);
-    let grade = "D";
-    if (rate >= 95 && remaining === 0) grade = "A";
-    else if (rate >= 75) grade = "B";
-    else if (rate >= 50) grade = "C";
-    const associationCount = new Set(records.map((row) => row.space_id)).size;
-    const extraRows = records.length - associationCount;
-    const currency = societies.find((space) => space.id === person.space_id)?.currency ?? "OMR";
-    const associationLabel = locale === "ar"
-      ? (associationCount === 1 ? "جمعية واحدة" : `${associationCount} جمعيات`)
-      : String(associationCount);
-    return <div className="member-row person-row" key={personIdentityKey(person)}><button type="button" className="member-name-hit" onClick={() => onOpenPerson(person.id, "all")}><div className="member-name"><i style={{ background: person.avatar }}>{person.display_name.slice(0, 1)}</i><div><strong>{person.display_name}</strong><span>{person.phone || person.email || (person.role === "owner" ? t.roleOwner : t.roleMember)}</span></div></div></button><span className={`status-pill ${active ? "complete" : "pending"}`}>{active ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}{active ? (locale === "ar" ? "نشط" : "Active") : (locale === "ar" ? "غير نشط" : "Inactive")}</span><strong title={records.map((row) => societies.find((space) => space.id === row.space_id)?.name_ar || row.space_id).join(" · ")}>{associationLabel}{extraRows > 0 ? (locale === "ar" ? ` · مكرر ${extraRows}` : ` · +${extraRows}`) : ""}</strong><strong>{grade} · {rate}%</strong><button type="button" className={`amount-hit ${remaining ? "amount-negative" : "muted-amount"}`} onClick={() => onOpenPerson(person.id, "owes")}>{formatMoney(remaining, currency, locale)}</button><button type="button" className="amount-hit reserve-amount" onClick={() => onOpenPerson(person.id, "credit")}>{formatMoney(paid + extra, currency, locale)}</button><button type="button" className="secondary-button compact person-edit-hit" onClick={() => onOpenPerson(person.id, "all", true)}><Pencil size={14} />{locale === "ar" ? "تعديل" : "Edit"}</button></div>;
-  })}</div></article>
-    <section className="settings-grid"><InfoPanel icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} /><InfoPanel icon={<Users />} title={t.access} text={t.accessText} /></section></div>;
+  const [spaceFilter, setSpaceFilter] = useState("");
+  const [sort, setSort] = useState<"asIs" | "alphaAsc" | "alphaDesc" | "byAssociation">("byAssociation");
+  const collator = useMemo(
+    () => new Intl.Collator(locale === "ar" ? "ar" : "en", { sensitivity: "base", numeric: true }),
+    [locale],
+  );
+
+  const spaceNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const space of societies) map.set(space.id, nameOf(space, locale));
+    return map;
+  }, [societies, locale]);
+
+  const associationNamesFor = useCallback((records: Member[]) => (
+    [...new Set(records.map((row) => spaceNameById.get(row.space_id) || row.space_id))]
+  ), [spaceNameById]);
+
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    let rows = people.map((records) => {
+      const scoped = spaceFilter
+        ? records.filter((row) => row.space_id === spaceFilter)
+        : records;
+      return scoped.length ? scoped : null;
+    }).filter((records): records is Member[] => Boolean(records));
+
+    if (needle) {
+      rows = rows.filter((records) => {
+        const person = records[0];
+        const hay = [
+          person.display_name,
+          person.email ?? "",
+          person.phone ?? "",
+          ...associationNamesFor(records),
+        ].join(" ").toLowerCase();
+        return hay.includes(needle);
+      });
+    }
+
+    if (sort === "asIs") return rows;
+    return rows.slice().sort((a, b) => {
+      if (sort === "byAssociation") {
+        const byAssoc = collator.compare(
+          associationNamesFor(a).join(" · "),
+          associationNamesFor(b).join(" · "),
+        );
+        if (byAssoc !== 0) return byAssoc;
+      }
+      const byName = collator.compare(a[0].display_name, b[0].display_name);
+      return sort === "alphaDesc" ? -byName : byName;
+    });
+  }, [people, query, spaceFilter, sort, collator, associationNamesFor]);
+
+  const filteredCount = visible.length;
+  const selectedSociety = spaceFilter ? societies.find((space) => space.id === spaceFilter) : null;
+
+  return (
+    <div className="dashboard-stack">
+      <div className="section-title">
+        <div>
+          <h2>{t.memberProgress}</h2>
+          <p>{locale === "ar"
+            ? "صفِّ حسب الجمعية لترى أعضاءها فقط، أو ابحث بالاسم أو اسم الجمعية. «تعديل» يغيّر بيانات التواصل."
+            : "Filter by association to see its members, or search by name or society. Edit updates contact details."}</p>
+        </div>
+        <div className="section-title-actions">
+          <DuplicateMergePanel members={groupMembers} spaces={societies} locale={locale} onMerged={onMerged} />
+          <button className="secondary-button" onClick={() => onSmartPay(groupMembers[0]?.id ?? "")}>
+            <Sparkles size={16} />{locale === "ar" ? "المحاسب الذكي" : "Smart accountant"}
+            {planHasFeature(planFeaturesOf(data), "smart_accountant") ? null : <PlanLockBadge locale={locale} />}
+          </button>
+          <button className="primary-button" onClick={onInvite}><UserPlus size={17} />{t.invite}</button>
+        </div>
+      </div>
+      <article className="panel members-panel person-table">
+        <div className="panel-heading">
+          <h2>{t.members} <span className="count-badge">{filteredCount}{filteredCount !== people.length ? ` / ${people.length}` : ""}</span></h2>
+          <div className="section-title-actions roster-toolbar members-view-toolbar">
+            <label className="search-field member-search">
+              <Search size={16} />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={locale === "ar" ? "ابحث بالاسم أو الجمعية" : "Search name or association"}
+              />
+            </label>
+            <label className="members-society-filter">
+              <span className="sr-only">{locale === "ar" ? "الجمعية" : "Association"}</span>
+              <select value={spaceFilter} onChange={(event) => setSpaceFilter(event.target.value)}>
+                <option value="">{locale === "ar" ? "كل الجمعيات" : "All associations"}</option>
+                {societiesSorted.map((space) => (
+                  <option key={space.id} value={space.id}>{nameOf(space, locale)}</option>
+                ))}
+              </select>
+            </label>
+            <label className="members-society-filter">
+              <span className="sr-only">{locale === "ar" ? "الترتيب" : "Sort"}</span>
+              <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}>
+                <option value="byAssociation">{locale === "ar" ? "فرز: الجمعية ثم الاسم" : "Sort: association then name"}</option>
+                <option value="alphaAsc">{locale === "ar" ? "فرز: الاسم أ → ي" : "Sort: name A → Z"}</option>
+                <option value="alphaDesc">{locale === "ar" ? "فرز: الاسم ي → أ" : "Sort: name Z → A"}</option>
+                <option value="asIs">{locale === "ar" ? "ترتيب السجل" : "Ledger order"}</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        {selectedSociety ? (
+          <p className="modal-note members-filter-note">
+            {locale === "ar"
+              ? `أعضاء «${nameOf(selectedSociety, locale)}» فقط — المبالغ والتعديل لهذه الجمعية.`
+              : `Members of “${nameOf(selectedSociety, locale)}” only — amounts and edit are for this association.`}
+          </p>
+        ) : null}
+        <div className="members-table">
+          <div className="table-head person-head">
+            <span>{locale === "ar" ? "العضو" : "Member"}</span>
+            <span>{locale === "ar" ? "الحالة" : "Status"}</span>
+            <span>{locale === "ar" ? "الجمعيات" : "Associations"}</span>
+            <span>{locale === "ar" ? "الانضباط" : "Discipline"}</span>
+            <span>{locale === "ar" ? "عليه" : "Owes"}</span>
+            <span>{locale === "ar" ? "المستلم" : "Received"}</span>
+            <span>{locale === "ar" ? "إجراء" : "Action"}</span>
+          </div>
+          {visible.map((records) => {
+            const person = records[0];
+            const active = records.some((row) => (row.status ?? "active") === "active");
+            const due = records.reduce((sum, row) => sum + row.due_minor, 0);
+            const paid = records.reduce((sum, row) => sum + row.paid_minor, 0);
+            const extra = records.reduce((sum, row) => sum + row.extra_minor + Number(row.addon_minor ?? 0), 0);
+            const rate = Math.round((Math.min(paid, Math.max(due, 1)) / Math.max(due, 1)) * 100);
+            const remaining = records.reduce((sum, row) => {
+              const plan = data.plans.find((item) => String(item.space_id) === row.space_id);
+              return sum + Math.max(0, memberAccruedDueMinor(row, data.installments ?? [], plan) - row.paid_minor);
+            }, 0);
+            let grade = "D";
+            if (rate >= 95 && remaining === 0) grade = "A";
+            else if (rate >= 75) grade = "B";
+            else if (rate >= 50) grade = "C";
+            const names = associationNamesFor(records);
+            const associationCount = names.length;
+            const currency = societies.find((space) => space.id === person.space_id)?.currency ?? "OMR";
+            const associationLabel = names.length <= 2
+              ? names.join(" · ")
+              : (locale === "ar" ? `${names[0]} · +${names.length - 1}` : `${names[0]} · +${names.length - 1}`);
+            return (
+              <div className="member-row person-row" key={`${personIdentityKey(person)}:${spaceFilter || "all"}`}>
+                <button type="button" className="member-name-hit" onClick={() => onOpenPerson(person.id, "all")}>
+                  <div className="member-name">
+                    <i style={{ background: person.avatar }}>{person.display_name.slice(0, 1)}</i>
+                    <div>
+                      <strong>{person.display_name}</strong>
+                      <span>{person.phone || person.email || (person.role === "owner" ? t.roleOwner : t.roleMember)}</span>
+                    </div>
+                  </div>
+                </button>
+                <span className={`status-pill ${active ? "complete" : "pending"}`}>
+                  {active ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
+                  {active ? (locale === "ar" ? "نشط" : "Active") : (locale === "ar" ? "غير نشط" : "Inactive")}
+                </span>
+                <strong className="person-assoc-cell" title={names.join(" · ")}>
+                  {associationLabel || (locale === "ar" ? "—" : "—")}
+                  {associationCount > 1 && !spaceFilter ? (
+                    <em className="person-assoc-count">{locale === "ar" ? `${associationCount} جمعيات` : `${associationCount}`}</em>
+                  ) : null}
+                </strong>
+                <strong>{grade} · {rate}%</strong>
+                <button type="button" className={`amount-hit ${remaining ? "amount-negative" : "muted-amount"}`} onClick={() => onOpenPerson(person.id, "owes")}>
+                  {formatMoney(remaining, currency, locale)}
+                </button>
+                <button type="button" className="amount-hit reserve-amount" onClick={() => onOpenPerson(person.id, "credit")}>
+                  {formatMoney(paid + extra, currency, locale)}
+                </button>
+                <button type="button" className="secondary-button compact person-edit-hit" onClick={() => onOpenPerson(person.id, "all", true)}>
+                  <Pencil size={14} />{locale === "ar" ? "تعديل" : "Edit"}
+                </button>
+              </div>
+            );
+          })}
+          {!visible.length ? (
+            <p className="modal-note" style={{ padding: "16px 4px" }}>
+              {locale === "ar" ? "لا أعضاء مطابقون لهذا البحث أو الجمعية." : "No members match this search or association."}
+            </p>
+          ) : null}
+        </div>
+      </article>
+      <section className="settings-grid">
+        <InfoPanel icon={<ShieldCheck />} title={t.privacy} text={t.privacyText} />
+        <InfoPanel icon={<Users />} title={t.access} text={t.accessText} />
+      </section>
+    </div>
+  );
 }
 
 function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCash, onWithdraw, onOpenMember, onChanged }: { members: Member[]; locale: Locale; currency: string; data?: DashboardData; spaceId?: string; tripUsesFundCash?: boolean; onWithdraw?: (memberId: string) => void; onOpenMember?: (memberId: string, focus?: MemberLedgerFocus) => void; onChanged?: (next: Partial<DashboardData>) => void }) {

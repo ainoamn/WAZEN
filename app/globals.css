@@ -397,7 +397,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .count-badge { display: inline-grid; place-items: center; min-width: 22px; height: 22px; border-radius: 7px; background: var(--green-soft); color: var(--green); font-size: 12px; }
 .members-table { margin-top: 14px; overflow-x: auto; }
 .table-head, .member-row { min-width: 1040px; display: grid; grid-template-columns: 1.8fr repeat(6, .7fr) .9fr; align-items: center; gap: 15px; }
-.person-table .person-head, .person-table .person-row { min-width: 1040px; grid-template-columns: 1.8fr .7fr .75fr .7fr .75fr .85fr .7fr; }
+.person-table .person-head, .person-table .person-row { min-width: 1100px; grid-template-columns: 1.7fr .65fr 1.2fr .65fr .75fr .85fr .7fr; }
 .person-edit-hit { justify-self: start; gap: 6px; }
 .statement-scope-picker { display: grid; gap: 10px; margin-top: 12px; padding: 14px; border: 1px solid #d7e0db; border-radius: 14px; background: #f8faf9; }
 .statement-scope-picker p { margin: 0; color: #5d6f69; font-size: 13px; font-weight: 700; }
@@ -718,6 +718,55 @@ label.secondary-button { display: inline-flex; align-items: center; gap: 7px; mi
 .search-field { max-width: 360px; height: 44px; border: 1px solid var(--line); border-radius: 11px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: #fafbfa; color: #86928d; }.search-field input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 14px; }
 .roster-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: flex-end; }
 .roster-toolbar .secondary-button.is-active { border-color: var(--green); color: var(--green); background: var(--green-soft); }
+.members-view-toolbar { max-width: min(100%, 820px); }
+.members-society-filter {
+  display: flex;
+  align-items: center;
+  min-width: 160px;
+  max-width: 240px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #fafbfa;
+  padding: 0 10px;
+}
+.members-society-filter select {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.members-filter-note { margin: 0 0 12px; }
+.person-assoc-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+  min-width: 0;
+}
+.person-assoc-cell .person-assoc-count {
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+  color: var(--muted);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .roster-column-picker { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; margin: 0 0 12px; }
 .roster-column-picker legend { padding: 0 6px; font-weight: 700; color: var(--ink); font-size: 13px; }
 .roster-column-picker .check-row,
@@ -1610,6 +1659,13 @@ html[data-theme="dark"] .search-field {
 html[data-theme="dark"] .search-field input {
   background: transparent;
   color: var(--ink);
+}
+html[data-theme="dark"] .members-society-filter {
+  background: var(--field);
+  border-color: var(--line);
+}
+html[data-theme="dark"] .members-society-filter select {
+  color: var(--field-ink);
 }
 html[data-theme="dark"] .split-dropdown-trigger,
 html[data-theme="dark"] .split-dropdown-panel,
