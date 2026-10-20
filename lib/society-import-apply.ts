@@ -5,7 +5,7 @@ import { prepareAudit } from "./audit";
 import { authorizeSpace, ensureDefaultTenant, platformRoleOf } from "./authorization";
 import { splitContributionPayment } from "./finance";
 import { installmentInsertStatements } from "./installment-payments";
-import { reconcileMemberLedgers } from "./ledger-void";
+import { reconcileMemberLedgers, writeApprovedCashBalance } from "./ledger-void";
 import { multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "./money";
 import { digitsOnly, isLikelyPhone, toWhatsAppNumber } from "./phone";
 import { filterSpacesByPlan } from "./plan-features";
@@ -62,7 +62,7 @@ function resolveMemberId(
 
 function looksLikeOpeningRow(memberName: string, note?: string) {
   const blob = `${memberName} ${note ?? ""}`;
-  return /مبالغ\s*سابقة|الجمعية السابقة|رصيد افتتاح|مرشد/.test(blob);
+  return /مبالغ\s*سابقة|مبالغ\s*أخرى|الجمعية السابقة|رصيد افتتاح/.test(blob);
 }
 
 async function flushBatches(db: D1Database, statements: D1PreparedStatement[], chunkSize = 80) {
@@ -233,8 +233,14 @@ export async function applySocietyImportPack(
   if (pack.openingBalance && Number(pack.openingBalance.amount) > 0) {
     const amountMinor = moneyMajor(pack.openingBalance.amount, currency);
     if (amountMinor > 0) {
+      // Keep the Excel date (e.g. 2026-06-04) — booked as general income, not a member contribution.
       const occurredAt = toIsoDate(pack.openingBalance.date, startsAt);
-      const description = pack.openingBalance.note?.trim() || "رصيد افتتاحي / مبالغ سابقة";
+      const note = pack.openingBalance.note?.trim();
+      const description = (
+        note
+          ? (note.includes("مبالغ أخرى") || note.includes("افتتاح") ? note : `مبالغ أخرى — رصيد افتتاحي · ${note}`)
+          : "مبالغ أخرى — رصيد افتتاحي (الجمعية السابقة)"
+      ).slice(0, 300);
       const transactionId = crypto.randomUUID();
       const entryId = crypto.randomUUID();
       ledgerStatements.push(
@@ -400,6 +406,7 @@ export async function applySocietyImportPack(
   }
 
   await reconcileMemberLedgers(db, [spaceId]);
+  await writeApprovedCashBalance(db, spaceId);
 
   return {
     ok: true,

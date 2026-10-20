@@ -66,7 +66,8 @@ def convert(path: Path, space_name: str) -> dict:
                 opening = {
                     "amount": amount,
                     "date": when,
-                    "note": note or typ or "رصيد افتتاحي / مبالغ سابقة",
+                    "note": "مبالغ أخرى — رصيد افتتاحي"
+                    + (f" · {note}" if note else (f" · {typ}" if typ else "")),
                 }
             continue
         pay = {"date": when, "memberName": name, "amount": amount}
