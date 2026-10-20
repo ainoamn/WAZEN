@@ -18,6 +18,7 @@ export type IdentityAccount = {
 };
 
 export type IdentityMeResponse = {
+  ok?: boolean;
   user?: IdentityAccount | null;
   accounts?: IdentityAccount[];
 };
@@ -46,7 +47,7 @@ export async function fetchIdentityAccounts(): Promise<IdentityMeResponse> {
   return (await response.json()) as IdentityMeResponse;
 }
 
-export async function switchIdentityAccount(sub: string): Promise<boolean> {
+export async function switchIdentityAccount(sub: string): Promise<IdentityMeResponse> {
   const response = await fetch(`${identityOrigin()}/api/auth/switch`, {
     method: "POST",
     credentials: "include",
@@ -54,10 +55,12 @@ export async function switchIdentityAccount(sub: string): Promise<boolean> {
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ sub }),
   });
-  return response.ok;
+  const data = (await response.json().catch(() => ({}))) as IdentityMeResponse;
+  if (!response.ok) return { user: null, accounts: [] };
+  return data;
 }
 
-export async function logoutIdentityAccount(all: boolean): Promise<{ user: IdentityAccount | null }> {
+export async function logoutIdentityAccount(all: boolean): Promise<IdentityMeResponse> {
   const response = await fetch(`${identityOrigin()}/api/auth/logout`, {
     method: "POST",
     credentials: "include",
@@ -65,15 +68,18 @@ export async function logoutIdentityAccount(all: boolean): Promise<{ user: Ident
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ all }),
   });
-  if (!response.ok) return { user: null };
-  const data = (await response.json()) as { user?: IdentityAccount | null };
-  return { user: data.user ?? null };
+  const data = (await response.json().catch(() => ({}))) as IdentityMeResponse;
+  if (!response.ok) return { user: null, accounts: [] };
+  return data;
 }
 
-/** Silent product SSO after identity switch / this-account logout with remaining roster. */
-export function silentProductStart(returnTo = wazenWorkspacePath()) {
+/**
+ * One hop to the product workspace. Middleware sends unauthenticated browsers
+ * to /api/auth/bhd/start — do not call start on every click.
+ */
+export function openProductWorkspace(returnTo = wazenWorkspacePath()) {
   const path = returnTo.startsWith("/") ? returnTo : `/${returnTo}`;
-  window.location.assign(`/api/auth/bhd/start?returnTo=${encodeURIComponent(path)}`);
+  window.location.assign(path);
 }
 
 export function buildEndSessionUrl(all: boolean) {

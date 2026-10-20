@@ -1,9 +1,10 @@
 "use client";
 
-import { CSSProperties, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { DEFAULT_BHD_IDENTITY_ISSUER } from "../../lib/bhd-identity";
 import type { AuthProviderMark } from "../../lib/bhd-multi-account";
-import { BHD_APPS, launchUrlForApp, type BhdApp } from "../../lib/bhd/apps";
+import { BHD_APPS, hopOrigins, launchUrlForApp, type BhdApp } from "../../lib/bhd/apps";
 import { BhdAppIcon } from "./BhdAppIcon";
 
 export type { AuthProviderMark };
@@ -31,8 +32,9 @@ const COPY = {
     account: "الحساب",
     signOut: "خروج من هذا الحساب",
     signOutAll: "خروج من كل الحسابات",
-    addAccount: "إضافة حساب",
+    addAccount: "إضافة حساب آخر",
     switchTo: "تبديل إلى",
+    manage: "إدارة الحساب",
     providerPassword: "تسجيل عادي",
     providerGoogle: "جوجل",
     providerFacebook: "فيسبوك",
@@ -45,8 +47,9 @@ const COPY = {
     account: "Account",
     signOut: "Sign out of this account",
     signOutAll: "Sign out of all accounts",
-    addAccount: "Add account",
+    addAccount: "Add another account",
     switchTo: "Switch to",
+    manage: "Manage account",
     providerPassword: "Password",
     providerGoogle: "Google",
     providerFacebook: "Facebook",
@@ -55,13 +58,6 @@ const COPY = {
 } as const;
 
 type SwitcherCopy = (typeof COPY)[keyof typeof COPY];
-
-const PROVIDER_MARK: Record<AuthProviderMark, string> = {
-  password: "●",
-  google: "G",
-  facebook: "f",
-  whatsapp: "WA",
-};
 
 function accountProviders(user: BhdSwitcherUser): AuthProviderMark[] {
   const found = new Set<AuthProviderMark>(user.providers || []);
@@ -82,10 +78,6 @@ function accountMeta(user: BhdSwitcherUser) {
   return [user.username, user.phone].filter(
     (item, index, list) => item && list.indexOf(item) === index && item !== user.email,
   );
-}
-
-function primaryProvider(user: BhdSwitcherUser): AuthProviderMark | null {
-  return accountProviders(user)[0] || null;
 }
 
 function stripSlash(value: string) {
@@ -126,60 +118,111 @@ function accountPageUrl(pageOrigin: string) {
   return `${DEFAULT_BHD_IDENTITY_ISSUER}/account`;
 }
 
-function AccountAvatar({
-  user,
-  size,
-  broken,
-  onBroken,
+function ProviderMarks({
+  providers,
   t,
 }: {
-  user: BhdSwitcherUser;
-  size: 32 | 40 | 56;
-  broken: boolean;
-  onBroken: () => void;
+  providers: AuthProviderMark[];
   t: SwitcherCopy;
 }) {
-  const initial = (user.name || user.email || "B").trim().slice(0, 1).toUpperCase();
-  const provider = primaryProvider(user);
-  const labels: Record<AuthProviderMark, string> = {
-    password: t.providerPassword,
-    google: t.providerGoogle,
-    facebook: t.providerFacebook,
-    whatsapp: t.providerWhatsapp,
+  const labels: Record<AuthProviderMark, { mark: string; label: string }> = {
+    password: { mark: "●", label: t.providerPassword },
+    google: { mark: "G", label: t.providerGoogle },
+    facebook: { mark: "f", label: t.providerFacebook },
+    whatsapp: { mark: "WA", label: t.providerWhatsapp },
   };
+  if (!providers.length) return null;
   return (
-    <span className={`bhd-switcher-face is-${size}`}>
-      {user.picture && !broken ? (
-        <img src={user.picture} alt="" width={size} height={size} referrerPolicy="no-referrer" onError={onBroken} />
-      ) : (
-        <span>{initial}</span>
-      )}
-      {provider ? (
-        <abbr className={`bhd-switcher-provider is-${provider}`} title={labels[provider]} aria-label={labels[provider]}>
-          {PROVIDER_MARK[provider]}
+    <span className="bhd-switcher-providers">
+      {providers.map((id) => (
+        <abbr key={id} className={`bhd-switcher-provider is-${id}`} title={labels[id].label} aria-label={labels[id].label}>
+          {labels[id].mark}
         </abbr>
-      ) : null}
+      ))}
     </span>
   );
 }
 
-function AccountIdentity({ user }: { user: BhdSwitcherUser }) {
-  const handle = accountHandle(user);
-  const meta = accountMeta(user);
+function Face({ user, t, large = false }: { user: BhdSwitcherUser; t: SwitcherCopy; large?: boolean }) {
+  const [broken, setBroken] = useState(false);
+  const show = Boolean(user.picture) && !broken;
+  const initial = (user.name || user.email || "B").trim().slice(0, 1).toUpperCase();
   return (
-    <div className="bhd-switcher-identity">
-      <strong dir="ltr">{handle}</strong>
-      {meta.length ? <small dir="ltr">{meta.join(" · ")}</small> : null}
-    </div>
+    <span className={large ? "bhd-switcher-face is-large" : "bhd-switcher-face"}>
+      {show ? (
+        <img
+          src={user.picture || undefined}
+          alt=""
+          width={large ? 56 : 40}
+          height={large ? 56 : 40}
+          referrerPolicy="no-referrer"
+          onError={() => setBroken(true)}
+        />
+      ) : (
+        <span aria-hidden="true">{initial}</span>
+      )}
+      <ProviderMarks providers={accountProviders(user).slice(0, 1)} t={t} />
+    </span>
   );
 }
 
-function openApp(app: BhdApp, pageOrigin: string) {
-  if (app.mode === "identity") {
-    window.location.assign(accountPageUrl(pageOrigin));
+function AccountRow({
+  user,
+  t,
+  large = false,
+}: {
+  user: BhdSwitcherUser;
+  t: SwitcherCopy;
+  large?: boolean;
+}) {
+  const meta = accountMeta(user);
+  return (
+    <span className="bhd-switcher-person">
+      <Face user={user} t={t} large={large} />
+      <span className="bhd-switcher-who">
+        <strong dir="ltr">{accountHandle(user)}</strong>
+        {meta.length ? <small dir="ltr">{meta.join(" · ")}</small> : null}
+      </span>
+    </span>
+  );
+}
+
+function hintHop(url: string) {
+  if (!url || url.startsWith("/")) return;
+  const origin = new URL(url, window.location.origin).origin;
+  if (!document.head.querySelector(`link[data-bhd-hop="${origin}"]`)) {
+    const pre = document.createElement("link");
+    pre.rel = "preconnect";
+    pre.href = origin;
+    pre.setAttribute("data-bhd-hop", origin);
+    document.head.appendChild(pre);
+  }
+  if (!document.head.querySelector(`link[data-bhd-prefetch="${url}"]`)) {
+    const prefetch = document.createElement("link");
+    prefetch.rel = "prefetch";
+    prefetch.as = "document";
+    prefetch.href = url;
+    prefetch.setAttribute("data-bhd-prefetch", url);
+    document.head.appendChild(prefetch);
+  }
+}
+
+function openApp(app: BhdApp, pageOrigin: string, push: (href: string) => void) {
+  const url = app.mode === "identity" ? accountPageUrl(pageOrigin) : launchUrlForApp(app, pageOrigin);
+  if (url.startsWith("/")) {
+    push(url);
     return;
   }
-  window.location.assign(launchUrlForApp(app, pageOrigin));
+  try {
+    const target = new URL(url);
+    if (target.origin === window.location.origin) {
+      push(`${target.pathname}${target.search}${target.hash}`);
+      return;
+    }
+  } catch {
+    /* fall through */
+  }
+  window.location.assign(url);
 }
 
 export function BhdAppSwitcher({
@@ -200,22 +243,23 @@ export function BhdAppSwitcher({
   locale?: "ar" | "en";
 }) {
   const [panel, setPanel] = useState<Panel>(null);
-  const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null);
   const [origin, setOrigin] = useState("");
-  const [broken, setBroken] = useState<Record<string, boolean>>({});
+  const [pictureBroken, setPictureBroken] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const appsId = useId();
   const accountId = useId();
+  const router = useRouter();
   const t = COPY[locale];
   const isArabic = locale === "ar";
 
   useEffect(() => {
     setOrigin(window.location.origin);
+    hopOrigins().forEach((item) => hintHop(item));
   }, []);
 
-  function markBroken(key: string) {
-    setBroken((current) => (current[key] ? current : { ...current, [key]: true }));
-  }
+  useEffect(() => {
+    setPictureBroken(false);
+  }, [user.picture]);
 
   const close = useCallback(() => setPanel(null), []);
 
@@ -235,48 +279,39 @@ export function BhdAppSwitcher({
     };
   }, [panel, close]);
 
-  useLayoutEffect(() => {
-    if (!panel) {
-      setPanelStyle(null);
-      return;
-    }
-    const updatePosition = () => {
-      const anchor = rootRef.current?.getBoundingClientRect();
-      if (!anchor) return;
-      const gutter = 12;
-      const width = Math.min(344, Math.max(220, window.innerWidth - (gutter * 2)));
-      const prefersRtl = document.documentElement.dir === "rtl";
-      const desiredLeft = prefersRtl ? anchor.left : anchor.right - width;
-      const left = Math.min(Math.max(desiredLeft, gutter), window.innerWidth - width - gutter);
-      const top = Math.max(gutter, anchor.bottom + 10);
-      setPanelStyle({ position: "fixed", top, left, width });
-    };
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [panel]);
+  useEffect(() => {
+    if (panel !== "apps" || !origin) return;
+    BHD_APPS.forEach((app) => {
+      if (!app.enabled) return;
+      hintHop(app.mode === "identity" ? accountPageUrl(origin) : launchUrlForApp(app, origin));
+    });
+  }, [panel, origin]);
 
   function onAppClick(app: BhdApp) {
     if (!app.enabled) return;
     if (app.id === "account") {
-      window.location.assign(accountPageUrl(origin));
+      if (window.location.pathname.startsWith("/account")) {
+        close();
+        return;
+      }
+      openApp(app, origin, (href) => {
+        close();
+        router.push(href);
+      });
       return;
     }
     if (origin && isCurrentApp(app, origin)) {
       close();
       return;
     }
-    openApp(app, origin);
+    openApp(app, origin, (href) => {
+      close();
+      router.push(href);
+    });
   }
 
-  const headerKey = user.id || user.email || user.username || user.phone || "self";
-  const others = accounts.filter(
-    (item) => (item.id || item.email || item.username || item.phone) !== (user.id || user.email || user.username || user.phone),
-  );
+  const initial = (user.name || user.email || "B").trim().slice(0, 1).toUpperCase() || "B";
+  const showPicture = Boolean(user.picture) && !pictureBroken;
 
   return (
     <div className="bhd-switcher-slot" ref={rootRef}>
@@ -305,17 +340,22 @@ export function BhdAppSwitcher({
         aria-controls={panel === "account" ? accountId : undefined}
         onClick={() => setPanel((current) => (current === "account" ? null : "account"))}
       >
-        <AccountAvatar
-          user={user}
-          size={32}
-          broken={Boolean(broken[headerKey])}
-          onBroken={() => markBroken(headerKey)}
-          t={t}
-        />
+        {showPicture ? (
+          <img
+            src={user.picture || undefined}
+            alt=""
+            width={32}
+            height={32}
+            referrerPolicy="no-referrer"
+            onError={() => setPictureBroken(true)}
+          />
+        ) : (
+          <span>{initial}</span>
+        )}
       </button>
 
       {panel === "apps" ? (
-        <div className="bhd-switcher-card" style={panelStyle ?? undefined} id={appsId} role="dialog" aria-label={t.appsAria}>
+        <div className="bhd-switcher-card" id={appsId} role="dialog" aria-label={t.appsAria}>
           <div className="bhd-switcher-card-head">
             <p>{t.appsTitle}</p>
           </div>
@@ -347,59 +387,46 @@ export function BhdAppSwitcher({
       ) : null}
 
       {panel === "account" ? (
-        <div className="bhd-switcher-card bhd-switcher-account" style={panelStyle ?? undefined} id={accountId} role="dialog" aria-label={t.accountAria}>
-          <div className="bhd-switcher-account-current">
-            <AccountAvatar
-              user={user}
-              size={56}
-              broken={Boolean(broken[headerKey])}
-              onBroken={() => markBroken(headerKey)}
-              t={t}
-            />
-            <AccountIdentity user={user} />
+        <div className="bhd-switcher-card bhd-switcher-account" id={accountId} role="dialog" aria-label={t.accountAria}>
+          <div className="bhd-switcher-account-now">
+            <AccountRow user={user} t={t} large />
             <a className="bhd-switcher-manage" href={accountPageUrl(origin)}>
-              {t.account}
+              {t.manage}
             </a>
           </div>
-          {others.length ? (
-            <div className="bhd-switcher-account-list">
-              {others.map((item) => {
-                const key = item.id || item.email || item.username || item.phone || accountHandle(item);
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    className="bhd-switcher-account-item"
-                    aria-label={`${t.switchTo} ${accountHandle(item)}`}
-                    onClick={() => item.id && void onSwitchAccount?.(item.id)}
-                  >
-                    <AccountAvatar
-                      user={item}
-                      size={40}
-                      broken={Boolean(broken[key])}
-                      onBroken={() => markBroken(key)}
-                      t={t}
-                    />
-                    <AccountIdentity user={item} />
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-          <div className="bhd-switcher-account-actions">
+          <div className="bhd-switcher-account-list">
+            {accounts
+              .filter((item) => (item.id || item.email) !== (user.id || user.email))
+              .map((item) => (
+                <button
+                  key={item.id || item.email}
+                  type="button"
+                  className="bhd-switcher-account-choice"
+                  aria-label={`${t.switchTo} ${accountHandle(item)}`}
+                  onClick={() => item.id && void onSwitchAccount?.(item.id)}
+                >
+                  <AccountRow user={item} t={t} />
+                </button>
+              ))}
             {onAddAccount ? (
-              <button type="button" className="bhd-switcher-account-action" onClick={onAddAccount}>
-                <span className="bhd-switcher-action-icon" aria-hidden="true">
-                  +
+              <button type="button" className="bhd-switcher-account-choice" onClick={onAddAccount}>
+                <span className="bhd-switcher-person">
+                  <span className="bhd-switcher-face is-action" aria-hidden="true">
+                    <span>+</span>
+                  </span>
+                  <span className="bhd-switcher-who">
+                    <strong>{t.addAccount}</strong>
+                  </span>
                 </span>
-                {t.addAccount}
               </button>
             ) : null}
-            <button type="button" className="bhd-switcher-account-action" onClick={() => void onSignOut()}>
+          </div>
+          <div className="bhd-switcher-account-foot">
+            <button type="button" className="bhd-switcher-account-choice" onClick={() => void onSignOut()}>
               {t.signOut}
             </button>
             {onSignOutAll ? (
-              <button type="button" className="bhd-switcher-account-action" onClick={() => void onSignOutAll()}>
+              <button type="button" className="bhd-switcher-account-choice" onClick={() => void onSignOutAll()}>
                 {t.signOutAll}
               </button>
             ) : null}

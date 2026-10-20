@@ -21,6 +21,8 @@ export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const token = sessionToken(request);
 
+  // BHD-ACCOUNT-SWITCHER §5: protected path without product session → start once
+  // with returnTo=current (or workspace). With a session, render immediately.
   if (needsSession(pathname) && !token) {
     const next = `${pathname}${request.nextUrl.search}`;
     const entry = signInEntryPath(next, new Request(request.url, { headers: request.headers }));
@@ -40,7 +42,7 @@ export function proxy(request: NextRequest) {
     "style-src 'self' 'unsafe-inline' https://accounts.google.com",
     "img-src 'self' data: blob: https://*.googleusercontent.com https://accounts.google.com",
     "font-src 'self' data:",
-    "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com",
+    "connect-src 'self' https://id.bhd-om.com https://one-bhd.vercel.app https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com",
     "worker-src 'self'",
     "manifest-src 'self'",
     "frame-src https://accounts.google.com",

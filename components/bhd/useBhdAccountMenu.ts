@@ -7,10 +7,11 @@ import {
   fetchIdentityAccounts,
   identityLoginAddUrl,
   logoutIdentityAccount,
-  silentProductStart,
+  openProductWorkspace,
   switchIdentityAccount,
   wazenWorkspacePath,
   type IdentityAccount,
+  type IdentityMeResponse,
 } from "../../lib/bhd-multi-account";
 import { clearAdminConsole } from "../../lib/admin-session";
 import { notifyBrowserSessionChange } from "../../lib/browser-session-client";
@@ -50,6 +51,21 @@ function mergeAccount(base: BhdSwitcherUser, identity?: IdentityAccount | null):
   };
 }
 
+function applyMe(
+  base: BhdSwitcherUser,
+  data: IdentityMeResponse,
+  setUser: (user: BhdSwitcherUser) => void,
+  setAccounts: (accounts: BhdSwitcherUser[]) => void,
+) {
+  if (!data.user) return false;
+  const nextUser = mergeAccount(base, data.user);
+  setUser(nextUser);
+  setAccounts(
+    (data.accounts?.length ? data.accounts : [data.user]).map((item) => mergeAccount(base, item)),
+  );
+  return true;
+}
+
 export function useBhdAccountMenu(productUser: BhdSwitcherUser, locale: "ar" | "en" = "ar") {
   const [user, setUser] = useState<BhdSwitcherUser>(productUser);
   const [accounts, setAccounts] = useState<BhdSwitcherUser[]>([productUser]);
@@ -79,14 +95,9 @@ export function useBhdAccountMenu(productUser: BhdSwitcherUser, locale: "ar" | "
     void fetchIdentityAccounts()
       .then((data) => {
         if (cancelled) return;
-        const nextUser = mergeAccount(productUser, data.user);
-        setUser(nextUser);
-        const list = data.accounts?.length
-          ? data.accounts.map((item) => mergeAccount(productUser, item))
-          : data.user
-            ? [nextUser]
-            : [productUser];
-        setAccounts(list);
+        if (!applyMe(productUser, data, setUser, setAccounts)) {
+          setAccounts([productUser]);
+        }
       })
       .catch(() => {
         if (!cancelled) setAccounts([productUser]);
@@ -104,27 +115,39 @@ export function useBhdAccountMenu(productUser: BhdSwitcherUser, locale: "ar" | "
   ]);
 
   const switchAccount = useCallback(async (sub: string) => {
-    const ok = await switchIdentityAccount(sub);
-    if (!ok) return;
-    await clearProductSessionOnly();
-    silentProductStart(wazenWorkspacePath());
-    await new Promise<never>(() => {});
-  }, []);
+    const previousId = user.id;
+    const optimistic = accounts.find((item) => item.id === sub);
+    if (optimistic) setUser(optimistic);
+
+    const data = await switchIdentityAccount(sub);
+    if (!data.user) return;
+    applyMe(productUser, data, setUser, setAccounts);
+
+    // Product session still belongs to the previous identity — one hop to workspace.
+    if (data.user.id && data.user.id !== previousId) {
+      await clearProductSessionOnly();
+      openProductWorkspace(wazenWorkspacePath());
+      await new Promise<never>(() => {});
+    }
+  }, [accounts, productUser, user.id]);
 
   const addAccount = useCallback(() => {
     window.location.assign(identityLoginAddUrl());
   }, []);
 
   const signOutThis = useCallback(async () => {
-    await clearProductSessionOnly();
-    const { user: remaining } = await logoutIdentityAccount(false);
-    if (remaining?.id) {
-      silentProductStart(wazenWorkspacePath());
-    } else {
-      window.location.replace(buildEndSessionUrl(false));
+    const data = await logoutIdentityAccount(false);
+    if (data.user) {
+      applyMe(productUser, data, setUser, setAccounts);
+      await clearProductSessionOnly();
+      openProductWorkspace(wazenWorkspacePath());
+      await new Promise<never>(() => {});
+      return;
     }
+    await clearProductSessionOnly();
+    window.location.replace(buildEndSessionUrl(false));
     await new Promise<never>(() => {});
-  }, []);
+  }, [productUser]);
 
   const signOutAll = useCallback(async () => {
     await clearProductSessionOnly();

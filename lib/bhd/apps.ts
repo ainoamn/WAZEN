@@ -26,7 +26,7 @@ function ssoStart(origin: string, workspacePath: string) {
 /**
  * كتالوج مجمد — يُنسخ حرفياً إلى كل منتجات BHD.
  * workspacePath = لوحة العميل بعد التعرّف عبر الهوية (ليس /admin إلا للمكتب الداخلي).
- * mode "sso" فقط بعد تحقق GET …/api/auth/bhd/start → 302 إلى id.bhd-om.com
+ * النقر يفتح workspacePath مباشرة. start فقط إن لم توجد جلسة منتج (ميدلوير المنتج).
  * انظر docs/BHD-PRODUCT-SSO-ADMIN.md وdocs/BHD-APP-SWITCHER.md
  */
 export const BHD_APPS: BhdApp[] = [
@@ -148,24 +148,43 @@ export function gatewayApps(): BhdApp[] {
   return BHD_APPS.filter((app) => app.enabled && app.id !== "account");
 }
 
-export function launchUrlForApp(app: BhdApp, pageOrigin?: string): string {
+function samePortalOrigin(pageOrigin?: string) {
+  if (!pageOrigin) return false;
+  const here = pageOrigin.replace(/\/$/, "");
+  return (
+    here === "https://www.bhd-om.com" ||
+    here === "https://bhd-om.com" ||
+    here.endsWith(".vercel.app") ||
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(here)
+  );
+}
+
+/** مساحة العمل مباشرة — بلا سلسلة start في كل نقرة. */
+export function workspaceUrlForApp(app: BhdApp, pageOrigin?: string): string {
   if (app.mode === "identity") {
+    if (pageOrigin) {
+      const here = pageOrigin.replace(/\/$/, "");
+      if (here === "https://id.bhd-om.com" || samePortalOrigin(pageOrigin)) return app.workspacePath;
+    }
     return `${app.origin.replace(/\/$/, "")}${app.workspacePath}`;
   }
-  if (app.id === "portal" && pageOrigin) {
-    const here = pageOrigin.replace(/\/$/, "");
-    if (
-      here === "https://www.bhd-om.com" ||
-      here === "https://bhd-om.com" ||
-      here.endsWith(".vercel.app") ||
-      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(here)
-    ) {
-      return app.workspacePath;
-    }
+  if (app.id === "portal" && samePortalOrigin(pageOrigin)) {
+    return app.workspacePath;
   }
-  if (app.startUrl) return app.startUrl;
   if (app.origin) {
     return `${app.origin.replace(/\/$/, "")}${app.workspacePath || "/"}`;
   }
-  return "/";
+  return app.workspacePath || "/";
+}
+
+export function launchUrlForApp(app: BhdApp, pageOrigin?: string): string {
+  return workspaceUrlForApp(app, pageOrigin);
+}
+
+export function startUrlForApp(app: BhdApp): string | null {
+  return app.startUrl;
+}
+
+export function hopOrigins(): string[] {
+  return [...new Set(BHD_APPS.filter((app) => app.enabled && app.origin).map((app) => app.origin.replace(/\/$/, "")))];
 }

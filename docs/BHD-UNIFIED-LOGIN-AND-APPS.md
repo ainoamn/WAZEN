@@ -7,6 +7,7 @@
 > **المواصفات البروتوكولية (لا تُحرَّف):**  
 > - [`BHD-IDENTITY-SSO.md`](BHD-IDENTITY-SSO.md) — `bhd-identity.v1`  
 > - [`BHD-APP-SWITCHER.md`](BHD-APP-SWITCHER.md) — `bhd-appswitcher.v1`  
+> - [`BHD-ACCOUNT-SWITCHER.md`](BHD-ACCOUNT-SWITCHER.md) — بطاقة الحساب + سرعة بلا وميض  
 > **الناشر:** بوابة BHD — مشروع Vercel `one-bhd` — المُصدِر `https://id.bhd-om.com`
 
 انسخ هذا الملف إلى مستودع كل منتج تحت `docs/BHD-UNIFIED-LOGIN-AND-APPS.md`. بعد تثبيت الدخول والمشغّل **املأ القسم 12 الخاص بموقعك**: كيف ثبّتت، كيف يعمل، والتقنيات الكاملة لبناء ذلك الموقع. لا تحذف أقسام المواقع الأخرى. المرجع الحي لهذه القواعد هو البوابة `BHD-Complete-Brand-and-Portal-v1.1.0`.
@@ -546,6 +547,8 @@ authorize وtoken دائماً على https://id.bhd-om.com وليس أصل ال
 |---|---|
 | [BHD-IDENTITY-SSO.md](BHD-IDENTITY-SSO.md) | بروتوكول OIDC حرفياً |
 | [BHD-APP-SWITCHER.md](BHD-APP-SWITCHER.md) | شكل المشغّل والكتالوج |
+| [BHD-ACCOUNT-SWITCHER.md](BHD-ACCOUNT-SWITCHER.md) | بطاقة الحساب وتبديل بلا وميض وفتح مساحة العمل |
+| [BHD-SESSION-POLICY.md](BHD-SESSION-POLICY.md) | الجلسة حتى الخروج |
 | [BHD-WAZEN-INTEGRATION.md](BHD-WAZEN-INTEGRATION.md) | بطاقة تنفيذ وازن |
 | [BHD-STORE-INTEGRATION.md](BHD-STORE-INTEGRATION.md) | بطاقة تنفيذ المتجر |
 | [BHD-NEON-DATABASE.md](BHD-NEON-DATABASE.md) | Neon الهوية فقط |
@@ -581,7 +584,7 @@ authorize وtoken دائماً على https://id.bhd-om.com وليس أصل ال
 | كيف ثُبّت | اتبع [BHD-WAZEN-INTEGRATION.md](BHD-WAZEN-INTEGRATION.md) — `client_id=bhd-wazen` |
 | كيف يعمل الدخول | `start` → Issuer authorize → `callback` → جلسة وازن + `bhd_sub` |
 | كيف يعمل التنقل الصامت | جلسة `bhd_id` على الهوية؛ وازن لا يرى كوكي البوابة |
-| المشغّل | `BhdSignedInSwitcher` — قائمة `accounts` من `id…/api/auth/me`، تبديل `POST …/switch` ثم `start` صامت، إضافة `/login?add=1`، خروج هذا/الكل |
+| المشغّل | `BhdSignedInSwitcher` وفق [`BHD-ACCOUNT-SWITCHER.md`](BHD-ACCOUNT-SWITCHER.md): بطاقة صورة+بريد، تبديل من JSON بلا إعادة تحميل، نقر التطبيق → `workspacePath` (لا `start` في كل نقرة)، `preconnect`/`prefetch`، إضافة `/login?add=1`، خروج هذا/الكل · منشور أيضاً `/docs/BHD-ACCOUNT-SWITCHER.md` |
 | أسرار (أسماء فقط) | `BHD_IDENTITY_ISSUER`, `BHD_OAUTH_CLIENT_ID`, `BHD_OAUTH_CLIENT_SECRET`, `BHD_OAUTH_REDIRECT_URI` + سر جلسة وازن |
 | التقنيات الكاملة لوازن | Next.js + Neon (D1 API) + محافظ/رحلات/جمعيات على Vercel |
 | ما لم يُوحَّد | المحافظ، المصاريف، الرحلات، الجمعيات |
