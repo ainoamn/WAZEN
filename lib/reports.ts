@@ -206,11 +206,15 @@ function buildSections(input: ReportInput): { subtitle: string; kpis: { label: s
       money(row.amount_minor, currency, locale),
     ]);
 
-  const memberRows = members.map((member) => {
+  const collator = new Intl.Collator(locale === "ar" ? "ar" : "en", { sensitivity: "base", numeric: true });
+  const membersAlpha = members.slice().sort((a, b) => collator.compare(a.display_name, b.display_name));
+  const memberRows = membersAlpha.map((member) => {
     const m = memberMetrics(member);
     return [
       member.display_name,
+      money(member.due_minor, currency, locale),
       money(member.paid_minor, currency, locale),
+      money(Math.max(0, member.extra_minor), currency, locale),
       debit(m.remaining, currency, locale),
       money(m.credit, currency, locale),
       `${m.rate}%`,
@@ -230,8 +234,17 @@ function buildSections(input: ReportInput): { subtitle: string; kpis: { label: s
         ],
         sections: [
           {
-            title: t(locale, "أعضاء الجمعية", "Association members"),
-            rows: [[t(locale, "العضو", "Member"), t(locale, "مدفوع", "Paid"), t(locale, "عليه", "Owes"), t(locale, "له", "Credit"), t(locale, "الالتزام", "Commitment"), t(locale, "التقييم", "Grade")], ...memberRows],
+            title: t(locale, "أعضاء الجمعية (أبجدي)", "Association members (A–Z)"),
+            rows: [[
+              t(locale, "العضو", "Member"),
+              t(locale, "الهدف المالي", "Goal"),
+              t(locale, "مدفوع", "Paid"),
+              t(locale, "إضافي", "Extra"),
+              t(locale, "عليه", "Owes"),
+              t(locale, "له", "Credit"),
+              t(locale, "الالتزام %", "Commitment %"),
+              t(locale, "التقييم", "Grade"),
+            ], ...memberRows],
           },
           {
             title: t(locale, "آخر الحركات", "Recent activity"),

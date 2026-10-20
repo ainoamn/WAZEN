@@ -19,6 +19,18 @@ function parse(value: string | number, currency: string, allowZero: boolean) {
 export function parseMoneyToMinor(value: string | number, currency = "OMR") { return parse(value, currency, false); }
 export function parseNonNegativeMoneyToMinor(value: string | number, currency = "OMR") { return parse(value, currency, true); }
 
+/** Accept Arabic-Indic digits while typing money fields (keeps one decimal point). */
+export function normalizeMoneyInput(value: string) {
+  const ascii = String(value ?? "")
+    .replace(/[٠-٩]/g, (digit) => "٠١٢٣٤٥٦٧٨٩".indexOf(digit).toString())
+    .replace(/[۰-۹]/g, (digit) => "۰۱۲۳۴۵۶۷۸۹".indexOf(digit).toString())
+    .replace(/,/g, ".")
+    .replace(/[^\d.]/g, "");
+  const firstDot = ascii.indexOf(".");
+  if (firstDot < 0) return ascii;
+  return `${ascii.slice(0, firstDot + 1)}${ascii.slice(firstDot + 1).replace(/\./g, "")}`;
+}
+
 function majorLabel(minor: number, currency: string) {
   return (minor / 10 ** currencyScale(currency)).toFixed(currencyScale(currency));
 }

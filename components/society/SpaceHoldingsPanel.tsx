@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { CalendarClock, Landmark, PiggyBank, Plus, TrendingUp } from "lucide-react";
 import { apiFetch } from "../../lib/client-api";
-import { currencyScale, formatMoneyMinor } from "../../lib/money";
+import { currencyScale, formatMoneyMinor, normalizeMoneyInput } from "../../lib/money";
 import {
   holdingKindLabel,
   holdingMaturityLabel,
@@ -239,14 +239,17 @@ export function SpaceHoldingsPanel({
                 <option value="other">{locale === "ar" ? "أصل آخر" : "Other asset"}</option>
               </select>
             </label>
-            <label><span>{locale === "ar" ? "المبلغ من النقد" : "Amount from cash"}</span><input required inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value.replace(/[^\d.]/g, ""))} /></label>
+            <label><span>{locale === "ar" ? "المبلغ من النقد" : "Amount from cash"}</span><input required inputMode="decimal" value={amount} onChange={(event) => setAmount(normalizeMoneyInput(event.target.value))} placeholder="1000.000" /></label>
           </div>
           <div className="form-row">
             <label><span>{locale === "ar" ? "تاريخ التحويل" : "Transfer date"}</span><DateField required value={occurredOn} onChange={setOccurredOn} /></label>
             <label><span>{locale === "ar" ? "تاريخ الاستحقاق / الإرجاع" : "Maturity / return date"}</span><DateField value={maturesOn} onChange={setMaturesOn} /></label>
           </div>
           <div className="form-row">
-            <label><span>{locale === "ar" ? "الأرباح المتوقعة عند الاستحقاق" : "Expected profit at maturity"}</span><input inputMode="decimal" value={expectedReturnText} onChange={(event) => setExpectedReturnText(event.target.value.replace(/[^\d.]/g, ""))} placeholder="0" /></label>
+            <label>
+              <span>{locale === "ar" ? "مبلغ الأرباح المتوقعة (ر.ع.) — ليس تاريخاً" : "Expected profit amount (OMR) — not a date"}</span>
+              <input inputMode="decimal" value={expectedReturnText} onChange={(event) => setExpectedReturnText(normalizeMoneyInput(event.target.value))} placeholder={locale === "ar" ? "مثال: 25.500" : "e.g. 25.500"} />
+            </label>
             <label><span>{locale === "ar" ? "ملاحظة (اختياري)" : "Note (optional)"}</span><input value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
           </div>
           {error ? <p className="modal-error">{error}</p> : null}
@@ -304,8 +307,16 @@ export function SpaceHoldingsPanel({
           <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>{locale === "ar" ? "تعديل الاستحقاق والأرباح" : "Edit maturity & profit"}</h3>
           <div className="form-row">
             <label><span>{locale === "ar" ? "تاريخ الاستحقاق / الإرجاع" : "Maturity / return date"}</span><DateField value={editMaturesOn} onChange={setEditMaturesOn} /></label>
-            <label><span>{locale === "ar" ? "الأرباح المتوقعة" : "Expected profit"}</span><input inputMode="decimal" value={editExpectedReturn} onChange={(event) => setEditExpectedReturn(event.target.value.replace(/[^\d.]/g, ""))} /></label>
+            <label>
+              <span>{locale === "ar" ? "مبلغ الأرباح المتوقعة (ر.ع.)" : "Expected profit amount (OMR)"}</span>
+              <input inputMode="decimal" value={editExpectedReturn} onChange={(event) => setEditExpectedReturn(normalizeMoneyInput(event.target.value))} placeholder={locale === "ar" ? "مثال: 25.500" : "e.g. 25.500"} />
+            </label>
           </div>
+          <p className="modal-note" style={{ marginTop: 0 }}>
+            {locale === "ar"
+              ? "التاريخ أعلاه لرجوع الوديعة. حقل الأرباح للمبلغ فقط (يمكنك كتابة أرقام عربية أو لاتينية)."
+              : "The date above is maturity. Profit is an amount field (Arabic or Latin digits accepted)."}
+          </p>
           <label><span>{locale === "ar" ? "ملاحظة" : "Note"}</span><input value={editNotes} onChange={(event) => setEditNotes(event.target.value)} /></label>
           {error ? <p className="modal-error">{error}</p> : null}
           <div className="modal-actions">

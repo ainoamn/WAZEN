@@ -10,6 +10,8 @@ import { ContactSourceBar } from "../components/members/contact-source-bar";
 import { SpaceRolePermissionsPanel } from "../components/members/space-role-permissions";
 import { SocietyImportModal } from "../components/society/SocietyImportModal";
 import { SpaceHoldingsPanel } from "../components/society/SpaceHoldingsPanel";
+import { MembersRosterExportModal, MembersRosterToolbar } from "../components/society/MembersRosterExport";
+import type { RosterSort } from "../lib/member-roster-export";
 import { PersonalRulesSetup, PersonalWalletPanel, confirmResetWalletData } from "../components/personal/personal-wallet";
 import { DateField } from "../components/ui/date-field";
 import { FoldWrap } from "../components/ui/collapsible-panel";
@@ -3096,6 +3098,8 @@ function MembersView({ data, locale, onInvite, onOpenPerson, onSmartPay, onMerge
 function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCash, onWithdraw, onOpenMember, onChanged }: { members: Member[]; locale: Locale; currency: string; data?: DashboardData; spaceId?: string; tripUsesFundCash?: boolean; onWithdraw?: (memberId: string) => void; onOpenMember?: (memberId: string, focus?: MemberLedgerFocus) => void; onChanged?: (next: Partial<DashboardData>) => void }) {
   const t = copy[locale];
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<RosterSort>("asIs");
+  const [exportOpen, setExportOpen] = useState(false);
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [lifecycleId, setLifecycleId] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -3106,7 +3110,45 @@ function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCa
   const space = data && spaceId ? data.spaces.find((item) => item.id === spaceId) : undefined;
   const canManageMembers = Boolean(space && data && ["owner", "manager"].includes(myRoleInSpace(data, space)));
   const assignableRoles = ["manager", "supervisor", "treasurer", "member", "auditor", "viewer"] as const;
-  const visible = members.filter((member) => `${member.display_name} ${member.email ?? ""} ${member.phone ?? ""}`.toLowerCase().includes(query.toLowerCase()));
+  const collator = useMemo(() => new Intl.Collator(locale === "ar" ? "ar" : "en", { sensitivity: "base", numeric: true }), [locale]);
+  const visible = useMemo(() => {
+    const needle = query.toLowerCase();
+    const filtered = members.filter((member) => `${member.display_name} ${member.email ?? ""} ${member.phone ?? ""}`.toLowerCase().includes(needle));
+    if (sort === "asIs") return filtered;
+    const ordered = filtered.slice().sort((a, b) => collator.compare(a.display_name, b.display_name));
+    return sort === "alphaDesc" ? ordered.reverse() : ordered;
+  }, [members, query, sort, collator]);
+  const rosterRows = useMemo(() => visible.map((member) => {
+    const pos = memberPosition(member, data, spaceId);
+    const spaceType = data?.spaces.find((item) => item.id === spaceId)?.type;
+    const extraMinor = spaceType === "trip" && data && spaceId
+      ? memberTripPocketMinor(member.id, spaceId, data.tripExpenses)
+      : Number(member.addon_minor ?? 0);
+    const usesFundCash = Boolean(tripUsesFundCash || (data && spaceId && tripWalletUsesFundCash({
+      spaceId,
+      expenses: data.tripExpenses,
+      membersPaidMinor: members.map((item) => item.paid_minor),
+    })));
+    const paidMinor = spaceType === "trip" && data && spaceId
+      ? (usesFundCash
+        ? Number(member.paid_minor) || 0
+        : memberTripPaidMinor(member.id, spaceId, member.paid_minor, data.settlements, {
+          expenses: data.tripExpenses,
+          splits: data.expenseSplits,
+          membersPaidMinor: members.map((item) => item.paid_minor),
+        }))
+      : Number(member.paid_minor) || 0;
+    return {
+      id: member.id,
+      display_name: member.display_name,
+      goal_minor: personGoalMinor(member),
+      paid_minor: paidMinor,
+      extra_minor: extraMinor,
+      owes_minor: pos.debit,
+      credit_minor: pos.credit,
+      status: member.status ?? "active",
+    };
+  }), [visible, data, spaceId, tripUsesFundCash, members]);
 
   useEffect(() => {
     if (!menuOpenId) return;
@@ -3286,12 +3328,32 @@ function MembersTable({ members, locale, currency, data, spaceId, tripUsesFundCa
     <article className="panel members-panel">
       <div className="panel-heading">
         <h2>{t.members} <span className="count-badge">{members.length}</span></h2>
-        <label className="search-field member-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={locale === "ar" ? "ابحث باسم المساهم" : "Search member name"} /></label>
+        <MembersRosterToolbar
+          locale={locale}
+          query={query}
+          onQuery={setQuery}
+          sort={sort}
+          onSort={setSort}
+          onOpenExport={() => setExportOpen(true)}
+        />
       </div>
+      {exportOpen ? (
+        <MembersRosterExportModal
+          locale={locale}
+          spaceName={space ? nameOf(space, locale) : (locale === "ar" ? "الجمعية" : "Society")}
+          spaceId={spaceId}
+          currency={currency}
+          issuerName={data?.user.displayName}
+          rows={rosterRows}
+          features={data?.entitlements?.features}
+          initialSort={sort}
+          onClose={() => setExportOpen(false)}
+        />
+      ) : null}
       <div className="members-table">
         <div className="table-head">
           <span>{locale === "ar" ? "العضو" : "Member"}</span>
-          <span>{t.goal}</span>
+          <span title={locale === "ar" ? "الالتزام السنوي الكامل؛ عمود عليه يحسب الأشهر المستحقة حتى اليوم" : "Full-year commitment; Owes uses months accrued to date"}>{t.goal}</span>
           <span title={data?.spaces.find((item) => item.id === spaceId)?.type === "trip"
             ? ((tripUsesFundCash || tripWalletUsesFundCash({
               spaceId: spaceId ?? "",
