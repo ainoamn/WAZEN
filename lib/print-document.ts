@@ -966,20 +966,18 @@ export function openReportPreview(html: string, autoPrint = false) {
 
 export async function downloadReportHtml(html: string, filename: string) {
   if (typeof window === "undefined") return;
-  const wantsPdf = /\.pdf$/i.test(filename) || !/\.html$/i.test(filename);
-  // Arabic receipts without explicit PDF request: HTML keeps shaping. Statements requested as PDF use canvas.
-  if (!wantsPdf && /lang=["']ar["']/i.test(html) && (/\bis-receipt\b/.test(html) || /\bis-statement\b/.test(html))) {
-    openReportPreview(html, false);
+  // Receipts/statements: crisp HTML (canvas PDF blurs Arabic). Open preview — same quality as Print.
+  if (/\bis-receipt\b/.test(html) || /\bis-statement\b/.test(html)) {
+    const opened = openReportPreview(html, false);
+    if (opened) return;
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    triggerBlobDownload(blob, filename.endsWith(".html") ? filename : `${filename.replace(/\.pdf$/i, "")}.html`);
     return;
   }
   try {
     const blob = await htmlDocumentToPdfBlob(html);
     triggerBlobDownload(blob, pdfFilename(filename));
   } catch {
-    if (/lang=["']ar["']/i.test(html) && (/\bis-receipt\b/.test(html) || /\bis-statement\b/.test(html))) {
-      openReportPreview(html, false);
-      return;
-    }
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     triggerBlobDownload(blob, filename.endsWith(".html") ? filename : `${filename}.html`);
   }

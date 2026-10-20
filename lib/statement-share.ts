@@ -240,38 +240,52 @@ export function buildAssociationStatementWhatsAppMessage(input: {
   const kindLabel = input.kind === "dues"
     ? (input.locale === "ar" ? "كشف المتأخرات" : "Arrears statement")
     : (input.locale === "ar" ? "كشف حساب الجمعية" : "Association statement");
+  const explainAr = input.kind === "dues"
+    ? "هذا كشف متأخرات إلكتروني من منصة وازن يوضح أسماء الأعضاء والمدفوع والمتأخر حتى الشهر الحالي، مع ملخص المتوفر والمصروفات."
+    : "هذا كشف حساب إلكتروني من منصة وازن يوضح حركات الجمعية ورصيدها؛ يمكنك فتحه وتنزيله أو طباعته من الرابط.";
+  const explainEn = input.kind === "dues"
+    ? "This is an electronic arrears statement from Wazen showing member names, paid amounts, and arrears to the current month, plus available funds and expenses."
+    : "This is an electronic association statement from Wazen showing movements and balances; open, download, or print it from the link.";
   const body = input.locale === "ar"
     ? [
         "السلام عليكم",
         "",
-        `${kindLabel} — وازن (بإدارة بن حمود للتطوير)`,
+        `${kindLabel} — وازن`,
+        explainAr,
+        "",
         `المحفظة: ${input.walletName}`,
-        `النوع: ${input.filterLabel}`,
+        `نوع الكشف: ${input.filterLabel}`,
         input.availableLabel ? `المتوفر (نقد + ودائع): ${input.availableLabel}` : `الرصيد: ${input.balanceLabel}`,
         input.expensesLabel ? `المصروفات: ${input.expensesLabel}` : null,
         input.paidLabel ? `المدفوع: ${input.paidLabel}` : null,
         input.arrearsLabel ? `المتأخرات: ${input.arrearsLabel}` : null,
-        input.lateMembersLabel ? `عدد المتأخرين: ${input.lateMembersLabel}` : null,
-        input.kind === "dues" ? null : `الحركات: ${input.movementsLabel}`,
+        input.lateMembersLabel ? `عدد المتأخرين عن الدفع: ${input.lateMembersLabel}` : null,
+        input.kind === "dues" ? null : `عدد الحركات: ${input.movementsLabel}`,
         "",
-        "مرفق ملف PDF للكشف. امسح رمز الاستجابة السريعة داخل الملف أو افتح الرابط:",
+        "رابط الكشف (فتح / تنزيل / طباعة):",
         input.statementUrl,
+        "",
+        "صادر إلكترونياً من منصة وازن — بإدارة بن حمود للتطوير (BHD).",
       ]
     : [
         "Hello",
         "",
-        `${kindLabel} — WAZEN (managed by Bin Hamoud for Development)`,
+        `${kindLabel} — WAZEN`,
+        explainEn,
+        "",
         `Wallet: ${input.walletName}`,
-        `Type: ${input.filterLabel}`,
+        `Statement type: ${input.filterLabel}`,
         input.availableLabel ? `Available (cash + holdings): ${input.availableLabel}` : `Balance: ${input.balanceLabel}`,
         input.expensesLabel ? `Expenses: ${input.expensesLabel}` : null,
         input.paidLabel ? `Paid: ${input.paidLabel}` : null,
         input.arrearsLabel ? `Arrears: ${input.arrearsLabel}` : null,
-        input.lateMembersLabel ? `Members in arrears: ${input.lateMembersLabel}` : null,
+        input.lateMembersLabel ? `Members late on payment: ${input.lateMembersLabel}` : null,
         input.kind === "dues" ? null : `Movements: ${input.movementsLabel}`,
         "",
-        "PDF attached. Scan the QR inside the file or open:",
+        "Statement link (open / download / print):",
         input.statementUrl,
+        "",
+        "Issued electronically by Wazen — managed by Bin Hamoud for Development (BHD).",
       ];
   return body.filter((line): line is string => line != null).join("\n");
 }

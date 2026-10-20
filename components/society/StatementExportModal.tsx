@@ -24,12 +24,12 @@ import {
   downloadReportHtml,
   printWazenHtml,
   resolvePrintLogoUrl,
-  shareWazenPdfWithText,
 } from "../../lib/print-document";
 import { consumePlanQuota } from "../../lib/plan-quota-client";
 import { planHasFeature } from "../../lib/plan-features";
 import { apiFetch } from "../../lib/client-api";
 import { buildAssociationStatementWhatsAppMessage } from "../../lib/statement-share";
+import { openWhatsAppUrl, whatsappShareUrl } from "../../lib/receipt-share";
 import { formatDebitMoneyMinor, formatMoneyMinor } from "../../lib/money";
 
 type Locale = "ar" | "en";
@@ -272,21 +272,10 @@ export function StatementExportModal({
       }
 
       if (mode === "whatsapp") {
+        // Same pattern as receipts: clear text + public open/download link (no blurry canvas PDF).
+        if (!verifyUrl) throw new Error(locale === "ar" ? "تعذر تجهيز رابط الكشف." : "Could not prepare statement link.");
         const text = buildSummaryMessage(verifyUrl);
-        const stamp = new Date().toISOString().slice(0, 10);
-        const result = await shareWazenPdfWithText({
-          buildHtml: (logoUrl) => buildHtml(logoUrl, { verifyUrl, qrDataUrl }),
-          text,
-          filename: duesOnly ? `wazen-dues-${stamp}.pdf` : `wazen-statement-${stamp}.pdf`,
-          title: spaceName,
-        });
-        if (result === "failed" && onShare && !duesOnly) {
-          onShare(filter);
-        } else if (result === "downloaded") {
-          window.alert(locale === "ar"
-            ? "تم تنزيل ملف PDF. أكمل الإرسال من واتساب مع الملخص الظاهر."
-            : "PDF downloaded. Finish sending from WhatsApp with the summary text.");
-        }
+        openWhatsAppUrl(whatsappShareUrl(null, text));
         onClose();
         return;
       }
@@ -300,7 +289,7 @@ export function StatementExportModal({
       const stamp = new Date().toISOString().slice(0, 10);
       await downloadReportHtml(
         buildHtml(logoUrl, { verifyUrl, qrDataUrl }),
-        duesOnly ? `wazen-dues-${stamp}.pdf` : `wazen-statement-${stamp}.pdf`,
+        duesOnly ? `wazen-dues-${stamp}.html` : `wazen-statement-${stamp}.html`,
       );
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "FAILED");
@@ -391,13 +380,9 @@ export function StatementExportModal({
           ) : null}
 
           <p className="modal-note">
-            {duesOnly
-              ? (locale === "ar"
-                ? "المتأخر بالأحمر. المتوفر = نقد + ودائع. فعّل «التفاصيل / ملاحظات الدفع» لطباعة آخر دفعة والملاحظات."
-                : "Arrears print in red. Available = cash + holdings. Enable “Details / payment notes” to print last payment notes.")
-              : (locale === "ar"
-                ? "واتساب يرسل ملخصاً + ملف PDF فيه رمز للتحقق. المتأخرات تظهر بالأحمر."
-                : "WhatsApp sends a summary + PDF with a verification QR. Arrears appear in red.")}
+            {locale === "ar"
+              ? "التحميل والطباعة بنفس الوضوح. واتساب يرسل شرحاً للكشف + رابط فتح/تنزيل من الموقع (مثل الإيصالات)."
+              : "Download and print stay crisp. WhatsApp sends an explanation plus an open/download link (same as receipts)."}
           </p>
 
           <div className="modal-actions">
@@ -408,7 +393,7 @@ export function StatementExportModal({
               disabled={busy || canShare === false}
               onClick={() => void run("whatsapp")}
             >
-              {locale === "ar" ? "واتساب (PDF)" : "WhatsApp (PDF)"}
+              {locale === "ar" ? "واتساب" : "WhatsApp"}
             </button>
             <button type="button" className="secondary-button" disabled={busy} onClick={() => void run("download")}>
               <Download size={15} />{locale === "ar" ? "تحميل" : "Download"}

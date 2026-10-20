@@ -13,7 +13,7 @@ import { assignEntryNumbers } from "../../../lib/entry-numbers";
 import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWriteRequest, errorResponse, rateLimit, releaseIdempotency } from "../../../lib/security";
 import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf, actorCanIssueSpaceDocuments } from "../../../lib/authorization";
 import { prepareAudit, writeAudit } from "../../../lib/audit";
-import { currencyScale, formatMoneyMinor, multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
+import { currencyScale, formatDebitMoneyMinor, formatMoneyMinor, multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
 import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, periodKeyFromDate, type InstallmentLike } from "../../../lib/installments";
 import { coveringPeriod } from "../../../lib/accounting-periods";
 import { isLikelyPhone, normalizeOptionalMemberPhone, toWhatsAppNumber } from "../../../lib/phone";
@@ -3934,14 +3934,40 @@ export async function POST(request: Request) {
         voided: locale === "ar" ? "المعاملات المحذوفة" : "Deleted transactions",
         all: locale === "ar" ? "كل المعاملات" : "All transactions",
       })[filter];
+      const currency = space.currency || "OMR";
       const txnCount = await db.prepare("SELECT COUNT(*) AS count FROM transactions WHERE space_id=?").bind(space.id).first<{ count: number }>();
+      const expenseRow = await db.prepare(
+        "SELECT COALESCE(SUM(amount_minor),0) AS total FROM transactions WHERE space_id=? AND status='approved' AND kind='expense'",
+      ).bind(space.id).first<{ total: number }>();
+      const holdingsRow = await db.prepare(
+        "SELECT COALESCE(SUM(amount_minor),0) AS total FROM space_holdings WHERE space_id=? AND status='active'",
+      ).bind(space.id).first<{ total: number }>().catch(() => ({ total: 0 }));
+      const membersAgg = await db.prepare(
+        `SELECT
+          COALESCE(SUM(paid_minor),0) AS paid,
+          COALESCE(SUM(CASE WHEN due_minor > paid_minor THEN due_minor - paid_minor ELSE 0 END),0) AS arrears,
+          COALESCE(SUM(CASE WHEN due_minor > paid_minor THEN 1 ELSE 0 END),0) AS late_count
+         FROM members WHERE space_id=? AND status='active' AND COALESCE(dues_exempt,0)=0`,
+      ).bind(space.id).first<{ paid: number; arrears: number; late_count: number }>();
+      const cash = Number(space.balance_minor) || 0;
+      const holdingsMinor = Number(holdingsRow?.total ?? 0);
+      const available = cash + holdingsMinor;
+      const expenses = Number(expenseRow?.total ?? 0);
+      const paid = Number(membersAgg?.paid ?? 0);
+      const arrears = Number(membersAgg?.arrears ?? 0);
+      const lateCount = Number(membersAgg?.late_count ?? 0);
       const message = buildAssociationStatementWhatsAppMessage({
         locale,
         walletName: locale === "ar" ? space.name_ar : space.name_en,
         filterLabel,
-        balanceLabel: formatMoneyMinor(Number(space.balance_minor) || 0, space.currency || "OMR", locale),
+        balanceLabel: formatMoneyMinor(cash, currency, locale),
         movementsLabel: String(Number(txnCount?.count ?? 0)),
         statementUrl,
+        availableLabel: formatMoneyMinor(available, currency, locale),
+        expensesLabel: formatMoneyMinor(expenses, currency, locale),
+        paidLabel: formatMoneyMinor(paid, currency, locale),
+        arrearsLabel: arrears > 0 ? formatDebitMoneyMinor(arrears, currency, locale) : formatMoneyMinor(0, currency, locale),
+        lateMembersLabel: String(lateCount),
       });
       const whatsappNumber = parsed.data.phone ? toWhatsAppNumber(parsed.data.phone) : "";
       notification = {
