@@ -142,6 +142,20 @@ export const BHD_APPS: BhdApp[] = [
     accent: "#283b4d",
     soft: "#e9edf0",
   },
+  {
+    id: "hr",
+    clientId: "bhd-hr",
+    nameAr: "الموارد البشرية",
+    nameEn: "BHD HR",
+    origin: "https://hr.bhd-om.com",
+    workspacePath: "/",
+    startUrl: ssoStart("https://hr.bhd-om.com", "/"),
+    mode: "sso",
+    enabled: true,
+    mark: "HR",
+    accent: "#3d5a45",
+    soft: "#e7efe9",
+  },
 ];
 
 export function gatewayApps(): BhdApp[] {
@@ -159,48 +173,26 @@ function samePortalOrigin(pageOrigin?: string) {
   );
 }
 
-function stripOrigin(value: string) {
-  return value.replace(/\/$/, "");
-}
-
-/** مساحة العمل مباشرة — للميدلوير وprefetch عندما تكون جلسة المنتج قائمة. */
+/** مساحة العمل مباشرة — بلا سلسلة start في كل نقرة. */
 export function workspaceUrlForApp(app: BhdApp, pageOrigin?: string): string {
   if (app.mode === "identity") {
     if (pageOrigin) {
-      const here = stripOrigin(pageOrigin);
+      const here = pageOrigin.replace(/\/$/, "");
       if (here === "https://id.bhd-om.com" || samePortalOrigin(pageOrigin)) return app.workspacePath;
     }
-    return `${stripOrigin(app.origin)}${app.workspacePath}`;
+    return `${app.origin.replace(/\/$/, "")}${app.workspacePath}`;
   }
   if (app.id === "portal" && samePortalOrigin(pageOrigin)) {
     return app.workspacePath;
   }
   if (app.origin) {
-    return `${stripOrigin(app.origin)}${app.workspacePath || "/"}`;
+    return `${app.origin.replace(/\/$/, "")}${app.workspacePath || "/"}`;
   }
   return app.workspacePath || "/";
 }
 
-/**
- * رابط النقر من المشغّل.
- * - نفس المنشأ: مساحة العمل (الميدلوير → start فقط إن لزم).
- * - منتج SSO آخر: start الصامت حتى تُعاد استخدام جلسة الهوية بلا نموذج دخول.
- * انظر BHD-APP-SWITCHER §0.4 / §3 وBHD-SESSION-POLICY «تنقّل صامت».
- */
 export function launchUrlForApp(app: BhdApp, pageOrigin?: string): string {
-  if (app.mode === "identity") {
-    return workspaceUrlForApp(app, pageOrigin);
-  }
-  if (app.mode === "browse" || !app.startUrl) {
-    return app.origin ? `${stripOrigin(app.origin)}/` : workspaceUrlForApp(app, pageOrigin);
-  }
-  if (pageOrigin && stripOrigin(pageOrigin) === stripOrigin(app.origin)) {
-    return workspaceUrlForApp(app, pageOrigin);
-  }
-  if (app.id === "portal" && samePortalOrigin(pageOrigin)) {
-    return workspaceUrlForApp(app, pageOrigin);
-  }
-  return app.startUrl;
+  return workspaceUrlForApp(app, pageOrigin);
 }
 
 export function startUrlForApp(app: BhdApp): string | null {
