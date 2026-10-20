@@ -3844,6 +3844,25 @@ export async function POST(request: Request) {
       ]);
       user.displayName = parsed.data.displayName;
       user.avatarUrl = parsed.data.avatarUrl ?? null;
+    } else if (action === "importSocietyPack") {
+      assertApiScope(user, "wallets:write");
+      const parsed = z.object({
+        pack: z.unknown(),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_PACK");
+      const { parseSocietyImportPack } = await import("../../../lib/society-import");
+      const { applySocietyImportPack } = await import("../../../lib/society-import-apply");
+      let pack;
+      try {
+        pack = parseSocietyImportPack(parsed.data.pack);
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "INVALID_PACK";
+        throw new ApiError(400, code.startsWith("INVALID") || code.startsWith("TOO_") ? code : "INVALID_PACK");
+      }
+      const result = await applySocietyImportPack(db, user, pack);
+      await completeIdempotency(db, user.id, idempotencyKey, result);
+      claimRef.current = null;
+      return Response.json(result, { headers: { "Cache-Control": "no-store" } });
     } else throw new ApiError(400, "UNSUPPORTED_ACTION");
 
     // Mutations must return immediately — client already holds the full dashboard from GET

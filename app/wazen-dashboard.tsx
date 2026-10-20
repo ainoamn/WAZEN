@@ -8,6 +8,7 @@ import { MemberDetailModal, MemberPersonProfile, MemberStatementEmailModal, Rece
 import { DuplicateMergePanel } from "../components/members/duplicate-merge-panel";
 import { ContactSourceBar } from "../components/members/contact-source-bar";
 import { SpaceRolePermissionsPanel } from "../components/members/space-role-permissions";
+import { SocietyImportModal } from "../components/society/SocietyImportModal";
 import { PersonalRulesSetup, PersonalWalletPanel, confirmResetWalletData } from "../components/personal/personal-wallet";
 import { DateField } from "../components/ui/date-field";
 import { FoldWrap } from "../components/ui/collapsible-panel";
@@ -1611,7 +1612,7 @@ export function WazenDashboard() {
   const [loading, setLoading] = useState(() => !readDashboardCache());
   const [error, setError] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [modal, setModal] = useState<"transaction" | "wallet" | "editWallet" | "invite" | "tripExpense" | "circleOrder" | "withdrawSurplus" | "smartPay" | "memberDetail" | "memberProfile" | "sendReceipt" | "clonePeriod" | null>(null);
+  const [modal, setModal] = useState<"transaction" | "wallet" | "editWallet" | "invite" | "societyImport" | "tripExpense" | "circleOrder" | "withdrawSurplus" | "smartPay" | "memberDetail" | "memberProfile" | "sendReceipt" | "clonePeriod" | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [pickedSpaceId, setPickedSpaceId] = useState<Partial<Record<ViewId, string>>>({});
   const [activeMemberId, setActiveMemberId] = useState("");
@@ -2112,16 +2113,21 @@ export function WazenDashboard() {
                       {canCreateCurrentType ? addWalletLabel : (locale === "ar" ? "ترقية لإضافة محفظة" : "Upgrade to add")}
                       {!canCreateCurrentType && <PlanLockBadge locale={locale} />}
                     </button>
+                    {activeView === "society" && canCreateCurrentType ? (
+                      <button type="button" className="secondary-button" onClick={() => setModal("societyImport")}>
+                        <Upload size={16} />{locale === "ar" ? "استيراد حزمة" : "Import pack"}
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
               {!activeSpace && (
-                <article className="panel"><div className="empty-state"><WalletCards size={28} /><strong>{addWalletLabel}</strong><p>{activeView === "society" ? (locale === "ar" ? "لا توجد جمعية بعد. أنشئ جمعية جديدة لإدارة الأقساط والأدوار والأعضاء." : "No savings circle yet. Create one to manage dues, turns, and members.") : (locale === "ar" ? "لا توجد محفظة في هذا القسم بعد." : "No wallet in this section yet.")}</p><button className="primary-button" onClick={openNewWallet}>{canCreateCurrentType ? <Plus size={16} /> : <Lock size={16} />}{canCreateCurrentType ? addWalletLabel : (locale === "ar" ? "ترقية الباقة" : "Upgrade plan")}</button></div></article>
+                <article className="panel"><div className="empty-state"><WalletCards size={28} /><strong>{addWalletLabel}</strong><p>{activeView === "society" ? (locale === "ar" ? "لا توجد جمعية بعد. أنشئ جمعية جديدة أو استورد حزمة الأعضاء والمدفوعات دفعة واحدة." : "No savings circle yet. Create one or import a members-and-payments pack in one batch.") : (locale === "ar" ? "لا توجد محفظة في هذا القسم بعد." : "No wallet in this section yet.")}</p><div className="space-switcher-actions"><button className="primary-button" onClick={openNewWallet}>{canCreateCurrentType ? <Plus size={16} /> : <Lock size={16} />}{canCreateCurrentType ? addWalletLabel : (locale === "ar" ? "ترقية الباقة" : "Upgrade plan")}</button>{activeView === "society" && canCreateCurrentType ? <button type="button" className="secondary-button" onClick={() => setModal("societyImport")}><Upload size={16} />{locale === "ar" ? "استيراد حزمة" : "Import pack"}</button> : null}</div></div></article>
               )}
             </>
           )}
           {activeSpace && !viewLocked && (
-            <SpaceDetail space={activeSpace} data={data} locale={locale} onAdd={() => setModal("transaction")} onInvite={() => setModal("invite")} onEditWallet={() => setModal("editWallet")} onToggleArchived={() => setShowArchived((current) => !current)} showArchived={showArchived} onAddWallet={openNewWallet} addWalletLabel={addWalletLabel} canCreateWallet={canCreateCurrentType} onArchiveWallet={() => {
+            <SpaceDetail space={activeSpace} data={data} locale={locale} onAdd={() => setModal("transaction")} onInvite={() => setModal("invite")} onImportPack={activeSpace.type === "society" || activeSpace.type === "group" ? () => setModal("societyImport") : undefined} onEditWallet={() => setModal("editWallet")} onToggleArchived={() => setShowArchived((current) => !current)} showArchived={showArchived} onAddWallet={openNewWallet} addWalletLabel={addWalletLabel} canCreateWallet={canCreateCurrentType} onArchiveWallet={() => {
               const archived = (activeSpace.status ?? "active") === "archived";
               if (!window.confirm(archived ? (locale === "ar" ? "إلغاء أرشفة هذه الجمعية وإعادتها للقائمة؟" : "Unarchive this association?") : (locale === "ar" ? "أرشفة هذه المحفظة؟ يتحقق النظام أولاً أن كل الحسابات مسوّاة وكل المبالغ مدفوعة، ثم يختمها للقراءة فقط وتختفي بياناتها من الشاشة الرئيسية. يمكن استعادتها من «عرض المؤرشف»." : "Archive this wallet? The system first checks every balance is settled and paid, then seals it read-only and hides its data from the main screens. Restore it from “show archived”."))) return;
               void apiFetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "archiveWallet", idempotencyKey: crypto.randomUUID(), spaceId: activeSpace.id, archived: !archived }) }).then(async (response) => {
@@ -2171,6 +2177,20 @@ export function WazenDashboard() {
         }} />
       )}
       {modal === "invite" && <InviteModal data={data} locale={locale} preferredSpaceId={activeSpace?.id} onClose={() => setModal(null)} onDone={(message) => { setModal(null); flash(message); void load(); }} onEditExisting={(memberId) => { setActiveMemberId(memberId); setMemberLedgerFocus("all"); setEditMemberOnOpen(true); setModal("memberProfile"); }} />}
+      {modal === "societyImport" && (
+        <SocietyImportModal
+          locale={locale}
+          preferredSpaceId={activeSpace?.type === "society" || activeSpace?.type === "group" ? activeSpace.id : undefined}
+          onClose={() => setModal(null)}
+          onDone={(message, spaceId) => {
+            setModal(null);
+            flash(message);
+            void load(true).then(() => {
+              if (spaceId) changeView("society", spaceId);
+            });
+          }}
+        />
+      )}
       {modal === "tripExpense" && <TripExpenseModal data={data} locale={locale} preferredSpaceId={activeSpace?.id} expenseId={editingExpenseId || undefined} onClose={() => { setModal(null); setEditingExpenseId(""); }} onSaved={(next) => { acceptWrite(next); setModal(null); setEditingExpenseId(""); flash(locale === "ar" ? "تم حفظ المصروف وتحديث الحصص" : "Expense saved and shares updated"); }} />}
       {modal === "circleOrder" && activeSpace && <CircleOrderModal data={data} locale={locale} spaceId={activeSpace.id} onClose={() => setModal(null)} onSaved={(next) => { acceptWrite(next); setModal(null); flash(locale === "ar" ? "تم اعتماد ترتيب الأدوار" : "Turn order saved"); }} />}
       {modal === "clonePeriod" && activeSpace && <ClonePeriodModal data={data} locale={locale} space={activeSpace} onClose={() => setModal(null)} onSaved={(next) => { acceptWrite(next); setModal(null); flash(locale === "ar" ? "فُتحت فترة / جمعية جديدة بنفس الشروط" : "A new period was opened with the same terms"); }} />}
@@ -2797,7 +2817,7 @@ function Obligations({ data, locale, onView }: { data: DashboardData; locale: Lo
   );
 }
 
-function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArchiveWallet, onToggleArchived, showArchived, onAddWallet, addWalletLabel, canCreateWallet, onTripExpense, onEditExpense, onCircleOrder, onClonePeriod, onClosePeriod, onReopenPeriod, onSettle, onCompleteTurn, onTxnChanged, onOpenMember }: { space: Space; data: DashboardData; locale: Locale; onAdd: () => void; onInvite: () => void; onEditWallet: () => void; onArchiveWallet: () => void; onToggleArchived?: () => void; showArchived?: boolean; onAddWallet?: () => void; addWalletLabel?: string; canCreateWallet?: boolean; onTripExpense: () => void; onEditExpense: (expenseId: string) => void; onCircleOrder: () => void; onClonePeriod: () => void; onClosePeriod: () => void; onReopenPeriod: (periodId: string) => void; onSettle: (settlementId: string) => void; onCompleteTurn: (turnId: string) => void; onTxnChanged: (next: Partial<DashboardData>) => void; onOpenMember: (memberId: string, focus?: MemberLedgerFocus) => void }) {
+function SpaceDetail({ space, data, locale, onAdd, onInvite, onImportPack, onEditWallet, onArchiveWallet, onToggleArchived, showArchived, onAddWallet, addWalletLabel, canCreateWallet, onTripExpense, onEditExpense, onCircleOrder, onClonePeriod, onClosePeriod, onReopenPeriod, onSettle, onCompleteTurn, onTxnChanged, onOpenMember }: { space: Space; data: DashboardData; locale: Locale; onAdd: () => void; onInvite: () => void; onImportPack?: () => void; onEditWallet: () => void; onArchiveWallet: () => void; onToggleArchived?: () => void; showArchived?: boolean; onAddWallet?: () => void; addWalletLabel?: string; canCreateWallet?: boolean; onTripExpense: () => void; onEditExpense: (expenseId: string) => void; onCircleOrder: () => void; onClonePeriod: () => void; onClosePeriod: () => void; onReopenPeriod: (periodId: string) => void; onSettle: (settlementId: string) => void; onCompleteTurn: (turnId: string) => void; onTxnChanged: (next: Partial<DashboardData>) => void; onOpenMember: (memberId: string, focus?: MemberLedgerFocus) => void }) {
   const t = copy[locale];
   const members = data.members.filter((member) => member.space_id === space.id);
   const tripUsesFundCash = space.type === "trip" && (
@@ -2853,6 +2873,7 @@ function SpaceDetail({ space, data, locale, onAdd, onInvite, onEditWallet, onArc
     <div className="space-toolbar">
       {canAddTxn ? <button type="button" onClick={onAdd}><Plus size={16} />{t.add}</button> : null}
       {["trip", "society", "group"].includes(space.type) && canManageRoles ? <button type="button" onClick={onInvite}><UserPlus size={16} />{t.invite}</button> : null}
+      {onImportPack && canManageRoles ? <button type="button" onClick={onImportPack}><Upload size={16} />{locale === "ar" ? "استيراد حزمة" : "Import pack"}</button> : null}
       <StatementPrintMenu
         locale={locale}
         locked={!canPrintForSpace(data, space)}
