@@ -862,7 +862,11 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     packed = await Promise.all([
     db.prepare(`SELECT * FROM spaces WHERE id IN (${placeholders}) ORDER BY created_at ASC`).bind(...ids).all<SpaceRow>(),
     db.prepare(`SELECT * FROM members WHERE space_id IN (${placeholders}) ORDER BY joined_at ASC`).bind(...ids).all<MemberRow>(),
-    db.prepare(`SELECT * FROM transactions WHERE space_id IN (${placeholders}) ORDER BY occurred_at DESC LIMIT 250`).bind(...ids).all<TransactionRow>(),
+    db.prepare(`SELECT * FROM transactions WHERE space_id IN (${placeholders}) ORDER BY occurred_at DESC LIMIT 800`).bind(...ids).all<TransactionRow>(),
+    db.prepare(`SELECT space_id,
+        COALESCE(SUM(CASE WHEN status='approved' AND kind IN ('income','contribution') THEN amount_minor ELSE 0 END), 0) AS posted_income_minor,
+        COALESCE(SUM(CASE WHEN status='approved' AND kind='expense' THEN amount_minor ELSE 0 END), 0) AS posted_expense_minor
+      FROM transactions WHERE space_id IN (${placeholders}) GROUP BY space_id`).bind(...ids).all<{ space_id: string; posted_income_minor: number; posted_expense_minor: number }>(),
     db.prepare(`SELECT * FROM contribution_plans WHERE space_id IN (${placeholders})`).bind(...ids).all(),
     db.prepare(`SELECT ct.*,m.display_name FROM circle_turns ct JOIN members m ON m.id=ct.member_id
       WHERE ct.space_id IN (${placeholders}) ORDER BY ct.space_id,ct.turn_number`).bind(...ids).all(),
@@ -949,6 +953,7 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
     refreshedSpaces,
     members,
     transactions,
+    ledgerTotals,
     plans,
     circleTurns,
     tripExpenses,
@@ -990,6 +995,15 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
   for (const plan of plans.results as Array<{ space_id: string; amount_minor: number; duration_months: number }>) {
     planBySpace.set(String(plan.space_id), { amount_minor: Number(plan.amount_minor ?? 0), duration_months: Number(plan.duration_months ?? 0) });
   }
+  const ledgerBySpace = new Map(
+    (ledgerTotals.results ?? []).map((row) => [
+      String(row.space_id),
+      {
+        posted_income_minor: Number(row.posted_income_minor) || 0,
+        posted_expense_minor: Number(row.posted_expense_minor) || 0,
+      },
+    ]),
+  );
   const spacesWithGoals = refreshedSpaces.results.map((space) => {
     const membersDue = memberDueBySpace.get(space.id) ?? 0;
     const plan = planBySpace.get(space.id);
@@ -1007,7 +1021,14 @@ async function loadDashboard(db: D1Database, userId: string, options?: { refresh
         balanceMinor = approvedCashMinor(spaceTxns);
       }
     }
-    return { ...space, balance_minor: balanceMinor, goal_minor: membersDue > 0 ? membersDue : (planGoal || space.goal_minor) };
+    const ledger = ledgerBySpace.get(space.id);
+    return {
+      ...space,
+      balance_minor: balanceMinor,
+      goal_minor: membersDue > 0 ? membersDue : (planGoal || space.goal_minor),
+      posted_income_minor: ledger?.posted_income_minor ?? 0,
+      posted_expense_minor: ledger?.posted_expense_minor ?? 0,
+    };
   });
 
   const unpaidBySpace = new Map<string, number>();

@@ -81,11 +81,14 @@ export function formatMoneyMinor(
   const scale = currencyScale(currency);
   const divisor = 10 ** scale;
   const amount = Number(minor) || 0;
+  // Latin digits + explicit decimal keep OMR baisa readable (2.100 ≠ ٢٬١٠٠ “ألفان”).
   const formatted = new Intl.NumberFormat(locale === "ar" ? "ar-OM" : "en-OM", {
     style: "currency",
     currency,
     minimumFractionDigits: scale,
     maximumFractionDigits: scale,
+    numberingSystem: "latn",
+    useGrouping: true,
     notation: options?.compact ? "compact" : "standard",
   }).format(Math.abs(amount) / divisor);
   return amount < 0 ? `(${formatted})` : formatted;
