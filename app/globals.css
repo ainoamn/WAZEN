@@ -2028,38 +2028,61 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
   background: currentColor;
 }
 
-.bhd-switcher-avatar img,
-.bhd-switcher-avatar span,
-.bhd-switcher-account-row img,
-.bhd-switcher-account-initial {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  object-fit: cover;
+.bhd-switcher-avatar .bhd-switcher-face.is-32 .bhd-switcher-provider {
+  display: none;
 }
 
-.bhd-switcher-avatar span,
-.bhd-switcher-account-initial {
+.bhd-switcher-face {
+  position: relative;
   display: grid;
   place-items: center;
+  flex: 0 0 auto;
+}
+
+.bhd-switcher-face img,
+.bhd-switcher-face > span:not(.bhd-switcher-provider) {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  object-fit: cover;
   background: #092d24;
   color: #fff;
-  font-size: 13px;
   font-weight: 800;
+}
+
+.bhd-switcher-face.is-32 img,
+.bhd-switcher-face.is-32 > span:not(.bhd-switcher-provider) {
+  width: 32px;
+  height: 32px;
+  font-size: 13px;
+}
+
+.bhd-switcher-face.is-40 img,
+.bhd-switcher-face.is-40 > span:not(.bhd-switcher-provider) {
+  width: 40px;
+  height: 40px;
+  font-size: 15px;
+}
+
+.bhd-switcher-face.is-56 img,
+.bhd-switcher-face.is-56 > span:not(.bhd-switcher-provider) {
+  width: 56px;
+  height: 56px;
+  font-size: 22px;
 }
 
 .bhd-switcher-card {
   position: fixed;
-  z-index: 80;
-  width: 320px;
-  max-width: min(320px, calc(100vw - 24px));
-  max-height: 360px;
+  z-index: 90;
+  width: min(344px, calc(100vw - 24px));
+  max-height: min(480px, calc(100svh - 96px));
   overflow: auto;
-  padding: 14px;
+  padding: 12px;
   border: 1px solid #d7e2dc;
-  border-radius: 16px;
+  border-radius: 28px;
   background: #fff;
   box-shadow: 0 18px 40px rgba(9, 45, 36, 0.12);
+  color: #092d24;
 }
 
 .bhd-switcher-card-head p {
@@ -2114,49 +2137,147 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
   box-shadow: 0 0 0 2px #fff, 0 0 0 4px currentColor;
 }
 
-.bhd-switcher-account-row {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 12px;
+.bhd-switcher-account {
+  padding: 8px;
+}
+
+.bhd-switcher-account-current {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 16px 12px 12px;
+  text-align: center;
+}
+
+.bhd-switcher-account-current .bhd-switcher-identity {
+  justify-items: center;
 }
 
 .bhd-switcher-identity {
   min-width: 0;
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
 .bhd-switcher-identity strong,
 .bhd-switcher-identity small {
   display: block;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.bhd-switcher-identity small,
-.bhd-switcher-account-row small {
+.bhd-switcher-identity strong {
+  font-size: 14px;
+  font-weight: 700;
+  unicode-bidi: plaintext;
+}
+
+.bhd-switcher-identity small {
   color: #5d7169;
   font-size: 12px;
   font-weight: 600;
 }
 
-.bhd-switcher-providers {
+.bhd-switcher-manage {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid #d7e2dc;
+  border-radius: 999px;
+  color: #075c45;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.bhd-switcher-account-list {
+  display: grid;
+  border-top: 1px solid #e6eeea;
+}
+
+.bhd-switcher-account-item {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.bhd-switcher-account-item:hover,
+.bhd-switcher-account-item:focus-visible {
+  background: #f5f7f6;
+}
+
+.bhd-switcher-account-item .bhd-switcher-identity {
+  flex: 1;
+  justify-items: start;
+}
+
+.bhd-switcher-account-actions {
+  display: grid;
+  gap: 2px;
+  border-top: 1px solid #e6eeea;
+  padding-top: 6px;
+}
+
+.bhd-switcher-account-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: start;
+  cursor: pointer;
+}
+
+.bhd-switcher-account-action:hover,
+.bhd-switcher-account-action:focus-visible {
+  background: #f5f7f6;
+}
+
+.bhd-switcher-action-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #eef4f1;
+  font-size: 22px;
+  font-weight: 500;
 }
 
 .bhd-switcher-provider {
+  position: absolute;
+  inset-inline-end: -2px;
+  bottom: -2px;
   display: inline-grid;
   place-items: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 2px solid #fff;
   border-radius: 999px;
   text-decoration: none;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
   line-height: 1;
   cursor: default;
@@ -2181,42 +2302,6 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
 .bhd-switcher-provider.is-whatsapp {
   background: #25d366;
   color: #fff;
-}
-
-.bhd-switcher-account-switch {
-  display: grid;
-  justify-items: start;
-}
-
-.bhd-switcher-account-link,
-.bhd-switcher-signout {
-  display: block;
-  width: 100%;
-  min-height: 44px;
-  padding: 10px 12px;
-  border: 0;
-  border-radius: 12px;
-  background: #f4f7f5;
-  color: var(--ink);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 800;
-  text-align: start;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.bhd-switcher-signout {
-  margin-top: 8px;
-  background: var(--ink);
-  color: #fff;
-}
-
-.bhd-switcher-signout-all {
-  margin-top: 6px;
-  background: #fff;
-  color: var(--ink);
-  border: 1px solid #d7e2dc;
 }
 
 @media (max-width: 600px) {
