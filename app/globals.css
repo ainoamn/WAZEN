@@ -1000,10 +1000,10 @@ html[data-theme="dark"] .space-picker-field select { background: var(--surface);
     gap: 16px;
     min-width: 0;
   }
-  .modal-card .modal-form input,
+  .modal-card .modal-form input:not([type="checkbox"]):not([type="radio"]),
   .modal-card .modal-form select,
   .modal-card .date-field-input,
-  .add-txn-modal .modal-form input,
+  .add-txn-modal .modal-form input:not([type="checkbox"]):not([type="radio"]),
   .add-txn-modal .modal-form select {
     height: 52px;
     font-size: 16px; /* avoid iOS zoom */
