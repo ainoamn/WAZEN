@@ -33,7 +33,7 @@ export function getRawDb(): D1Database {
   );
 }
 
-const SCHEMA_VERSION = 30;
+const SCHEMA_VERSION = 31;
 const schemaCache = new WeakMap<object, Promise<void>>();
 
 type SchemaGlobal = typeof globalThis & { __wazen_schema_version__?: number };
@@ -315,7 +315,12 @@ async function ensureSchemaPatches(db: D1Database) {
     try { await db.prepare("ALTER TABLE spaces ADD COLUMN role_permissions_json TEXT").run(); } catch { /* exists */ }
   }
   if (!spaceStart.results.some((column) => column.name === "statement_copy_json")) {
-    try { await db.prepare("ALTER TABLE spaces ADD COLUMN statement_copy_json TEXT").run(); } catch { /* exists */ }
+    try {
+      // Postgres accepts IF NOT EXISTS; SQLite ignores via catch if unsupported.
+      await db.prepare("ALTER TABLE spaces ADD COLUMN IF NOT EXISTS statement_copy_json TEXT").run();
+    } catch {
+      try { await db.prepare("ALTER TABLE spaces ADD COLUMN statement_copy_json TEXT").run(); } catch { /* exists */ }
+    }
   }
   const periodColumns = await db.prepare("PRAGMA table_info(accounting_periods)").all<{ name: string }>();
   const periodNames = new Set(periodColumns.results.map((column) => column.name));

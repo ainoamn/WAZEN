@@ -85,11 +85,22 @@ export function StatementCopySettings({
         }),
       });
       const result = await response.json() as { error?: string; statement_copy_json?: string };
-      if (!response.ok) throw new Error(result.error ?? "INVALID_STATEMENT_COPY");
+      if (!response.ok) {
+        const code = result.error ?? "INVALID_STATEMENT_COPY";
+        throw new Error(
+          code === "FORBIDDEN"
+            ? (locale === "ar" ? "لا تملك صلاحية تعديل عبارات هذه الجمعية." : "You cannot edit wording for this association.")
+            : code === "INVALID_STATEMENT_COPY"
+              ? (locale === "ar" ? "تحقق من طول العبارات (حتى 500 حرفاً لكل حقل)." : "Check wording length (max 500 characters per field).")
+              : code,
+        );
+      }
       onSaved(selected.id, String(result.statement_copy_json ?? "{}"));
-      setMsg(locale === "ar" ? "تم حفظ العبارات لهذه الجمعية." : "Wording saved for this association.");
+      setMsg(locale === "ar"
+        ? "تم حفظ العبارات — ستظهر في الطباعة ورابط الكشف وواتساب."
+        : "Saved — wording applies to print, share links, and WhatsApp.");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "SAVE_FAILED");
+      setError(caught instanceof Error ? caught.message : (locale === "ar" ? "تعذر الحفظ." : "Could not save."));
     } finally {
       setBusy(false);
     }
