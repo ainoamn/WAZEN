@@ -108,6 +108,10 @@ type AssociationPayload = {
   totalInMinor: number;
   totalOutMinor: number;
   movementCount: number;
+  cashMinor?: number;
+  cashLabel?: string;
+  holdingsMinor?: number;
+  holdingsLabel?: string;
   availableLabel?: string;
   expenseLabel?: string;
   members?: AssociationMember[];
@@ -205,15 +209,22 @@ function associationPrintHtml(data: AssociationPayload, logoUrl: string, verifyU
     ],
     kpis: isMembers
       ? [
-        { label: ar ? "المتوفر" : "Available", value: data.availableLabel ?? "—" },
+        { label: ar ? "النقد" : "Cash", value: data.cashLabel ?? data.closingLabel },
+        { label: ar ? "الودائع" : "Holdings", value: data.holdingsLabel ?? "—" },
+        { label: ar ? "المتوفر (نقد + ودائع)" : "Available (cash + holdings)", value: data.availableLabel ?? "—" },
         { label: ar ? "المصروفات" : "Expenses", value: data.expenseLabel ?? "—" },
-        { label: ar ? "عدد الأسماء" : "Names", value: String(data.members?.length ?? 0) },
       ]
       : [
         { label: ar ? "أول المدة" : "Opening", value: data.openingLabel, tone: data.openingMinor < 0 ? "neg" : undefined },
         { label: ar ? "إيداع" : "In", value: data.totalInLabel },
         { label: ar ? "سحب" : "Out", value: data.totalOutLabel },
         { label: ar ? "آخر المدة" : "Closing", value: data.closingLabel, tone: data.closingMinor < 0 ? "neg" : undefined },
+        ...(data.holdingsMinor && data.holdingsMinor > 0
+          ? [
+            { label: ar ? "الودائع" : "Holdings", value: data.holdingsLabel ?? "—" },
+            { label: ar ? "المتوفر (نقد + ودائع)" : "Available", value: data.availableLabel ?? "—" },
+          ]
+          : []),
       ],
     bodyHtml,
   });
@@ -333,12 +344,19 @@ export default function StatementShareClient({ token }: { token: string }) {
               <div><span>{locale === "ar" ? "إيداع" : "In"}</span><strong>{data.totalInLabel}</strong></div>
               <div><span>{locale === "ar" ? "سحب" : "Out"}</span><strong>{data.totalOutLabel}</strong></div>
               <div><span>{locale === "ar" ? "آخر المدة" : "Closing"}</span><strong className={data.closingMinor < 0 ? "amount-negative" : ""}>{data.closingLabel}</strong></div>
+              {(data.holdingsMinor ?? 0) > 0 ? (
+                <>
+                  <div><span>{locale === "ar" ? "الودائع" : "Holdings"}</span><strong>{data.holdingsLabel}</strong></div>
+                  <div><span>{locale === "ar" ? "المتوفر (نقد + ودائع)" : "Available"}</span><strong>{data.availableLabel}</strong></div>
+                </>
+              ) : null}
             </div>
           ) : (
             <div className="statement-share-kpis">
-              <div><span>{locale === "ar" ? "المتوفر" : "Available"}</span><strong>{data.availableLabel ?? "—"}</strong></div>
+              <div><span>{locale === "ar" ? "النقد" : "Cash"}</span><strong>{data.cashLabel ?? data.closingLabel}</strong></div>
+              <div><span>{locale === "ar" ? "الودائع" : "Holdings"}</span><strong>{data.holdingsLabel ?? "—"}</strong></div>
+              <div><span>{locale === "ar" ? "المتوفر (نقد + ودائع)" : "Available (cash + holdings)"}</span><strong>{data.availableLabel ?? "—"}</strong></div>
               <div><span>{locale === "ar" ? "المصروفات" : "Expenses"}</span><strong>{data.expenseLabel ?? "—"}</strong></div>
-              <div><span>{locale === "ar" ? "عدد الأسماء" : "Names"}</span><strong>{data.members?.length ?? 0}</strong></div>
             </div>
           )}
 

@@ -106,7 +106,7 @@ async function associationStatementJson(payload: AssociationStatementSharePayloa
   if (!space) return null;
 
   const sheetKind = payload.sheetKind ?? "movements";
-  const [members, transactions, roster, installmentRows] = await Promise.all([
+  const [members, transactions, roster, installmentRows, holdings] = await Promise.all([
     db.prepare("SELECT id, space_id, display_name FROM members WHERE space_id=?")
       .bind(payload.spaceId)
       .all<{ id: string; space_id: string; display_name: string }>(),
@@ -137,6 +137,28 @@ async function associationStatementJson(payload: AssociationStatementSharePayloa
       paid_minor: number;
       status: string;
     }>(),
+    db.prepare(
+      `SELECT id, space_id, name, kind, amount_minor, matures_at, expected_return_minor, status
+       FROM space_holdings WHERE space_id=? AND status='active'`,
+    ).bind(payload.spaceId).all<{
+      id: string;
+      space_id: string;
+      name: string;
+      kind: string;
+      amount_minor: number;
+      matures_at: string | null;
+      expected_return_minor: number;
+      status: string;
+    }>().catch(() => ({ results: [] as Array<{
+      id: string;
+      space_id: string;
+      name: string;
+      kind: string;
+      amount_minor: number;
+      matures_at: string | null;
+      expected_return_minor: number;
+      status: string;
+    }> })),
   ]);
 
   const locale = payload.locale;
@@ -149,6 +171,7 @@ async function associationStatementJson(payload: AssociationStatementSharePayloa
     transactions: (transactions.results ?? []) as never[],
     spaceId: space.id,
     txnFilter: filter,
+    holdings: holdings.results ?? [],
   });
   const money = (minor: number) => formatMoneyMinor(minor, model.currency, locale);
   const debit = (minor: number) => formatDebitMoneyMinor(minor, model.currency, locale);
@@ -237,6 +260,10 @@ async function associationStatementJson(payload: AssociationStatementSharePayloa
     totalInMinor: model.totalInMinor,
     totalOutMinor: model.totalOutMinor,
     movementCount: model.movementCount,
+    cashMinor: model.closingMinor,
+    cashLabel: money(model.closingMinor),
+    holdingsMinor: model.holdingsMinor,
+    holdingsLabel: money(model.holdingsMinor),
     availableMinor: model.availableMinor,
     availableLabel: money(model.availableMinor),
     expenseMinor: model.expenseMinor,
