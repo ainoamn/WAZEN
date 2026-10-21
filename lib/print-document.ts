@@ -228,6 +228,22 @@ body.is-statement .doc-stamp { color: #174b70; }
   line-height: 1.85;
   color: var(--ink);
 }
+.doc-lead__kind { display: block; margin-bottom: 0.35rem; }
+.doc-lead__assoc {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 1.05rem;
+}
+.doc-lead__assoc-label {
+  color: var(--muted);
+  font-weight: 700;
+  margin-inline-end: 0.35rem;
+}
+.doc-assoc-name {
+  color: #174b70;
+  font-weight: 900;
+  font-size: 1.12em;
+}
 .brand-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   padding: 20px 28px 16px;
@@ -903,6 +919,10 @@ export async function buildReceiptQrDataUrl(receiptUrl: string) {
   });
 }
 
+function formalLeadNeeded(isReceipt: boolean, isStatement: boolean, leadKind: string) {
+  return (isReceipt || isStatement) && Boolean(leadKind || isStatement || isReceipt);
+}
+
 export function wrapPrintDocument(options: {
   locale: "ar" | "en";
   title: string;
@@ -967,17 +987,24 @@ export function wrapPrintDocument(options: {
     : isStatement
       ? (options.locale === "ar" ? "رسمي" : "Official")
       : "";
-  const leadText = options.subtitle
+  const leadKind = options.subtitle
     ? options.subtitle
     : isReceipt
       ? (options.locale === "ar"
-        ? `إيصال صادر إلكترونياً من منصة وازن لصالح ${options.entityName}.`
-        : `Electronic receipt issued by Wazen for ${options.entityName}.`)
+        ? "إيصال صادر إلكترونياً من منصة وازن."
+        : "Electronic receipt issued by the Wazen platform.")
       : isStatement
         ? (options.locale === "ar"
-          ? `كشف حساب صادر إلكترونياً من منصة وازن — ${options.entityName}.`
-          : `Account statement issued electronically by Wazen — ${options.entityName}.`)
+          ? "كشف حساب صادر إلكترونياً من منصة وازن."
+          : "Account statement issued electronically by the Wazen platform.")
         : "";
+  const assocLabel = options.locale === "ar" ? "الجمعية / المحفظة:" : "Association / wallet:";
+  const leadBlock = formalLeadNeeded(isReceipt, isStatement, leadKind)
+    ? `<p class="doc-lead">
+  ${leadKind ? `<span class="doc-lead__kind">${escapeHtml(leadKind)}</span>` : ""}
+  <span class="doc-lead__assoc"><span class="doc-lead__assoc-label">${escapeHtml(assocLabel)}</span><strong class="doc-assoc-name">${escapeHtml(options.entityName)}</strong></span>
+</p>`
+    : (leadKind ? `<p class="doc-lead">${escapeHtml(leadKind)}</p>` : "");
   const qrHint = options.locale === "ar"
     ? "امسح الرمز لفتح تفاصيل المستند على موقع وازن"
     : "Scan to open this document on Wazen";
@@ -1034,11 +1061,10 @@ export function wrapPrintDocument(options: {
       <div class="doc-title">
         <span class="doc-title-alt">${escapeHtml(titleAlt)}</span>
         <h1>${escapeHtml(options.title)}</h1>
-        ${options.subtitle ? `<p>${escapeHtml(options.subtitle)}</p>` : ""}
       </div>
     </header>
     <p class="doc-stamp" aria-hidden="true">${escapeHtml(stampLabel)}</p>
-    ${leadText ? `<p class="doc-lead">${escapeHtml(leadText)}</p>` : ""}
+    ${leadBlock}
     ` : `
     <div class="brand-bar">
       <img src="${escapeHtml(options.logoUrl)}" alt="WAZEN · وازن" />

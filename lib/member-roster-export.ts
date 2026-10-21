@@ -56,6 +56,16 @@ export function duesRosterColumns(): RosterColumnId[] {
   return ["member", "paid", "owes"];
 }
 
+/** Paid-only sheet: names of members who have paid amounts. */
+export function paidRosterColumns(): RosterColumnId[] {
+  return ["member", "paid"];
+}
+
+/** Owing-only sheet: names of members with outstanding arrears. */
+export function owingRosterColumns(): RosterColumnId[] {
+  return ["member", "paid", "owes"];
+}
+
 export function sortRosterRows(rows: RosterMemberRow[], sort: RosterSort, locale: RosterLocale) {
   if (sort === "asIs") return rows.slice();
   const collator = new Intl.Collator(locale === "ar" ? "ar" : "en", { sensitivity: "base", numeric: true });

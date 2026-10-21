@@ -15,6 +15,8 @@ import {
   ROSTER_COLUMNS,
   defaultRosterColumns,
   duesRosterColumns,
+  owingRosterColumns,
+  paidRosterColumns,
   type RosterColumnId,
   type RosterMemberRow,
   type RosterSort,
@@ -33,7 +35,8 @@ import { openWhatsAppUrl, whatsappShareUrl } from "../../lib/receipt-share";
 import { formatDebitMoneyMinor, formatMoneyMinor } from "../../lib/money";
 
 type Locale = "ar" | "en";
-type ReportKind = "movements" | "dues";
+/** Member sheets: all dues, payers only, or owing only. */
+type ReportKind = "movements" | "dues" | "dues_paid" | "dues_owing";
 
 const FILTERS: Array<{ id: StatementTxnFilter; ar: string; en: string }> = [
   { id: "full", ar: "الكشف الكامل", en: "Full statement" },
@@ -41,6 +44,102 @@ const FILTERS: Array<{ id: StatementTxnFilter; ar: string; en: string }> = [
   { id: "voided", ar: "المعاملات المحذوفة", en: "Deleted transactions" },
   { id: "all", ar: "كل المعاملات", en: "All transactions" },
 ];
+
+function isMemberSheet(kind: ReportKind) {
+  return kind === "dues" || kind === "dues_paid" || kind === "dues_owing";
+}
+
+function filterMemberRows(kind: ReportKind, rows: RosterMemberRow[] | undefined) {
+  const list = rows ?? [];
+  if (kind === "dues_paid") return list.filter((row) => row.paid_minor > 0);
+  if (kind === "dues_owing") return list.filter((row) => row.owes_minor > 0);
+  return list;
+}
+
+function reportCopy(kind: ReportKind, locale: Locale, spaceName: string) {
+  if (kind === "dues_paid") {
+    return locale === "ar"
+      ? {
+          title: "كشف المسدّدين",
+          intro: `هذا كشف بأسماء الأشخاص الذين سددوا مبالغاً فقط، مرتبط بجمعية «${spaceName}».`,
+          sheetLabel: "المسدّدون (دفعوا مبالغاً)",
+          summary: `${spaceName} · كشف المسدّدين فقط`,
+          empty: "لا يوجد أعضاء مسدّدون (بمبالغ مدفوعة) في هذه الجمعية.",
+          file: "wazen-paid",
+          whatsapp: "المسدّدون فقط",
+        }
+      : {
+          title: "Payers statement",
+          intro: `This sheet lists only members who have paid amounts, for association “${spaceName}”.`,
+          sheetLabel: "Payers (paid amounts)",
+          summary: `${spaceName} · payers only`,
+          empty: "No members with paid amounts in this association.",
+          file: "wazen-paid",
+          whatsapp: "Payers only",
+        };
+  }
+  if (kind === "dues_owing") {
+    return locale === "ar"
+      ? {
+          title: "كشف المترتبة عليهم مبالغ",
+          intro: `هذا كشف بأسماء الأشخاص المترتبة عليهم مبالغ فقط، مرتبط بجمعية «${spaceName}».`,
+          sheetLabel: "المترتبة عليهم مبالغ",
+          summary: `${spaceName} · كشف المتأخرين فقط`,
+          empty: "لا يوجد أعضاء مترتبة عليهم مبالغ في هذه الجمعية.",
+          file: "wazen-owing",
+          whatsapp: "المترتبة عليهم مبالغ فقط",
+        }
+      : {
+          title: "Arrears-only statement",
+          intro: `This sheet lists only members who still owe amounts, for association “${spaceName}”.`,
+          sheetLabel: "Members who owe",
+          summary: `${spaceName} · owing members only`,
+          empty: "No members with outstanding amounts in this association.",
+          file: "wazen-owing",
+          whatsapp: "Owing members only",
+        };
+  }
+  if (kind === "dues") {
+    return locale === "ar"
+      ? {
+          title: "كشف المتأخرات حتى الشهر الحالي",
+          intro: `هذا كشف متأخرات الأعضاء (الاسم والمدفوع والمتأخر حتى الشهر الحالي)، مرتبط بجمعية «${spaceName}».`,
+          sheetLabel: "متأخرات الأعضاء حتى الشهر الحالي",
+          summary: `${spaceName} · كشف متأخرات: الاسم + المدفوع + المتأخر حتى الشهر الحالي`,
+          empty: "لا يوجد أعضاء لهذا الكشف.",
+          file: "wazen-dues",
+          whatsapp: "متأخرات الأعضاء حتى الشهر الحالي",
+        }
+      : {
+          title: "Arrears statement to current month",
+          intro: `This is the member dues sheet (name, paid, and arrears through the current month) for association “${spaceName}”.`,
+          sheetLabel: "Member arrears to current month",
+          summary: `${spaceName} · dues sheet: name + paid + arrears to current month`,
+          empty: "No members available for this statement.",
+          file: "wazen-dues",
+          whatsapp: "Member arrears to current month",
+        };
+  }
+  return locale === "ar"
+    ? {
+        title: "",
+        intro: `هذا كشف حركات حساب الجمعية، مرتبط بجمعية «${spaceName}».`,
+        sheetLabel: "",
+        summary: "",
+        empty: "",
+        file: "wazen-statement",
+        whatsapp: "",
+      }
+    : {
+        title: "",
+        intro: `This is the association account movements statement for “${spaceName}”.`,
+        sheetLabel: "",
+        summary: "",
+        empty: "",
+        file: "wazen-statement",
+        whatsapp: "",
+      };
+}
 
 export function StatementExportModal({
   locale,
@@ -98,26 +197,41 @@ export function StatementExportModal({
   );
   const [busy, setBusy] = useState(false);
   const canDownload = planHasFeature(features ?? [], "downloads");
-  const duesOnly = reportKind === "dues";
+  const memberSheet = isMemberSheet(reportKind);
   const currency = spaces.find((space) => space.id === spaceId)?.currency || "OMR";
+  const copy = reportCopy(reportKind, locale, spaceName);
+  const selectedMembers = useMemo(
+    () => filterMemberRows(reportKind, memberRows),
+    [reportKind, memberRows],
+  );
 
   const summary = useMemo(() => {
-    if (duesOnly) {
-      return locale === "ar"
-        ? `${spaceName} · كشف متأخرات: الاسم + المدفوع + المتأخر حتى الشهر الحالي`
-        : `${spaceName} · dues sheet: name + paid + arrears to current month`;
-    }
+    if (memberSheet) return copy.summary;
     if (locale === "ar") {
       return `${spaceName} · ${columns.length} أعمدة حركات${includeMembers ? ` · أعضاء (${memberSort === "alphaAsc" ? "أ→ي" : memberSort === "alphaDesc" ? "ي→أ" : "سجل"})` : ""}`;
     }
     return `${spaceName} · ${columns.length} movement columns${includeMembers ? ` · members (${memberSort})` : ""}`;
-  }, [locale, spaceName, columns.length, includeMembers, memberSort, duesOnly]);
+  }, [locale, spaceName, columns.length, includeMembers, memberSort, memberSheet, copy.summary]);
 
   const applyReportKind = (kind: ReportKind) => {
     setReportKind(kind);
     if (kind === "dues") {
       setIncludeMembers(true);
       setMemberColumns(duesRosterColumns());
+      setMemberSort("alphaAsc");
+      setColumns([]);
+      return;
+    }
+    if (kind === "dues_paid") {
+      setIncludeMembers(true);
+      setMemberColumns(paidRosterColumns());
+      setMemberSort("alphaAsc");
+      setColumns([]);
+      return;
+    }
+    if (kind === "dues_owing") {
+      setIncludeMembers(true);
+      setMemberColumns(owingRosterColumns());
       setMemberSort("alphaAsc");
       setColumns([]);
       return;
@@ -148,6 +262,10 @@ export function StatementExportModal({
     });
   };
 
+  const movementsIntro = locale === "ar"
+    ? `هذا كشف حركات حساب الجمعية، مرتبط بجمعية «${spaceName}».`
+    : `This is the association account movements statement for “${spaceName}”.`;
+
   const buildHtml = (logoUrl: string, extras?: { verifyUrl?: string; qrDataUrl?: string }) => buildAccountStatementHtml({
     locale,
     logoUrl,
@@ -159,24 +277,19 @@ export function StatementExportModal({
     occurrences,
     spaceId,
     txnFilter: filter,
-    columns: duesOnly ? [] : columns,
+    columns: memberSheet ? [] : columns,
     holdings,
-    includeMovements: !duesOnly,
-    includeHoldings: !duesOnly,
-    includeMembers: duesOnly ? societyMembers : (includeMembers && societyMembers),
-    memberRows,
+    includeMovements: !memberSheet,
+    includeHoldings: !memberSheet,
+    includeMembers: memberSheet ? selectedMembers.length > 0 : (includeMembers && societyMembers),
+    memberRows: memberSheet ? selectedMembers : memberRows,
     memberColumns,
     memberSort,
     verifyUrl: extras?.verifyUrl,
     qrDataUrl: extras?.qrDataUrl,
-    titleOverride: duesOnly
-      ? (locale === "ar" ? "كشف المتأخرات حتى الشهر الحالي" : "Arrears statement to current month")
-      : undefined,
-    subtitleOverride: duesOnly
-      ? (locale === "ar"
-        ? "أسماء الأعضاء مع المدفوع والمتأخر المستحق حتى نهاية الشهر الحالي. الهدف والتفاصيل اختياريان."
-        : "Member names with paid and arrears through the current month. Goal and details are optional.")
-      : undefined,
+    titleOverride: memberSheet ? copy.title : undefined,
+    subtitleOverride: memberSheet ? copy.intro : movementsIntro,
+    memberSheetLabel: memberSheet ? copy.sheetLabel : undefined,
   });
 
   const ensureVerifyLink = async () => {
@@ -187,7 +300,7 @@ export function StatementExportModal({
         action: "createAssociationStatementShare",
         idempotencyKey: crypto.randomUUID(),
         spaceId,
-        filter: duesOnly ? "full" : filter,
+        filter: memberSheet ? "full" : filter,
         locale,
       }),
     });
@@ -209,11 +322,11 @@ export function StatementExportModal({
       txnFilter: filter,
       holdings,
     });
-    const paid = (memberRows ?? []).reduce((sum, row) => sum + row.paid_minor, 0);
-    const arrears = (memberRows ?? []).reduce((sum, row) => sum + Math.max(0, row.owes_minor), 0);
-    const late = (memberRows ?? []).filter((row) => row.owes_minor > 0).length;
-    const filterLabel = duesOnly
-      ? (locale === "ar" ? "متأخرات الأعضاء حتى الشهر الحالي" : "Member arrears to current month")
+    const paid = selectedMembers.reduce((sum, row) => sum + row.paid_minor, 0);
+    const arrears = selectedMembers.reduce((sum, row) => sum + Math.max(0, row.owes_minor), 0);
+    const late = selectedMembers.filter((row) => row.owes_minor > 0).length;
+    const filterLabel = memberSheet
+      ? copy.whatsapp
       : (FILTERS.find((item) => item.id === filter)?.[locale] ?? filter);
     return buildAssociationStatementWhatsAppMessage({
       locale,
@@ -222,7 +335,7 @@ export function StatementExportModal({
       balanceLabel: formatMoneyMinor(model.closingMinor, currency, locale),
       movementsLabel: String(model.movementCount),
       statementUrl,
-      kind: duesOnly ? "dues" : "movements",
+      kind: memberSheet ? "dues" : "movements",
       availableLabel: formatMoneyMinor(model.availableMinor, currency, locale),
       expensesLabel: formatMoneyMinor(model.expenseMinor, currency, locale),
       paidLabel: formatMoneyMinor(paid, currency, locale),
@@ -235,11 +348,15 @@ export function StatementExportModal({
 
   const run = async (mode: "print" | "download" | "whatsapp") => {
     if (busy) return;
-    if (duesOnly && !societyMembers) {
+    if (memberSheet && !societyMembers) {
       window.alert(locale === "ar" ? "لا يوجد أعضاء لهذا الكشف." : "No members available for this statement.");
       return;
     }
-    if (!duesOnly && !columns.length && !(includeMembers && societyMembers)) {
+    if (memberSheet && !selectedMembers.length) {
+      window.alert(copy.empty);
+      return;
+    }
+    if (!memberSheet && !columns.length && !(includeMembers && societyMembers)) {
       window.alert(locale === "ar" ? "اختر عموداً واحداً على الأقل أو أرفق الأعضاء." : "Pick at least one column or attach members.");
       return;
     }
@@ -272,7 +389,6 @@ export function StatementExportModal({
       }
 
       if (mode === "whatsapp") {
-        // Same pattern as receipts: clear text + public open/download link (no blurry canvas PDF).
         if (!verifyUrl) throw new Error(locale === "ar" ? "تعذر تجهيز رابط الكشف." : "Could not prepare statement link.");
         const text = buildSummaryMessage(verifyUrl);
         openWhatsAppUrl(whatsappShareUrl(null, text));
@@ -289,7 +405,7 @@ export function StatementExportModal({
       const stamp = new Date().toISOString().slice(0, 10);
       await downloadReportHtml(
         buildHtml(logoUrl, { verifyUrl, qrDataUrl }),
-        duesOnly ? `wazen-dues-${stamp}.html` : `wazen-statement-${stamp}.html`,
+        `${copy.file}-${stamp}.html`,
       );
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "FAILED");
@@ -312,13 +428,37 @@ export function StatementExportModal({
             <label>
               <span>{locale === "ar" ? "نوع الكشف" : "Statement type"}</span>
               <select value={reportKind} onChange={(event) => applyReportKind(event.target.value as ReportKind)}>
-                <option value="dues">{locale === "ar" ? "متأخرات الأعضاء (اسم · مدفوع · متأخر حتى الشهر الحالي)" : "Member dues (name · paid · arrears to current month)"}</option>
-                <option value="movements">{locale === "ar" ? "كشف الحركات / الحساب" : "Movements / account statement"}</option>
+                <option value="dues">
+                  {locale === "ar"
+                    ? "متأخرات الأعضاء (اسم · مدفوع · متأخر حتى الشهر الحالي)"
+                    : "Member dues (name · paid · arrears to current month)"}
+                </option>
+                <option value="dues_paid">
+                  {locale === "ar"
+                    ? "كشف المسدّدين فقط (من دفعوا مبالغاً)"
+                    : "Payers only (who paid amounts)"}
+                </option>
+                <option value="dues_owing">
+                  {locale === "ar"
+                    ? "كشف المترتبة عليهم مبالغ فقط"
+                    : "Owing members only"}
+                </option>
+                <option value="movements">
+                  {locale === "ar" ? "كشف الحركات / الحساب" : "Movements / account statement"}
+                </option>
               </select>
             </label>
           ) : null}
 
-          {!duesOnly ? (
+          {memberSheet ? (
+            <p className="modal-note">
+              {copy.intro}
+              {" · "}
+              {locale === "ar" ? "عدد الأسماء:" : "Names:"} {selectedMembers.length}
+            </p>
+          ) : null}
+
+          {!memberSheet ? (
             <>
               <label>
                 <span>{locale === "ar" ? "نطاق المعاملات" : "Transaction scope"}</span>
@@ -352,7 +492,7 @@ export function StatementExportModal({
             </>
           ) : null}
 
-          {(duesOnly || includeMembers) && societyMembers ? (
+          {(memberSheet || includeMembers) && societyMembers ? (
             <>
               <label>
                 <span>{locale === "ar" ? "ترتيب الأعضاء" : "Member order"}</span>

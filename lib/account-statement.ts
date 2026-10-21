@@ -375,6 +375,8 @@ export function buildAccountStatementHtml(input: {
   includeHoldings?: boolean;
   titleOverride?: string;
   subtitleOverride?: string;
+  /** Label shown in meta for member-only sheets (defaults to arrears statement). */
+  memberSheetLabel?: string;
   memberRows?: RosterMemberRow[];
   memberColumns?: RosterColumnId[];
   memberSort?: RosterSort;
@@ -512,7 +514,9 @@ export function buildAccountStatementHtml(input: {
       : memberSort === "alphaDesc"
         ? t(locale, "مرتّب أبجدياً ي → أ", "Sorted Z → A")
         : t(locale, "ترتيب السجل", "Ledger order");
-    table += `<section><h2>${escapeHtml(t(locale, "أعضاء الجمعية", "Association members"))}</h2>
+    const membersHeading = input.memberSheetLabel
+      ?? t(locale, "أعضاء الجمعية", "Association members");
+    table += `<section><h2>${escapeHtml(membersHeading)}</h2>
       <p class="footer-note">${escapeHtml(sortNote)} · ${ordered.length}</p>
       <table>
         <thead><tr>${labels.map((label) => `<th>${escapeHtml(label)}</th>`).join("")}</tr></thead>
@@ -586,18 +590,19 @@ export function buildAccountStatementHtml(input: {
     verifyUrl: input.verifyUrl,
     qrDataUrl: input.qrDataUrl,
     meta: [
-      { label: t(locale, "النطاق", "Scope"), value: entityName },
+      { label: t(locale, "الجمعية", "Association"), value: entityName },
       {
         label: t(locale, "نوع الكشف", "Statement type"),
         value: includeMovements
           ? scopeLabel
-          : t(locale, "متأخرات الأعضاء حتى الشهر الحالي", "Member arrears to current month"),
+          : (input.memberSheetLabel
+            ?? t(locale, "متأخرات الأعضاء حتى الشهر الحالي", "Member arrears to current month")),
       },
       { label: t(locale, "أُصدر بواسطة", "Issued by"), value: input.issuerName },
       { label: t(locale, "تاريخ الإصدار", "Issued at"), value: new Date().toLocaleString(locale === "ar" ? "ar-OM" : "en-GB") },
       includeMovements
         ? { label: t(locale, "عدد الحركات", "Movements"), value: String(rows.length) }
-        : { label: t(locale, "عدد الأعضاء", "Members"), value: String(memberCount) },
+        : { label: t(locale, "عدد الأسماء في الكشف", "Names on this sheet"), value: String(memberCount) },
     ],
     kpis,
     bodyHtml: table,
