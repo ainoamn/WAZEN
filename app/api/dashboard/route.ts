@@ -1613,10 +1613,7 @@ export async function POST(request: Request) {
         }),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_STATEMENT_COPY");
-      const space = await authorizeSpace(db, user, parsed.data.spaceId, "members:write", ["society", "group"]);
-      if (!["owner", "manager", "supervisor", "treasurer"].includes(space.effective_role)) {
-        throw new ApiError(403, "FORBIDDEN");
-      }
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "documents:issue", ["society", "group"]);
       const existingRow = await db.prepare("SELECT statement_copy_json FROM spaces WHERE id=?")
         .bind(space.id)
         .first<{ statement_copy_json?: string | null }>();
