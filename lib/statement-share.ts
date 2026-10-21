@@ -237,55 +237,28 @@ export function buildAssociationStatementWhatsAppMessage(input: {
   lateMembersLabel?: string;
   kind?: "movements" | "dues";
 }) {
-  const kindLabel = input.kind === "dues"
-    ? (input.locale === "ar" ? "كشف المتأخرات" : "Arrears statement")
-    : (input.locale === "ar" ? "كشف حساب الجمعية" : "Association statement");
-  const explainAr = input.kind === "dues"
-    ? "هذا كشف متأخرات إلكتروني من منصة وازن يوضح أسماء الأعضاء والمدفوع والمتأخر حتى الشهر الحالي، مع ملخص المتوفر والمصروفات."
-    : "هذا كشف حساب إلكتروني من منصة وازن يوضح حركات الجمعية ورصيدها؛ يمكنك فتحه وتنزيله أو طباعته من الرابط.";
-  const explainEn = input.kind === "dues"
-    ? "This is an electronic arrears statement from Wazen showing member names, paid amounts, and arrears to the current month, plus available funds and expenses."
-    : "This is an electronic association statement from Wazen showing movements and balances; open, download, or print it from the link.";
+  const name = String(input.walletName ?? "").trim() || (input.locale === "ar" ? "الجمعية" : "the association");
+  // Keep WhatsApp text short — long prefilled messages freeze the app on many phones.
   const body = input.locale === "ar"
     ? [
-        "السلام عليكم",
+        `السلام عليكم أعضاء «${name}»،`,
         "",
-        `${kindLabel} — وازن`,
-        explainAr,
+        "نرفق لكم كشف حساب الجمعية للاطلاع على التفاصيل.",
         "",
-        `المحفظة: ${input.walletName}`,
-        `نوع الكشف: ${input.filterLabel}`,
-        input.availableLabel ? `المتوفر (نقد + ودائع): ${input.availableLabel}` : `الرصيد: ${input.balanceLabel}`,
-        input.expensesLabel ? `المصروفات: ${input.expensesLabel}` : null,
-        input.paidLabel ? `المدفوع: ${input.paidLabel}` : null,
-        input.arrearsLabel ? `المتأخرات: ${input.arrearsLabel}` : null,
-        input.lateMembersLabel ? `عدد المتأخرين عن الدفع: ${input.lateMembersLabel}` : null,
-        input.kind === "dues" ? null : `عدد الحركات: ${input.movementsLabel}`,
-        "",
-        "رابط الكشف (فتح / تنزيل / طباعة):",
+        "افتحوا الكشف من هنا:",
         input.statementUrl,
         "",
-        "صادر إلكترونياً من منصة وازن — بإدارة بن حمود للتطوير (BHD).",
+        "مع التحية",
       ]
     : [
-        "Hello",
+        `Hello members of “${name}”,`,
         "",
-        `${kindLabel} — WAZEN`,
-        explainEn,
+        "Please find the association account statement for your review.",
         "",
-        `Wallet: ${input.walletName}`,
-        `Statement type: ${input.filterLabel}`,
-        input.availableLabel ? `Available (cash + holdings): ${input.availableLabel}` : `Balance: ${input.balanceLabel}`,
-        input.expensesLabel ? `Expenses: ${input.expensesLabel}` : null,
-        input.paidLabel ? `Paid: ${input.paidLabel}` : null,
-        input.arrearsLabel ? `Arrears: ${input.arrearsLabel}` : null,
-        input.lateMembersLabel ? `Members late on payment: ${input.lateMembersLabel}` : null,
-        input.kind === "dues" ? null : `Movements: ${input.movementsLabel}`,
-        "",
-        "Statement link (open / download / print):",
+        "Open it here:",
         input.statementUrl,
         "",
-        "Issued electronically by Wazen — managed by Bin Hamoud for Development (BHD).",
+        "Best regards",
       ];
-  return body.filter((line): line is string => line != null).join("\n");
+  return body.join("\n");
 }

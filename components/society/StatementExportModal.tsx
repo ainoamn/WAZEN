@@ -5,7 +5,6 @@ import { Download, Printer, X } from "lucide-react";
 import {
   STATEMENT_COLUMNS,
   buildAccountStatementHtml,
-  buildAccountStatementModel,
   defaultStatementColumns,
   type StatementColumnId,
   type StatementHolding,
@@ -32,8 +31,6 @@ import { planHasFeature } from "../../lib/plan-features";
 import { apiFetch } from "../../lib/client-api";
 import { buildAssociationStatementWhatsAppMessage } from "../../lib/statement-share";
 import { openWhatsAppUrl, whatsappShareUrl } from "../../lib/receipt-share";
-import { formatDebitMoneyMinor, formatMoneyMinor } from "../../lib/money";
-
 type Locale = "ar" | "en";
 /** Member sheets: all dues, payers only, or owing only. */
 type ReportKind = "movements" | "dues" | "dues_paid" | "dues_owing";
@@ -198,7 +195,6 @@ export function StatementExportModal({
   const [busy, setBusy] = useState(false);
   const canDownload = planHasFeature(features ?? [], "downloads");
   const memberSheet = isMemberSheet(reportKind);
-  const currency = spaces.find((space) => space.id === spaceId)?.currency || "OMR";
   const copy = reportCopy(reportKind, locale, spaceName);
   const selectedMembers = useMemo(
     () => filterMemberRows(reportKind, memberRows),
@@ -310,21 +306,6 @@ export function StatementExportModal({
   };
 
   const buildSummaryMessage = (statementUrl: string) => {
-    const model = buildAccountStatementModel({
-      locale,
-      issuerName,
-      spaces,
-      members,
-      accounts,
-      transactions,
-      occurrences,
-      spaceId,
-      txnFilter: filter,
-      holdings,
-    });
-    const paid = selectedMembers.reduce((sum, row) => sum + row.paid_minor, 0);
-    const arrears = selectedMembers.reduce((sum, row) => sum + Math.max(0, row.owes_minor), 0);
-    const late = selectedMembers.filter((row) => row.owes_minor > 0).length;
     const filterLabel = memberSheet
       ? copy.whatsapp
       : (FILTERS.find((item) => item.id === filter)?.[locale] ?? filter);
@@ -332,17 +313,10 @@ export function StatementExportModal({
       locale,
       walletName: spaceName,
       filterLabel,
-      balanceLabel: formatMoneyMinor(model.closingMinor, currency, locale),
-      movementsLabel: String(model.movementCount),
+      balanceLabel: "",
+      movementsLabel: "",
       statementUrl,
       kind: memberSheet ? "dues" : "movements",
-      availableLabel: formatMoneyMinor(model.availableMinor, currency, locale),
-      expensesLabel: formatMoneyMinor(model.expenseMinor, currency, locale),
-      paidLabel: formatMoneyMinor(paid, currency, locale),
-      arrearsLabel: arrears > 0
-        ? formatDebitMoneyMinor(arrears, currency, locale)
-        : formatMoneyMinor(0, currency, locale),
-      lateMembersLabel: String(late),
     });
   };
 
@@ -370,6 +344,16 @@ export function StatementExportModal({
     }
     setBusy(true);
     try {
+      // WhatsApp: only mint a short link — no QR / heavy HTML (avoids 30s+ freezes on phones).
+      if (mode === "whatsapp") {
+        const verifyUrl = await ensureVerifyLink();
+        if (!verifyUrl) throw new Error(locale === "ar" ? "تعذر تجهيز رابط الكشف." : "Could not prepare statement link.");
+        const text = buildSummaryMessage(verifyUrl);
+        openWhatsAppUrl(whatsappShareUrl(null, text));
+        onClose();
+        return;
+      }
+
       const quota = await consumePlanQuota(
         mode === "download" ? "download" : "print",
         locale,
@@ -379,21 +363,13 @@ export function StatementExportModal({
 
       let verifyUrl = "";
       let qrDataUrl = "";
-      if (mode === "whatsapp" || canShare !== false) {
+      if (canShare !== false) {
         try {
           verifyUrl = await ensureVerifyLink();
           if (verifyUrl) qrDataUrl = await buildReceiptQrDataUrl(verifyUrl);
         } catch {
-          if (mode === "whatsapp") throw new Error(locale === "ar" ? "تعذر تجهيز رابط الكشف." : "Could not prepare statement link.");
+          /* print/download still work without QR */
         }
-      }
-
-      if (mode === "whatsapp") {
-        if (!verifyUrl) throw new Error(locale === "ar" ? "تعذر تجهيز رابط الكشف." : "Could not prepare statement link.");
-        const text = buildSummaryMessage(verifyUrl);
-        openWhatsAppUrl(whatsappShareUrl(null, text));
-        onClose();
-        return;
       }
 
       if (mode === "print") {

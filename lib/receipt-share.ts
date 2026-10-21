@@ -136,6 +136,13 @@ export function toDeviceWhatsAppUrl(url: string) {
 export function openWhatsAppUrl(url: string) {
   if (typeof window === "undefined") return false;
   const target = toDeviceWhatsAppUrl(url);
-  window.open(target, "_blank", "noopener,noreferrer");
+  // Same-tab navigation is much faster on phones than window.open + a huge ?text= URL.
+  const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+  if (mobile) {
+    window.location.assign(target);
+    return true;
+  }
+  const popup = window.open(target, "_blank", "noopener,noreferrer");
+  if (!popup) window.location.assign(target);
   return true;
 }

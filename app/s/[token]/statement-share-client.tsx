@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import WazenLogo from "../../../components/brand/WazenLogo";
 import { buildCombinedMemberLedgerHtml, formatMemberLedgerLineMoney, memberLedgerAmountClass, memberLedgerTone } from "../../../lib/member-ledger";
 import { formatMoneyMinor } from "../../../lib/money";
-import { downloadReportHtml, printWazenHtml } from "../../../lib/print-document";
+import { downloadReportHtml, printWazenHtml, wrapPrintDocument } from "../../../lib/print-document";
+import { escapeHtml } from "../../../lib/html";
 
 type MemberLine = {
   at: string;
@@ -115,6 +116,58 @@ function isAssociation(data: StatementPayload): data is AssociationPayload {
   return data.kind === "association_statement";
 }
 
+function associationPrintHtml(data: AssociationPayload, logoUrl: string, verifyUrl?: string) {
+  const ar = data.locale === "ar";
+  const money = (minor: number) => formatMoneyMinor(minor, data.currency || "OMR", data.locale);
+  const rows = data.lines.map((line) => {
+    const cls = !line.live ? "voided" : "";
+    return `<tr class="${cls}">
+      <td>${escapeHtml(new Date(line.at).toLocaleDateString(ar ? "ar-OM" : "en-GB"))}</td>
+      <td><strong>${escapeHtml(line.description)}</strong><small>${escapeHtml(line.item)} · ${escapeHtml(line.flow)}</small></td>
+      <td class="num in">${line.depositMinor ? escapeHtml(money(line.depositMinor)) : "—"}</td>
+      <td class="num out">${line.withdrawMinor ? escapeHtml(money(line.withdrawMinor)) : "—"}</td>
+      <td class="num">${line.balanceMinor == null ? "—" : escapeHtml(money(line.balanceMinor))}</td>
+    </tr>`;
+  }).join("");
+  const intro = ar
+    ? `هذا كشف حساب «${data.walletName}» للاطلاع على التفاصيل.`
+    : `Account statement for “${data.walletName}” for your review.`;
+  const bodyHtml = `<section><h2>${escapeHtml(ar ? "الحركات" : "Movements")}</h2>
+    <table>
+      <thead><tr>
+        <th>${escapeHtml(ar ? "التاريخ" : "Date")}</th>
+        <th>${escapeHtml(ar ? "البند" : "Item")}</th>
+        <th>${escapeHtml(ar ? "إيداع" : "In")}</th>
+        <th>${escapeHtml(ar ? "سحب" : "Out")}</th>
+        <th>${escapeHtml(ar ? "الرصيد" : "Balance")}</th>
+      </tr></thead>
+      <tbody>${rows || `<tr><td colspan="5">${escapeHtml(ar ? "لا توجد حركات." : "No movements.")}</td></tr>`}</tbody>
+    </table>
+  </section>`;
+  return wrapPrintDocument({
+    locale: data.locale,
+    title: data.title,
+    entityName: data.walletName,
+    logoUrl,
+    subtitle: intro,
+    variant: "statement",
+    orientation: "landscape",
+    verifyUrl,
+    meta: [
+      { label: ar ? "الجمعية" : "Association", value: data.walletName },
+      { label: ar ? "نوع الكشف" : "Statement type", value: data.filterLabel },
+      { label: ar ? "عدد الحركات" : "Movements", value: String(data.movementCount) },
+    ],
+    kpis: [
+      { label: ar ? "أول المدة" : "Opening", value: data.openingLabel, tone: data.openingMinor < 0 ? "neg" : undefined },
+      { label: ar ? "إيداع" : "In", value: data.totalInLabel },
+      { label: ar ? "سحب" : "Out", value: data.totalOutLabel },
+      { label: ar ? "آخر المدة" : "Closing", value: data.closingLabel, tone: data.closingMinor < 0 ? "neg" : undefined },
+    ],
+    bodyHtml,
+  });
+}
+
 export default function StatementShareClient({ token }: { token: string }) {
   const [data, setData] = useState<StatementPayload | null>(null);
   const [error, setError] = useState("");
@@ -135,50 +188,31 @@ export default function StatementShareClient({ token }: { token: string }) {
     return () => { cancelled = true; };
   }, [token]);
 
+  useEffect(() => {
+    if (!data || !isAssociation(data)) return;
+    const key = `wazen-stmt-auto:${token}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch {
+      /* private mode — still try once */
+    }
+    void printWazenHtml(
+      (logoUrl) => associationPrintHtml(data, logoUrl, window.location.href),
+      true,
+    );
+  }, [data, token]);
+
   const printOrDownload = async (mode: "print" | "download") => {
     if (!data) return;
     setBusy(mode);
     try {
       if (isAssociation(data)) {
-        const htmlBuilder = (logoUrl: string) => {
-          const money = (minor: number) => new Intl.NumberFormat(data.locale === "ar" ? "ar-OM" : "en-OM", {
-            style: "currency",
-            currency: data.currency || "OMR",
-            minimumFractionDigits: 3,
-            maximumFractionDigits: 3,
-          }).format(minor / 1000);
-          const rows = data.lines.map((line) => {
-            const signed = line.depositMinor - line.withdrawMinor;
-            return `<article class="statement-card"><header><strong>${line.description}</strong><em>${money(signed)}</em></header>
-              <p>${line.item} · ${line.flow}</p>
-              <footer><span>${new Date(line.at).toLocaleString(data.locale === "ar" ? "ar-OM" : "en-GB")}</span><span>${line.ref} · ${line.status}</span></footer></article>`;
-          }).join("");
-          return `<!doctype html><html lang="${data.locale}" dir="${data.locale === "ar" ? "rtl" : "ltr"}"><head><meta charset="utf-8"/><title>${data.title}</title>
-            <style>body{font-family:Tahoma,Arial,sans-serif;padding:16px;background:#f7f4ef;color:#1c1917}
-            .brand{display:flex;align-items:center;gap:10px;margin-bottom:12px}.brand img{height:36px}
-            h1{font-size:1.35rem;margin:0 0 6px}.meta{opacity:.75;margin-bottom:14px}
-            .kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:14px}
-            .kpis div{background:#fff;border:1px solid #e7e0d6;border-radius:12px;padding:10px}
-            .kpis span{display:block;font-size:.75rem;opacity:.7}.kpis strong{font-size:1rem}
-            .statement-card{background:#fff;border:1px solid #e7e0d6;border-radius:14px;padding:12px;margin-bottom:8px}
-            .statement-card header{display:flex;justify-content:space-between;gap:8px}
-            .statement-card footer{display:flex;justify-content:space-between;font-size:.78rem;opacity:.7;margin-top:6px}
-            @media print{body{background:#fff}}</style></head><body>
-            <div class="brand"><img src="${logoUrl}" alt="WAZEN"/><strong>WAZEN</strong></div>
-            <h1>${data.title}</h1><p class="meta">${data.walletName} · ${data.filterLabel}</p>
-            <div class="kpis">
-              <div><span>${data.locale === "ar" ? "أول المدة" : "Opening"}</span><strong>${data.openingLabel}</strong></div>
-              <div><span>${data.locale === "ar" ? "إيداع" : "In"}</span><strong>${data.totalInLabel}</strong></div>
-              <div><span>${data.locale === "ar" ? "سحب" : "Out"}</span><strong>${data.totalOutLabel}</strong></div>
-              <div><span>${data.locale === "ar" ? "آخر المدة" : "Closing"}</span><strong>${data.closingLabel}</strong></div>
-            </div>
-            ${rows || `<p>${data.locale === "ar" ? "لا توجد حركات." : "No movements."}</p>`}
-            </body></html>`;
-        };
+        const htmlBuilder = (logoUrl: string) => associationPrintHtml(data, logoUrl, window.location.href);
         if (mode === "print") await printWazenHtml(htmlBuilder, true);
         else {
           const logoUrl = `${window.location.origin}/brand/wazen-lockup.png`;
-          await downloadReportHtml(htmlBuilder(logoUrl), `wazen-association-${data.walletName.slice(0, 20)}`);
+          await downloadReportHtml(htmlBuilder(logoUrl), `statement-${data.walletName.slice(0, 24)}`);
         }
         return;
       }
@@ -295,8 +329,8 @@ export default function StatementShareClient({ token }: { token: string }) {
 
           <p className="receipt-share-foot">
             {locale === "ar"
-              ? "هذا كشف جمعية إلكتروني من موقع وازن — واضح على الجوال والكمبيوتر"
-              : "This is an electronic association statement from Wazen — clear on phone and desktop"}
+              ? `كشف «${data.walletName}» — للطباعة أو الحفظ كـ PDF استخدم الأزرار أعلاه`
+              : `Statement for “${data.walletName}” — use the buttons above to print or save as PDF`}
           </p>
         </article>
       )}
