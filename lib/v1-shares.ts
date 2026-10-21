@@ -4,6 +4,7 @@ import type { RequestUser } from "../db/runtime";
 import { prepareAudit } from "./audit";
 import { ApiError } from "./security";
 import { formatDebitMoneyMinor, formatMoneyMinor } from "./money";
+import { summarizeAssociationArrears } from "./installments";
 import { toWhatsAppNumber } from "./phone";
 import {
   buildReceiptWhatsAppMessage,
@@ -184,7 +185,7 @@ export async function createV1AssociationStatementShare(
   const origin = input.origin || "https://wazen.bhd-om.com";
   const shareUrl = `${origin}/s/${encodeURIComponent(shareToken)}`;
   const currency = spaceRow.currency || "OMR";
-  const [txnCount, expenseRow, holdingsRow, membersAgg] = await Promise.all([
+  const [txnCount, expenseRow, holdingsRow, membersRoster, installmentRoster] = await Promise.all([
     db.prepare("SELECT COUNT(*) AS count FROM transactions WHERE space_id=?")
       .bind(spaceRow.id).first<{ count: number }>(),
     db.prepare(
@@ -194,17 +195,31 @@ export async function createV1AssociationStatementShare(
       "SELECT COALESCE(SUM(amount_minor),0) AS total FROM space_holdings WHERE space_id=? AND status='active'",
     ).bind(spaceRow.id).first<{ total: number }>().catch(() => ({ total: 0 })),
     db.prepare(
-      `SELECT
-        COALESCE(SUM(CASE WHEN due_minor > paid_minor THEN due_minor - paid_minor ELSE 0 END),0) AS arrears,
-        COALESCE(SUM(CASE WHEN due_minor > paid_minor THEN 1 ELSE 0 END),0) AS late_count,
-        COALESCE(SUM(CASE WHEN due_minor <= paid_minor THEN 1 ELSE 0 END),0) AS committed_count
-       FROM members WHERE space_id=? AND status='active' AND COALESCE(dues_exempt,0)=0`,
-    ).bind(spaceRow.id).first<{ arrears: number; late_count: number; committed_count: number }>(),
+      `SELECT id, due_minor, paid_minor, COALESCE(dues_exempt,0) AS dues_exempt
+       FROM members WHERE space_id=? AND status='active'`,
+    ).bind(spaceRow.id).all<{ id: string; due_minor: number; paid_minor: number; dues_exempt: number }>(),
+    db.prepare(
+      `SELECT member_id, id, period_index, period_key, due_at, amount_minor, paid_minor, status
+       FROM member_installments WHERE space_id=?`,
+    ).bind(spaceRow.id).all<{
+      member_id: string;
+      id: string;
+      period_index: number;
+      period_key: string;
+      due_at: string | null;
+      amount_minor: number;
+      paid_minor: number;
+      status: string;
+    }>(),
   ]);
+  const duesSummary = summarizeAssociationArrears(
+    membersRoster.results ?? [],
+    (installmentRoster.results ?? []).map((row) => ({ ...row, due_at: row.due_at ?? undefined })),
+  );
   const cash = Number(spaceRow.balance_minor) || 0;
   const available = cash + Number(holdingsRow?.total ?? 0);
   const expenses = Number(expenseRow?.total ?? 0);
-  const arrears = Number(membersAgg?.arrears ?? 0);
+  const arrears = duesSummary.arrearsMinor;
   const message = buildAssociationStatementWhatsAppMessage({
     locale,
     walletName: locale === "ar" ? spaceRow.name_ar : spaceRow.name_en,
@@ -216,8 +231,8 @@ export async function createV1AssociationStatementShare(
     availableLabel: formatMoneyMinor(available, currency, locale),
     expensesLabel: formatMoneyMinor(expenses, currency, locale),
     arrearsLabel: arrears > 0 ? formatDebitMoneyMinor(arrears, currency, locale) : formatMoneyMinor(0, currency, locale),
-    lateMembersLabel: String(Number(membersAgg?.late_count ?? 0)),
-    committedMembersLabel: String(Number(membersAgg?.committed_count ?? 0)),
+    lateMembersLabel: String(duesSummary.lateCount),
+    committedMembersLabel: String(duesSummary.committedCount),
   });
   const whatsappNumber = input.phone ? toWhatsAppNumber(input.phone) : "";
 

@@ -6,6 +6,7 @@ import {
   buildInstallmentSchedule,
   selectByAmount,
   selectThroughOldest,
+  summarizeAssociationArrears,
   totalRemainingMinor,
 } from "../lib/installments.ts";
 import { DEFAULT_DIAL_CODE, dialCodesForSelect } from "../lib/country-dial-codes.ts";
@@ -72,6 +73,30 @@ test("accrued dues stop at the current month and ignore future installments", ()
   const asOf = new Date("2026-03-20T00:00:00.000Z");
   assert.equal(accruedDueMinor(schedule.rows, asOf), 60_000);
   assert.equal(accruedDueMinor(schedule.rows, new Date("2026-01-15T12:00:00.000Z")), 20_000);
+});
+
+test("association arrears KPIs use accrued months not full annual goal", () => {
+  const asOf = new Date("2026-10-21T12:00:00.000Z");
+  const schedule = buildInstallmentSchedule({
+    memberId: "m1",
+    spaceId: "s1",
+    startAt: "2026-04-01T12:00:00.000Z",
+    durationMonths: 12,
+    amountMinor: 2_000,
+  });
+  const summary = summarizeAssociationArrears(
+    [
+      { id: "m1", due_minor: 24_000, paid_minor: 10_000, dues_exempt: 0 },
+      { id: "m2", due_minor: 24_000, paid_minor: 24_000, dues_exempt: 0 },
+      { id: "m3", due_minor: 24_000, paid_minor: 0, dues_exempt: 1 },
+    ],
+    schedule.rows.map((row) => ({ ...row, member_id: "m1" })),
+    asOf,
+  );
+  // Apr–Oct = 7 × 2 = 14; paid 10 → owes 4 (not 24−10=14 from full goal).
+  assert.equal(summary.arrearsMinor, 4_000);
+  assert.equal(summary.lateCount, 1);
+  assert.equal(summary.committedCount, 1);
 });
 
 test("omani phones become WhatsApp numbers", () => {

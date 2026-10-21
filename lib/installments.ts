@@ -149,3 +149,48 @@ export function accruedDueMinor(
     return sum;
   }, 0);
 }
+
+/** Society arrears KPIs: مستحق الأقساط حتى asOf − المدفوع (ليس الهدف السنوي الكامل). */
+export function summarizeAssociationArrears(
+  members: Array<{ id: string; due_minor?: unknown; paid_minor?: unknown; dues_exempt?: unknown }>,
+  installments: Array<InstallmentLike & { member_id: string; due_at?: string | null }>,
+  asOf: Date = new Date(),
+) {
+  const byMember = new Map<string, Array<InstallmentLike & { due_at?: string }>>();
+  for (const row of installments) {
+    const id = String(row.member_id ?? "");
+    if (!id) continue;
+    const list = byMember.get(id) ?? [];
+    list.push({
+      id: row.id,
+      period_index: row.period_index,
+      period_key: row.period_key,
+      amount_minor: Number(row.amount_minor) || 0,
+      paid_minor: Number(row.paid_minor) || 0,
+      status: row.status,
+      due_at: row.due_at ? String(row.due_at) : undefined,
+    });
+    byMember.set(id, list);
+  }
+  let arrearsMinor = 0;
+  let lateCount = 0;
+  let committedCount = 0;
+  const owing: Array<{ id: string; accruedMinor: number; paidMinor: number; owesMinor: number }> = [];
+  for (const member of members) {
+    if (Number(member.dues_exempt) > 0) continue;
+    const paidMinor = Number(member.paid_minor) || 0;
+    const months = byMember.get(String(member.id)) ?? [];
+    const accruedMinor = months.length
+      ? accruedDueMinor(months, asOf)
+      : Number(member.due_minor) || 0;
+    const owesMinor = Math.max(0, accruedMinor - paidMinor);
+    if (owesMinor > 0) {
+      arrearsMinor += owesMinor;
+      lateCount += 1;
+      owing.push({ id: String(member.id), accruedMinor, paidMinor, owesMinor });
+    } else {
+      committedCount += 1;
+    }
+  }
+  return { arrearsMinor, lateCount, committedCount, owing };
+}

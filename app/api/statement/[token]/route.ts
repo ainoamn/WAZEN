@@ -8,6 +8,7 @@ import type { MemberLedgerFocus } from "../../../../lib/member-ledger";
 import { loadMemberStatementSection } from "../../../../lib/member-statement-data";
 import { buildAccountStatementModel, type StatementTxnFilter } from "../../../../lib/account-statement";
 import { formatDebitMoneyMinor, formatMoneyMinor } from "../../../../lib/money";
+import { accruedDueMinor } from "../../../../lib/installments";
 
 export const runtime = "nodejs";
 
@@ -105,7 +106,7 @@ async function associationStatementJson(payload: AssociationStatementSharePayloa
   if (!space) return null;
 
   const sheetKind = payload.sheetKind ?? "movements";
-  const [members, transactions, roster] = await Promise.all([
+  const [members, transactions, roster, installmentRows] = await Promise.all([
     db.prepare("SELECT id, space_id, display_name FROM members WHERE space_id=?")
       .bind(payload.spaceId)
       .all<{ id: string; space_id: string; display_name: string }>(),
@@ -123,6 +124,19 @@ async function associationStatementJson(payload: AssociationStatementSharePayloa
       status: string;
       dues_exempt: number;
     }>(),
+    db.prepare(
+      `SELECT member_id, id, period_index, period_key, due_at, amount_minor, paid_minor, status
+       FROM member_installments WHERE space_id=? ORDER BY member_id, period_index`,
+    ).bind(payload.spaceId).all<{
+      member_id: string;
+      id: string;
+      period_index: number;
+      period_key: string;
+      due_at: string | null;
+      amount_minor: number;
+      paid_minor: number;
+      status: string;
+    }>(),
   ]);
 
   const locale = payload.locale;
@@ -139,11 +153,35 @@ async function associationStatementJson(payload: AssociationStatementSharePayloa
   const money = (minor: number) => formatMoneyMinor(minor, model.currency, locale);
   const debit = (minor: number) => formatDebitMoneyMinor(minor, model.currency, locale);
 
+  const installmentsByMember = new Map<string, Array<{
+    id: string;
+    period_index: number;
+    period_key: string;
+    amount_minor: number;
+    paid_minor: number;
+    status: string;
+    due_at?: string;
+  }>>();
+  for (const row of installmentRows.results ?? []) {
+    const list = installmentsByMember.get(row.member_id) ?? [];
+    list.push({
+      id: row.id,
+      period_index: row.period_index,
+      period_key: row.period_key,
+      amount_minor: Number(row.amount_minor) || 0,
+      paid_minor: Number(row.paid_minor) || 0,
+      status: row.status,
+      due_at: row.due_at ? String(row.due_at) : undefined,
+    });
+    installmentsByMember.set(row.member_id, list);
+  }
+
   let memberRows = (roster.results ?? []).map((row) => {
     const paid = Number(row.paid_minor) || 0;
-    const due = Number(row.due_minor) || 0;
     const exempt = Number(row.dues_exempt) > 0;
-    const owes = exempt ? 0 : Math.max(0, due - paid);
+    const months = installmentsByMember.get(row.id) ?? [];
+    const accrued = months.length ? accruedDueMinor(months) : Number(row.due_minor) || 0;
+    const owes = exempt ? 0 : Math.max(0, accrued - paid);
     return {
       id: row.id,
       display_name: row.display_name,

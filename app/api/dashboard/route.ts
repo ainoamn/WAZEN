@@ -14,7 +14,7 @@ import { ApiError, claimIdempotency, completeIdempotency, enforceCsrf, enforceWr
 import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf, actorCanIssueSpaceDocuments } from "../../../lib/authorization";
 import { prepareAudit, writeAudit } from "../../../lib/audit";
 import { currencyScale, formatDebitMoneyMinor, formatMoneyMinor, multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
-import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, periodKeyFromDate, type InstallmentLike } from "../../../lib/installments";
+import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, periodKeyFromDate, summarizeAssociationArrears, type InstallmentLike } from "../../../lib/installments";
 import { coveringPeriod } from "../../../lib/accounting-periods";
 import { isLikelyPhone, normalizeOptionalMemberPhone, toWhatsAppNumber } from "../../../lib/phone";
 import { isExternalLedgerMemberName } from "../../../lib/member-dues-exempt";
@@ -3945,22 +3945,37 @@ export async function POST(request: Request) {
       const holdingsRow = await db.prepare(
         "SELECT COALESCE(SUM(amount_minor),0) AS total FROM space_holdings WHERE space_id=? AND status='active'",
       ).bind(space.id).first<{ total: number }>().catch(() => ({ total: 0 }));
-      const membersAgg = await db.prepare(
-        `SELECT
-          COALESCE(SUM(paid_minor),0) AS paid,
-          COALESCE(SUM(CASE WHEN due_minor > paid_minor THEN due_minor - paid_minor ELSE 0 END),0) AS arrears,
-          COALESCE(SUM(CASE WHEN due_minor > paid_minor THEN 1 ELSE 0 END),0) AS late_count,
-          COALESCE(SUM(CASE WHEN due_minor <= paid_minor THEN 1 ELSE 0 END),0) AS committed_count
-         FROM members WHERE space_id=? AND status='active' AND COALESCE(dues_exempt,0)=0`,
-      ).bind(space.id).first<{ paid: number; arrears: number; late_count: number; committed_count: number }>();
+      const [membersRoster, installmentRoster] = await Promise.all([
+        db.prepare(
+          `SELECT id, due_minor, paid_minor, COALESCE(dues_exempt,0) AS dues_exempt
+           FROM members WHERE space_id=? AND status='active'`,
+        ).bind(space.id).all<{ id: string; due_minor: number; paid_minor: number; dues_exempt: number }>(),
+        db.prepare(
+          `SELECT member_id, id, period_index, period_key, due_at, amount_minor, paid_minor, status
+           FROM member_installments WHERE space_id=?`,
+        ).bind(space.id).all<{
+          member_id: string;
+          id: string;
+          period_index: number;
+          period_key: string;
+          due_at: string | null;
+          amount_minor: number;
+          paid_minor: number;
+          status: string;
+        }>(),
+      ]);
+      const duesSummary = summarizeAssociationArrears(
+        membersRoster.results ?? [],
+        (installmentRoster.results ?? []).map((row) => ({ ...row, due_at: row.due_at ?? undefined })),
+      );
       const cash = Number(space.balance_minor) || 0;
       const holdingsMinor = Number(holdingsRow?.total ?? 0);
       const available = cash + holdingsMinor;
       const expenses = Number(expenseRow?.total ?? 0);
-      const paid = Number(membersAgg?.paid ?? 0);
-      const arrears = Number(membersAgg?.arrears ?? 0);
-      const lateCount = Number(membersAgg?.late_count ?? 0);
-      const committedCount = Number(membersAgg?.committed_count ?? 0);
+      const paid = (membersRoster.results ?? []).reduce((sum, row) => sum + (Number(row.paid_minor) || 0), 0);
+      const arrears = duesSummary.arrearsMinor;
+      const lateCount = duesSummary.lateCount;
+      const committedCount = duesSummary.committedCount;
       const message = buildAssociationStatementWhatsAppMessage({
         locale,
         walletName: locale === "ar" ? space.name_ar : space.name_en,
