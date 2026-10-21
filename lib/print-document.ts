@@ -54,13 +54,16 @@ export async function resolvePrintLogoUrl() {
 export const PRINT_DOCUMENT_CSS = `
 :root {
   color-scheme: light;
-  --ink: #12231f;
-  --muted: #5a6b64;
-  --line: #dce6e1;
-  --soft: #f3f8f5;
-  --green: #0d7a65;
+  --ink: #12302a;
+  --muted: #5a6f67;
+  --line: #d9e3de;
+  --soft: #f4f8f6;
+  --green: #0b6b5d;
   --green-deep: #0a5c4c;
   --canvas: #eef3f0;
+  --paper: #fffdf8;
+  --gold: #c9a646;
+  --serif: "Amiri", "Traditional Arabic", "Times New Roman", serif;
 }
 * { box-sizing: border-box; }
 @page { size: A4 portrait; margin: 12mm; }
@@ -81,7 +84,7 @@ body {
 body.page-landscape { font-size: 12px; line-height: 1.4; }
 .print-actions {
   position: fixed; top: 0; inset-inline: 0; z-index: 20;
-  display: flex; justify-content: flex-end; gap: 8px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px;
   padding: 10px 16px;
   padding-top: calc(10px + env(safe-area-inset-top, 0px));
   background: rgba(255,255,255,.96);
@@ -89,13 +92,24 @@ body.page-landscape { font-size: 12px; line-height: 1.4; }
   border-bottom: 1px solid var(--line);
   box-shadow: 0 8px 24px rgba(18,35,31,.12);
 }
+.print-actions .print-hint {
+  margin: 0;
+  margin-inline-end: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  max-width: 28rem;
+  line-height: 1.4;
+}
 body { padding-top: 64px; }
 body.page-landscape { padding-top: 56px; }
+body.is-receipt, body.is-statement { padding-top: 72px; }
 .print-actions button {
   border: 0; border-radius: 12px; padding: 11px 18px;
   background: var(--green); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
 }
 .sheet {
+  position: relative;
   max-width: 920px;
   margin: 24px auto 48px;
   background: #fff;
@@ -104,19 +118,131 @@ body.page-landscape { padding-top: 56px; }
   overflow: hidden;
   box-shadow: 0 24px 60px rgba(18,35,31,.08);
 }
+body.is-receipt .sheet,
+body.is-statement .sheet {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  box-shadow: 0 18px 40px rgb(9 45 36 / 0.07);
+  outline: 3px double rgb(201 166 70 / 0.35);
+  outline-offset: -10px;
+}
 body.page-landscape .sheet { max-width: 1123px; margin: 12px auto 28px; border-radius: 16px; }
-.sheet-accent { height: 5px; background: linear-gradient(90deg, var(--green-deep), var(--green), #2aa88a); }
+.sheet-accent { height: 6px; background: linear-gradient(90deg, #08a39f, #174b70); }
+body.is-statement .sheet-accent { background: linear-gradient(90deg, #08a39f, var(--green-deep), #174b70); }
+body.is-receipt .sheet-accent { background: linear-gradient(90deg, #08a39f, #174b70); }
+.sheet-page-frame {
+  display: none;
+  pointer-events: none;
+}
+.doc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  padding: 1.35rem 1.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #fbfdfb 0%, var(--paper) 100%);
+}
+.doc-issuer {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: 0;
+}
+.doc-issuer img {
+  height: 52px;
+  width: auto;
+  max-width: min(160px, 42vw);
+  object-fit: contain;
+}
+.doc-issuer small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.doc-issuer strong {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.35;
+}
+.doc-title {
+  text-align: end;
+  min-width: min(100%, 14rem);
+}
+.doc-title-alt {
+  display: block;
+  color: #7b8d86;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+html[dir="rtl"] .doc-title-alt { letter-spacing: 0; text-transform: none; }
+.doc-title h1 {
+  margin: 0.2rem 0 0;
+  font-family: var(--serif);
+  font-size: 1.75rem;
+  line-height: 1.25;
+  color: var(--green);
+  font-weight: 700;
+}
+body.is-receipt .doc-title h1 { color: var(--green); }
+body.is-statement .doc-title h1 { color: #174b70; }
+.doc-title p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  max-width: 22rem;
+  margin-inline-start: auto;
+}
+.doc-stamp {
+  position: absolute;
+  inset-block-start: 7.2rem;
+  inset-inline-end: 1.6rem;
+  z-index: 2;
+  margin: 0;
+  padding: 0.35rem 0.9rem;
+  border: 3px double currentColor;
+  border-radius: 0.55rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  transform: rotate(-8deg);
+  opacity: 0.88;
+  color: #13834f;
+  background: rgb(255 253 248 / 0.72);
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+body.is-statement .doc-stamp { color: #174b70; }
+.doc-lead {
+  margin: 0;
+  padding: 0.85rem 1.75rem 0.15rem;
+  max-width: 46rem;
+  font-size: 1.02rem;
+  line-height: 1.85;
+  color: var(--ink);
+}
 .brand-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   padding: 20px 28px 16px;
   background: linear-gradient(180deg, #f8fcfa 0%, #fff 100%);
 }
+body.is-receipt .brand-bar,
+body.is-statement .brand-bar { display: none; }
 body.page-landscape .brand-bar { padding: 12px 18px; }
 .brand-bar img { height: 48px; width: auto; max-width: min(220px, 55vw); object-fit: contain; }
 body.page-landscape .brand-bar img { height: 38px; }
 .brand-bar small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; }
 .brand-bar strong { font-size: 17px; color: var(--ink); font-weight: 800; }
 .head { padding: 8px 28px 6px; }
+body.is-receipt .head,
+body.is-statement .head { display: none; }
 body.page-landscape .head { padding: 8px 18px 4px; }
 .head h1 {
   margin: 0 0 6px;
@@ -134,12 +260,30 @@ body.page-landscape .head p { font-size: 13px; }
   gap: 12px 18px; margin: 14px 28px; padding: 14px 16px;
   border: 1px solid var(--line); border-radius: 14px; background: var(--soft);
 }
+body.is-receipt .meta,
+body.is-statement .meta {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem 1rem;
+  margin: 0.85rem 1.75rem;
+  padding: 0.9rem 1rem;
+  border: 0;
+  border-radius: 0.8rem;
+  background: var(--soft);
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
 body.page-landscape .meta { margin: 10px 18px; padding: 10px 12px; gap: 8px 16px; }
+body.is-statement.page-landscape .meta {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0.65rem 1.1rem;
+}
 .meta span { color: var(--muted); font-size: 12px; display: block; font-weight: 700; margin-bottom: 3px; }
 .meta b { font-size: 15px; color: var(--ink); font-weight: 800; overflow-wrap: anywhere; }
 body.page-landscape .meta span { font-size: 11px; }
 body.page-landscape .meta b { font-size: 13px; }
 .kpis { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; padding: 0 28px 18px; }
+body.is-receipt .kpis,
+body.is-statement .kpis { padding: 0 1.75rem 1rem; }
 body.page-landscape .kpis { gap: 8px; padding: 0 18px 12px; }
 .kpi {
   border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px;
@@ -151,12 +295,21 @@ body.page-landscape .kpi { padding: 8px 10px; border-radius: 10px; }
 body.page-landscape .kpi span { font-size: 11px; margin-bottom: 4px; }
 body.page-landscape .kpi strong { font-size: 14px; }
 section { padding: 8px 28px 22px; }
+body.is-receipt section,
+body.is-statement section { padding: 0.5rem 1.75rem 1.25rem; }
 body.page-landscape section { padding: 6px 18px 16px; }
 section h2 { margin: 0 0 12px; font-size: 18px; color: var(--green-deep); font-weight: 800; }
+body.is-statement section h2 { font-family: var(--serif); font-size: 1.2rem; color: #174b70; }
 body.page-landscape section h2 { margin: 0 0 8px; font-size: 15px; }
 table { width: 100%; border-collapse: collapse; font-size: 16px; }
 th, td { padding: 12px 10px; border-bottom: 1px solid var(--line); text-align: start; vertical-align: top; }
 th { color: var(--muted); font-size: 13px; background: var(--soft); font-weight: 800; }
+body.is-statement th {
+  background: transparent;
+  border-bottom: 2px solid var(--ink);
+  color: #42564f;
+  font-size: 0.78rem;
+}
 td { color: var(--ink); font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
 body.page-portrait td:first-child { color: var(--muted); font-weight: 700; width: 34%; }
 .num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 16px; font-weight: 800; }
@@ -166,6 +319,39 @@ body.page-portrait td:first-child { color: var(--muted); font-weight: 700; width
 .voided td { text-decoration: line-through; color: #5b6b66; }
 .footer-note { margin: 12px 0 0; font-weight: 800; color: var(--green); font-size: 15px; }
 .empty { color: #5b6b66; font-size: 15px; }
+.doc-sign {
+  display: flex;
+  gap: 1.1rem;
+  align-items: center;
+  margin: 0.35rem 1.75rem 0.5rem;
+  padding: 1rem;
+  border: 1.5px dashed #9fb8ae;
+  border-radius: 0.9rem;
+  background: #fbfdfc;
+  break-inside: avoid;
+}
+.doc-sign .receipt-qr {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: start;
+}
+.doc-sign .receipt-qr img { margin: 0 0 0.35rem; width: 120px; height: 120px; }
+.doc-sign-copy h2 {
+  margin: 0 0 0.35rem;
+  color: #13834f;
+  font-size: 1rem;
+  font-weight: 800;
+}
+.doc-sign-copy p { margin: 0; color: var(--muted); font-size: 0.85rem; font-weight: 600; line-height: 1.55; }
+.doc-sign-copy .verify-url {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  word-break: break-all;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
 
 /* —— Receipt document (print / PDF / mobile) —— */
 body.is-receipt {
@@ -209,17 +395,8 @@ body.is-receipt .head p {
   font-size: 14px;
   font-weight: 600;
 }
-body.is-receipt .receipt-badge {
-  display: inline-block;
-  margin: 0 0 10px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  background: rgba(13,122,101,.1);
-  color: var(--green-deep);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0;
-}
+body.is-receipt .receipt-badge,
+body.is-statement .receipt-badge { display: none; }
 .receipt-block { padding: 8px 24px 8px; }
 .receipt-amount {
   margin: 12px 0 18px;
@@ -317,7 +494,8 @@ body.is-receipt .receipt-badge {
   border-radius: 8px;
   background: #fff;
 }
-.statement-verify-qr .verify-url {
+.statement-verify-qr .verify-url,
+.doc-sign .verify-url {
   font-size: 10px;
   word-break: break-all;
   color: #596b64;
@@ -333,6 +511,16 @@ body.is-receipt .receipt-badge {
   line-height: 1.5;
   letter-spacing: 0;
 }
+body.is-receipt .receipt-amount {
+  background: linear-gradient(135deg, #0b6b5d, #174b70);
+  border-radius: 0.8rem;
+}
+body.is-receipt .receipt-fields {
+  border-radius: 0.8rem;
+  background: var(--soft);
+}
+body.is-receipt .receipt-fields > div { background: transparent; }
+body.is-receipt .receipt-fields > div:nth-child(even) { background: rgb(255 255 255 / 0.55); }
 body.is-receipt footer.sheet-foot {
   margin-top: 8px;
   padding: 18px 24px 22px;
@@ -508,23 +696,55 @@ body.page-landscape td.col-desc { min-width: 160px; white-space: normal; overflo
   }
   body.page-landscape { font-size: 11px; }
   body.is-receipt { font-size: 13px; line-height: 1.35; }
+  body.is-statement { font-size: 12px; line-height: 1.4; }
   .print-actions { display: none !important; }
-  body, body.page-landscape { padding-top: 0 !important; }
-  .sheet { margin: 0; border: 0; border-radius: 0; max-width: none; overflow: visible; box-shadow: none; min-height: 0 !important; }
-  body.is-receipt .sheet { max-width: none; margin: 0; min-height: 0 !important; }
+  body, body.page-landscape, body.is-receipt, body.is-statement { padding-top: 0 !important; }
+  .sheet { margin: 0; border: 0; border-radius: 0; max-width: none; overflow: visible; box-shadow: none; min-height: 0 !important; outline: none; }
+  body.is-receipt .sheet,
+  body.is-statement .sheet {
+    max-width: none;
+    margin: 0;
+    min-height: 0 !important;
+    background: #fff;
+    outline: none;
+  }
+  .sheet-page-frame {
+    display: block;
+    position: fixed;
+    inset: 4mm;
+    border: 1.5px solid rgb(201 166 70 / 0.55);
+    border-radius: 0;
+    z-index: 0;
+  }
+  .doc-head, .doc-stamp, .meta, .kpi, .receipt-amount, .sheet-accent, .doc-sign, th {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
   .brand-bar, th, .meta, .kpi, .receipt-amount, .sheet-accent, .receipt-fields > div:nth-child(even) { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .brand-bar small, .meta span, .kpi span, th, body.page-portrait td:first-child, footer.sheet-foot, .receipt-fields dt { color: #222 !important; }
-  .brand-bar strong, .meta b, .kpi strong, td, .head p, .receipt-fields dd { color: #000 !important; }
+  .brand-bar strong, .meta b, .kpi strong, td, .head p, .receipt-fields dd, .doc-issuer strong { color: #000 !important; }
   .neg, .kpi.is-neg strong, .footer-note.neg { color: #b42318 !important; }
-  .head h1 { font-size: 32px; color: #0a5c4c !important; }
-  body.is-receipt .sheet-accent { height: 3px; }
-  body.is-receipt .brand-bar { padding: 8px 14px 6px !important; }
-  body.is-receipt .brand-bar img { height: 28px !important; }
-  body.is-receipt .brand-bar strong { font-size: 13px !important; }
-  body.is-receipt .head { padding: 2px 14px 6px !important; margin-bottom: 0 !important; }
-  body.is-receipt .receipt-badge { margin: 0 0 4px !important; padding: 2px 8px !important; font-size: 10px !important; }
-  body.is-receipt .head h1 { font-size: 18px !important; margin: 0 0 2px !important; }
-  body.is-receipt .head p { font-size: 11px !important; }
+  .head h1, .doc-title h1 { font-size: 22px; color: #0a5c4c !important; }
+  body.is-statement .doc-title h1 { color: #174b70 !important; }
+  .doc-head { padding: 0.55rem 0.85rem 0.45rem !important; }
+  .doc-issuer img { height: 36px !important; }
+  .doc-stamp {
+    inset-block-start: 5.2rem;
+    inset-inline-end: 0.85rem;
+    font-size: 0.82rem;
+    padding: 0.2rem 0.55rem;
+  }
+  .doc-lead { padding: 0.45rem 0.85rem 0.1rem !important; font-size: 0.92rem !important; line-height: 1.55 !important; }
+  body.is-receipt .meta,
+  body.is-statement .meta { margin: 0.45rem 0.85rem !important; padding: 0.55rem 0.7rem !important; }
+  body.is-receipt .kpis,
+  body.is-statement .kpis { padding: 0 0.85rem 0.55rem !important; }
+  body.is-receipt section,
+  body.is-statement section { padding: 0.25rem 0.85rem 0.7rem !important; }
+  .doc-sign { margin: 0.25rem 0.85rem !important; padding: 0.65rem !important; }
+  .doc-sign .receipt-qr img { width: 88px !important; height: 88px !important; }
+  body.is-receipt .sheet-accent,
+  body.is-statement .sheet-accent { height: 4px; }
   body.is-receipt .receipt-block { padding: 4px 14px 2px !important; }
   body.is-receipt .receipt-amount { margin: 6px 0 8px !important; padding: 10px 12px 12px !important; border-radius: 10px !important; box-shadow: none !important; }
   body.is-receipt .receipt-amount span { margin-bottom: 4px !important; font-size: 11px !important; }
@@ -538,7 +758,7 @@ body.page-landscape td.col-desc { min-width: 160px; white-space: normal; overflo
   body.is-receipt .receipt-fields dt { font-size: 11px !important; }
   body.is-receipt .receipt-fields dd { font-size: 12px !important; }
   body.is-receipt .receipt-ref { margin: 8px 0 2px !important; padding: 6px 8px !important; font-size: 11px !important; }
-  body.is-receipt .receipt-qr { margin: 8px 0 0 !important; padding: 8px 8px !important; }
+  body.is-receipt .receipt-qr:not(.doc-sign .receipt-qr) { margin: 8px 0 0 !important; padding: 8px 8px !important; }
   body.is-receipt .receipt-qr img { width: 88px !important; height: 88px !important; margin: 0 auto 4px !important; }
   body.is-receipt .receipt-qr p { font-size: 10px !important; }
   body.is-receipt footer.sheet-foot { margin-top: 4px !important; padding: 8px 14px 10px !important; font-size: 10px !important; line-height: 1.4 !important; }
@@ -554,6 +774,7 @@ body.page-landscape td.col-desc { min-width: 160px; white-space: normal; overflo
 @media screen and (max-width: 760px) {
   body { background: #f4f7f5; }
   .print-actions { justify-content: stretch; padding: 10px 12px; padding-top: calc(10px + env(safe-area-inset-top, 0px)); }
+  .print-actions .print-hint { width: 100%; margin: 0 0 4px; max-width: none; }
   .print-actions button { width: 100%; min-height: 48px; border-radius: 14px; font-size: 16px; }
   .sheet {
     margin: 0;
@@ -562,8 +783,20 @@ body.page-landscape td.col-desc { min-width: 160px; white-space: normal; overflo
     box-shadow: none;
     max-width: none;
     min-height: 100dvh;
+    outline: none;
   }
-  body.is-receipt .sheet { margin: 0; max-width: none; border-radius: 0; min-height: 100dvh; }
+  body.is-receipt .sheet,
+  body.is-statement .sheet { margin: 0; max-width: none; border-radius: 0; min-height: 100dvh; outline: none; }
+  .doc-head {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 1rem 1rem 0.85rem;
+  }
+  .doc-title { text-align: start; }
+  .doc-title p { margin-inline-start: 0; }
+  .doc-stamp { inset-block-start: auto; inset-inline-end: 0.85rem; top: 6.5rem; }
+  .doc-lead { padding: 0.65rem 1rem 0.1rem; font-size: 0.95rem; }
+  .doc-sign { flex-direction: column; align-items: flex-start; margin: 0.35rem 1rem; }
   .brand-bar {
     flex-direction: column;
     align-items: flex-start;
@@ -580,8 +813,14 @@ body.page-landscape td.col-desc { min-width: 160px; white-space: normal; overflo
   body.is-receipt .head h1 { font-size: 22px; }
   .head p { font-size: 13px; }
   .meta, .kpis { grid-template-columns: 1fr; margin: 10px 16px; }
+  body.is-receipt .meta,
+  body.is-statement .meta { grid-template-columns: 1fr; margin: 0.65rem 1rem; }
   .kpis { padding: 0 16px 14px; }
+  body.is-receipt .kpis,
+  body.is-statement .kpis { padding: 0 1rem 0.85rem; }
   section { padding: 6px 16px 20px; }
+  body.is-receipt section,
+  body.is-statement section { padding: 0.35rem 1rem 1rem; }
   body.is-receipt .receipt-block { padding: 6px 16px 10px; }
   body.page-portrait td:first-child { width: 38%; font-size: 13px; }
   td { font-size: 15px; }
@@ -718,21 +957,55 @@ export function wrapPrintDocument(options: {
         ? escapeHtml(options.footer)
         : `<span class="foot-mark">${escapeHtml(statementFoot.mark)}</span><span class="foot-site">${escapeHtml(statementFoot.site)}</span>`)
     : escapeHtml(options.footer ?? (options.locale === "ar" ? reportFootAr : reportFootEn));
-  const badge = isReceipt
-    ? `<span class="receipt-badge">${options.locale === "ar" ? "إيصال إلكتروني" : "Electronic receipt"}</span>`
+  const titleAlt = isReceipt
+    ? (options.locale === "ar" ? "إيصال قبض إلكتروني" : "Electronic payment receipt")
     : isStatement
-      ? `<span class="receipt-badge">${options.locale === "ar" ? "كشف إلكتروني" : "Electronic statement"}</span>`
+      ? (options.locale === "ar" ? "كشف حساب رسمي" : "Official account statement")
       : "";
+  const stampLabel = isReceipt
+    ? (options.locale === "ar" ? "مسدد" : "Paid")
+    : isStatement
+      ? (options.locale === "ar" ? "رسمي" : "Official")
+      : "";
+  const leadText = options.subtitle
+    ? options.subtitle
+    : isReceipt
+      ? (options.locale === "ar"
+        ? `إيصال صادر إلكترونياً من منصة وازن لصالح ${options.entityName}.`
+        : `Electronic receipt issued by Wazen for ${options.entityName}.`)
+      : isStatement
+        ? (options.locale === "ar"
+          ? `كشف حساب صادر إلكترونياً من منصة وازن — ${options.entityName}.`
+          : `Account statement issued electronically by Wazen — ${options.entityName}.`)
+        : "";
   const qrHint = options.locale === "ar"
-    ? "امسح الرمز لفتح تفاصيل الكشف على موقع وازن"
-    : "Scan to open statement details on Wazen";
+    ? "امسح الرمز لفتح تفاصيل المستند على موقع وازن"
+    : "Scan to open this document on Wazen";
+  const signTitle = options.locale === "ar" ? "التحقق الإلكتروني" : "Electronic verification";
   const verifyBlock = options.qrDataUrl && options.verifyUrl
-    ? `<div class="receipt-qr statement-verify-qr">
+    ? (isReceipt || isStatement
+      ? `<section class="doc-sign statement-verify-qr" aria-label="${escapeHtml(signTitle)}">
+  <div class="receipt-qr">
+    <img src="${escapeHtml(options.qrDataUrl)}" width="120" height="120" alt="QR" />
+  </div>
+  <div class="doc-sign-copy">
+    <h2>${escapeHtml(signTitle)}</h2>
+    <p>${escapeHtml(qrHint)}</p>
+    <p class="verify-url">${escapeHtml(options.verifyUrl)}</p>
+  </div>
+</section>`
+      : `<div class="receipt-qr statement-verify-qr">
   <img src="${escapeHtml(options.qrDataUrl)}" width="148" height="148" alt="QR" />
   <p>${escapeHtml(qrHint)}</p>
   <p class="verify-url">${escapeHtml(options.verifyUrl)}</p>
-</div>`
+</div>`)
     : "";
+  const printHint = (isReceipt || isStatement)
+    ? (options.locale === "ar"
+      ? "للحفظ كـ PDF اختر «حفظ كـ PDF» في نافذة الطباعة."
+      : "To keep a PDF, choose “Save as PDF” in the print dialog.")
+    : "";
+  const formalChrome = isReceipt || isStatement;
   return `<!doctype html>
 <html lang="${options.locale}" dir="${dir}" data-orientation="${orientation}">
 <head>
@@ -742,9 +1015,31 @@ export function wrapPrintDocument(options: {
   <style>${PRINT_DOCUMENT_CSS}\n${pageRule}</style>
 </head>
 <body class="page-${orientation}${isReceipt ? " is-receipt" : ""}${isStatement ? " is-statement" : ""}">
-  <div class="print-actions"><button type="button" onclick="window.print()">${escapeHtml(printLabel)}</button></div>
-  <article class="sheet">
+  <div class="print-actions">
+    ${printHint ? `<p class="print-hint">${escapeHtml(printHint)}</p>` : ""}
+    <button type="button" onclick="window.print()">${escapeHtml(printLabel)}</button>
+  </div>
+  <article class="sheet${formalChrome ? " sheet--formal" : ""}">
     <div class="sheet-accent" aria-hidden="true"></div>
+    ${formalChrome ? `<div class="sheet-page-frame" aria-hidden="true"></div>` : ""}
+    ${formalChrome ? `
+    <header class="doc-head">
+      <div class="doc-issuer">
+        <img src="${escapeHtml(options.logoUrl)}" alt="WAZEN · وازن" />
+        <div>
+          <small>WAZEN · وازن · BHD</small>
+          <strong>${escapeHtml(options.entityName)}</strong>
+        </div>
+      </div>
+      <div class="doc-title">
+        <span class="doc-title-alt">${escapeHtml(titleAlt)}</span>
+        <h1>${escapeHtml(options.title)}</h1>
+        ${options.subtitle ? `<p>${escapeHtml(options.subtitle)}</p>` : ""}
+      </div>
+    </header>
+    <p class="doc-stamp" aria-hidden="true">${escapeHtml(stampLabel)}</p>
+    ${leadText ? `<p class="doc-lead">${escapeHtml(leadText)}</p>` : ""}
+    ` : `
     <div class="brand-bar">
       <img src="${escapeHtml(options.logoUrl)}" alt="WAZEN · وازن" />
       <div>
@@ -753,10 +1048,10 @@ export function wrapPrintDocument(options: {
       </div>
     </div>
     <div class="head">
-      ${badge}
       <h1>${escapeHtml(options.title)}</h1>
       ${options.subtitle ? `<p>${escapeHtml(options.subtitle)}</p>` : ""}
     </div>
+    `}
     ${metaHtml ? `<div class="meta">${metaHtml}</div>` : ""}
     ${kpiHtml ? `<div class="kpis">${kpiHtml}</div>` : ""}
     ${options.bodyHtml}
