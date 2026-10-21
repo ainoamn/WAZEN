@@ -91,7 +91,7 @@ export function StatementCopySettings({
           code === "FORBIDDEN"
             ? (locale === "ar" ? "لا تملك صلاحية تعديل عبارات هذه الجمعية." : "You cannot edit wording for this association.")
             : code === "INVALID_STATEMENT_COPY"
-              ? (locale === "ar" ? "تحقق من طول العبارات (حتى 500 حرفاً لكل حقل)." : "Check wording length (max 500 characters per field).")
+              ? (locale === "ar" ? `تحقق من طول العبارات (حتى ${STATEMENT_COPY_MAX_LEN} حرفاً لكل حقل).` : `Check wording length (max ${STATEMENT_COPY_MAX_LEN} characters per field).`)
               : code,
         );
       }
@@ -113,8 +113,8 @@ export function StatementCopySettings({
           <h2>{locale === "ar" ? "عبارات كشوف الجمعية" : "Society statement wording"}</h2>
           <p className="modal-note">
             {locale === "ar"
-              ? "اكتب المقدمات وفقرات واتساب بأسلوبكم. استخدم {{spaceName}} ليُستبدل باسم الجمعية تلقائياً."
-              : "Write intros and WhatsApp lines in your own tone. Use {{spaceName}} — it is replaced with the association name."}
+              ? "هذه الرسائل الافتراضية الرسمية للجمعيات — عدّلوها كما تشاؤون. {{spaceName}} = اسم الجمعية، واختيارياً {{statementUrl}} داخل رسالة واتساب."
+              : "These are the official default society letters — edit freely. {{spaceName}} = association name; optional {{statementUrl}} inside WhatsApp text."}
           </p>
         </div>
       </div>
@@ -134,14 +134,14 @@ export function StatementCopySettings({
         </label>
         <p className="modal-note">
           {locale === "ar"
-            ? `معاينة الاسم: «${spaceName}» · حد كل حقل ${STATEMENT_COPY_MAX_LEN} حرفاً.`
-            : `Name preview: “${spaceName}” · ${STATEMENT_COPY_MAX_LEN} characters per field.`}
+            ? `معاينة الاسم: «${spaceName}» · حتى ${STATEMENT_COPY_MAX_LEN} حرفاً لكل حقل.`
+            : `Name preview: “${spaceName}” · up to ${STATEMENT_COPY_MAX_LEN} characters per field.`}
         </p>
         {STATEMENT_COPY_FIELD_META.map((field) => (
           <label key={field.key}>
             <span>{locale === "ar" ? field.ar : field.en}</span>
             <textarea
-              rows={field.key.startsWith("whatsapp") ? 2 : 3}
+              rows={field.key.startsWith("whatsapp") ? 12 : 7}
               maxLength={STATEMENT_COPY_MAX_LEN}
               value={fields[field.key]}
               onChange={(event) => setFields((prev) => ({ ...prev, [field.key]: event.target.value }))}

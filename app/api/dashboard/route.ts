@@ -3997,6 +3997,7 @@ export async function POST(request: Request) {
         locale,
         sheetKind as AssociationSheetCopyKind,
         walletName,
+        statementUrl,
       );
       const currency = space.currency || "OMR";
       const txnCount = await db.prepare("SELECT COUNT(*) AS count FROM transactions WHERE space_id=?").bind(space.id).first<{ count: number }>();

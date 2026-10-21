@@ -9,6 +9,7 @@ import {
   verifyAssociationStatementToken,
   verifyMemberStatementToken,
 } from "../lib/statement-share.ts";
+import { resolveWhatsAppAttach } from "../lib/statement-copy.ts";
 import { buildCombinedMemberLedgerHtml, buildMemberLedgerHtml } from "../lib/member-ledger.ts";
 import { buildAccountStatementModel } from "../lib/account-statement.ts";
 
@@ -121,6 +122,7 @@ test("member statement WhatsApp message includes the share link", () => {
 });
 
 test("association statement WhatsApp message includes wallet and link", () => {
+  const letter = resolveWhatsAppAttach(null, "ar", "movements", "جمعية الحي");
   const message = buildAssociationStatementWhatsAppMessage({
     locale: "ar",
     walletName: "جمعية الحي",
@@ -129,14 +131,16 @@ test("association statement WhatsApp message includes wallet and link", () => {
     movementsLabel: "14",
     statementUrl: "https://example.com/s/assoc",
     sheetKind: "movements",
+    attachOverride: letter,
     availableLabel: "150.000 ر.ع.",
     expensesLabel: "30.000 ر.ع.",
     arrearsLabel: "45.000 ر.ع.",
     lateMembersLabel: "3",
     committedMembersLabel: "12",
   });
-  assert.match(message, /السلام عليكم أعضاء «جمعية الحي»/);
-  assert.match(message, /كشف حساب كامل وعام/);
+  assert.match(message, /السلام عليكم ورحمة الله وبركاته/);
+  assert.match(message, /الكشف المالي الشامل/);
+  assert.match(message, /إدارة جمعية الحي/);
   assert.match(message, /المتوفر \(نقد \+ ودائع\): 150\.000/);
   assert.match(message, /المصروفات: 30\.000/);
   assert.match(message, /إجمالي المتأخرات: 45\.000/);
@@ -145,7 +149,8 @@ test("association statement WhatsApp message includes wallet and link", () => {
   assert.match(message, /https:\/\/example\.com\/s\/assoc/);
 });
 
-test("association arrears WhatsApp message names the sheet type", () => {
+test("association arrears WhatsApp message uses approved letter without type-line boilerplate", () => {
+  const letter = resolveWhatsAppAttach(null, "ar", "dues", "جمعية أبناء خلفان");
   const message = buildAssociationStatementWhatsAppMessage({
     locale: "ar",
     walletName: "جمعية أبناء خلفان",
@@ -154,14 +159,16 @@ test("association arrears WhatsApp message names the sheet type", () => {
     movementsLabel: "0",
     statementUrl: "https://example.com/s/dues",
     sheetKind: "dues",
+    attachOverride: letter,
     availableLabel: "10.000 ر.ع.",
     expensesLabel: "2.000 ر.ع.",
     arrearsLabel: "8.000 ر.ع.",
     lateMembersLabel: "5",
     committedMembersLabel: "20",
   });
-  assert.match(message, /كشف المبالغ المتأخرة على الأعضاء حتى نهاية الشهر الحالي/);
-  assert.match(message, /نوع الكشف: متأخرات الأعضاء حتى نهاية الشهر الحالي/);
+  assert.match(message, /كشف المستحقات المالية المتأخرة عن السداد/);
+  assert.match(message, /إدارة جمعية أبناء خلفان/);
+  assert.doesNotMatch(message, /نوع الكشف:/);
   assert.doesNotMatch(message, /عدد الحركات/);
 });
 

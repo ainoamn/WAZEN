@@ -228,7 +228,13 @@ body.is-statement .doc-stamp { color: #174b70; }
   line-height: 1.85;
   color: var(--ink);
 }
-.doc-lead__kind { display: block; margin-bottom: 0.35rem; }
+.doc-lead__kind {
+  display: block;
+  margin-bottom: 0.35rem;
+  white-space: pre-wrap;
+  line-height: 1.65;
+  max-width: 52rem;
+}
 .doc-lead__assoc {
   display: block;
   margin-top: 0.15rem;
@@ -1011,12 +1017,15 @@ export function wrapPrintDocument(options: {
           : "Account statement issued electronically by the Wazen platform.")
         : "";
   const assocLabel = options.locale === "ar" ? "الجمعية / المحفظة:" : "Association / wallet:";
+  const leadKindHtml = leadKind
+    ? escapeHtml(leadKind).replace(/\r\n|\r|\n/g, "<br />")
+    : "";
   const leadBlock = formalLeadNeeded(isReceipt, isStatement, leadKind)
     ? `<p class="doc-lead">
-  ${leadKind ? `<span class="doc-lead__kind">${escapeHtml(leadKind)}</span>` : ""}
+  ${leadKindHtml ? `<span class="doc-lead__kind">${leadKindHtml}</span>` : ""}
   <span class="doc-lead__assoc"><span class="doc-lead__assoc-label">${escapeHtml(assocLabel)}</span><strong class="doc-assoc-name">${escapeHtml(options.entityName)}</strong></span>
 </p>`
-    : (leadKind ? `<p class="doc-lead">${escapeHtml(leadKind)}</p>` : "");
+    : (leadKindHtml ? `<p class="doc-lead">${leadKindHtml}</p>` : "");
   const qrHint = options.locale === "ar"
     ? "امسح الرمز لفتح تفاصيل المستند على موقع وازن"
     : "Scan to open this document on Wazen";

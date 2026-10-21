@@ -249,107 +249,49 @@ export function buildAssociationStatementWhatsAppMessage(input: {
   committedMembersLabel?: string;
   kind?: "movements" | "dues";
   sheetKind?: AssociationSheetKind;
-  /** Custom attach paragraph from settings (already resolved / with space name). */
+  /**
+   * Full WhatsApp letter from settings/defaults (space name already applied).
+   * KPI summary + statement link are appended unless the body already contains the URL.
+   */
   attachOverride?: string;
 }) {
-  const name = String(input.walletName ?? "").trim() || (input.locale === "ar" ? "الجمعية" : "the association");
   const sheet = input.sheetKind
     ?? (input.kind === "dues" ? "dues" : "movements");
-  const attachAr = (() => {
-    switch (sheet) {
-      case "dues":
-        return "نرفق لكم كشف المبالغ المتأخرة على الأعضاء حتى نهاية الشهر الحالي، للاطلاع على التفاصيل.";
-      case "dues_paid":
-        return "نرفق لكم كشف المسدّدين (من دفعوا مبالغاً) للاطلاع على التفاصيل.";
-      case "dues_owing":
-        return "نرفق لكم كشف الأعضاء المترتبة عليهم مبالغ فقط، للاطلاع على التفاصيل.";
-      default:
-        return "نرفق لكم كشف حساب كامل وعام للجمعية، للاطلاع على التفاصيل.";
-    }
-  })();
-  const attachEn = (() => {
-    switch (sheet) {
-      case "dues":
-        return "Please find the member arrears statement through the end of the current month.";
-      case "dues_paid":
-        return "Please find the payers-only statement (members who have paid).";
-      case "dues_owing":
-        return "Please find the statement of members who still owe amounts.";
-      default:
-        return "Please find the full general association account statement.";
-    }
-  })();
-  const attachCustom = String(input.attachOverride ?? "").trim();
-  const typeLineAr = (() => {
-    switch (sheet) {
-      case "dues":
-        return "نوع الكشف: متأخرات الأعضاء حتى نهاية الشهر الحالي";
-      case "dues_paid":
-        return "نوع الكشف: المسدّدون فقط";
-      case "dues_owing":
-        return "نوع الكشف: المترتبة عليهم مبالغ فقط";
-      default:
-        return "نوع الكشف: كشف كامل وعام";
-    }
-  })();
-  const typeLineEn = (() => {
-    switch (sheet) {
-      case "dues":
-        return "Type: member arrears to current month";
-      case "dues_paid":
-        return "Type: payers only";
-      case "dues_owing":
-        return "Type: owing members only";
-      default:
-        return "Type: full general statement";
-    }
-  })();
-
-  const summaryAr = [
-    input.availableLabel ? `المتوفر (نقد + ودائع): ${input.availableLabel}` : null,
-    input.expensesLabel ? `المصروفات: ${input.expensesLabel}` : null,
-    input.arrearsLabel ? `إجمالي المتأخرات: ${input.arrearsLabel}` : null,
-    input.lateMembersLabel ? `عدد المتأخرين: ${input.lateMembersLabel}` : null,
-    input.committedMembersLabel ? `عدد الملتزمين: ${input.committedMembersLabel}` : null,
-    sheet === "movements" && input.movementsLabel ? `عدد الحركات: ${input.movementsLabel}` : null,
-  ].filter((line): line is string => Boolean(line));
-
-  const summaryEn = [
-    input.availableLabel ? `Available (cash + holdings): ${input.availableLabel}` : null,
-    input.expensesLabel ? `Expenses: ${input.expensesLabel}` : null,
-    input.arrearsLabel ? `Total arrears: ${input.arrearsLabel}` : null,
-    input.lateMembersLabel ? `Members in arrears: ${input.lateMembersLabel}` : null,
-    input.committedMembersLabel ? `Members current: ${input.committedMembersLabel}` : null,
-    sheet === "movements" && input.movementsLabel ? `Movements: ${input.movementsLabel}` : null,
-  ].filter((line): line is string => Boolean(line));
-
-  const attach = attachCustom || (input.locale === "ar" ? attachAr : attachEn);
-  const body = input.locale === "ar"
+  const letter = String(input.attachOverride ?? "").trim();
+  const summary = (input.locale === "ar"
     ? [
-        `السلام عليكم أعضاء «${name}»،`,
-        "",
-        attach,
-        typeLineAr,
-        "",
-        ...summaryAr,
-        "",
-        "للاطلاع على الأسماء والتفاصيل افتحوا الكشف من هنا:",
-        input.statementUrl,
-        "",
-        "مع التحية",
-      ]
+      input.availableLabel ? `المتوفر (نقد + ودائع): ${input.availableLabel}` : null,
+      input.expensesLabel ? `المصروفات: ${input.expensesLabel}` : null,
+      input.arrearsLabel ? `إجمالي المتأخرات: ${input.arrearsLabel}` : null,
+      input.lateMembersLabel ? `عدد المتأخرين: ${input.lateMembersLabel}` : null,
+      input.committedMembersLabel ? `عدد الملتزمين: ${input.committedMembersLabel}` : null,
+      sheet === "movements" && input.movementsLabel ? `عدد الحركات: ${input.movementsLabel}` : null,
+    ]
     : [
-        `Hello members of “${name}”,`,
-        "",
-        attach,
-        typeLineEn,
-        "",
-        ...summaryEn,
-        "",
-        "Open the statement for names and details:",
-        input.statementUrl,
-        "",
-        "Best regards",
-      ];
-  return body.filter((line) => line != null).join("\n");
+      input.availableLabel ? `Available (cash + holdings): ${input.availableLabel}` : null,
+      input.expensesLabel ? `Expenses: ${input.expensesLabel}` : null,
+      input.arrearsLabel ? `Total arrears: ${input.arrearsLabel}` : null,
+      input.lateMembersLabel ? `Members in arrears: ${input.lateMembersLabel}` : null,
+      input.committedMembersLabel ? `Members current: ${input.committedMembersLabel}` : null,
+      sheet === "movements" && input.movementsLabel ? `Movements: ${input.movementsLabel}` : null,
+    ]).filter((line): line is string => Boolean(line));
+
+  const url = String(input.statementUrl ?? "").trim();
+  const hasUrlInLetter = Boolean(url && letter.includes(url));
+  const linkBlock = hasUrlInLetter
+    ? []
+    : [
+      "",
+      input.locale === "ar"
+        ? "للاطلاع على الأسماء والتفاصيل افتحوا الكشف من هنا:"
+        : "Open the statement for names and details:",
+      url,
+    ];
+
+  const parts = [
+    letter,
+    ...(summary.length ? ["", ...summary] : []),
+    ...linkBlock,
+  ];
+  return parts.filter((line) => line != null).join("\n").trim();
 }

@@ -2528,6 +2528,8 @@ html[data-theme="dark"] .date-calendar-head button, html[data-theme="dark"] .dat
   color: var(--muted);
   font-size: 13px;
   font-weight: 600;
+  white-space: pre-wrap;
+  line-height: 1.65;
 }
 .receipt-share-amount {
   margin: 0 0 16px;
