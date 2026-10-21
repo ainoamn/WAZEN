@@ -32,6 +32,7 @@ import { openWhatsAppUrl } from "../lib/receipt-share";
 import { apiFetch } from "../lib/client-api";
 import { type StatementTxnFilter } from "../lib/account-statement";
 import { StatementExportModal } from "../components/society/StatementExportModal";
+import { StatementCopySettings } from "../components/society/StatementCopySettings";
 import type { RosterMemberRow } from "../lib/member-roster-export";
 import { mapBankCsvRow, parseBankCsv } from "../lib/ledger-csv";
 import { PwaInstallCard } from "../components/pwa/PwaInstallCard";
@@ -153,6 +154,7 @@ type Space = {
   starts_at?: string | null;
   status?: string;
   role_permissions_json?: string | null;
+  statement_copy_json?: string | null;
   /** Full-ledger aggregates (not limited by the recent transactions window). */
   posted_income_minor?: number;
   posted_expense_minor?: number;
@@ -837,6 +839,7 @@ function StatementPrintMenu({
           occurrences={data.personalOccurrences ?? []}
           holdings={(data.spaceHoldings ?? []).filter((row) => row.space_id === space.id)}
           memberRows={memberRows}
+          statementCopyJson={space.statement_copy_json}
           canShare={canShare}
           onShare={(filter) => void shareSpaceStatement(space, locale, filter, Boolean(canShare))}
           onClose={() => setOpen(false)}
@@ -4127,6 +4130,17 @@ function SettingsView({ user, locale, entitlements, spaces, onLogout, onSaved }:
       <div className="modal-actions"><button className="primary-button" disabled={saving}>{saving ? t.saving : (locale === "ar" ? "حفظ البيانات" : "Save profile")}</button></div>
     </form>
     <PasswordChangeCard locale={locale} />
+    <StatementCopySettings
+      locale={locale}
+      spaces={spaces}
+      onSaved={(spaceId, statement_copy_json) => {
+        onSaved({
+          spaces: spaces.map((space) => (
+            space.id === spaceId ? { ...space, statement_copy_json } : space
+          )),
+        });
+      }}
+    />
     <PwaInstallCard locale={locale} />
     <PushNotifyCard locale={locale} />
     <PlanFeaturesPanel locale={locale} entitlements={entitlements} />

@@ -314,6 +314,9 @@ async function ensureSchemaPatches(db: D1Database) {
   if (!spaceStart.results.some((column) => column.name === "role_permissions_json")) {
     try { await db.prepare("ALTER TABLE spaces ADD COLUMN role_permissions_json TEXT").run(); } catch { /* exists */ }
   }
+  if (!spaceStart.results.some((column) => column.name === "statement_copy_json")) {
+    try { await db.prepare("ALTER TABLE spaces ADD COLUMN statement_copy_json TEXT").run(); } catch { /* exists */ }
+  }
   const periodColumns = await db.prepare("PRAGMA table_info(accounting_periods)").all<{ name: string }>();
   const periodNames = new Set(periodColumns.results.map((column) => column.name));
   if (!periodNames.has("closed_by")) {

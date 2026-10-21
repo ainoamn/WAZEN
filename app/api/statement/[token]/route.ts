@@ -9,6 +9,7 @@ import { loadMemberStatementSection } from "../../../../lib/member-statement-dat
 import { buildAccountStatementModel, type StatementTxnFilter } from "../../../../lib/account-statement";
 import { formatDebitMoneyMinor, formatMoneyMinor } from "../../../../lib/money";
 import { accruedDueMinor } from "../../../../lib/installments";
+import { parseSpaceStatementCopy, resolveStatementIntro } from "../../../../lib/statement-copy";
 
 export const runtime = "nodejs";
 
@@ -94,7 +95,7 @@ async function associationStatementJson(payload: AssociationStatementSharePayloa
   await ensureSchema(db);
 
   const space = await db.prepare(`
-    SELECT id, name_ar, name_en, type, currency, balance_minor FROM spaces WHERE id=? LIMIT 1
+    SELECT id, name_ar, name_en, type, currency, balance_minor, statement_copy_json FROM spaces WHERE id=? LIMIT 1
   `).bind(payload.spaceId).first<{
     id: string;
     name_ar: string;
@@ -102,6 +103,7 @@ async function associationStatementJson(payload: AssociationStatementSharePayloa
     type: string;
     currency: string;
     balance_minor: number;
+    statement_copy_json?: string | null;
   }>();
   if (!space) return null;
 
@@ -225,21 +227,12 @@ async function associationStatementJson(payload: AssociationStatementSharePayloa
     dues_owing: { ar: "كشف المترتبة عليهم مبالغ", en: "Owing members statement" },
   } as const;
   const title = locale === "ar" ? sheetTitles[sheetKind].ar : sheetTitles[sheetKind].en;
-  const subtitle = locale === "ar"
-    ? (sheetKind === "movements"
-      ? `إليكم بيان حركات حساب «${model.entityName}» — للشفافية والمتابعة بكل وضوح.`
-      : sheetKind === "dues"
-        ? `بيان ودّي لمتابعة مستحقات «${model.entityName}» حتى نهاية الشهر الحالي: الاسم، ما دُفع، وما تبقّى.`
-        : sheetKind === "dues_paid"
-          ? `إليكم أسماء الأعضاء الذين سدّدوا مساهماتهم في «${model.entityName}» — شكراً لالتزامهم.`
-          : `إليكم من لا تزال عليهم مبالغ مستحقة في «${model.entityName}» حتى نهاية الشهر الحالي — للمتابعة بلطف ووضوح.`)
-    : (sheetKind === "movements"
-      ? `Here is the account activity for “${model.entityName}” — clear and ready for review.`
-      : sheetKind === "dues"
-        ? `A clear dues overview for “${model.entityName}” through the current month: name, paid, and remaining.`
-        : sheetKind === "dues_paid"
-          ? `Members of “${model.entityName}” who have paid — thank you for staying current.`
-          : `Members of “${model.entityName}” with amounts still due through the current month — for clear follow-up.`);
+  const subtitle = resolveStatementIntro(
+    parseSpaceStatementCopy(space.statement_copy_json),
+    locale,
+    sheetKind,
+    model.entityName,
+  );
 
   return {
     kind: "association_statement" as const,

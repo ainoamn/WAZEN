@@ -30,6 +30,12 @@ import { consumePlanQuota } from "../../lib/plan-quota-client";
 import { planHasFeature } from "../../lib/plan-features";
 import { apiFetch } from "../../lib/client-api";
 import { openWhatsAppUrl } from "../../lib/receipt-share";
+import {
+  parseSpaceStatementCopy,
+  resolveStatementIntro,
+  type SpaceStatementCopy,
+} from "../../lib/statement-copy";
+
 type Locale = "ar" | "en";
 /** Member sheets: all dues, payers only, or owing only. */
 type ReportKind = "movements" | "dues" | "dues_paid" | "dues_owing";
@@ -52,12 +58,18 @@ function filterMemberRows(kind: ReportKind, rows: RosterMemberRow[] | undefined)
   return list;
 }
 
-function reportCopy(kind: ReportKind, locale: Locale, spaceName: string) {
+function reportCopy(
+  kind: ReportKind,
+  locale: Locale,
+  spaceName: string,
+  statementCopy?: SpaceStatementCopy | null,
+) {
+  const intro = resolveStatementIntro(statementCopy, locale, kind, spaceName);
   if (kind === "dues_paid") {
     return locale === "ar"
       ? {
           title: "كشف المسدّدين",
-          intro: `إليكم أسماء الأعضاء الذين سدّدوا مساهماتهم في «${spaceName}» — شكراً لالتزامهم.`,
+          intro,
           sheetLabel: "المسدّدون (دفعوا مبالغاً)",
           summary: `${spaceName} · كشف المسدّدين فقط`,
           empty: "لا يوجد أعضاء مسدّدون (بمبالغ مدفوعة) في هذه الجمعية.",
@@ -66,7 +78,7 @@ function reportCopy(kind: ReportKind, locale: Locale, spaceName: string) {
         }
       : {
           title: "Payers statement",
-          intro: `Here are the members of “${spaceName}” who have paid their contributions — thank you for staying current.`,
+          intro,
           sheetLabel: "Payers (paid amounts)",
           summary: `${spaceName} · payers only`,
           empty: "No members with paid amounts in this association.",
@@ -78,7 +90,7 @@ function reportCopy(kind: ReportKind, locale: Locale, spaceName: string) {
     return locale === "ar"
       ? {
           title: "كشف المترتبة عليهم مبالغ",
-          intro: `إليكم من لا تزال عليهم مبالغ مستحقة في «${spaceName}» حتى نهاية الشهر الحالي — للمتابعة بلطف ووضوح.`,
+          intro,
           sheetLabel: "المترتبة عليهم مبالغ",
           summary: `${spaceName} · كشف المتأخرين فقط`,
           empty: "لا يوجد أعضاء مترتبة عليهم مبالغ في هذه الجمعية.",
@@ -87,7 +99,7 @@ function reportCopy(kind: ReportKind, locale: Locale, spaceName: string) {
         }
       : {
           title: "Arrears-only statement",
-          intro: `Members of “${spaceName}” with amounts still due through the current month — for clear, courteous follow-up.`,
+          intro,
           sheetLabel: "Members who owe",
           summary: `${spaceName} · owing members only`,
           empty: "No members with outstanding amounts in this association.",
@@ -99,7 +111,7 @@ function reportCopy(kind: ReportKind, locale: Locale, spaceName: string) {
     return locale === "ar"
       ? {
           title: "كشف المتأخرات حتى الشهر الحالي",
-          intro: `بيان ودّي لمتابعة مستحقات «${spaceName}» حتى نهاية الشهر الحالي: الاسم، ما دُفع، وما تبقّى.`,
+          intro,
           sheetLabel: "متأخرات الأعضاء حتى الشهر الحالي",
           summary: `${spaceName} · كشف متأخرات: الاسم + المدفوع + المتأخر حتى الشهر الحالي`,
           empty: "لا يوجد أعضاء لهذا الكشف.",
@@ -108,7 +120,7 @@ function reportCopy(kind: ReportKind, locale: Locale, spaceName: string) {
         }
       : {
           title: "Arrears statement to current month",
-          intro: `A clear dues overview for “${spaceName}” through the current month: each member’s name, paid amount, and remaining balance.`,
+          intro,
           sheetLabel: "Member arrears to current month",
           summary: `${spaceName} · dues sheet: name + paid + arrears to current month`,
           empty: "No members available for this statement.",
@@ -119,7 +131,7 @@ function reportCopy(kind: ReportKind, locale: Locale, spaceName: string) {
   return locale === "ar"
     ? {
         title: "",
-        intro: `إليكم بيان حركات حساب «${spaceName}» — للشفافية والمتابعة بكل وضوح.`,
+        intro,
         sheetLabel: "",
         summary: "",
         empty: "",
@@ -128,7 +140,7 @@ function reportCopy(kind: ReportKind, locale: Locale, spaceName: string) {
       }
     : {
         title: "",
-        intro: `Here is the account activity for “${spaceName}” — clear and ready for review.`,
+        intro,
         sheetLabel: "",
         summary: "",
         empty: "",
@@ -150,6 +162,7 @@ export function StatementExportModal({
   occurrences,
   holdings,
   memberRows,
+  statementCopyJson,
   canShare,
   onShare,
   onClose,
@@ -178,6 +191,7 @@ export function StatementExportModal({
   occurrences?: Array<{ transaction_id?: string | null; rule_name?: string; account_id?: string | null }>;
   holdings?: StatementHolding[];
   memberRows?: RosterMemberRow[];
+  statementCopyJson?: string | null;
   canShare?: boolean;
   onShare?: (filter: StatementTxnFilter) => void;
   onClose: () => void;
@@ -194,7 +208,8 @@ export function StatementExportModal({
   const [busy, setBusy] = useState(false);
   const canDownload = planHasFeature(features ?? [], "downloads");
   const memberSheet = isMemberSheet(reportKind);
-  const copy = reportCopy(reportKind, locale, spaceName);
+  const statementCopy = parseSpaceStatementCopy(statementCopyJson);
+  const copy = reportCopy(reportKind, locale, spaceName, statementCopy);
   const selectedMembers = useMemo(
     () => filterMemberRows(reportKind, memberRows),
     [reportKind, memberRows],
@@ -257,9 +272,7 @@ export function StatementExportModal({
     });
   };
 
-  const movementsIntro = locale === "ar"
-    ? `إليكم بيان حركات حساب «${spaceName}» — للشفافية والمتابعة بكل وضوح.`
-    : `Here is the account activity for “${spaceName}” — clear and ready for review.`;
+  const movementsIntro = resolveStatementIntro(statementCopy, locale, "movements", spaceName);
 
   const buildHtml = (logoUrl: string, extras?: { verifyUrl?: string; qrDataUrl?: string }) => buildAccountStatementHtml({
     locale,

@@ -249,6 +249,8 @@ export function buildAssociationStatementWhatsAppMessage(input: {
   committedMembersLabel?: string;
   kind?: "movements" | "dues";
   sheetKind?: AssociationSheetKind;
+  /** Custom attach paragraph from settings (already resolved / with space name). */
+  attachOverride?: string;
 }) {
   const name = String(input.walletName ?? "").trim() || (input.locale === "ar" ? "الجمعية" : "the association");
   const sheet = input.sheetKind
@@ -277,6 +279,7 @@ export function buildAssociationStatementWhatsAppMessage(input: {
         return "Please find the full general association account statement.";
     }
   })();
+  const attachCustom = String(input.attachOverride ?? "").trim();
   const typeLineAr = (() => {
     switch (sheet) {
       case "dues":
@@ -320,11 +323,12 @@ export function buildAssociationStatementWhatsAppMessage(input: {
     sheet === "movements" && input.movementsLabel ? `Movements: ${input.movementsLabel}` : null,
   ].filter((line): line is string => Boolean(line));
 
+  const attach = attachCustom || (input.locale === "ar" ? attachAr : attachEn);
   const body = input.locale === "ar"
     ? [
         `السلام عليكم أعضاء «${name}»،`,
         "",
-        attachAr,
+        attach,
         typeLineAr,
         "",
         ...summaryAr,
@@ -337,7 +341,7 @@ export function buildAssociationStatementWhatsAppMessage(input: {
     : [
         `Hello members of “${name}”,`,
         "",
-        attachEn,
+        attach,
         typeLineEn,
         "",
         ...summaryEn,

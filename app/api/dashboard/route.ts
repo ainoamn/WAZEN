@@ -15,6 +15,13 @@ import { assertApiScope, authorizeSpace, ensureDefaultTenant, platformRoleOf, ac
 import { prepareAudit, writeAudit } from "../../../lib/audit";
 import { currencyScale, formatDebitMoneyMinor, formatMoneyMinor, multiplyMinor, parseMoneyToMinor, parseNonNegativeMoneyToMinor } from "../../../lib/money";
 import { allocateOldestFirst, buildInstallmentSchedule, installmentStatus, periodKeyFromDate, summarizeAssociationArrears, type InstallmentLike } from "../../../lib/installments";
+import {
+  parseSpaceStatementCopy,
+  resolveWhatsAppAttach,
+  serializeSpaceStatementCopy,
+  STATEMENT_COPY_MAX_LEN,
+  type AssociationSheetCopyKind,
+} from "../../../lib/statement-copy";
 import { coveringPeriod } from "../../../lib/accounting-periods";
 import { isLikelyPhone, normalizeOptionalMemberPhone, toWhatsAppNumber } from "../../../lib/phone";
 import { isExternalLedgerMemberName } from "../../../lib/member-dues-exempt";
@@ -76,6 +83,7 @@ type SpaceRow = {
   starts_at?: string | null;
   status?: string;
   role_permissions_json?: string | null;
+  statement_copy_json?: string | null;
 };
 
 type MemberRow = {
@@ -1582,6 +1590,55 @@ export async function POST(request: Request) {
         }),
       ]);
       const body = { ok: true, spaceId: space.id, role_permissions_json: json };
+      await completeIdempotency(db, user.id, idempotencyKey, body);
+      claimRef.current = null;
+      return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+    } else if (action === "saveSpaceStatementCopy") {
+      const fieldSchema = z.string().max(STATEMENT_COPY_MAX_LEN);
+      const localeBlock = z.object({
+        introDues: fieldSchema.optional(),
+        introDuesPaid: fieldSchema.optional(),
+        introDuesOwing: fieldSchema.optional(),
+        introMovements: fieldSchema.optional(),
+        whatsappDues: fieldSchema.optional(),
+        whatsappDuesPaid: fieldSchema.optional(),
+        whatsappDuesOwing: fieldSchema.optional(),
+        whatsappMovements: fieldSchema.optional(),
+      }).partial();
+      const parsed = z.object({
+        spaceId: z.string().min(1).max(120),
+        copy: z.object({
+          ar: localeBlock.optional(),
+          en: localeBlock.optional(),
+        }),
+      }).safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "INVALID_STATEMENT_COPY");
+      const space = await authorizeSpace(db, user, parsed.data.spaceId, "members:write", ["society", "group"]);
+      if (!["owner", "manager", "supervisor", "treasurer"].includes(space.effective_role)) {
+        throw new ApiError(403, "FORBIDDEN");
+      }
+      const existingRow = await db.prepare("SELECT statement_copy_json FROM spaces WHERE id=?")
+        .bind(space.id)
+        .first<{ statement_copy_json?: string | null }>();
+      const existing = parseSpaceStatementCopy(existingRow?.statement_copy_json);
+      const merged = {
+        ar: { ...(existing.ar ?? {}), ...(parsed.data.copy.ar ?? {}) },
+        en: { ...(existing.en ?? {}), ...(parsed.data.copy.en ?? {}) },
+      };
+      const json = serializeSpaceStatementCopy(merged);
+      const createdAt = now();
+      await db.batch([
+        db.prepare("UPDATE spaces SET statement_copy_json=? WHERE id=?").bind(json, space.id),
+        prepareAudit(db, {
+          userId: user.id,
+          action: "space.statement_copy_updated",
+          entityType: "space",
+          entityId: space.id,
+          metadata: { via: "settings" },
+          createdAt,
+        }),
+      ]);
+      const body = { ok: true, spaceId: space.id, statement_copy_json: json };
       await completeIdempotency(db, user.id, idempotencyKey, body);
       claimRef.current = null;
       return Response.json(body, { headers: { "Cache-Control": "no-store" } });
@@ -3920,9 +3977,9 @@ export async function POST(request: Request) {
       const spaceAuth = await authorizeSpace(db, user, parsed.data.spaceId, "read");
       const { assertPlanShareFeature } = await import("../../../services/admin/billing-service");
       await assertPlanShareFeature(db, spaceAuth.owner_user_id, "whatsapp", user.id);
-      const space = await db.prepare("SELECT id,name_ar,name_en,currency,balance_minor FROM spaces WHERE id=?")
+      const space = await db.prepare("SELECT id,name_ar,name_en,currency,balance_minor,statement_copy_json FROM spaces WHERE id=?")
         .bind(parsed.data.spaceId)
-        .first<{ id: string; name_ar: string; name_en: string; currency: string; balance_minor: number }>();
+        .first<{ id: string; name_ar: string; name_en: string; currency: string; balance_minor: number; statement_copy_json?: string | null }>();
       if (!space) throw new ApiError(404, "WALLET_NOT_FOUND");
       const shareToken = signAssociationStatementToken({
         spaceId: space.id,
@@ -3937,6 +3994,13 @@ export async function POST(request: Request) {
         dues_paid: locale === "ar" ? "المسدّدون فقط" : "Payers only",
         dues_owing: locale === "ar" ? "المترتبة عليهم مبالغ فقط" : "Owing members only",
       })[sheetKind];
+      const walletName = locale === "ar" ? space.name_ar : space.name_en;
+      const attachOverride = resolveWhatsAppAttach(
+        parseSpaceStatementCopy(space.statement_copy_json),
+        locale,
+        sheetKind as AssociationSheetCopyKind,
+        walletName,
+      );
       const currency = space.currency || "OMR";
       const txnCount = await db.prepare("SELECT COUNT(*) AS count FROM transactions WHERE space_id=?").bind(space.id).first<{ count: number }>();
       const expenseRow = await db.prepare(
@@ -3978,12 +4042,13 @@ export async function POST(request: Request) {
       const committedCount = duesSummary.committedCount;
       const message = buildAssociationStatementWhatsAppMessage({
         locale,
-        walletName: locale === "ar" ? space.name_ar : space.name_en,
+        walletName,
         filterLabel,
         balanceLabel: formatMoneyMinor(cash, currency, locale),
         movementsLabel: String(Number(txnCount?.count ?? 0)),
         statementUrl,
         sheetKind,
+        attachOverride,
         availableLabel: formatMoneyMinor(available, currency, locale),
         expensesLabel: formatMoneyMinor(expenses, currency, locale),
         paidLabel: formatMoneyMinor(paid, currency, locale),

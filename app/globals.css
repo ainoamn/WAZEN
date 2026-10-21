@@ -702,6 +702,26 @@ label.secondary-button { display: inline-flex; align-items: center; gap: 7px; mi
 .member-name { display: flex; align-items: center; gap: 10px; }.member-name i { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: white; font-style: normal; font-size: 13px; font-weight: 700; }.member-name div { display: flex; flex-direction: column; gap: 4px; }.member-name strong { font-size: 14px; }.member-name span { color: #8a9590; font-size: 12px; }
 .status-pill { width: max-content; min-height: 28px; display: inline-flex; align-items: center; gap: 5px; padding: 0 10px; border-radius: 8px; font-size: 12px; font-weight: 700; }.status-pill.complete { color: var(--green); background: var(--green-soft); }.status-pill.pending { color: #b27120; background: var(--amber-soft); }
 .settings-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+.statement-copy-form {
+  display: grid;
+  gap: 12px;
+}
+.statement-copy-form textarea {
+  width: 100%;
+  min-height: 72px;
+  border: 1px solid var(--line, #dfe5e1);
+  border-radius: 11px;
+  padding: 10px 12px;
+  background: #fbfcfb;
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.55;
+  resize: vertical;
+}
+html[data-theme="dark"] .statement-copy-form textarea {
+  background: #15201c;
+  border-color: #2a3b35;
+}
 .profile-card { display: flex; flex-direction: column; gap: 14px; padding: 22px; }
 .profile-card label { display: flex; flex-direction: column; gap: 7px; }
 .profile-card label > span { color: #596b64; font-size: 13px; font-weight: 700; }
