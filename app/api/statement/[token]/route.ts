@@ -104,13 +104,25 @@ async function associationStatementJson(payload: AssociationStatementSharePayloa
   }>();
   if (!space) return null;
 
-  const [members, transactions] = await Promise.all([
+  const sheetKind = payload.sheetKind ?? "movements";
+  const [members, transactions, roster] = await Promise.all([
     db.prepare("SELECT id, space_id, display_name FROM members WHERE space_id=?")
       .bind(payload.spaceId)
       .all<{ id: string; space_id: string; display_name: string }>(),
     db.prepare("SELECT * FROM transactions WHERE space_id=? ORDER BY occurred_at ASC LIMIT 500")
       .bind(payload.spaceId)
       .all(),
+    db.prepare(
+      `SELECT id, display_name, due_minor, paid_minor, status, COALESCE(dues_exempt,0) AS dues_exempt
+       FROM members WHERE space_id=? AND status='active' ORDER BY display_name`,
+    ).bind(payload.spaceId).all<{
+      id: string;
+      display_name: string;
+      due_minor: number;
+      paid_minor: number;
+      status: string;
+      dues_exempt: number;
+    }>(),
   ]);
 
   const locale = payload.locale;
@@ -125,14 +137,57 @@ async function associationStatementJson(payload: AssociationStatementSharePayloa
     txnFilter: filter,
   });
   const money = (minor: number) => formatMoneyMinor(minor, model.currency, locale);
+  const debit = (minor: number) => formatDebitMoneyMinor(minor, model.currency, locale);
+
+  let memberRows = (roster.results ?? []).map((row) => {
+    const paid = Number(row.paid_minor) || 0;
+    const due = Number(row.due_minor) || 0;
+    const exempt = Number(row.dues_exempt) > 0;
+    const owes = exempt ? 0 : Math.max(0, due - paid);
+    return {
+      id: row.id,
+      display_name: row.display_name,
+      paid_minor: paid,
+      owes_minor: owes,
+      paidLabel: money(paid),
+      owesLabel: owes > 0 ? debit(owes) : money(0),
+      status: row.status ?? "active",
+    };
+  });
+  if (sheetKind === "dues_paid") memberRows = memberRows.filter((row) => row.paid_minor > 0);
+  if (sheetKind === "dues_owing") memberRows = memberRows.filter((row) => row.owes_minor > 0);
+
+  const sheetTitles = {
+    movements: { ar: "كشف حساب كامل وعام", en: "Full general account statement" },
+    dues: { ar: "كشف المتأخرات حتى نهاية الشهر الحالي", en: "Arrears statement to current month" },
+    dues_paid: { ar: "كشف المسدّدين", en: "Payers statement" },
+    dues_owing: { ar: "كشف المترتبة عليهم مبالغ", en: "Owing members statement" },
+  } as const;
+  const title = locale === "ar" ? sheetTitles[sheetKind].ar : sheetTitles[sheetKind].en;
+  const subtitle = locale === "ar"
+    ? (sheetKind === "movements"
+      ? `كشف حساب كامل وعام لـ«${model.entityName}» — الحركات والأرصدة.`
+      : sheetKind === "dues"
+        ? `أسماء الأعضاء مع المدفوع والمتأخر حتى نهاية الشهر الحالي — «${model.entityName}».`
+        : sheetKind === "dues_paid"
+          ? `أسماء المسدّدين فقط في «${model.entityName}».`
+          : `أسماء الأعضاء المترتبة عليهم مبالغ فقط في «${model.entityName}».`)
+    : (sheetKind === "movements"
+      ? `Full general account statement for “${model.entityName}” — movements and balances.`
+      : sheetKind === "dues"
+        ? `Member names with paid and arrears through the current month — “${model.entityName}”.`
+        : sheetKind === "dues_paid"
+          ? `Payers only in “${model.entityName}”.`
+          : `Owing members only in “${model.entityName}”.`);
 
   return {
     kind: "association_statement" as const,
     locale,
     filter,
-    filterLabel: model.title,
-    title: model.title,
-    subtitle: model.subtitle,
+    sheetKind,
+    filterLabel: title,
+    title,
+    subtitle,
     walletName: model.entityName,
     currency: model.currency,
     openingLabel: money(model.openingMinor),
@@ -144,19 +199,26 @@ async function associationStatementJson(payload: AssociationStatementSharePayloa
     totalInMinor: model.totalInMinor,
     totalOutMinor: model.totalOutMinor,
     movementCount: model.movementCount,
-    lines: model.lines.map((line) => ({
-      at: line.at,
-      ref: line.ref,
-      description: line.description,
-      item: line.item,
-      flow: line.flow,
-      userName: line.userName,
-      depositMinor: line.depositMinor,
-      withdrawMinor: line.withdrawMinor,
-      balanceMinor: line.balanceMinor,
-      status: line.status,
-      live: line.live,
-    })),
+    availableMinor: model.availableMinor,
+    availableLabel: money(model.availableMinor),
+    expenseMinor: model.expenseMinor,
+    expenseLabel: money(model.expenseMinor),
+    members: memberRows,
+    lines: sheetKind === "movements"
+      ? model.lines.map((line) => ({
+        at: line.at,
+        ref: line.ref,
+        description: line.description,
+        item: line.item,
+        flow: line.flow,
+        userName: line.userName,
+        depositMinor: line.depositMinor,
+        withdrawMinor: line.withdrawMinor,
+        balanceMinor: line.balanceMinor,
+        status: line.status,
+        live: line.live,
+      }))
+      : [],
   };
 }
 

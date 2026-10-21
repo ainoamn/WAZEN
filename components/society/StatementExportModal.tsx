@@ -29,8 +29,7 @@ import {
 import { consumePlanQuota } from "../../lib/plan-quota-client";
 import { planHasFeature } from "../../lib/plan-features";
 import { apiFetch } from "../../lib/client-api";
-import { buildAssociationStatementWhatsAppMessage } from "../../lib/statement-share";
-import { openWhatsAppUrl, whatsappShareUrl } from "../../lib/receipt-share";
+import { openWhatsAppUrl } from "../../lib/receipt-share";
 type Locale = "ar" | "en";
 /** Member sheets: all dues, payers only, or owing only. */
 type ReportKind = "movements" | "dues" | "dues_paid" | "dues_owing";
@@ -288,7 +287,7 @@ export function StatementExportModal({
     memberSheetLabel: memberSheet ? copy.sheetLabel : undefined,
   });
 
-  const ensureVerifyLink = async () => {
+  const createShare = async () => {
     const response = await apiFetch("/api/dashboard", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -297,27 +296,19 @@ export function StatementExportModal({
         idempotencyKey: crypto.randomUUID(),
         spaceId,
         filter: memberSheet ? "full" : filter,
+        sheetKind: reportKind,
         locale,
       }),
     });
-    const result = await response.json() as { error?: string; notification?: { receiptUrl?: string | null } };
+    const result = await response.json() as {
+      error?: string;
+      notification?: { receiptUrl?: string | null; whatsappUrl?: string | null };
+    };
     if (!response.ok) throw new Error(result.error ?? "SHARE_FAILED");
-    return String(result.notification?.receiptUrl ?? "").trim();
-  };
-
-  const buildSummaryMessage = (statementUrl: string) => {
-    const filterLabel = memberSheet
-      ? copy.whatsapp
-      : (FILTERS.find((item) => item.id === filter)?.[locale] ?? filter);
-    return buildAssociationStatementWhatsAppMessage({
-      locale,
-      walletName: spaceName,
-      filterLabel,
-      balanceLabel: "",
-      movementsLabel: "",
-      statementUrl,
-      kind: memberSheet ? "dues" : "movements",
-    });
+    return {
+      verifyUrl: String(result.notification?.receiptUrl ?? "").trim(),
+      whatsappUrl: String(result.notification?.whatsappUrl ?? "").trim(),
+    };
   };
 
   const run = async (mode: "print" | "download" | "whatsapp") => {
@@ -344,12 +335,13 @@ export function StatementExportModal({
     }
     setBusy(true);
     try {
-      // WhatsApp: only mint a short link — no QR / heavy HTML (avoids 30s+ freezes on phones).
+      // WhatsApp: server builds type-specific message + sheetKind link (no QR — keeps phones responsive).
       if (mode === "whatsapp") {
-        const verifyUrl = await ensureVerifyLink();
-        if (!verifyUrl) throw new Error(locale === "ar" ? "تعذر تجهيز رابط الكشف." : "Could not prepare statement link.");
-        const text = buildSummaryMessage(verifyUrl);
-        openWhatsAppUrl(whatsappShareUrl(null, text));
+        const share = await createShare();
+        if (!share.whatsappUrl && !share.verifyUrl) {
+          throw new Error(locale === "ar" ? "تعذر تجهيز رابط الكشف." : "Could not prepare statement link.");
+        }
+        openWhatsAppUrl(share.whatsappUrl || `https://wa.me/?text=${encodeURIComponent(share.verifyUrl)}`);
         onClose();
         return;
       }
@@ -365,7 +357,8 @@ export function StatementExportModal({
       let qrDataUrl = "";
       if (canShare !== false) {
         try {
-          verifyUrl = await ensureVerifyLink();
+          const share = await createShare();
+          verifyUrl = share.verifyUrl;
           if (verifyUrl) qrDataUrl = await buildReceiptQrDataUrl(verifyUrl);
         } catch {
           /* print/download still work without QR */

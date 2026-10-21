@@ -79,10 +79,21 @@ type MemberPayload = {
   sections?: MemberSection[];
 };
 
+type AssociationMember = {
+  id: string;
+  display_name: string;
+  paid_minor: number;
+  owes_minor: number;
+  paidLabel: string;
+  owesLabel: string;
+  status: string;
+};
+
 type AssociationPayload = {
   kind: "association_statement";
   locale: "ar" | "en";
   filter: "full" | "valid" | "voided" | "all";
+  sheetKind?: "movements" | "dues" | "dues_paid" | "dues_owing";
   filterLabel: string;
   title: string;
   subtitle: string;
@@ -97,6 +108,9 @@ type AssociationPayload = {
   totalInMinor: number;
   totalOutMinor: number;
   movementCount: number;
+  availableLabel?: string;
+  expenseLabel?: string;
+  members?: AssociationMember[];
   lines: AssociationLine[];
 };
 
@@ -118,21 +132,49 @@ function isAssociation(data: StatementPayload): data is AssociationPayload {
 
 function associationPrintHtml(data: AssociationPayload, logoUrl: string, verifyUrl?: string) {
   const ar = data.locale === "ar";
-  const money = (minor: number) => formatMoneyMinor(minor, data.currency || "OMR", data.locale);
-  const rows = data.lines.map((line) => {
-    const cls = !line.live ? "voided" : "";
-    return `<tr class="${cls}">
+  const sheetKind = data.sheetKind ?? "movements";
+  const isMembers = sheetKind !== "movements";
+  const intro = data.subtitle
+    || (ar
+      ? `هذا كشف حساب «${data.walletName}» للاطلاع على التفاصيل.`
+      : `Account statement for “${data.walletName}” for your review.`);
+  let bodyHtml = "";
+  if (isMembers) {
+    const members = data.members ?? [];
+    const cards = members.map((row) => `<article class="statement-card">
+      <header><strong>${escapeHtml(row.display_name)}</strong><em class="${row.owes_minor > 0 ? "neg" : ""}">${escapeHtml(row.owesLabel)}</em></header>
+      <p>${escapeHtml(ar ? "مدفوع" : "Paid")}: ${escapeHtml(row.paidLabel)}</p>
+      <footer><span>${escapeHtml(ar ? "متأخر حتى الشهر الحالي" : "Arrears")}</span><span class="${row.owes_minor > 0 ? "neg" : ""}">${escapeHtml(row.owesLabel)}</span></footer>
+    </article>`).join("");
+    const rows = members.map((row) => `<tr>
+      <td>${escapeHtml(row.display_name)}</td>
+      <td class="num">${escapeHtml(row.paidLabel)}</td>
+      <td class="num ${row.owes_minor > 0 ? "neg" : ""}">${escapeHtml(row.owesLabel)}</td>
+    </tr>`).join("");
+    bodyHtml = `<section class="statement-members-section"><h2>${escapeHtml(data.filterLabel)}</h2>
+      <div class="statement-table-wrap ops-desktop-table"><table>
+        <thead><tr>
+          <th>${escapeHtml(ar ? "العضو" : "Member")}</th>
+          <th>${escapeHtml(ar ? "مدفوع" : "Paid")}</th>
+          <th>${escapeHtml(ar ? "متأخر" : "Arrears")}</th>
+        </tr></thead>
+        <tbody>${rows || `<tr><td colspan="3">${escapeHtml(ar ? "لا أسماء في هذا الكشف." : "No names on this sheet.")}</td></tr>`}</tbody>
+      </table></div>
+      <div class="statement-cards">${cards || `<p class="empty">${escapeHtml(ar ? "لا أسماء في هذا الكشف." : "No names on this sheet.")}</p>`}</div>
+    </section>`;
+  } else {
+    const money = (minor: number) => formatMoneyMinor(minor, data.currency || "OMR", data.locale);
+    const rows = data.lines.map((line) => {
+      const cls = !line.live ? "voided" : "";
+      return `<tr class="${cls}">
       <td>${escapeHtml(new Date(line.at).toLocaleDateString(ar ? "ar-OM" : "en-GB"))}</td>
       <td><strong>${escapeHtml(line.description)}</strong><small>${escapeHtml(line.item)} · ${escapeHtml(line.flow)}</small></td>
       <td class="num in">${line.depositMinor ? escapeHtml(money(line.depositMinor)) : "—"}</td>
       <td class="num out">${line.withdrawMinor ? escapeHtml(money(line.withdrawMinor)) : "—"}</td>
       <td class="num">${line.balanceMinor == null ? "—" : escapeHtml(money(line.balanceMinor))}</td>
     </tr>`;
-  }).join("");
-  const intro = ar
-    ? `هذا كشف حساب «${data.walletName}» للاطلاع على التفاصيل.`
-    : `Account statement for “${data.walletName}” for your review.`;
-  const bodyHtml = `<section><h2>${escapeHtml(ar ? "الحركات" : "Movements")}</h2>
+    }).join("");
+    bodyHtml = `<section><h2>${escapeHtml(ar ? "الحركات" : "Movements")}</h2>
     <table>
       <thead><tr>
         <th>${escapeHtml(ar ? "التاريخ" : "Date")}</th>
@@ -144,6 +186,7 @@ function associationPrintHtml(data: AssociationPayload, logoUrl: string, verifyU
       <tbody>${rows || `<tr><td colspan="5">${escapeHtml(ar ? "لا توجد حركات." : "No movements.")}</td></tr>`}</tbody>
     </table>
   </section>`;
+  }
   return wrapPrintDocument({
     locale: data.locale,
     title: data.title,
@@ -151,19 +194,27 @@ function associationPrintHtml(data: AssociationPayload, logoUrl: string, verifyU
     logoUrl,
     subtitle: intro,
     variant: "statement",
-    orientation: "landscape",
+    orientation: isMembers ? "portrait" : "landscape",
     verifyUrl,
     meta: [
       { label: ar ? "الجمعية" : "Association", value: data.walletName },
       { label: ar ? "نوع الكشف" : "Statement type", value: data.filterLabel },
-      { label: ar ? "عدد الحركات" : "Movements", value: String(data.movementCount) },
+      isMembers
+        ? { label: ar ? "عدد الأسماء" : "Names", value: String(data.members?.length ?? 0) }
+        : { label: ar ? "عدد الحركات" : "Movements", value: String(data.movementCount) },
     ],
-    kpis: [
-      { label: ar ? "أول المدة" : "Opening", value: data.openingLabel, tone: data.openingMinor < 0 ? "neg" : undefined },
-      { label: ar ? "إيداع" : "In", value: data.totalInLabel },
-      { label: ar ? "سحب" : "Out", value: data.totalOutLabel },
-      { label: ar ? "آخر المدة" : "Closing", value: data.closingLabel, tone: data.closingMinor < 0 ? "neg" : undefined },
-    ],
+    kpis: isMembers
+      ? [
+        { label: ar ? "المتوفر" : "Available", value: data.availableLabel ?? "—" },
+        { label: ar ? "المصروفات" : "Expenses", value: data.expenseLabel ?? "—" },
+        { label: ar ? "عدد الأسماء" : "Names", value: String(data.members?.length ?? 0) },
+      ]
+      : [
+        { label: ar ? "أول المدة" : "Opening", value: data.openingLabel, tone: data.openingMinor < 0 ? "neg" : undefined },
+        { label: ar ? "إيداع" : "In", value: data.totalInLabel },
+        { label: ar ? "سحب" : "Out", value: data.totalOutLabel },
+        { label: ar ? "آخر المدة" : "Closing", value: data.closingLabel, tone: data.closingMinor < 0 ? "neg" : undefined },
+      ],
     bodyHtml,
   });
 }
@@ -187,21 +238,6 @@ export default function StatementShareClient({ token }: { token: string }) {
     })();
     return () => { cancelled = true; };
   }, [token]);
-
-  useEffect(() => {
-    if (!data || !isAssociation(data)) return;
-    const key = `wazen-stmt-auto:${token}`;
-    try {
-      if (sessionStorage.getItem(key)) return;
-      sessionStorage.setItem(key, "1");
-    } catch {
-      /* private mode — still try once */
-    }
-    void printWazenHtml(
-      (logoUrl) => associationPrintHtml(data, logoUrl, window.location.href),
-      true,
-    );
-  }, [data, token]);
 
   const printOrDownload = async (mode: "print" | "download") => {
     if (!data) return;
@@ -291,41 +327,73 @@ export default function StatementShareClient({ token }: { token: string }) {
           <h1>{data.title}</h1>
           <p className="receipt-share-date">{data.subtitle}</p>
 
-          <div className="statement-share-kpis">
-            <div><span>{locale === "ar" ? "أول المدة" : "Opening"}</span><strong className={data.openingMinor < 0 ? "amount-negative" : ""}>{data.openingLabel}</strong></div>
-            <div><span>{locale === "ar" ? "إيداع" : "In"}</span><strong>{data.totalInLabel}</strong></div>
-            <div><span>{locale === "ar" ? "سحب" : "Out"}</span><strong>{data.totalOutLabel}</strong></div>
-            <div><span>{locale === "ar" ? "آخر المدة" : "Closing"}</span><strong className={data.closingMinor < 0 ? "amount-negative" : ""}>{data.closingLabel}</strong></div>
-          </div>
+          {(data.sheetKind ?? "movements") === "movements" ? (
+            <div className="statement-share-kpis">
+              <div><span>{locale === "ar" ? "أول المدة" : "Opening"}</span><strong className={data.openingMinor < 0 ? "amount-negative" : ""}>{data.openingLabel}</strong></div>
+              <div><span>{locale === "ar" ? "إيداع" : "In"}</span><strong>{data.totalInLabel}</strong></div>
+              <div><span>{locale === "ar" ? "سحب" : "Out"}</span><strong>{data.totalOutLabel}</strong></div>
+              <div><span>{locale === "ar" ? "آخر المدة" : "Closing"}</span><strong className={data.closingMinor < 0 ? "amount-negative" : ""}>{data.closingLabel}</strong></div>
+            </div>
+          ) : (
+            <div className="statement-share-kpis">
+              <div><span>{locale === "ar" ? "المتوفر" : "Available"}</span><strong>{data.availableLabel ?? "—"}</strong></div>
+              <div><span>{locale === "ar" ? "المصروفات" : "Expenses"}</span><strong>{data.expenseLabel ?? "—"}</strong></div>
+              <div><span>{locale === "ar" ? "عدد الأسماء" : "Names"}</span><strong>{data.members?.length ?? 0}</strong></div>
+            </div>
+          )}
 
           <dl className="statement-share-meta">
-            <div><dt>{locale === "ar" ? "المحفظة" : "Wallet"}</dt><dd>{data.walletName}</dd></div>
+            <div><dt>{locale === "ar" ? "الجمعية" : "Association"}</dt><dd>{data.walletName}</dd></div>
             <div><dt>{locale === "ar" ? "نوع الكشف" : "Type"}</dt><dd>{data.filterLabel}</dd></div>
-            <div><dt>{locale === "ar" ? "عدد الحركات" : "Movements"}</dt><dd>{data.movementCount}</dd></div>
+            <div>
+              <dt>{(data.sheetKind ?? "movements") === "movements" ? (locale === "ar" ? "عدد الحركات" : "Movements") : (locale === "ar" ? "عدد الأسماء" : "Names")}</dt>
+              <dd>{(data.sheetKind ?? "movements") === "movements" ? data.movementCount : (data.members?.length ?? 0)}</dd>
+            </div>
           </dl>
 
-          <section className="statement-share-lines">
-            <h2>{locale === "ar" ? "الحركات" : "Movements"}</h2>
-            {data.lines.length ? data.lines.map((line, index) => {
-              const amountMinor = line.depositMinor || -line.withdrawMinor;
-              const amount = formatMoneyMinor(amountMinor, data.currency || "OMR", locale);
-              return (
-                <article key={`${line.ref}:${index}`} className={`statement-share-line is-${line.depositMinor > 0 ? "in" : line.withdrawMinor > 0 ? "out" : "info"}`}>
+          {(data.sheetKind ?? "movements") !== "movements" ? (
+            <section className="statement-share-lines">
+              <h2>{locale === "ar" ? "الأسماء" : "Names"}</h2>
+              {data.members?.length ? data.members.map((member) => (
+                <article key={member.id} className={`statement-share-line ${member.owes_minor > 0 ? "is-out" : "is-in"}`}>
                   <header>
-                    <strong>{line.description}</strong>
-                    <em className={line.withdrawMinor > 0 ? "amount-negative" : line.depositMinor > 0 ? "amount-positive" : ""}>{amount}</em>
+                    <strong>{member.display_name}</strong>
+                    <em className={member.owes_minor > 0 ? "amount-negative" : "amount-positive"}>{member.owesLabel}</em>
                   </header>
-                  <p>{line.item} · {line.flow}</p>
+                  <p>{locale === "ar" ? "مدفوع" : "Paid"} · {member.paidLabel}</p>
                   <footer>
-                    <span>{new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</span>
-                    <span>{line.ref} · {line.status}</span>
+                    <span>{locale === "ar" ? "متأخر حتى الشهر الحالي" : "Arrears to current month"}</span>
+                    <span className={member.owes_minor > 0 ? "amount-negative" : ""}>{member.owesLabel}</span>
                   </footer>
                 </article>
-              );
-            }) : (
-              <p className="receipt-share-status">{locale === "ar" ? "لا توجد حركات في هذا القسم." : "No movements in this section."}</p>
-            )}
-          </section>
+              )) : (
+                <p className="receipt-share-status">{locale === "ar" ? "لا أسماء في هذا الكشف." : "No names on this sheet."}</p>
+              )}
+            </section>
+          ) : (
+            <section className="statement-share-lines">
+              <h2>{locale === "ar" ? "الحركات" : "Movements"}</h2>
+              {data.lines.length ? data.lines.map((line, index) => {
+                const amountMinor = line.depositMinor || -line.withdrawMinor;
+                const amount = formatMoneyMinor(amountMinor, data.currency || "OMR", locale);
+                return (
+                  <article key={`${line.ref}:${index}`} className={`statement-share-line is-${line.depositMinor > 0 ? "in" : line.withdrawMinor > 0 ? "out" : "info"}`}>
+                    <header>
+                      <strong>{line.description}</strong>
+                      <em className={line.withdrawMinor > 0 ? "amount-negative" : line.depositMinor > 0 ? "amount-positive" : ""}>{amount}</em>
+                    </header>
+                    <p>{line.item} · {line.flow}</p>
+                    <footer>
+                      <span>{new Date(line.at).toLocaleString(locale === "ar" ? "ar-OM" : "en-GB")}</span>
+                      <span>{line.ref} · {line.status}</span>
+                    </footer>
+                  </article>
+                );
+              }) : (
+                <p className="receipt-share-status">{locale === "ar" ? "لا توجد حركات في هذا القسم." : "No movements in this section."}</p>
+              )}
+            </section>
+          )}
 
           <p className="receipt-share-foot">
             {locale === "ar"

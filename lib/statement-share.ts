@@ -54,16 +54,21 @@ export type MemberStatementSharePayload = {
   exp: number;
 };
 
+export type AssociationSheetKind = "movements" | "dues" | "dues_paid" | "dues_owing";
+
 export type AssociationStatementSharePayload = {
   kind: "association_statement";
   spaceId: string;
   filter: StatementTxnFilter;
   locale: "ar" | "en";
+  /** Which printable sheet the link should open (names vs movements). */
+  sheetKind?: AssociationSheetKind;
   exp: number;
 };
 
 const FOCUSES = new Set<MemberLedgerFocus>(["all", "paid", "spent", "owes", "credit"]);
 const FILTERS = new Set<StatementTxnFilter>(["full", "valid", "voided", "all"]);
+const SHEET_KINDS = new Set<AssociationSheetKind>(["movements", "dues", "dues_paid", "dues_owing"]);
 
 export function signMemberStatementToken(input: {
   memberId: string;
@@ -108,14 +113,19 @@ export function signAssociationStatementToken(input: {
   spaceId: string;
   filter?: StatementTxnFilter;
   locale?: "ar" | "en";
+  sheetKind?: AssociationSheetKind;
   ttlMs?: number;
 }) {
   const filter = FILTERS.has(input.filter as StatementTxnFilter) ? (input.filter as StatementTxnFilter) : "full";
+  const sheetKind = SHEET_KINDS.has(input.sheetKind as AssociationSheetKind)
+    ? (input.sheetKind as AssociationSheetKind)
+    : "movements";
   const payload: AssociationStatementSharePayload = {
     kind: "association_statement",
     spaceId: input.spaceId,
     filter,
     locale: input.locale ?? "ar",
+    sheetKind,
     exp: Date.now() + (input.ttlMs ?? DEFAULT_TTL_MS),
   };
   return signBody(payload);
@@ -128,6 +138,7 @@ export function verifyAssociationStatementToken(token: string): AssociationState
   if (payload.exp < Date.now()) return null;
   if (!FILTERS.has(payload.filter)) payload.filter = "full";
   if (payload.locale !== "en") payload.locale = "ar";
+  if (!SHEET_KINDS.has(payload.sheetKind as AssociationSheetKind)) payload.sheetKind = "movements";
   return payload;
 }
 
@@ -235,17 +246,90 @@ export function buildAssociationStatementWhatsAppMessage(input: {
   paidLabel?: string;
   arrearsLabel?: string;
   lateMembersLabel?: string;
+  committedMembersLabel?: string;
   kind?: "movements" | "dues";
+  sheetKind?: AssociationSheetKind;
 }) {
   const name = String(input.walletName ?? "").trim() || (input.locale === "ar" ? "الجمعية" : "the association");
-  // Keep WhatsApp text short — long prefilled messages freeze the app on many phones.
+  const sheet = input.sheetKind
+    ?? (input.kind === "dues" ? "dues" : "movements");
+  const attachAr = (() => {
+    switch (sheet) {
+      case "dues":
+        return "نرفق لكم كشف المبالغ المتأخرة على الأعضاء حتى نهاية الشهر الحالي، للاطلاع على التفاصيل.";
+      case "dues_paid":
+        return "نرفق لكم كشف المسدّدين (من دفعوا مبالغاً) للاطلاع على التفاصيل.";
+      case "dues_owing":
+        return "نرفق لكم كشف الأعضاء المترتبة عليهم مبالغ فقط، للاطلاع على التفاصيل.";
+      default:
+        return "نرفق لكم كشف حساب كامل وعام للجمعية، للاطلاع على التفاصيل.";
+    }
+  })();
+  const attachEn = (() => {
+    switch (sheet) {
+      case "dues":
+        return "Please find the member arrears statement through the end of the current month.";
+      case "dues_paid":
+        return "Please find the payers-only statement (members who have paid).";
+      case "dues_owing":
+        return "Please find the statement of members who still owe amounts.";
+      default:
+        return "Please find the full general association account statement.";
+    }
+  })();
+  const typeLineAr = (() => {
+    switch (sheet) {
+      case "dues":
+        return "نوع الكشف: متأخرات الأعضاء حتى نهاية الشهر الحالي";
+      case "dues_paid":
+        return "نوع الكشف: المسدّدون فقط";
+      case "dues_owing":
+        return "نوع الكشف: المترتبة عليهم مبالغ فقط";
+      default:
+        return "نوع الكشف: كشف كامل وعام";
+    }
+  })();
+  const typeLineEn = (() => {
+    switch (sheet) {
+      case "dues":
+        return "Type: member arrears to current month";
+      case "dues_paid":
+        return "Type: payers only";
+      case "dues_owing":
+        return "Type: owing members only";
+      default:
+        return "Type: full general statement";
+    }
+  })();
+
+  const summaryAr = [
+    input.availableLabel ? `المتوفر (نقد + ودائع): ${input.availableLabel}` : null,
+    input.expensesLabel ? `المصروفات: ${input.expensesLabel}` : null,
+    input.arrearsLabel ? `إجمالي المتأخرات: ${input.arrearsLabel}` : null,
+    input.lateMembersLabel ? `عدد المتأخرين: ${input.lateMembersLabel}` : null,
+    input.committedMembersLabel ? `عدد الملتزمين: ${input.committedMembersLabel}` : null,
+    sheet === "movements" && input.movementsLabel ? `عدد الحركات: ${input.movementsLabel}` : null,
+  ].filter((line): line is string => Boolean(line));
+
+  const summaryEn = [
+    input.availableLabel ? `Available (cash + holdings): ${input.availableLabel}` : null,
+    input.expensesLabel ? `Expenses: ${input.expensesLabel}` : null,
+    input.arrearsLabel ? `Total arrears: ${input.arrearsLabel}` : null,
+    input.lateMembersLabel ? `Members in arrears: ${input.lateMembersLabel}` : null,
+    input.committedMembersLabel ? `Members current: ${input.committedMembersLabel}` : null,
+    sheet === "movements" && input.movementsLabel ? `Movements: ${input.movementsLabel}` : null,
+  ].filter((line): line is string => Boolean(line));
+
   const body = input.locale === "ar"
     ? [
         `السلام عليكم أعضاء «${name}»،`,
         "",
-        "نرفق لكم كشف حساب الجمعية للاطلاع على التفاصيل.",
+        attachAr,
+        typeLineAr,
         "",
-        "افتحوا الكشف من هنا:",
+        ...summaryAr,
+        "",
+        "للاطلاع على الأسماء والتفاصيل افتحوا الكشف من هنا:",
         input.statementUrl,
         "",
         "مع التحية",
@@ -253,12 +337,15 @@ export function buildAssociationStatementWhatsAppMessage(input: {
     : [
         `Hello members of “${name}”,`,
         "",
-        "Please find the association account statement for your review.",
+        attachEn,
+        typeLineEn,
         "",
-        "Open it here:",
+        ...summaryEn,
+        "",
+        "Open the statement for names and details:",
         input.statementUrl,
         "",
         "Best regards",
       ];
-  return body.join("\n");
+  return body.filter((line) => line != null).join("\n");
 }

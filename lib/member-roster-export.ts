@@ -1,8 +1,8 @@
 /** Society/group member roster print & download with selectable columns. */
 
-import { formatDebitMoneyMinor, formatMoneyMinor } from "./money";
-import { wrapPrintDocument } from "./print-document";
-import { escapeHtml } from "./html";
+import { formatDebitMoneyMinor, formatMoneyMinor } from "./money.ts";
+import { wrapPrintDocument } from "./print-document.ts";
+import { escapeHtml } from "./html.ts";
 
 export type RosterLocale = "ar" | "en";
 

@@ -3,7 +3,7 @@
 import type { RequestUser } from "../db/runtime";
 import { prepareAudit } from "./audit";
 import { ApiError } from "./security";
-import { formatMoneyMinor } from "./money";
+import { formatDebitMoneyMinor, formatMoneyMinor } from "./money";
 import { toWhatsAppNumber } from "./phone";
 import {
   buildReceiptWhatsAppMessage,
@@ -174,28 +174,50 @@ export async function createV1AssociationStatementShare(
     .first<{ id: string; name_ar: string; name_en: string; currency: string; balance_minor: number }>();
   if (!spaceRow) throw new ApiError(404, "WALLET_NOT_FOUND");
 
+  const sheetKind = "movements" as const;
   const shareToken = signAssociationStatementToken({
     spaceId: spaceRow.id,
     filter,
     locale,
+    sheetKind,
   });
   const origin = input.origin || "https://wazen.bhd-om.com";
   const shareUrl = `${origin}/s/${encodeURIComponent(shareToken)}`;
-  const filterLabel = ({
-    full: locale === "ar" ? "الكشف الكامل" : "Full statement",
-    valid: locale === "ar" ? "المعاملات الصحيحة" : "Valid transactions",
-    voided: locale === "ar" ? "المعاملات المحذوفة" : "Deleted transactions",
-    all: locale === "ar" ? "كل المعاملات" : "All transactions",
-  })[filter];
-  const txnCount = await db.prepare("SELECT COUNT(*) AS count FROM transactions WHERE space_id=?")
-    .bind(spaceRow.id).first<{ count: number }>();
+  const currency = spaceRow.currency || "OMR";
+  const [txnCount, expenseRow, holdingsRow, membersAgg] = await Promise.all([
+    db.prepare("SELECT COUNT(*) AS count FROM transactions WHERE space_id=?")
+      .bind(spaceRow.id).first<{ count: number }>(),
+    db.prepare(
+      "SELECT COALESCE(SUM(amount_minor),0) AS total FROM transactions WHERE space_id=? AND status='approved' AND kind='expense'",
+    ).bind(spaceRow.id).first<{ total: number }>(),
+    db.prepare(
+      "SELECT COALESCE(SUM(amount_minor),0) AS total FROM space_holdings WHERE space_id=? AND status='active'",
+    ).bind(spaceRow.id).first<{ total: number }>().catch(() => ({ total: 0 })),
+    db.prepare(
+      `SELECT
+        COALESCE(SUM(CASE WHEN due_minor > paid_minor THEN due_minor - paid_minor ELSE 0 END),0) AS arrears,
+        COALESCE(SUM(CASE WHEN due_minor > paid_minor THEN 1 ELSE 0 END),0) AS late_count,
+        COALESCE(SUM(CASE WHEN due_minor <= paid_minor THEN 1 ELSE 0 END),0) AS committed_count
+       FROM members WHERE space_id=? AND status='active' AND COALESCE(dues_exempt,0)=0`,
+    ).bind(spaceRow.id).first<{ arrears: number; late_count: number; committed_count: number }>(),
+  ]);
+  const cash = Number(spaceRow.balance_minor) || 0;
+  const available = cash + Number(holdingsRow?.total ?? 0);
+  const expenses = Number(expenseRow?.total ?? 0);
+  const arrears = Number(membersAgg?.arrears ?? 0);
   const message = buildAssociationStatementWhatsAppMessage({
     locale,
     walletName: locale === "ar" ? spaceRow.name_ar : spaceRow.name_en,
-    filterLabel,
-    balanceLabel: formatMoneyMinor(Number(spaceRow.balance_minor) || 0, spaceRow.currency || "OMR", locale),
+    filterLabel: locale === "ar" ? "كشف كامل وعام" : "Full general statement",
+    balanceLabel: formatMoneyMinor(cash, currency, locale),
     movementsLabel: String(Number(txnCount?.count ?? 0)),
     statementUrl: shareUrl,
+    sheetKind,
+    availableLabel: formatMoneyMinor(available, currency, locale),
+    expensesLabel: formatMoneyMinor(expenses, currency, locale),
+    arrearsLabel: arrears > 0 ? formatDebitMoneyMinor(arrears, currency, locale) : formatMoneyMinor(0, currency, locale),
+    lateMembersLabel: String(Number(membersAgg?.late_count ?? 0)),
+    committedMembersLabel: String(Number(membersAgg?.committed_count ?? 0)),
   });
   const whatsappNumber = input.phone ? toWhatsAppNumber(input.phone) : "";
 
@@ -204,7 +226,7 @@ export async function createV1AssociationStatementShare(
     action: "statement.association_share",
     entityType: "space",
     entityId: spaceRow.id,
-    metadata: { spaceId: spaceRow.id, filter, locale, via: "api.v1" },
+    metadata: { spaceId: spaceRow.id, filter, sheetKind, locale, via: "api.v1" },
     createdAt: new Date().toISOString(),
   }).run();
 
@@ -215,5 +237,6 @@ export async function createV1AssociationStatementShare(
     whatsappUrl: whatsappShareUrl(whatsappNumber || null, message),
     locale,
     filter,
+    sheetKind,
   };
 }

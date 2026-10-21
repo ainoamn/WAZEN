@@ -516,12 +516,26 @@ export function buildAccountStatementHtml(input: {
         : t(locale, "ترتيب السجل", "Ledger order");
     const membersHeading = input.memberSheetLabel
       ?? t(locale, "أعضاء الجمعية", "Association members");
-    table += `<section><h2>${escapeHtml(membersHeading)}</h2>
+    const memberCards = ordered.map((row) => {
+      const paid = money(row.paid_minor);
+      const owes = row.owes_minor > 0
+        ? formatDebitMoneyMinor(row.owes_minor, currency, locale)
+        : money(0);
+      return `<article class="statement-card">
+        <header><strong>${escapeHtml(row.display_name)}</strong><em class="${row.owes_minor > 0 ? "neg" : ""}">${escapeHtml(owes)}</em></header>
+        <p>${escapeHtml(t(locale, "مدفوع", "Paid"))}: ${escapeHtml(paid)}${memberColumns.includes("details") && row.details ? ` · ${escapeHtml(row.details)}` : ""}</p>
+        <footer><span>${escapeHtml(t(locale, "متأخر حتى الشهر الحالي", "Arrears to current month"))}</span><span class="${row.owes_minor > 0 ? "neg" : ""}">${escapeHtml(owes)}</span></footer>
+      </article>`;
+    }).join("");
+    table += `<section class="statement-members-section"><h2>${escapeHtml(membersHeading)}</h2>
       <p class="footer-note">${escapeHtml(sortNote)} · ${ordered.length}</p>
-      <table>
-        <thead><tr>${labels.map((label) => `<th>${escapeHtml(label)}</th>`).join("")}</tr></thead>
-        <tbody>${memberBody}</tbody>
-      </table>
+      <div class="statement-table-wrap ops-desktop-table">
+        <table>
+          <thead><tr>${labels.map((label) => `<th>${escapeHtml(label)}</th>`).join("")}</tr></thead>
+          <tbody>${memberBody}</tbody>
+        </table>
+      </div>
+      <div class="statement-cards" aria-label="${escapeHtml(membersHeading)}">${memberCards}</div>
     </section>`;
   }
 
@@ -585,7 +599,9 @@ export function buildAccountStatementHtml(input: {
     entityName,
     logoUrl: input.logoUrl,
     subtitle,
-    orientation: includeMovements || (input.memberColumns ?? []).includes("details") ? "landscape" : "portrait",
+    orientation: !includeMovements
+      ? "portrait"
+      : ((input.memberColumns ?? []).includes("details") || includeMovements ? "landscape" : "portrait"),
     variant: "statement",
     verifyUrl: input.verifyUrl,
     qrDataUrl: input.qrDataUrl,

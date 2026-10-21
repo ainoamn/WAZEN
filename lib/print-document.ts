@@ -628,12 +628,24 @@ html[dir="rtl"] .statement-movements tr.is-paid td:first-child {
   font-weight: 800;
   vertical-align: middle;
 }
-.statement-cards { display: grid; gap: 10px; }
+.statement-cards { display: none; gap: 10px; }
 .statement-card {
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 12px 14px;
   background: #fff;
+}
+.statement-members-section .statement-table-wrap { overflow-x: auto; }
+@media screen and (max-width: 760px) {
+  body.is-statement .statement-members-section .statement-table-wrap,
+  body.is-statement .statement-members-section .ops-desktop-table { display: none !important; }
+  body.is-statement .statement-cards { display: grid !important; }
+  body.is-statement .doc-stamp { display: none; }
+  body.is-statement .doc-head { flex-direction: column; }
+  body.is-statement .doc-title { text-align: start; }
+  body.is-statement .meta { grid-template-columns: 1fr !important; }
+  body.is-statement .kpis { grid-template-columns: 1fr 1fr !important; }
+  body.is-statement .sheet { outline: none; border-radius: 0; margin: 0; max-width: none; }
 }
 .statement-card header {
   display: flex;

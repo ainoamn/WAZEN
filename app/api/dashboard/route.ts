@@ -3911,10 +3911,12 @@ export async function POST(request: Request) {
         filter: z.enum(["full", "valid", "voided", "all"]).optional(),
         locale: z.enum(["ar", "en"]).optional(),
         phone: z.string().max(40).optional(),
+        sheetKind: z.enum(["movements", "dues", "dues_paid", "dues_owing"]).optional(),
       }).safeParse(payload);
       if (!parsed.success) throw new ApiError(400, "INVALID_STATEMENT");
       const locale = parsed.data.locale ?? "ar";
       const filter = (parsed.data.filter ?? "full") as StatementTxnFilter;
+      const sheetKind = parsed.data.sheetKind ?? "movements";
       const spaceAuth = await authorizeSpace(db, user, parsed.data.spaceId, "read");
       const { assertPlanShareFeature } = await import("../../../services/admin/billing-service");
       await assertPlanShareFeature(db, spaceAuth.owner_user_id, "whatsapp", user.id);
@@ -3926,14 +3928,15 @@ export async function POST(request: Request) {
         spaceId: space.id,
         filter,
         locale,
+        sheetKind,
       });
       const statementUrl = `${appOrigin(request)}/s/${encodeURIComponent(shareToken)}`;
       const filterLabel = ({
-        full: locale === "ar" ? "الكشف الكامل" : "Full statement",
-        valid: locale === "ar" ? "المعاملات الصحيحة" : "Valid transactions",
-        voided: locale === "ar" ? "المعاملات المحذوفة" : "Deleted transactions",
-        all: locale === "ar" ? "كل المعاملات" : "All transactions",
-      })[filter];
+        movements: locale === "ar" ? "كشف كامل وعام" : "Full general statement",
+        dues: locale === "ar" ? "متأخرات الأعضاء حتى نهاية الشهر الحالي" : "Member arrears to current month",
+        dues_paid: locale === "ar" ? "المسدّدون فقط" : "Payers only",
+        dues_owing: locale === "ar" ? "المترتبة عليهم مبالغ فقط" : "Owing members only",
+      })[sheetKind];
       const currency = space.currency || "OMR";
       const txnCount = await db.prepare("SELECT COUNT(*) AS count FROM transactions WHERE space_id=?").bind(space.id).first<{ count: number }>();
       const expenseRow = await db.prepare(
@@ -3946,9 +3949,10 @@ export async function POST(request: Request) {
         `SELECT
           COALESCE(SUM(paid_minor),0) AS paid,
           COALESCE(SUM(CASE WHEN due_minor > paid_minor THEN due_minor - paid_minor ELSE 0 END),0) AS arrears,
-          COALESCE(SUM(CASE WHEN due_minor > paid_minor THEN 1 ELSE 0 END),0) AS late_count
+          COALESCE(SUM(CASE WHEN due_minor > paid_minor THEN 1 ELSE 0 END),0) AS late_count,
+          COALESCE(SUM(CASE WHEN due_minor <= paid_minor THEN 1 ELSE 0 END),0) AS committed_count
          FROM members WHERE space_id=? AND status='active' AND COALESCE(dues_exempt,0)=0`,
-      ).bind(space.id).first<{ paid: number; arrears: number; late_count: number }>();
+      ).bind(space.id).first<{ paid: number; arrears: number; late_count: number; committed_count: number }>();
       const cash = Number(space.balance_minor) || 0;
       const holdingsMinor = Number(holdingsRow?.total ?? 0);
       const available = cash + holdingsMinor;
@@ -3956,6 +3960,7 @@ export async function POST(request: Request) {
       const paid = Number(membersAgg?.paid ?? 0);
       const arrears = Number(membersAgg?.arrears ?? 0);
       const lateCount = Number(membersAgg?.late_count ?? 0);
+      const committedCount = Number(membersAgg?.committed_count ?? 0);
       const message = buildAssociationStatementWhatsAppMessage({
         locale,
         walletName: locale === "ar" ? space.name_ar : space.name_en,
@@ -3963,11 +3968,13 @@ export async function POST(request: Request) {
         balanceLabel: formatMoneyMinor(cash, currency, locale),
         movementsLabel: String(Number(txnCount?.count ?? 0)),
         statementUrl,
+        sheetKind,
         availableLabel: formatMoneyMinor(available, currency, locale),
         expensesLabel: formatMoneyMinor(expenses, currency, locale),
         paidLabel: formatMoneyMinor(paid, currency, locale),
         arrearsLabel: arrears > 0 ? formatDebitMoneyMinor(arrears, currency, locale) : formatMoneyMinor(0, currency, locale),
         lateMembersLabel: String(lateCount),
+        committedMembersLabel: String(committedCount),
       });
       const whatsappNumber = parsed.data.phone ? toWhatsAppNumber(parsed.data.phone) : "";
       notification = {
@@ -3981,7 +3988,7 @@ export async function POST(request: Request) {
         action: "statement.association_share",
         entityType: "space",
         entityId: space.id,
-        metadata: { spaceId: space.id, filter, locale },
+        metadata: { spaceId: space.id, filter, sheetKind, locale },
       }).catch(() => {});
       await completeIdempotency(db, user.id, idempotencyKey, { ok: true, notification });
       claimRef.current = null;

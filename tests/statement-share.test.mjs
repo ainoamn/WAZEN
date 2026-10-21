@@ -23,11 +23,18 @@ test("member statement tokens round-trip and reject tampering", () => {
 });
 
 test("association statement tokens round-trip", () => {
-  const token = signAssociationStatementToken({ spaceId: "s9", filter: "valid", locale: "en", ttlMs: 60_000 });
+  const token = signAssociationStatementToken({
+    spaceId: "s9",
+    filter: "valid",
+    locale: "en",
+    sheetKind: "dues",
+    ttlMs: 60_000,
+  });
   const payload = verifyAssociationStatementToken(token);
   assert.equal(payload?.spaceId, "s9");
   assert.equal(payload?.filter, "valid");
   assert.equal(payload?.locale, "en");
+  assert.equal(payload?.sheetKind, "dues");
   assert.equal(verifyAnyStatementToken(token)?.kind, "association_statement");
   assert.equal(verifyMemberStatementToken(token), null);
 });
@@ -117,14 +124,45 @@ test("association statement WhatsApp message includes wallet and link", () => {
   const message = buildAssociationStatementWhatsAppMessage({
     locale: "ar",
     walletName: "جمعية الحي",
-    filterLabel: "الكشف الكامل",
+    filterLabel: "كشف كامل وعام",
     balanceLabel: "120.000 ر.ع.",
     movementsLabel: "14",
     statementUrl: "https://example.com/s/assoc",
+    sheetKind: "movements",
+    availableLabel: "150.000 ر.ع.",
+    expensesLabel: "30.000 ر.ع.",
+    arrearsLabel: "45.000 ر.ع.",
+    lateMembersLabel: "3",
+    committedMembersLabel: "12",
   });
-  assert.match(message, /كشف حساب الجمعية/);
-  assert.match(message, /جمعية الحي/);
+  assert.match(message, /السلام عليكم أعضاء «جمعية الحي»/);
+  assert.match(message, /كشف حساب كامل وعام/);
+  assert.match(message, /المتوفر \(نقد \+ ودائع\): 150\.000/);
+  assert.match(message, /المصروفات: 30\.000/);
+  assert.match(message, /إجمالي المتأخرات: 45\.000/);
+  assert.match(message, /عدد المتأخرين: 3/);
+  assert.match(message, /عدد الملتزمين: 12/);
   assert.match(message, /https:\/\/example\.com\/s\/assoc/);
+});
+
+test("association arrears WhatsApp message names the sheet type", () => {
+  const message = buildAssociationStatementWhatsAppMessage({
+    locale: "ar",
+    walletName: "جمعية أبناء خلفان",
+    filterLabel: "متأخرات",
+    balanceLabel: "0",
+    movementsLabel: "0",
+    statementUrl: "https://example.com/s/dues",
+    sheetKind: "dues",
+    availableLabel: "10.000 ر.ع.",
+    expensesLabel: "2.000 ر.ع.",
+    arrearsLabel: "8.000 ر.ع.",
+    lateMembersLabel: "5",
+    committedMembersLabel: "20",
+  });
+  assert.match(message, /كشف المبالغ المتأخرة على الأعضاء حتى نهاية الشهر الحالي/);
+  assert.match(message, /نوع الكشف: متأخرات الأعضاء حتى نهاية الشهر الحالي/);
+  assert.doesNotMatch(message, /عدد الحركات/);
 });
 
 test("account statement model builds running balance lines", () => {
