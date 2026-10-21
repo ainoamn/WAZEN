@@ -140,8 +140,8 @@ function associationPrintHtml(data: AssociationPayload, logoUrl: string, verifyU
   const isMembers = sheetKind !== "movements";
   const intro = data.subtitle
     || (ar
-      ? `هذا كشف حساب «${data.walletName}» للاطلاع على التفاصيل.`
-      : `Account statement for “${data.walletName}” for your review.`);
+      ? `إليكم بيان حساب «${data.walletName}» للاطلاع والمتابعة.`
+      : `Here is the account statement for “${data.walletName}” for your review.`);
   let bodyHtml = "";
   if (isMembers) {
     const members = data.members ?? [];

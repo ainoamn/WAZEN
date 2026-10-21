@@ -227,19 +227,19 @@ async function associationStatementJson(payload: AssociationStatementSharePayloa
   const title = locale === "ar" ? sheetTitles[sheetKind].ar : sheetTitles[sheetKind].en;
   const subtitle = locale === "ar"
     ? (sheetKind === "movements"
-      ? `كشف حساب كامل وعام لـ«${model.entityName}» — الحركات والأرصدة.`
+      ? `إليكم بيان حركات حساب «${model.entityName}» — للشفافية والمتابعة بكل وضوح.`
       : sheetKind === "dues"
-        ? `أسماء الأعضاء مع المدفوع والمتأخر حتى نهاية الشهر الحالي — «${model.entityName}».`
+        ? `بيان ودّي لمتابعة مستحقات «${model.entityName}» حتى نهاية الشهر الحالي: الاسم، ما دُفع، وما تبقّى.`
         : sheetKind === "dues_paid"
-          ? `أسماء المسدّدين فقط في «${model.entityName}».`
-          : `أسماء الأعضاء المترتبة عليهم مبالغ فقط في «${model.entityName}».`)
+          ? `إليكم أسماء الأعضاء الذين سدّدوا مساهماتهم في «${model.entityName}» — شكراً لالتزامهم.`
+          : `إليكم من لا تزال عليهم مبالغ مستحقة في «${model.entityName}» حتى نهاية الشهر الحالي — للمتابعة بلطف ووضوح.`)
     : (sheetKind === "movements"
-      ? `Full general account statement for “${model.entityName}” — movements and balances.`
+      ? `Here is the account activity for “${model.entityName}” — clear and ready for review.`
       : sheetKind === "dues"
-        ? `Member names with paid and arrears through the current month — “${model.entityName}”.`
+        ? `A clear dues overview for “${model.entityName}” through the current month: name, paid, and remaining.`
         : sheetKind === "dues_paid"
-          ? `Payers only in “${model.entityName}”.`
-          : `Owing members only in “${model.entityName}”.`);
+          ? `Members of “${model.entityName}” who have paid — thank you for staying current.`
+          : `Members of “${model.entityName}” with amounts still due through the current month — for clear follow-up.`);
 
   return {
     kind: "association_statement" as const,
