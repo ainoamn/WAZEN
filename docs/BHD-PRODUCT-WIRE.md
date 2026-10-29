@@ -32,3 +32,7 @@
 2. سجّل دخولاً → Cookie `wazen_session` / `__Host-wazen_session` بـ Max-Age ≈ runtime.
 3. من قائمة الحساب: بدّل حساباً → `POST /api/auth/bhd/rebind` → لوحة الحساب الجديد فقط.
 4. شبكة التطبيقات تعرض أيقونات من `GET https://id.bhd-om.com/api/bhd/catalog`.
+
+## تحديث §95 (29 أكتوبر 2026)
+
+إصلاح جذر العزل على الهوية: `POST /api/auth/switch` يكتب `bhd_id` دائماً. هذا المنتج يعتمد `rebind` محلياً بعد التبديل. التفاصيل: `BHD-ACCOUNT-ISOLATION.md`.
