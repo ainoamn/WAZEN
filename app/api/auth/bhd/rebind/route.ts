@@ -164,7 +164,7 @@ async function rebind(request: Request) {
         {
           ok: true,
           user: {
-            id: user.bhdSub || profile.sub,
+            id: profile.sub,
             email: user.email,
             name: user.displayName || profile.name,
           },
