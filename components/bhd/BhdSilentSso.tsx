@@ -12,7 +12,8 @@ import {
 } from "../../lib/identity/client";
 import { loadBhdIdentity } from "../../lib/identity/bhd-browser";
 import { boundWindowToken, readActiveAu, setActiveAu } from "../../lib/identity/window-session";
-import { useEffect, useTransition } from "react";`nimport { useRouter } from "next/navigation";
+import { useEffect, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 export function BhdSilentSso() {
   const router = useRouter();
