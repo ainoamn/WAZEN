@@ -29,7 +29,7 @@ function ssoStart(origin: string, workspacePath: string) {
  * النقر يفتح workspacePath مباشرة. start فقط إن لم توجد جلسة منتج (ميدلوير المنتج).
  * انظر docs/BHD-PRODUCT-SSO-ADMIN.md وdocs/BHD-APP-SWITCHER.md
  */
-export const BHD_APPS: BhdApp[] = [
+export const BHD_APPS_FALLBACK: BhdApp[] = [
   {
     id: "account",
     clientId: null,
@@ -158,8 +158,10 @@ export const BHD_APPS: BhdApp[] = [
   },
 ];
 
-export function gatewayApps(): BhdApp[] {
-  return BHD_APPS.filter((app) => app.enabled && app.id !== "account");
+export const BHD_APPS = BHD_APPS_FALLBACK;
+
+export function gatewayApps(apps: BhdApp[] = BHD_APPS_FALLBACK): BhdApp[] {
+  return apps.filter((app) => app.enabled && app.id !== "account");
 }
 
 function samePortalOrigin(pageOrigin?: string) {
@@ -199,6 +201,6 @@ export function startUrlForApp(app: BhdApp): string | null {
   return app.startUrl;
 }
 
-export function hopOrigins(): string[] {
-  return [...new Set(BHD_APPS.filter((app) => app.enabled && app.origin).map((app) => app.origin.replace(/\/$/, "")))];
+export function hopOrigins(apps: BhdApp[] = BHD_APPS_FALLBACK): string[] {
+  return [...new Set(apps.filter((app) => app.enabled && app.origin).map((app) => app.origin.replace(/\/$/, "")))];
 }

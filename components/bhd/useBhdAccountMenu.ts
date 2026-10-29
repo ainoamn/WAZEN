@@ -8,10 +8,11 @@ import {
   buildEndSessionUrl,
   fetchIdentityAccounts,
   logoutIdentityAccount,
-  switchIdentityAccount,
+  switchWindowAccount,
   type IdentityAccount,
   type IdentityMeResponse,
 } from "../../lib/bhd-multi-account";
+import { isAccountRebindPending } from "../../lib/identity/client";
 import { clearAdminConsole } from "../../lib/admin-session";
 import { notifyBrowserSessionChange } from "../../lib/browser-session-client";
 import { apiFetch } from "../../lib/client-api";
@@ -122,22 +123,18 @@ export function useBhdAccountMenu(productUser: BhdSwitcherUser, locale: "ar" | "
 
   const switchAccount = useCallback(async (sub: string) => {
     const target = String(sub || "").trim();
-    if (!target) return;
+    if (!target || isAccountRebindPending()) return;
     const optimistic = accounts.find((item) => item.id === target || item.email === target);
     if (optimistic) setUser(optimistic);
 
-    const data = await switchIdentityAccount(target);
-    if (!data.user) {
-      // Do not open /login?add=1 — leave roster UI; user can retry.
+    const switched = await switchWindowAccount(target);
+    if (!switched.ok || !switched.token) {
       if (optimistic) setUser(user);
       return;
     }
-    applyMe(productUser, data, setUser, setAccounts);
-    // Spec §2: wipe previous product data, then silent start on current path.
-    await clearProductSessionOnly();
-    applyAccountIsolation();
+    await applyAccountIsolation(switched.token, { force: true });
     await new Promise<never>(() => {});
-  }, [accounts, productUser, user]);
+  }, [accounts, user]);
 
   const addAccount = useCallback(() => {
     window.location.assign(addAccountUrl());
@@ -147,8 +144,8 @@ export function useBhdAccountMenu(productUser: BhdSwitcherUser, locale: "ar" | "
     const data = await logoutIdentityAccount(false);
     if (data.user) {
       applyMe(productUser, data, setUser, setAccounts);
-      await clearProductSessionOnly();
-      applyAccountIsolation();
+      const token = typeof (data as { token?: string }).token === "string" ? (data as { token?: string }).token : null;
+      await applyAccountIsolation(token, { force: true });
       await new Promise<never>(() => {});
       return;
     }

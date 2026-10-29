@@ -6,7 +6,8 @@ import { ArrowLeft, ArrowRight, BarChart3, Check, FileText, Globe2, House, LockK
 import { BhdAppIcon } from "../components/bhd/BhdAppIcon";
 import { OmrAmount } from "../components/brand/OmrSymbol";
 import { WazenIcon } from "../components/brand/WazenLogo";
-import { BHD_APPS } from "../lib/bhd/apps";
+import { gatewayApps } from "../lib/bhd/apps";
+import { useBhdCatalog } from "../lib/identity/use-bhd-catalog";
 import { AccountHeader, Brand, PublicHeader, useCommerceLocale } from "./commercial-kit";
 
 export default function LandingPage() {
@@ -34,7 +35,8 @@ export default function LandingPage() {
     };
   }, []);
 
-  const footerApps = BHD_APPS.filter((app) => app.enabled && app.id !== "account");
+  const catalogApps = useBhdCatalog();
+  const footerApps = gatewayApps(catalogApps);
   return <main className="commerce-landing">
     {signedInUser
       ? <AccountHeader locale={locale} setLocale={setLocale} user={signedInUser} />

@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans_Arabic, Inter } from "next/font/google";
+import Script from "next/script";
 import NavigationProgress from "../components/brand/NavigationProgress";
 import { BhdSilentSso } from "../components/bhd/BhdSilentSso";
+import { IDENTITY_SCRIPT_URL } from "../lib/bhd/runtime";
 import AppProviders from "./providers";
 import "./globals.css";
 import "./commercial.css";
@@ -87,6 +89,7 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl" className={`${plexArabic.variable} ${inter.variable}`}>
       <body className={plexArabic.className}>
+        <Script src={IDENTITY_SCRIPT_URL} strategy="afterInteractive" />
         <AppProviders>
           <NavigationProgress />
           <BhdSilentSso />

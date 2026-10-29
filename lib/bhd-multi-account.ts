@@ -4,7 +4,10 @@ import {
   addAccountUrl,
   applyAccountIsolation,
   identityFetch,
+  switchWindowAccount,
 } from "./identity/client";
+
+export { switchWindowAccount };
 
 export type AuthProviderMark = "password" | "google" | "facebook" | "whatsapp";
 
@@ -47,14 +50,14 @@ export async function fetchIdentityAccounts(): Promise<IdentityMeResponse> {
 }
 
 export async function switchIdentityAccount(sub: string): Promise<IdentityMeResponse> {
-  const response = await identityFetch("/api/auth/switch", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ sub }),
+  const switched = await switchWindowAccount(sub);
+  if (!switched.ok) return { user: null, accounts: [] };
+  const response = await identityFetch("/api/auth/me", {
+    method: "GET",
+    headers: { Accept: "application/json" },
   });
-  const data = (await response.json().catch(() => ({}))) as IdentityMeResponse;
   if (!response.ok) return { user: null, accounts: [] };
-  return data;
+  return (await response.json()) as IdentityMeResponse;
 }
 
 export async function logoutIdentityAccount(all: boolean): Promise<IdentityMeResponse> {

@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { DEFAULT_BHD_IDENTITY_ISSUER } from "../../lib/bhd-identity";
 import type { AuthProviderMark } from "../../lib/bhd-multi-account";
-import { BHD_APPS, hopOrigins, launchUrlForApp, type BhdApp } from "../../lib/bhd/apps";
+import { hopOrigins, launchUrlForApp, type BhdApp } from "../../lib/bhd/apps";
+import { useBhdCatalog } from "../../lib/identity/use-bhd-catalog";
 import { BhdAppIcon } from "./BhdAppIcon";
 
 export type { AuthProviderMark };
@@ -105,10 +106,10 @@ function isCurrentApp(app: BhdApp, pageOrigin: string) {
   return Boolean(app.origin) && here === stripSlash(app.origin);
 }
 
-function accountPageUrl(pageOrigin: string) {
+function accountPageUrl(pageOrigin: string, apps: BhdApp[]) {
   if (!pageOrigin) return `${DEFAULT_BHD_IDENTITY_ISSUER}/account`;
-  const accountApp = BHD_APPS.find((app) => app.id === "account");
-  const portalApp = BHD_APPS.find((app) => app.id === "portal");
+  const accountApp = apps.find((app) => app.id === "account");
+  const portalApp = apps.find((app) => app.id === "portal");
   if (
     (accountApp && isCurrentApp(accountApp, pageOrigin))
     || (portalApp && isCurrentApp(portalApp, pageOrigin))
@@ -209,8 +210,8 @@ function hintHop(url: string) {
   }
 }
 
-function openApp(app: BhdApp, pageOrigin: string, push: (href: string) => void) {
-  const url = app.mode === "identity" ? accountPageUrl(pageOrigin) : launchUrlForApp(app, pageOrigin);
+function openApp(app: BhdApp, pageOrigin: string, apps: BhdApp[], push: (href: string) => void) {
+  const url = app.mode === "identity" ? accountPageUrl(pageOrigin, apps) : launchUrlForApp(app, pageOrigin);
   if (url.startsWith("/")) {
     push(url);
     return;
@@ -251,13 +252,14 @@ export function BhdAppSwitcher({
   const appsId = useId();
   const accountId = useId();
   const router = useRouter();
+  const catalogApps = useBhdCatalog();
   const t = COPY[locale];
   const isArabic = locale === "ar";
 
   useEffect(() => {
     setOrigin(window.location.origin);
-    hopOrigins().forEach((item) => hintHop(item));
-  }, []);
+    hopOrigins(catalogApps).forEach((item) => hintHop(item));
+  }, [catalogApps]);
 
   useEffect(() => {
     setPictureBroken(false);
@@ -283,16 +285,16 @@ export function BhdAppSwitcher({
 
   useEffect(() => {
     if (panel !== "apps" || !origin) return;
-    BHD_APPS.forEach((app) => {
+    catalogApps.forEach((app) => {
       if (!app.enabled) return;
       if (app.mode === "identity") {
-        hintHop(accountPageUrl(origin));
+        hintHop(accountPageUrl(origin, catalogApps));
         return;
       }
       hintHop(launchUrlForApp(app, origin));
       if (app.startUrl) hintHop(app.startUrl);
     });
-  }, [panel, origin]);
+  }, [panel, origin, catalogApps]);
 
   function onAppClick(app: BhdApp) {
     if (!app.enabled) return;
@@ -301,7 +303,7 @@ export function BhdAppSwitcher({
         close();
         return;
       }
-      openApp(app, origin, (href) => {
+      openApp(app, origin, catalogApps, (href) => {
         close();
         router.push(href);
       });
@@ -311,7 +313,7 @@ export function BhdAppSwitcher({
       close();
       return;
     }
-    openApp(app, origin, (href) => {
+    openApp(app, origin, catalogApps, (href) => {
       close();
       router.push(href);
     });
@@ -367,7 +369,7 @@ export function BhdAppSwitcher({
             <p>{t.appsTitle}</p>
           </div>
           <div className="bhd-switcher-grid-apps">
-            {BHD_APPS.map((app) => {
+            {catalogApps.map((app) => {
               const current = origin ? isCurrentApp(app, origin) : false;
               const label = isArabic ? app.nameAr : app.nameEn;
               return (
@@ -397,7 +399,7 @@ export function BhdAppSwitcher({
         <div className="bhd-switcher-card bhd-switcher-account" id={accountId} role="dialog" aria-label={t.accountAria}>
           <div className="bhd-switcher-account-now">
             <AccountRow user={user} t={t} large />
-            <a className="bhd-switcher-manage" href={accountPageUrl(origin)}>
+            <a className="bhd-switcher-manage" href={accountPageUrl(origin, catalogApps)}>
               {t.manage}
             </a>
           </div>

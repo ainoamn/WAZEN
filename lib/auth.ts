@@ -1,6 +1,6 @@
 import { getRequestUser, type RequestUser } from "../db/runtime";
 import { browserIdCookie, browserIdFromRequest } from "./browser-session";
-import { csrfCookieName, persistentCsrfCookie, persistentSessionCookie, SESSION_MAX_MS, sessionCookieName } from "./session-policy";
+import { csrfCookieName, persistentCsrfCookie, persistentSessionCookie, sessionMaxMs, sessionCookieName } from "./session-policy";
 import { clientCountry, clientIp, ipHash, maskIp } from "./ip-security";
 
 const SESSION_COOKIE = sessionCookieName();
@@ -90,7 +90,7 @@ export async function createSession(db: D1Database, userId: string, request?: Re
   const token = createSessionToken();
   const csrfToken = createSessionToken(); const tokenHash = await sha256(token); const csrfTokenHash = await sha256(csrfToken);
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + SESSION_MAX_MS);
+  const expiresAt = new Date(now.getTime() + sessionMaxMs());
   const ip = request ? clientIp(request) : null;
   const hash = ip ? await ipHash(ip) : null;
   const masked = ip ? maskIp(ip) : null;
@@ -138,7 +138,7 @@ export async function authenticateRequest(db: D1Database, request: Request): Pro
   // last_seen_at is activity telemetry only; it never expires the session.
   const nowMs = Date.now();
   const lastSeenMs = new Date(row.last_seen_at ?? 0).getTime() || 0;
-  const fixedExpiryMs = (new Date(row.session_created_at).getTime() || nowMs) + SESSION_MAX_MS;
+  const fixedExpiryMs = (new Date(row.session_created_at).getTime() || nowMs) + sessionMaxMs();
   const expiresMs = new Date(row.expires_at).getTime() || nowMs;
   // Sessions minted under the old 48h sliding policy get their fixed 400-day expiry once.
   const legacyShortExpiry = fixedExpiryMs - expiresMs > 86_400_000;

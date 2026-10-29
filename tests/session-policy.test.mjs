@@ -8,17 +8,17 @@ import { persistentCsrfCookie, persistentSessionCookie, SESSION_MAX_AGE_SEC, SES
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("product session cookie is fixed 400 days, HttpOnly, Lax, host-only", () => {
+test("product session cookie Max-Age from identity runtime fallback, HttpOnly, Lax, host-only", () => {
   const session = persistentSessionCookie("token-value");
   const csrf = persistentCsrfCookie("csrf-value");
-  assert.equal(SESSION_MAX_AGE_SEC, 34_560_000);
-  assert.equal(SESSION_MAX_MS, 400 * 24 * 60 * 60 * 1000);
-  assert.match(session, /Max-Age=34560000/);
+  assert.equal(SESSION_MAX_AGE_SEC, 40 * 24 * 60 * 60);
+  assert.equal(SESSION_MAX_MS, 40 * 24 * 60 * 60 * 1000);
+  assert.match(session, /Max-Age=3456000/);
   assert.match(session, /HttpOnly/);
   assert.match(session, /SameSite=Lax/);
   assert.match(session, /Path=\//);
   assert.doesNotMatch(session, /Domain=/i);
-  assert.match(csrf, /Max-Age=34560000/);
+  assert.match(csrf, /Max-Age=3456000/);
   assert.match(csrf, /SameSite=Strict/);
   assert.doesNotMatch(csrf, /Domain=/i);
   assert.doesNotMatch(csrf, /HttpOnly/);

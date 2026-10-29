@@ -38,9 +38,9 @@ export function proxy(request: NextRequest) {
     "default-src 'self'",
     // Prerendered Next chunks have no CSP nonce. A nonce-only script policy
     // blocks the login client, and the form GETs /login? instead of signing in.
-    `script-src 'self' https://accounts.google.com 'unsafe-inline'${development ? " 'unsafe-eval'" : ""}`,
+    `script-src 'self' https://id.bhd-om.com https://accounts.google.com 'unsafe-inline'${development ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline' https://accounts.google.com",
-    "img-src 'self' data: blob: https://*.googleusercontent.com https://accounts.google.com",
+    "img-src 'self' data: blob: https://id.bhd-om.com https://*.googleusercontent.com https://accounts.google.com",
     "font-src 'self' data:",
     "connect-src 'self' https://id.bhd-om.com https://one-bhd.vercel.app https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com",
     "worker-src 'self'",
