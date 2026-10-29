@@ -93,4 +93,4 @@ export function buildEndSessionUrl(all: boolean) {
   return url.toString();
 }
 
-export { applyAccountIsolation, addAccountUrl };
+export { applyAccountIsolation, addAccountUrl, paintPrivacyVeil } from "./identity/client";

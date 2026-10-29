@@ -12,7 +12,7 @@ import {
   type IdentityAccount,
   type IdentityMeResponse,
 } from "../../lib/bhd-multi-account";
-import { isAccountRebindPending } from "../../lib/identity/client";
+import { isAccountRebindPending, paintPrivacyVeil } from "../../lib/identity/client";
 import { clearAdminConsole } from "../../lib/admin-session";
 import { notifyBrowserSessionChange } from "../../lib/browser-session-client";
 import { apiFetch } from "../../lib/client-api";
@@ -127,12 +127,16 @@ export function useBhdAccountMenu(productUser: BhdSwitcherUser, locale: "ar" | "
     const optimistic = accounts.find((item) => item.id === target || item.email === target);
     if (optimistic) setUser(optimistic);
 
+    paintPrivacyVeil();
     const switched = await switchWindowAccount(target);
     if (!switched.ok || !switched.token) {
       if (optimistic) setUser(user);
       return;
     }
-    await applyAccountIsolation(switched.token, { force: true });
+    await applyAccountIsolation(switched.token, {
+      force: true,
+      sub: switched.userId || target,
+    });
     await new Promise<never>(() => {});
   }, [accounts, user]);
 
@@ -145,7 +149,7 @@ export function useBhdAccountMenu(productUser: BhdSwitcherUser, locale: "ar" | "
     if (data.user) {
       applyMe(productUser, data, setUser, setAccounts);
       const token = typeof (data as { token?: string }).token === "string" ? (data as { token?: string }).token : null;
-      await applyAccountIsolation(token, { force: true });
+      await applyAccountIsolation(token, { force: true, sub: data.user?.id });
       await new Promise<never>(() => {});
       return;
     }

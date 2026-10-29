@@ -3,6 +3,7 @@ import { IBM_Plex_Sans_Arabic, Inter } from "next/font/google";
 import Script from "next/script";
 import NavigationProgress from "../components/brand/NavigationProgress";
 import { BhdSilentSso } from "../components/bhd/BhdSilentSso";
+import { BhdPrivacyGateProduct } from "../components/bhd/BhdPrivacyGateProduct";
 import { IDENTITY_SCRIPT_URL } from "../lib/bhd/runtime";
 import AppProviders from "./providers";
 import "./globals.css";
@@ -93,6 +94,7 @@ export default function RootLayout({
         <AppProviders>
           <NavigationProgress />
           <BhdSilentSso />
+          <BhdPrivacyGateProduct />
           {children}
         </AppProviders>
       </body>

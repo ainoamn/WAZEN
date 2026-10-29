@@ -6,26 +6,12 @@ import {
   isAccountRebindPending,
   isIdentityOrigin,
   productStartPath,
+  scrubCacheBustFromUrl,
 } from "../../lib/identity/client";
 import { loadBhdIdentity } from "../../lib/identity/bhd-browser";
+import { boundWindowToken, readActiveAu, setActiveAu } from "../../lib/identity/window-session";
 import { useEffect } from "react";
 
-type IdentityMe = { user?: { id?: string; email?: string } | null };
-type ProductMe = { user?: { id?: string; email?: string; bhdSub?: string | null } | null };
-
-function sameActiveAccount(identity: IdentityMe["user"], product: ProductMe["user"]) {
-  if (!identity?.id || !product) return false;
-  const identityEmail = (identity.email || "").trim().toLowerCase();
-  const productEmail = (product.email || "").trim().toLowerCase();
-  if (product.bhdSub && product.bhdSub === identity.id) return true;
-  if (identityEmail && productEmail && identityEmail === productEmail) return true;
-  return false;
-}
-
-/**
- * Direct links: bind product session to the active identity account silently.
- * Rebind via window Bearer when product session exists; start only when unauthenticated locally.
- */
 export function BhdSilentSso() {
   useEffect(() => {
     const path = window.location.pathname;
@@ -33,6 +19,8 @@ export function BhdSilentSso() {
       isIdentityOrigin()
       || path.startsWith("/login")
       || path.startsWith("/register")
+      || path.startsWith("/welcome")
+      || path.startsWith("/pricing")
       || path.startsWith("/oauth")
       || path.startsWith("/api/")
       || path.startsWith("/auth/")
@@ -41,47 +29,81 @@ export function BhdSilentSso() {
       return;
     }
 
-    if (isAccountRebindPending()) return;
-
     let cancelled = false;
+    let timer = 0;
 
-    void loadBhdIdentity().then(async (identity) => {
-      if (cancelled || !identity) return;
+    async function reconcile() {
+      if (cancelled || isAccountRebindPending() || document.hidden) return;
       try {
+        const au = readActiveAu();
+        if (au) setActiveAu(au);
+
+        const localResponse = await fetch("/api/auth/me", { cache: "no-store", credentials: "include" });
+        const local = (await localResponse.json().catch(() => ({}))) as {
+          user?: { id?: string; email?: string; bhdSub?: string | null } | null;
+        };
+        if (cancelled) return;
+
+        const localId = local.user?.bhdSub || local.user?.id;
+        if (localId && au && localId === au) {
+          clearAccountRebindLock();
+          scrubCacheBustFromUrl();
+          return;
+        }
+
+        const identity = await loadBhdIdentity();
+        if (cancelled || !identity) return;
         const { ok, body } = await identity.me();
         if (cancelled || !ok || !body.user?.id) {
           clearAccountRebindLock();
           return;
         }
 
-        const localResponse = await fetch("/api/auth/me", { cache: "no-store", credentials: "include" });
-        const local = (await localResponse.json().catch(() => ({}))) as ProductMe;
-        if (cancelled) return;
+        const identityId = body.user.id;
+        const targetAu = au || identityId;
 
-        if (localResponse.ok && sameActiveAccount(body.user, local.user)) {
+        if (localId && localId === identityId && localId === targetAu) {
           clearAccountRebindLock();
+          scrubCacheBustFromUrl();
           return;
         }
 
-        const guardKey = `bhd-sso:${body.user.id}`;
+        const guardKey = `bhd-sso:${targetAu || identityId}`;
         const last = Number(sessionStorage.getItem(guardKey) || "0");
-        if (last && Date.now() - last < 15_000) return;
+        if (last && Date.now() - last < 12_000) return;
         sessionStorage.setItem(guardKey, String(Date.now()));
 
-        if (!local.user?.id && !local.user?.bhdSub) {
+        if (!localId) {
           const here = `${window.location.pathname}${window.location.search || ""}` || "/";
           window.location.replace(identity.productStart(here) || productStartPath(here));
           return;
         }
 
-        await applyAccountIsolation(body.token, { force: true });
+        const token =
+          (au && identityId !== au ? boundWindowToken() : "") || boundWindowToken() || body.token;
+        await applyAccountIsolation(token, {
+          force: true,
+          sub: targetAu || identityId,
+          silent: true,
+        });
       } catch {
         clearAccountRebindLock();
       }
-    });
+    }
+
+    void reconcile();
+    const onVis = () => {
+      if (!document.hidden) void reconcile();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    timer = window.setInterval(() => {
+      if (!document.hidden) void reconcile();
+    }, 20_000);
 
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVis);
+      window.clearInterval(timer);
     };
   }, []);
 

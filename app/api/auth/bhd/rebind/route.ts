@@ -41,6 +41,38 @@ async function profileFromWindowToken(token: string): Promise<IdentityProfile> {
   };
 }
 
+function bindReturnPath(returnTo: string, sub: string) {
+  const safe = safeReturnTo(returnTo);
+  try {
+    const url = new URL(safe, "https://bhd.local");
+    url.searchParams.set("au", sub);
+    url.searchParams.set("_bhd", String(Date.now()));
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return safe;
+  }
+}
+
+function wantsJson(request: Request) {
+  const accept = request.headers.get("accept") || "";
+  return accept.includes("application/json");
+}
+
+function jsonOk(
+  payload: { ok: true; unchanged?: boolean; user: { id: string; email: string; name: string } },
+  session?: Awaited<ReturnType<typeof createSession>>,
+) {
+  const headers = new Headers({
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store, no-cache, must-revalidate, private",
+    Pragma: "no-cache",
+  });
+  if (session) {
+    sessionHeaders(session).forEach((value, key) => headers.append(key, value));
+  }
+  return new Response(JSON.stringify(payload), { status: 200, headers });
+}
+
 async function rebind(request: Request) {
   const origin = (() => {
     try {
@@ -49,8 +81,15 @@ async function rebind(request: Request) {
       return new URL(request.url).origin;
     }
   })();
+  const json = wantsJson(request);
 
   if (!isBhdIdentityConfigured()) {
+    if (json) {
+      return new Response(JSON.stringify({ ok: false, error: "sso" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     return Response.redirect(new URL("/login?local=1", origin), 303);
   }
 
@@ -72,6 +111,12 @@ async function rebind(request: Request) {
   const header = request.headers.get("authorization");
   if (!token && header?.toLowerCase().startsWith("bearer ")) token = header.slice(7).trim();
   if (!token || token.length < 20) {
+    if (json) {
+      return new Response(JSON.stringify({ ok: false, error: "token" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     return Response.redirect(new URL(`/api/auth/bhd/start?returnTo=${encodeURIComponent(returnTo)}`, origin), 303);
   }
 
@@ -82,7 +127,19 @@ async function rebind(request: Request) {
     const profile = await profileFromWindowToken(token);
     const current = await authenticateRequest(db, request);
     if (current?.bhdSub && current.bhdSub === profile.sub) {
-      return Response.redirect(new URL(returnTo, origin), 303);
+      if (json) {
+        return jsonOk({
+          ok: true,
+          unchanged: true,
+          user: { id: profile.sub, email: current.email, name: current.displayName || profile.name },
+        });
+      }
+      const next = bindReturnPath(returnTo, profile.sub);
+      const headers = new Headers();
+      headers.set("Location", `${origin}${next}`);
+      headers.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      headers.set("Pragma", "no-cache");
+      return new Response(null, { status: 303, headers });
     }
 
     const user = await upsertBhdUser(db, {
@@ -102,13 +159,32 @@ async function rebind(request: Request) {
       countryCode: clientCountry(request),
       userAgent: request.headers.get("user-agent"),
     });
-    const next = safeReturnTo(returnTo);
+    if (json) {
+      return jsonOk(
+        {
+          ok: true,
+          user: {
+            id: user.bhdSub || profile.sub,
+            email: user.email,
+            name: user.displayName || profile.name,
+          },
+        },
+        session,
+      );
+    }
+    const next = bindReturnPath(returnTo, profile.sub);
     const headers = sessionHeaders(session);
     headers.set("Location", `${origin}${next}`);
-    headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    headers.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
     headers.set("Pragma", "no-cache");
     return new Response(null, { status: 303, headers });
   } catch {
+    if (json) {
+      return new Response(JSON.stringify({ ok: false, error: "rebind" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     return Response.redirect(
       new URL(
         `/api/auth/bhd/logout?continue=${encodeURIComponent(`/api/auth/bhd/start?returnTo=${encodeURIComponent(returnTo)}`)}`,

@@ -12,10 +12,12 @@
 | `lib/bhd/runtime.ts` | `session.maxAgeSec` من `/api/bhd/runtime` (~5 دقائق cache) |
 | `lib/session-policy.ts` | Max-Age للكوكي من runtime |
 | `app/api/auth/bhd/rebind/route.ts` | ربط جلسة WAZEN بـ Bearer النافذة |
-| `lib/identity/client.ts` | `identityFetch` + `switchWindowAccount` + `applyAccountIsolation` (rebind أولاً) |
-| `lib/identity/window-session.ts` | `bhd_window_token` |
+| `lib/identity/client.ts` | `?au=` + silent JSON rebind + `paintPrivacyVeil` + `switchWindowAccount` (`X-BHD-Persist-Cookie:1`) |
+| `lib/identity/window-session.ts` | `bhd_account_tokens` + `bhd_active_au` + `boundWindowToken` |
+| `components/bhd/BhdPrivacyGate.tsx` + `BhdPrivacyGateProduct.tsx` | عزل صامت عند تحميل الجلسة |
 | `lib/bhd/catalog.ts` + `lib/identity/use-bhd-catalog.ts` | كتالوج حي + حدث `bhd-catalog` |
-| `components/bhd/BhdSilentSso.tsx` | rebind عند عدم تطابق الحساب |
+| `components/bhd/BhdSilentSso.tsx` | reconcile ~20s، `silent:true` فقط — بلا رسائل |
+| `app/api/auth/bhd/rebind/route.ts` | JSON `Accept: application/json` → `{ ok, unchanged?, user }` + Set-Cookie |
 | `components/bhd/useBhdAccountMenu.ts` | تبديل → `switchWindowAccount` ثم rebind |
 | `components/bhd/BhdAppSwitcher.tsx` | شبكة التطبيقات من الكتالوج الحي |
 | `app/page.tsx` | فوتر الأيقونات من الكتالوج |
