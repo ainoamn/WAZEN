@@ -88,6 +88,21 @@ export function scrubCacheBustFromUrl() {
     /* ignore */
   }
 }
+/** Keep ?au= on the URL without navigation — stabilizes multi-tab binding. */
+export function ensureAuInUrl(sub?: string | null) {
+  if (typeof window === "undefined") return;
+  const au = (sub || readActiveAu() || "").trim();
+  if (!au) return;
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("au") === au) return;
+    url.searchParams.set("au", au);
+    url.searchParams.delete("_bhd");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  } catch {
+    /* ignore */
+  }
+}
 
 export function cacheBustReturnPath(returnTo = "/", sub?: string | null) {
   return accountBoundReturnPath(returnTo, sub);
@@ -119,6 +134,8 @@ export function addAccountUrl() {
 }
 
 const REBIND_LOCK = "bhd_rebind_lock";
+/** Cooldown after a silent cookie repair — stops multi-tab thrash. */
+export const SILENT_SSO_GUARD_MS = 45_000;
 
 export function isAccountRebindPending() {
   if (typeof sessionStorage === "undefined") return false;
@@ -127,6 +144,33 @@ export function isAccountRebindPending() {
   const at = Number(raw);
   return Number.isFinite(at) && Date.now() - at < 12_000;
 }
+
+/**
+ * Shared product cookies can only represent one account. Only the focused,
+ * visible tab may rewrite them — otherwise tabs fight and the UI flickers.
+ */
+export function tabMayClaimProductCookie() {
+  if (typeof document === "undefined") return false;
+  if (document.hidden) return false;
+  try {
+    if (typeof document.hasFocus === "function" && !document.hasFocus()) return false;
+  } catch {
+    /* ignore */
+  }
+  return true;
+}
+
+export function emitAccountRebound(userId?: string | null) {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(
+      new CustomEvent("bhd:account-rebound", { detail: { userId: userId || "" } }),
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
 
 export function paintPrivacyVeil(_message?: string) {
   if (typeof document === "undefined") return;
@@ -251,15 +295,17 @@ export async function applyAccountIsolation(
     token || (sub ? tokenForAccount(sub) : "") || boundWindowToken() || sessionStorage.getItem("bhd_window_token") || "";
 
   if (options?.silent) {
+    if (!tabMayClaimProductCookie()) return;
     const result = await silentRebind(windowToken, sub);
-    if (result.ok && result.unchanged) {
+    if (result.ok) {
       clearAccountRebindLock();
       scrubCacheBustFromUrl();
-      return;
-    }
-    if (result.ok && result.userId) {
-      sessionStorage.setItem(REBIND_LOCK, String(Date.now()));
-      window.location.replace(accountBoundPath(here, result.userId));
+      // Cookie fixed in-place — never hard-navigate (stops blink + tab wars).
+      if (!result.unchanged) {
+        const guardKey = `bhd-sso:${result.userId || sub || "x"}`;
+        sessionStorage.setItem(guardKey, String(Date.now()));
+        emitAccountRebound(result.userId || sub);
+      }
       return;
     }
   }
